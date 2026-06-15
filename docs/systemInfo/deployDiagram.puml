@@ -1,0 +1,27 @@
+@startuml
+
+node "Dispositivo del usuario" {
+  artifact "Navegador Web / PWA" as Browser
+}
+
+node "Servidor Web" {
+  artifact "Frontend Web\nReact / Angular / Vue" as Frontend
+}
+
+node "Servidor Backend" {
+  artifact "NestJS API" as API
+  artifact "Node.js Runtime" as Node
+}
+
+database "Servidor Base de Datos" {
+  artifact "PostgreSQL" as PostgreSQL
+}
+
+cloud "Internet" as Internet
+
+Browser --> Internet
+Internet --> Frontend : HTTPS
+Frontend --> API : HTTPS / REST API
+API --> PostgreSQL : TCP 5432
+
+@enduml

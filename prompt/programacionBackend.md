@@ -52,6 +52,8 @@ Cuando generes código backend para este proyecto, asume el siguiente stack:
 - PostgreSQL como base de datos preferente cuando el usuario no indique otra.
 - Zod para validación de datos.
 - JWT para autenticación y autorización.
+- Rate limiter obligatorio en todos los proyectos backend.
+- API Gateway obligatorio como punto de entrada para APIs, microservicios o sistemas con posibilidad de crecimiento.
 - Guards para autenticación y autorización.
 - Pipes para validación y transformación de entrada.
 - Exception filters para manejo centralizado de errores.
@@ -190,7 +192,16 @@ src/
     cors.config.ts
     security.config.ts
     database.config.ts
+    rate-limit.config.ts
+    gateway.config.ts
     app.config.ts
+    README.md
+
+  gateway/
+    gateway.module.ts
+    gateway.controller.ts
+    gateway.service.ts
+    gateway.routes.ts
     README.md
 
   database/
@@ -222,6 +233,14 @@ src/
     guards/
       jwt-auth.guard.ts
       roles.guard.ts
+      rate-limit.guard.ts
+      README.md
+
+    rate-limit/
+      rate-limit.module.ts
+      rate-limit.service.ts
+      rate-limit.storage.ts
+      rate-limit.types.ts
       README.md
 
     pipes/
@@ -1344,8 +1363,194 @@ Respuesta preferible:
 ```
 
 ---
+## 26. Rate limiter obligatorio
 
-## 26. Seguridad base de NestJS
+Todo backend NestJS debe incluir rate limiter desde el diseño inicial.
+
+El rate limiter no es opcional. Debe aplicarse como medida base de seguridad, estabilidad y protección contra abuso.
+
+Debe implementarse usando una solución compatible con NestJS, por ejemplo:
+
+- `@nestjs/throttler` para proyectos simples o medianos.
+- Redis como storage distribuido cuando existan múltiples instancias, despliegue horizontal, API Gateway distribuido o microservicios.
+- Un rate limiter externo del proveedor de infraestructura cuando corresponda, sin eliminar la protección interna del backend.
+
+Debe existir configuración centralizada en:
+
+```txt
+src/config/rate-limit.config.ts
+```
+
+Y, si se implementa como módulo propio:
+
+```txt
+src/common/rate-limit/
+  rate-limit.module.ts
+  rate-limit.service.ts
+  rate-limit.storage.ts
+  rate-limit.types.ts
+  README.md
+```
+
+Reglas obligatorias:
+
+- Todo proyecto backend debe tener rate limiter global.
+- Endpoints sensibles deben tener límites más estrictos.
+- Login, registro, refresh token, recuperación de contraseña, verificación de código y endpoints públicos deben estar especialmente protegidos.
+- El rate limit debe considerar IP, usuario autenticado, token, API key o combinación de criterios según el caso.
+- No se deben aplicar límites idénticos a todos los endpoints si existen endpoints críticos.
+- La configuración debe diferenciar entorno local, staging y producción.
+- La respuesta de exceso de solicitudes debe ser consistente y segura.
+- No se deben revelar detalles internos de la estrategia de protección.
+- Los límites deben documentarse en `docs/endpoints/endpoints.md` cuando afecten el uso del endpoint.
+- Los flujos de protección deben documentarse en `docs/architecture/flows.md`.
+
+Respuesta esperada ante exceso de solicitudes:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "TOO_MANY_REQUESTS",
+    "message": "Demasiadas solicitudes. Intenta nuevamente más tarde.",
+    "details": []
+  }
+}
+```
+
+Ejemplo conceptual con NestJS:
+
+```ts
+import { Module } from "@nestjs/common";
+import { ThrottlerModule } from "@nestjs/throttler";
+
+@Module({
+  imports: [
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000,
+        limit: 100,
+      },
+    ]),
+  ],
+})
+export class RateLimitModule {}
+```
+
+Ejemplo conceptual para endpoint sensible:
+
+```ts
+import { Controller, Post, UseGuards } from "@nestjs/common";
+import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
+
+@Controller("api/v1/auth")
+@UseGuards(ThrottlerGuard)
+export class AuthController {
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post("login")
+  login() {
+    // flujo de login
+  }
+}
+```
+
+En producción, si hay múltiples instancias del backend, debe preferirse almacenamiento distribuido para el rate limiter.
+
+---
+
+## 27. API Gateway obligatorio
+
+Todo backend debe considerar un API Gateway como punto de entrada principal cuando el sistema sea una API REST, un sistema modular, un backend para frontend, una arquitectura con microservicios o un proyecto con posibilidad de crecimiento.
+
+El API Gateway es obligatorio como requisito arquitectónico. Su implementación puede ser interna o externa según el tamaño del proyecto.
+
+### Opción A: Gateway interno en NestJS
+
+Usa esta opción cuando el proyecto es monolito modular, backend inicial, MVP o sistema que todavía no requiere infraestructura externa compleja.
+
+Estructura recomendada:
+
+```txt
+src/
+  gateway/
+    gateway.module.ts
+    gateway.controller.ts
+    gateway.service.ts
+    gateway.routes.ts
+    README.md
+```
+
+Responsabilidades del gateway interno:
+
+- Centralizar el punto de entrada.
+- Aplicar políticas globales.
+- Coordinar versionado de API.
+- Aplicar rate limiter global.
+- Aplicar CORS.
+- Aplicar autenticación global cuando corresponda.
+- Aplicar logging y trazabilidad.
+- Normalizar respuestas.
+- Exponer health checks.
+- Documentar rutas públicas y privadas.
+- Preparar el sistema para una futura separación en microservicios.
+
+### Opción B: Gateway externo
+
+Usa esta opción cuando el sistema tenga microservicios, múltiples backends, alta concurrencia, balanceo, despliegue distribuido o necesidad de políticas avanzadas.
+
+Opciones válidas:
+
+- NGINX.
+- Kong.
+- Traefik.
+- AWS API Gateway.
+- Azure API Management.
+- Google Cloud API Gateway.
+- Cloudflare API Gateway o reglas equivalentes.
+- Otro gateway administrado por infraestructura.
+
+Responsabilidades del gateway externo:
+
+- Enrutamiento a servicios internos.
+- TLS/HTTPS.
+- Rate limiting perimetral.
+- CORS perimetral si corresponde.
+- Protección contra abuso.
+- Balanceo de carga.
+- Reintentos controlados cuando aplique.
+- Observabilidad y métricas.
+- Gestión de API keys si corresponde.
+- Restricción de orígenes.
+- Protección de endpoints internos.
+
+Reglas obligatorias:
+
+- Todo backend debe explicar qué estrategia de API Gateway usa.
+- Si es monolito modular, puede implementarse gateway interno.
+- Si es microservicio o arquitectura distribuida, debe proponerse gateway externo.
+- El gateway no debe contener reglas de negocio.
+- El gateway no reemplaza controllers, services ni repositories.
+- El gateway no debe acceder directamente a base de datos.
+- El gateway debe aplicar o coordinar políticas transversales.
+- El gateway debe documentarse en `docs/architecture/architecture.md`.
+- Los flujos que pasan por gateway deben documentarse en `docs/architecture/flows.md`.
+- Si se usa gateway externo, debe documentarse cómo se enrutan los servicios internos.
+- Si se usa gateway externo, el backend igual debe conservar validaciones, guards y seguridad interna.
+
+Ejemplo conceptual de documentación esperada:
+
+```md
+## Estrategia de API Gateway
+
+El sistema usa un API Gateway interno en NestJS durante la fase inicial del proyecto. Este gateway centraliza políticas globales como CORS, rate limiting, logging, health checks, versionado y documentación de rutas.
+
+Cuando el sistema crezca hacia microservicios, el gateway podrá migrarse a NGINX, Kong, Traefik o un API Gateway administrado en cloud.
+```
+
+---
+
+
+## 28. Seguridad base de NestJS
 
 Toda API NestJS de producción debe considerar:
 
@@ -1383,7 +1588,7 @@ app.use(urlencoded({ extended: true, limit: "1mb" }));
 
 ---
 
-## 27. CORS y cookies
+## 29. CORS y cookies
 
 Si el frontend y backend están en dominios distintos y se usan cookies:
 
@@ -1398,7 +1603,7 @@ La configuración de CORS debe estar centralizada, no repetida en múltiples arc
 
 ---
 
-## 28. Variables de entorno
+## 30. Variables de entorno
 
 Las variables de entorno deben centralizarse y validarse con Zod.
 
@@ -1440,7 +1645,7 @@ Si falta una variable crítica, la aplicación debe fallar al iniciar, no durant
 
 ---
 
-## 29. Manejo de errores
+## 31. Manejo de errores
 
 Debe existir un manejo centralizado de errores con exception filters.
 
@@ -1472,7 +1677,7 @@ La respuesta de error debe tener una estructura consistente:
 
 ---
 
-## 30. Normalización de errores de Sequelize
+## 32. Normalización de errores de Sequelize
 
 Los errores técnicos de Sequelize deben transformarse en errores de aplicación controlados.
 
@@ -1490,7 +1695,7 @@ El exception filter global debe devolver mensajes seguros y consistentes.
 
 ---
 
-## 31. Respuestas HTTP
+## 33. Respuestas HTTP
 
 Las respuestas deben ser consistentes.
 
@@ -1532,7 +1737,7 @@ Usa códigos HTTP correctos:
 
 ---
 
-## 32. Health checks y apagado controlado
+## 34. Health checks y apagado controlado
 
 Toda API de producción debe incluir endpoints de diagnóstico.
 
@@ -1571,7 +1776,7 @@ app.enableShutdownHooks();
 
 ---
 
-## 33. Logs y observabilidad
+## 35. Logs y observabilidad
 
 Incluye logs técnicos únicamente donde aporten valor.
 
@@ -1599,7 +1804,7 @@ Usa `Logger` de NestJS o un logger estructurado si el proyecto lo requiere.
 
 ---
 
-## 34. Calidad automática de código
+## 36. Calidad automática de código
 
 Todo proyecto debe incluir configuración de calidad automática.
 
@@ -1632,7 +1837,7 @@ No entregues código que dependa de tipos débiles si puede tiparse correctament
 
 ---
 
-## 35. Testing esperado
+## 37. Testing esperado
 
 Cuando generes código backend, incluye o sugiere pruebas para:
 
@@ -1662,7 +1867,7 @@ Las pruebas deben enfocarse en services, guards, pipes, filters, repositories y 
 
 ---
 
-## 36. Postman y smoke tests
+## 38. Postman y smoke tests
 
 Cuando corresponda, debe generarse una colección de Postman en:
 
@@ -1693,7 +1898,7 @@ Los smoke tests deben validar que el sistema responde correctamente en flujos m�
 
 ---
 
-## 37. Documentación OpenAPI
+## 39. Documentación OpenAPI
 
 Cuando corresponda, además de la colección Postman, debe generarse o mantenerse documentación OpenAPI.
 
@@ -1732,7 +1937,7 @@ Si se usa Swagger en NestJS, debe configurarse sin reemplazar la documentación 
 
 ---
 
-## 38. Documentación obligatoria de endpoints
+## 40. Documentación obligatoria de endpoints
 
 Siempre que se genere o modifique un backend, debe crearse o actualizarse documentación de endpoints en:
 
@@ -1835,7 +2040,7 @@ No basta con crear el código. El comportamiento del endpoint debe quedar docume
 
 ---
 
-## 39. Documentación de arquitectura y flujos
+## 41. Documentación de arquitectura y flujos
 
 Siempre que se genere o modifique un backend, debe crearse o actualizarse:
 
@@ -1873,7 +2078,7 @@ docs/
 
 ---
 
-## 40. Carpeta prompt
+## 42. Carpeta prompt
 
 La carpeta `prompt` debe contener los prompts y reglas usadas para generar, mantener o ampliar el proyecto.
 
@@ -1904,7 +2109,7 @@ El archivo `prompt/README.md` debe explicar:
 
 ---
 
-## 41. README obligatorio por carpeta
+## 43. README obligatorio por carpeta
 
 Cada carpeta importante del proyecto debe incluir un `README.md`.
 
@@ -1997,12 +2202,16 @@ El `README.md` no debe ser decorativo. Debe servir para que otro desarrollador e
 
 ---
 
-## 42. Criterio de producción
+## 44. Criterio de producción
 
 Antes de entregar código, verifica que cumpla con esta checklist:
 
 - NestJS usado como framework backend.
 - Sin Express puro salvo pedido explícito.
+- Rate limiter obligatorio configurado globalmente.
+- Rate limiter específico en endpoints sensibles.
+- API Gateway definido como estrategia arquitectónica.
+- Gateway interno o externo documentado.
 - Modules organizados por dominio.
 - Controllers delgados.
 - Services desacoplados.
@@ -2047,13 +2256,15 @@ Antes de entregar código, verifica que cumpla con esta checklist:
 
 ---
 
-## 43. Formato de respuesta esperado para código NestJS
+## 45. Formato de respuesta esperado para código NestJS
 
 Cuando generes una solución backend en NestJS, responde con esta estructura:
 
 1. **Resumen técnico**
    - Explica qué se implementó.
    - Explica qué módulos NestJS se crearon.
+   - Explica qué estrategia de API Gateway se usó.
+   - Explica qué estrategia de rate limiter se aplicó.
    - Explica qué estrategia de autenticación se usó.
    - Explica cómo se usó Sequelize.
    - Explica si se usaron transacciones, DTOs, mappers o repository genérico.
@@ -2072,7 +2283,7 @@ Cuando generes una solución backend en NestJS, responde con esta estructura:
    - Entrega cada archivo separado y con nombre claro.
 
 5. **Explicación de la arquitectura**
-   - Explica modules, controllers, services, repositories, DTOs, schemas, guards, pipes, filters, interceptors, Sequelize y configuración centralizada.
+   - Explica modules, gateway, controllers, services, repositories, DTOs, schemas, guards, pipes, filters, interceptors, rate limiter, Sequelize y configuración centralizada.
 
 6. **Validación con Zod**
    - Explica cómo se validan body, params, query, headers o cookies usando pipes de NestJS.
@@ -2114,7 +2325,7 @@ Cuando generes una solución backend en NestJS, responde con esta estructura:
 
 ---
 
-## 44. Regla final
+## 46. Regla final
 
 No entregues código NestJS improvisado, mezclado o de tutorial básico.
 
@@ -2124,6 +2335,8 @@ Toda solución backend generada debe incluir:
 
 - Código fuente en TypeScript.
 - NestJS como framework principal.
+- API Gateway obligatorio.
+- Rate limiter obligatorio.
 - Sequelize como ORM.
 - Validaciones con Zod.
 - JWT seguro.

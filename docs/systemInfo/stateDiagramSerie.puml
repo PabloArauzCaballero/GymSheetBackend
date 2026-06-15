@@ -1,0 +1,18 @@
+@startuml
+
+[*] --> BORRADOR : Usuario abre formulario de serie
+
+BORRADOR --> VALIDANDO : Presiona guardar
+VALIDANDO --> REGISTRADA : Datos válidos
+VALIDANDO --> BORRADOR : Datos inválidos
+
+REGISTRADA --> EDITADA : Usuario modifica datos
+EDITADA --> REGISTRADA : Guarda cambios
+
+REGISTRADA --> ELIMINADA : Usuario elimina serie
+EDITADA --> ELIMINADA : Usuario elimina serie
+
+REGISTRADA --> [*]
+ELIMINADA --> [*]
+
+@enduml
