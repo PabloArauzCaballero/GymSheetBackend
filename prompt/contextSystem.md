@@ -2,926 +2,1053 @@
 
 ## 1. Naturaleza del sistema
 
-El sistema corresponde a una plataforma backend distribuida de **cadena de suministro**, diseñada para una empresa con múltiples sucursales y alto volumen operativo, que actualmente se encuentra desactualizada y realiza gran parte de su gestión mediante archivos Excel.
+El sistema corresponde a una aplicación web de entrenamiento para un gimnasio, enfocada principalmente en los clientes o usuarios finales del gym.
 
-El objetivo principal del sistema es digitalizar, ordenar y controlar los procesos relacionados con:
+El objetivo principal del sistema es permitir que cada usuario pueda registrar su entrenamiento de forma rápida, simple y sin fricción, evitando que el proceso sea tan largo o pesado que el usuario deje de usar la aplicación.
 
-* Catálogo de productos.
-* Proveedores.
-* Órdenes de compra.
-* Recepción de órdenes de compra.
-* Inventario.
-* Control de stock recibido.
-* Control de stock vendible.
-* Reposición en sala.
-* Transferencias entre sucursales y centros de distribución.
-* Control de vencimientos por riesgo.
-* Notificaciones operativas.
-* Trazabilidad de responsables y movimientos.
+La aplicación no debe diseñarse como un sistema complejo de planificación deportiva avanzada, sino como una herramienta práctica para registrar series, ejercicios, pesos y progreso básico.
 
-El sistema no debe construirse como un simple CRUD de productos, proveedores y órdenes de compra. Debe diseñarse como una solución profesional de cadena de suministro, preparada para operar en una empresa real con muchas sucursales, alto volumen de proveedores diarios, productos perecederos, reposición por terceros y necesidad de trazabilidad operativa.
+El sistema debe permitir registrar por cada entrenamiento:
+
+* Ejercicio realizado.
+* Número de serie.
+* Repeticiones.
+* Peso levantado.
+* RIR.
+* Si ese día el ejercicio tiene énfasis.
+* Descanso respecto a la serie anterior.
+
+Además, el sistema debe manejar parámetros antropométricos básicos del usuario:
+
+* Edad.
+* Peso corporal.
+* Estatura.
+* Objetivo principal de entrenamiento.
+
+El sistema debe ser web y el backend debe construirse usando NestJS.
 
 ## 2. Contexto empresarial
 
-La empresa posee múltiples sucursales y maneja operaciones de abastecimiento, recepción, inventario y reposición. Actualmente, gran parte de estos procesos se gestionan en Excel, lo cual genera problemas como:
+El cliente es un gimnasio que necesita ofrecer a sus usuarios una aplicación sencilla para registrar sus entrenamientos.
 
-* Baja trazabilidad.
-* Dificultad para saber qué se pidió y qué se recibió.
-* Falta de control entre stock recibido y stock realmente vendible.
-* Riesgo de productos vencidos o próximos a vencer.
-* Dificultad para controlar reposiciones realizadas por proveedores externos.
-* Dependencia excesiva de revisión manual.
-* Falta de notificaciones automáticas.
-* Falta de integración clara entre compras, recepción, inventario y sala.
-* Información desactualizada o dispersa entre sucursales.
+Actualmente, muchos usuarios registran su progreso de forma manual, en notas del celular, libretas, hojas de cálculo o directamente no registran nada. Esto genera problemas como:
 
-El sistema debe resolver estos problemas con una arquitectura backend seria, distribuida, trazable y preparada para producción.
+* Falta de seguimiento del progreso.
+* Dificultad para saber cuánto peso levantó el usuario anteriormente.
+* Falta de historial de repeticiones, series y cargas.
+* Dificultad para compartir información clara con un entrenador externo.
+* Poca adherencia al registro si la herramienta es muy compleja.
+* Falta de una lista clara de máquinas, indumentaria y posibilidades reales de entrenamiento dentro del gimnasio.
 
-## 3. Enfoque arquitectónico
+La solución debe ser simple, rápida y orientada a uso real en el gym, considerando que el usuario probablemente registrará sus datos entre series, con poco tiempo y desde el celular.
 
-El sistema debe diseñarse como un **backend distribuido**, compuesto por servicios separados por responsabilidad.
+## 3. Enfoque general del sistema
 
-Los servicios principales sugeridos son:
+El sistema debe permitir que un usuario inicie sesión y pueda:
 
-```txt
-Servicio Catálogo
-Servicio Proveedores
-Servicio Compras
-Servicio Inventario
-Servicio Sala / Reposición
-Servicio Notificaciones
-Servicio Seguridad
-Servicio Auditoría
-Servicio Reportes
-API Gateway
-Broker de Eventos
-```
+1. Completar su perfil básico.
+2. Consultar ejercicios predeterminados del gimnasio.
+3. Crear ejercicios personalizados en base a las máquinas o accesorios disponibles.
+4. Seleccionar sus ejercicios frecuentes.
+5. Iniciar una sesión de entrenamiento.
+6. Registrar series rápidamente.
+7. Consultar su historial.
+8. Compartir o exportar información útil para un entrenador externo.
 
-Cada servicio debe tener responsabilidades claras y no debe convertirse en un módulo genérico que haga todo.
+El sistema debe mantener un catálogo general del gimnasio, administrado por el admin, que incluya:
 
-La comunicación entre servicios debe realizarse mediante:
+* Máquinas disponibles.
+* Barras.
+* Mancuernas.
+* Discos.
+* Poleas.
+* Bancos.
+* Bandas.
+* Accesorios.
+* Otra indumentaria útil para entrenar.
 
-* APIs REST para operaciones sincrónicas.
-* Eventos asincrónicos para notificaciones, auditoría, actualización de estados y comunicación desacoplada.
-* Broker de eventos para evitar acoplamiento directo entre servicios.
+Este catálogo sirve para que el usuario y un entrenador externo conozcan las posibilidades reales de entrenamiento dentro del gimnasio.
 
-Eventos importantes del dominio:
+## 4. Roles principales
 
-```txt
-OrdenCompraCreada
-OrdenCompraEmitida
-OrdenCompraNotificadaProveedor
-RecepcionOrdenCompraRegistrada
-OrdenCompraRecibidaParcial
-OrdenCompraRecibidaTotal
-StockRecibidoCreado
-ReposicionSalaIniciada
-ReposicionSalaValidada
-StockPasadoAVendible
-ProductoProximoAVencerDetectado
-StockBloqueado
-TransferenciaStockCreada
-TransferenciaStockRecibida
-```
-
-## 4. Decisión sobre Producto y Sucursal
-
-Producto y Sucursal no deben tratarse como entidades externas.
-
-Deben formar parte del dominio interno del sistema de cadena de suministro, ya que son elementos centrales para compras, inventario, recepción, reposición y planificación.
-
-El sistema debe manejar internamente:
-
-```txt
-Producto
-Sucursal
-Centro de Distribución
-Categoría de Producto
-Familia Comercial
-Ubicación de Inventario
-Ubicación de Sala
-```
-
-El centro de distribución debe modelarse como un tipo especial de sucursal o ubicación operativa, permitiendo transferencias entre:
-
-```txt
-Centro de Distribución → Sucursal
-Sucursal → Sucursal
-Sucursal → Centro de Distribución
-```
-
-## 5. Separación lógica del dominio
-
-Aunque el sistema será distribuido, el dominio debe mantenerse coherente. No se debe partir la solución de forma artificial.
-
-Los servicios deben organizarse así:
-
-### Servicio Catálogo
-
-Responsable de:
-
-* Productos.
-* SKUs.
-* Categorías de productos.
-* Familias comerciales.
-* Sucursales.
-* Centros de distribución.
-* Naturaleza perecedera del producto.
-* Vida útil mínima y máxima esperada.
-* Nivel de control de vencimiento.
-
-### Servicio Proveedores
-
-Responsable de:
-
-* Proveedores.
-* Categorías de proveedores.
-* Contactos del proveedor.
-* Usuarios del portal proveedor.
-* Reponedores externos.
-* Personal de despacho.
-* Vendedores del proveedor.
-* Relación proveedor-producto.
-* UxB.
-* Compra mínima.
-* Costos por proveedor.
-* Calendario de entrega.
-
-### Servicio Compras
-
-Responsable de:
-
-* Órdenes de compra.
-* Detalle de orden de compra.
-* Emisión de orden de compra.
-* Consulta de órdenes por proveedor.
-* Avisos de despacho.
-* Declaración de cantidades enviadas.
-* Declaración de fecha de vencimiento más corta cuando aplique.
-* Actualización del estado de la orden según recepción.
-
-### Servicio Inventario
-
-Responsable de:
-
-* Recepción de órdenes de compra.
-* Detalle de recepción.
-* Cantidad recibida.
-* Cantidad aceptada.
-* Cantidad rechazada.
-* Faltantes.
-* Sobrantes.
-* Stock recibido.
-* Stock en trastienda.
-* Stock vendible.
-* Movimientos de inventario.
-* Bloqueos.
-* Mermas.
-* Transferencias.
-* Control de vencimientos.
-* Alertas de productos próximos a vencer.
-
-### Servicio Sala / Reposición
-
-Responsable de:
-
-* Layout de sala.
-* Pasillos.
-* Góndolas.
-* Niveles de góndola.
-* Secciones de góndola.
-* Ubicación de productos en sala.
-* Reposición en sala.
-* Validación de reposición por picker interno.
-* Control de ingreso de reponedores externos.
-* Cambio de stock recibido a stock vendible.
-
-### Servicio Notificaciones
-
-Responsable de:
-
-* Notificar al proveedor cuando se emite una orden de compra.
-* Notificar al comprador o planificador cuando su orden de compra fue recepcionada.
-* Notificar al comprador o planificador cuando los productos de su orden de compra pasaron a vendible.
-* Notificar alertas de vencimiento.
-* Notificar stock recibido no vendible.
-* Reintentar notificaciones fallidas.
-* Registrar histórico de notificaciones.
-
-## 6. Objetivo funcional general
-
-El sistema debe cubrir el flujo completo de cadena de suministro:
-
-```txt
-Creación de Orden de Compra
-→ Emisión de Orden de Compra
-→ Notificación al Proveedor
-→ Aviso de Despacho del Proveedor
-→ Recepción de Orden de Compra
-→ Registro de cantidad realmente recibida
-→ Creación de stock recibido
-→ Reposición en sala
-→ Validación por picker interno
-→ Conversión a stock vendible
-→ Notificación al comprador o planificador
-→ Consulta de disponibilidad por POS o canal de venta
-```
-
-El sistema debe asegurar que una mercancía recibida no sea considerada automáticamente como vendible.
-
-La regla central del sistema es:
-
-```txt
-RECIBIDO ≠ VENDIBLE
-```
-
-## 7. Orden de compra
-
-La orden de compra representa lo que la empresa solicita al proveedor.
-
-Debe contener:
-
-* ID de orden de compra.
-* Número de orden.
-* Proveedor.
-* Sucursal o centro de distribución destino.
-* Usuario comprador.
-* Usuario planificador, si aplica.
-* Fecha de emisión.
-* Fecha esperada de entrega.
-* Hora esperada de entrega.
-* Estado.
-* Monto total estimado.
-* Observaciones.
-
-El detalle de orden de compra debe contener:
-
-* Producto.
-* SKU.
-* Cantidad solicitada.
-* Costo unitario.
-* UxB aplicado.
-* Subtotal.
-* Compra mínima aplicable.
-
-El sistema debe validar que las cantidades solicitadas respeten el UxB definido por el proveedor para cada SKU.
-
-Ejemplo:
-
-```txt
-Si el proveedor vende Coca-Cola en paquetes de 6 unidades,
-no se debe permitir solicitar 7 unidades.
-Las cantidades válidas serían 6, 12, 18, 24, etc.
-```
-
-## 8. Proveedores y contactos
-
-Cada proveedor debe tener:
-
-* Nombre.
-* NIT.
-* Estado.
-* Categorías que provee.
-* Productos/SKUs que provee.
-* Calendario de entrega.
-* Días de entrega.
-* Hora esperada de entrega.
-* Condiciones comerciales.
-* UxB por producto.
-* Compra mínima por producto.
-* Costo por producto.
-
-Además, cada proveedor debe poder registrar una lista de contactos.
-
-Los contactos pueden ser:
-
-```txt
-VENDEDOR
-PERSONAL_DESPACHO
-REPONEDOR_EXTERNO
-ADMINISTRATIVO
-OTRO
-```
-
-Los reponedores externos deben pertenecer a un proveedor y deben estar registrados como contactos del proveedor.
-
-Un proveedor puede tener usuarios para ingresar al portal proveedor.
-
-El portal proveedor debe permitir, como mínimo:
-
-* Consultar órdenes de compra.
-* Consultar facturas.
-* Registrar aviso de despacho.
-* Declarar cantidades enviadas.
-* Declarar fecha de vencimiento más corta por SKU cuando aplique.
-
-## 9. Recepción de orden de compra
-
-La recepción de orden de compra es una entidad central del sistema.
-
-Debe estar asociada a una orden de compra y debe registrar cuánto se recibió realmente.
-
-Esto es necesario porque la empresa puede pedir 100 unidades y recibir solo 80.
-
-La recepción debe contener:
-
-* ID de recepción.
-* Orden de compra asociada.
-* Proveedor.
-* Sucursal o centro de distribución.
-* Usuario de sala que recibió.
-* Fecha y hora de recepción.
-* Estado de recepción.
-* Observaciones.
-
-El detalle de recepción debe contener:
-
-* Producto.
-* SKU.
-* Cantidad solicitada.
-* Cantidad recibida.
-* Cantidad aceptada.
-* Cantidad rechazada.
-* Motivo de rechazo.
-* Estado del detalle.
-
-Estados posibles de recepción:
-
-```txt
-BORRADOR
-EN_RECEPCION
-RECIBIDA_PARCIAL
-RECIBIDA_COMPLETA
-RECIBIDA_CON_OBSERVACION
-RECHAZADA
-CERRADA
-```
-
-La recepción debe poder generar eventos como:
-
-```txt
-RecepcionOrdenCompraRegistrada
-OrdenCompraRecibidaParcial
-OrdenCompraRecibidaTotal
-StockRecibidoCreado
-```
-
-Cuando una orden de compra sea recepcionada, el comprador o planificador que creó la orden debe recibir una notificación.
-
-## 10. Stock recibido y stock vendible
-
-El sistema debe distinguir claramente entre stock recibido y stock vendible.
-
-### Stock recibido
-
-Significa que el producto llegó y fue aceptado, pero todavía se encuentra en:
-
-```txt
-Trastienda
-Depósito
-Cámara fría
-Centro de distribución
-Zona interna
-```
-
-Este stock no debe estar disponible para el cliente.
-
-### Stock vendible
-
-Significa que el producto ya fue ubicado en sala, góndola o canal de venta, y fue validado por un usuario interno.
-
-Solo el stock vendible debe estar disponible para:
-
-```txt
-POS
-Ecommerce
-Pedidos de cliente
-Consulta de disponibilidad comercial
-```
-
-Estados sugeridos del stock:
-
-```txt
-RECIBIDO
-EN_TRASTIENDA
-EN_REPOSICION
-VENDIBLE
-BLOQUEADO
-VENCIDO
-MERMA
-EN_TRANSFERENCIA
-DEVUELTO
-```
-
-El sistema debe impedir que un producto pase a vendible sin una validación interna.
-
-Regla obligatoria:
-
-```txt
-Ningún producto puede pasar a VENDIBLE sin una reposición o confirmación validada por un usuario interno.
-```
-
-## 11. Reposición en sala
-
-La reposición en sala puede ser realizada por reponedores externos del proveedor, pero estos no pueden actuar solos.
-
-El reponedor externo debe ingresar acompañado o validado por un picker interno.
-
-La reposición debe registrar:
-
-* Sucursal.
-* Proveedor.
-* Reponedor externo.
-* Picker interno validador.
-* Fecha y hora de inicio.
-* Fecha y hora de fin.
-* Estado de reposición.
-* Observaciones.
-
-El detalle de reposición debe registrar:
-
-* Producto.
-* SKU.
-* Cantidad repuesta.
-* Stock origen.
-* Stock destino.
-* Ubicación en sala.
-* Estado origen.
-* Estado destino.
-* Fecha de vencimiento más corta visible, si aplica.
-* Nivel de confianza del dato.
-
-Estados de reposición:
-
-```txt
-PLANIFICADA
-EN_PROCESO
-VALIDADA
-RECHAZADA
-CANCELADA
-```
-
-Cuando una reposición sea validada y el stock pase a vendible, el sistema debe generar el evento:
-
-```txt
-StockPasadoAVendible
-```
-
-Este evento debe notificar al comprador o planificador asociado a la orden de compra original.
-
-## 12. Control de vencimientos
-
-El sistema debe resolver el problema de productos próximos a vencer sin exigir que el picker revise producto por producto.
-
-Dado que la empresa recibe más de 30 proveedores al día, con productos variados y lotes grandes, no es realista exigir un control exhaustivo por lote para todos los productos.
-
-El control debe ser por riesgo, por criticidad y por excepción.
-
-El producto debe tener campos como:
-
-* Naturaleza perecedera.
-* Requiere refrigeración.
-* Vida útil mínima esperada.
-* Vida útil máxima esperada.
-* Nivel de control de vencimiento.
-
-Niveles de control sugeridos:
-
-```txt
-SIN_CONTROL
-CONTROL_ESTIMADO
-CONTROL_FECHA_CORTA
-CONTROL_ESTRICTO
-```
-
-La fecha de vencimiento no debe estar en el producto maestro, porque un mismo SKU puede tener múltiples fechas de vencimiento simultáneas.
-
-La fecha de vencimiento debe registrarse a nivel de recepción, stock o grupo operativo de control.
-
-Dado que los proveedores no siempre entregan productos separados por lote ni informan sus lotes internos, el sistema no debe depender del lote del proveedor.
-
-En su lugar, el sistema debe permitir registrar:
-
-```txt
-Fecha de vencimiento más corta detectada
-Fuente del dato
-Nivel de confianza
-Cantidad aproximada afectada
-```
-
-Fuentes posibles del dato:
-
-```txt
-PROVEEDOR_DECLARADO
-RECEPCION
-REPOSICION_PROVEEDOR
-MUESTREO
-AUDITORIA
-ESTIMADO_SISTEMA
-NO_IDENTIFICADO
-```
-
-Niveles de confianza:
-
-```txt
-ALTO
-MEDIO
-BAJO
-DESCONOCIDO
-```
-
-El sistema debe manejar stock con vencimiento:
-
-```txt
-Confirmado
-Estimado
-Desconocido
-```
-
-Para productos de control estricto, si no existe fecha identificada, el sistema debe permitir bloquear el stock o generar una tarea de auditoría.
-
-## 13. Aviso de despacho del proveedor
-
-Debido al alto volumen operativo del centro de distribución y las sucursales, parte de la carga de información debe trasladarse al proveedor.
-
-El proveedor debe poder registrar un aviso de despacho desde su portal.
-
-El aviso de despacho debe permitir declarar:
-
-* Orden de compra relacionada.
-* Fecha estimada de entrega.
-* Productos enviados.
-* Cantidades enviadas.
-* Fecha de vencimiento más corta por SKU, si aplica.
-* Observaciones.
-
-El objetivo no es exigir al proveedor una trazabilidad perfecta de todos sus lotes internos, sino obtener información mínima útil para reducir el trabajo manual del CD y mejorar el control de vencimientos.
-
-## 14. Transferencias entre sucursales y centro de distribución
-
-El sistema debe contemplar transferencias de stock entre ubicaciones operativas.
-
-Las transferencias pueden darse entre:
-
-```txt
-Centro de Distribución → Sucursal
-Sucursal → Sucursal
-Sucursal → Centro de Distribución
-```
-
-La transferencia debe registrar:
-
-* Sucursal origen.
-* Sucursal destino.
-* Fecha de solicitud.
-* Fecha de envío.
-* Fecha de recepción.
-* Estado.
-* Observaciones.
-
-El detalle de transferencia debe registrar:
-
-* Producto.
-* Cantidad solicitada.
-* Cantidad enviada.
-* Cantidad recibida.
-* Estado del detalle.
-
-La transferencia debe conservar trazabilidad del estado y del vencimiento del stock cuando aplique.
-
-## 15. Layout de sala
-
-El sistema debe manejar la estructura física de la sucursal:
-
-* Pasillo.
-* Góndola.
-* Nivel de góndola.
-* Sección de góndola.
-* Familia comercial.
-* Ubicación de producto en sala.
-
-La familia comercial puede estar relacionada con la categoría del producto, pero no necesariamente es lo mismo.
-
-Ejemplo:
-
-```txt
-Categoría del producto: Bebidas
-Familia comercial de sala: Bebidas alcohólicas y frituras
-```
-
-Por lo tanto, categoría de producto y familia comercial deben modelarse como conceptos distintos.
-
-## 16. Notificaciones obligatorias
-
-El sistema debe enviar notificaciones en los siguientes momentos:
-
-### Notificación al proveedor
-
-Cuando una orden de compra sea emitida.
-
-Evento relacionado:
-
-```txt
-OrdenCompraEmitida
-```
-
-Destinatario:
-
-```txt
-Proveedor
-Vendedor del proveedor
-Personal de despacho del proveedor
-```
-
-### Notificación al comprador o planificador
-
-Cuando una orden de compra sea recepcionada parcial o totalmente.
-
-Eventos relacionados:
-
-```txt
-OrdenCompraRecibidaParcial
-OrdenCompraRecibidaTotal
-```
-
-Destinatario:
-
-```txt
-Usuario comprador
-Usuario planificador
-```
-
-### Notificación al comprador o planificador
-
-Cuando los productos asociados a su orden de compra pasen a vendible.
-
-Evento relacionado:
-
-```txt
-StockPasadoAVendible
-```
-
-Destinatario:
-
-```txt
-Usuario comprador
-Usuario planificador
-```
-
-### Notificaciones adicionales
-
-El sistema también puede notificar:
-
-* Productos próximos a vencer.
-* Stock recibido que no ha pasado a vendible.
-* Reposiciones pendientes.
-* Faltantes de recepción.
-* Rechazos de recepción.
-* Incumplimientos del proveedor.
-
-## 17. Auditoría y trazabilidad
-
-El sistema debe registrar trazabilidad de:
-
-* Quién creó la orden de compra.
-* Quién emitió la orden de compra.
-* A qué proveedor se notificó.
-* Quién recibió la mercadería.
-* Cuánto se recibió realmente.
-* Qué productos fueron rechazados.
-* Qué productos quedaron en stock recibido.
-* Qué productos pasaron a vendible.
-* Qué picker validó la reposición.
-* Qué reponedor externo participó.
-* Qué movimientos de inventario se generaron.
-* Qué alertas de vencimiento se emitieron.
-* Qué notificaciones fueron enviadas.
-* Qué eventos fueron procesados.
-
-Cada evento relevante debe registrarse para auditoría.
-
-El sistema debe mantener un histórico de movimientos de inventario y cambios de estado.
-
-## 18. Seguridad
-
-El sistema debe manejar roles y permisos.
-
-Roles sugeridos:
+El sistema debe contemplar como mínimo los siguientes roles:
 
 ```txt
 ADMINISTRADOR
-COMPRADOR
-PLANIFICADOR
-USUARIO_SALA
-PICKER_INTERNO
-ENCARGADO_INVENTARIO
-SUPERVISOR
-PROVEEDOR_VENDEDOR
-PROVEEDOR_DESPACHO
-REPONEDOR_EXTERNO
-AUDITOR
+CLIENTE
+ENTRENADOR_EXTERNO
 ```
 
-Reglas de seguridad importantes:
+### Administrador
 
-1. El proveedor solo puede ver sus propias órdenes de compra y facturas.
-2. El reponedor externo solo puede registrar o participar en reposiciones asociadas a su proveedor.
-3. El reponedor externo no puede validar solo el paso a vendible.
-4. El paso a vendible requiere usuario interno.
-5. El usuario de sala debe quedar registrado en la recepción.
-6. El picker interno debe quedar registrado en la reposición.
-7. El POS solo debe consultar stock vendible.
-8. Las acciones críticas deben quedar auditadas.
-9. Las contraseñas deben almacenarse hasheadas.
-10. Debe existir control de sesión, tokens y expiración.
+El administrador representa al personal del gimnasio encargado de configurar la información base del sistema.
 
-## 19. Integración con POS o canal de venta
+Puede:
 
-El POS o canal de venta no debe consultar stock recibido ni stock en trastienda.
+* Gestionar máquinas.
+* Gestionar indumentaria.
+* Gestionar accesorios del gimnasio.
+* Crear ejercicios predeterminados.
+* Editar ejercicios predeterminados.
+* Inhabilitar ejercicios predeterminados.
+* Consultar información general de uso si el alcance lo requiere.
 
-Solo debe consultar stock en estado:
+### Cliente / Usuario final
+
+El cliente es el usuario principal de la aplicación.
+
+Puede:
+
+* Iniciar sesión.
+* Registrar su perfil básico.
+* Ver ejercicios predeterminados.
+* Crear ejercicios personalizados.
+* Seleccionar ejercicios frecuentes.
+* Iniciar una sesión de entrenamiento.
+* Registrar series.
+* Editar series.
+* Finalizar entrenamientos.
+* Consultar su historial.
+* Exportar información para un entrenador externo.
+
+### Entrenador externo
+
+El entrenador externo no necesariamente administra la aplicación.
+
+Su participación puede darse mediante información exportada por el usuario, donde pueda revisar:
+
+* Ejercicios realizados.
+* Series.
+* Repeticiones.
+* Peso levantado.
+* RIR.
+* Descansos.
+* Ejercicios personalizados.
+* Máquinas e indumentaria disponibles en el gimnasio.
+
+## 5. Principio central del sistema
+
+La regla más importante del sistema es:
 
 ```txt
-VENDIBLE
+REGISTRO RÁPIDO > FUNCIONALIDAD COMPLEJA
 ```
 
-El sistema debe exponer endpoints o eventos para disponibilidad comercial.
+El usuario debe poder registrar una serie en pocos segundos.
+
+El sistema debe evitar formularios largos, pasos innecesarios o campos demasiado técnicos.
+
+La experiencia ideal es que el usuario pueda registrar algo como:
+
+```txt
+Ejercicio: Press banca
+
+Serie | Reps | Peso | RIR | Descanso anterior
+1     | 10   | 60kg | 2   | 0s
+2     | 8    | 65kg | 1   | 90s
+3     | 8    | 65kg | 1   | 120s
+```
+
+El campo “énfasis del día” no debe repetirse en cada serie. Debe marcarse a nivel del ejercicio dentro de la sesión de entrenamiento.
+
+Por ejemplo:
+
+```txt
+Sesión de entrenamiento
+  └── Press banca
+        ├── Es énfasis: Sí
+        ├── Serie 1
+        ├── Serie 2
+        └── Serie 3
+```
+
+## 6. Ejercicios predeterminados y personalizados
+
+El sistema debe diferenciar entre dos tipos de ejercicios:
+
+```txt
+GLOBAL
+PERSONAL
+```
+
+### Ejercicio GLOBAL
+
+Es un ejercicio predeterminado creado por el administrador del gimnasio.
+
+Características:
+
+* Visible para todos los usuarios.
+* Forma parte del catálogo base del gym.
+* Puede estar asociado a una o varias máquinas o accesorios.
+* Puede ser editado o inhabilitado por el administrador.
+
+Ejemplos:
+
+```txt
+Press banca
+Sentadilla en multipower
+Jalón al pecho
+Remo en polea baja
+Prensa de piernas
+Curl femoral sentado
+```
+
+### Ejercicio PERSONAL
+
+Es un ejercicio creado por el usuario final.
+
+Características:
+
+* Solo es visible para el usuario que lo creó.
+* Puede estar basado en máquinas, poleas, mancuernas o accesorios disponibles.
+* No modifica el catálogo global del gimnasio.
+* Permite registrar variantes reales de entrenamiento.
+
+Ejemplos:
+
+```txt
+Press inclinado en máquina con agarre cerrado
+Remo unilateral en polea baja
+Curl en polea con cuerda propia
+Extensión de tríceps en máquina usando banco
+```
+
+La regla de visibilidad debe ser:
+
+```txt
+El usuario ve ejercicios GLOBAL + sus propios ejercicios PERSONAL.
+```
+
+Consulta lógica sugerida:
+
+```sql
+SELECT *
+FROM ejercicios
+WHERE estado = 'ACTIVO'
+AND (
+  tipo_ejercicio = 'GLOBAL'
+  OR created_by_usuario_id = :usuarioId
+);
+```
+
+## 7. Perfil básico del usuario
+
+El sistema debe manejar únicamente datos antropométricos básicos.
+
+No se debe convertir esta app en una plataforma médica ni en una app avanzada de nutrición.
+
+Datos requeridos:
+
+* Edad.
+* Peso corporal en kg.
+* Estatura en cm.
+* Objetivo principal.
+
+Objetivos sugeridos:
+
+```txt
+HIPERTROFIA
+FUERZA
+RESISTENCIA
+PERDIDA_GRASA
+SALUD_GENERAL
+REHABILITACION
+```
+
+Estos datos sirven para dar contexto al historial del usuario, no para generar diagnósticos médicos.
+
+## 8. Sesión de entrenamiento
+
+La sesión de entrenamiento representa un entrenamiento realizado por el usuario en una fecha determinada.
+
+Debe contener:
+
+* Usuario.
+* Fecha y hora de inicio.
+* Fecha y hora de finalización.
+* Estado.
+* Observación opcional.
+
+Estados sugeridos:
+
+```txt
+EN_PROGRESO
+FINALIZADA
+CANCELADA
+```
+
+Una sesión puede tener muchos ejercicios.
+
+Cada ejercicio dentro de una sesión puede tener muchas series.
+
+## 9. Ejercicio dentro de una sesión
+
+El ejercicio dentro de una sesión representa que el usuario realizó un ejercicio específico durante ese entrenamiento.
+
+Debe contener:
+
+* Sesión de entrenamiento.
+* Ejercicio.
+* Orden dentro de la sesión.
+* Si es énfasis del día.
+* Nota opcional.
+
+El campo `esEnfasis` debe estar aquí y no en la serie, porque el énfasis corresponde al ejercicio del día, no a cada serie individual.
 
 Ejemplo:
 
 ```txt
-GET /stock-vendible?sku={sku}&sucursal={idSucursal}
+Día torso
+- Press banca: énfasis Sí
+- Jalón al pecho: énfasis No
+- Press militar: énfasis No
 ```
 
-Cuando el stock pase a vendible, se debe publicar un evento de disponibilidad actualizada.
+## 10. Serie de entrenamiento
 
-## 20. Reglas de negocio principales
+La serie de entrenamiento es el registro principal del sistema.
 
-El sistema debe cumplir las siguientes reglas:
+Debe contener:
 
-1. Producto y Sucursal son entidades internas del dominio.
-2. El centro de distribución se modela como tipo especial de sucursal o ubicación operativa.
-3. Un proveedor puede vender muchos productos.
-4. Un producto puede ser vendido por muchos proveedores.
-5. La relación proveedor-producto define costo, UxB, compra mínima y condiciones comerciales.
-6. La cantidad solicitada en una OC debe respetar el UxB del proveedor.
-7. Una orden de compra puede ser recibida total o parcialmente.
-8. La recepción debe registrar cuánto llegó realmente.
-9. La recepción debe registrar el usuario interno que recibió.
-10. La recepción genera stock recibido, no stock vendible.
-11. Stock recibido no debe estar disponible para cliente.
-12. Stock vendible solo existe luego de validación de reposición o ubicación en sala.
-13. El reponedor externo pertenece a un proveedor.
-14. El reponedor externo no puede actuar sin validación interna.
-15. El picker interno valida la reposición.
-16. El paso de recibido a vendible debe generar movimiento de inventario.
-17. El sistema debe notificar al proveedor cuando se emite una OC.
-18. El sistema debe notificar al comprador o planificador cuando su OC fue recepcionada.
-19. El sistema debe notificar al comprador o planificador cuando sus productos pasan a vendible.
-20. La fecha de vencimiento no pertenece al producto maestro.
-21. El control de vencimiento se maneja por recepción, stock o grupo operativo.
-22. El sistema debe permitir fecha de vencimiento confirmada, estimada o desconocida.
-23. Los productos con control estricto y fecha desconocida pueden bloquearse o auditarse.
-24. Las auditorías de vencimiento deben ser dirigidas por riesgo.
-25. El sistema debe mantener trazabilidad de todos los movimientos relevantes.
+* Ejercicio dentro de la sesión.
+* Número de serie.
+* Repeticiones.
+* Peso levantado.
+* RIR.
+* Descanso respecto a la serie anterior.
+* Fecha y hora de registro.
 
-## 21. Alcance técnico inicial
-
-La primera fase debe enfocarse en el backend.
-
-Se debe priorizar:
-
-* Diseño de servicios.
-* Modelado de base de datos.
-* APIs REST.
-* Eventos de dominio.
-* Seguridad.
-* Notificaciones.
-* Auditoría.
-* Flujos críticos.
-* Validaciones de negocio.
-
-El frontend puede desarrollarse posteriormente, pero el backend debe quedar preparado para soportar:
-
-* Portal interno.
-* Portal de proveedores.
-* Consulta de POS.
-* Panel de recepción.
-* Panel de inventario.
-* Panel de sala/reposición.
-* Panel de alertas.
-* Reportes.
-
-## 22. Diseño distribuido recomendado
-
-El sistema debe poder desplegarse como backend distribuido.
-
-Componentes sugeridos:
+Reglas de validación:
 
 ```txt
-API Gateway
-Servicio Seguridad
-Servicio Catálogo
-Servicio Proveedores
-Servicio Compras
-Servicio Inventario
-Servicio Sala / Reposición
-Servicio Notificaciones
-Servicio Auditoría
-Servicio Reportes
-Broker de Eventos
-Scheduler / Workers
-Base de datos por servicio o PostgreSQL separado por schemas
-Object Storage para documentos y evidencias
+repeticiones > 0
+peso_kg >= 0
+rir >= 0 AND rir <= 10
+descanso_seg_anterior >= 0
 ```
 
-Si el equipo aún no tiene madurez suficiente para manejar una base de datos por servicio, se permite iniciar con una misma instancia PostgreSQL separada por schemas, manteniendo contratos claros entre servicios.
+También se debe evitar duplicar el mismo número de serie dentro del mismo ejercicio de sesión:
 
-La solución debe poder evolucionar después hacia bases de datos separadas por servicio.
+```txt
+UNIQUE (sesion_ejercicio_id, numero_serie)
+```
 
-## 23. Calidad esperada
+## 11. Catálogo de máquinas e indumentaria
 
-El sistema será utilizado por una empresa con varias sucursales, procesos operativos reales y problemas actuales derivados de una gestión manual en Excel.
+El sistema debe manejar un catálogo de recursos físicos disponibles en el gimnasio.
 
-Por lo tanto, la solución debe priorizar:
+Este catálogo debe incluir:
 
-* Robustez.
-* Trazabilidad.
-* Seguridad.
-* Escalabilidad.
-* Separación de responsabilidades.
-* Diseño distribuido.
-* Manejo de eventos.
-* Auditoría.
-* Notificaciones asincrónicas.
-* Validaciones de negocio.
-* Manejo de estados.
-* Control de vencimientos por riesgo.
-* Operación realista.
-* Mantenibilidad.
-* Documentación clara.
-* Preparación para crecimiento futuro.
+* Máquinas.
+* Mancuernas.
+* Barras.
+* Discos.
+* Poleas.
+* Bancos.
+* Bandas.
+* Accesorios.
+* Otra indumentaria útil.
 
-No debe construirse como un proyecto académico. Debe diseñarse como un backend profesional preparado para clientes técnicos y exigentes.
+Entidad sugerida:
 
-## 24. Diagramas requeridos
+```txt
+EquipoGym
+```
+
+Campos sugeridos:
+
+* ID.
+* Nombre.
+* Tipo.
+* Descripción.
+* Estado.
+
+Tipos sugeridos:
+
+```txt
+MAQUINA
+MANCUERNA
+BARRA
+DISCO
+BANCO
+POLEA
+BANDA
+ACCESORIO
+OTRO
+```
+
+Estados sugeridos:
+
+```txt
+DISPONIBLE
+MANTENIMIENTO
+INACTIVO
+```
+
+El objetivo de esta información es que el usuario o entrenador externo conozca qué posibilidades reales existen dentro del gimnasio.
+
+## 12. Relación entre ejercicios y equipos
+
+Un ejercicio puede usar uno o varios equipos.
+
+Una máquina o accesorio puede estar asociado a muchos ejercicios.
+
+Por lo tanto, debe existir una relación muchos a muchos:
+
+```txt
+EjercicioEquipo
+```
+
+Ejemplos:
+
+```txt
+Press banca
+  → Banco plano
+  → Barra olímpica
+  → Discos
+
+Jalón al pecho
+  → Polea alta
+  → Barra larga
+
+Curl en polea
+  → Polea baja
+  → Cuerda
+```
+
+Esto permite que el sistema pueda mostrarle a un entrenador externo no solo qué ejercicio realizó el usuario, sino también con qué máquina o accesorio lo hizo.
+
+## 13. Funcionalidades principales del usuario
+
+El usuario debe poder:
+
+```txt
+1. Iniciar sesión.
+2. Completar perfil básico.
+3. Ver ejercicios predeterminados.
+4. Crear ejercicios personalizados.
+5. Ver máquinas e indumentaria disponible.
+6. Seleccionar ejercicios frecuentes.
+7. Iniciar entrenamiento.
+8. Agregar ejercicio a la sesión.
+9. Marcar ejercicio como énfasis del día.
+10. Registrar serie.
+11. Editar serie.
+12. Eliminar serie.
+13. Finalizar entrenamiento.
+14. Consultar historial.
+15. Exportar información para entrenador externo.
+```
+
+## 14. Funcionalidades principales del administrador
+
+El administrador debe poder:
+
+```txt
+1. Iniciar sesión.
+2. Gestionar máquinas.
+3. Gestionar accesorios.
+4. Gestionar indumentaria del gimnasio.
+5. Crear ejercicios predeterminados.
+6. Editar ejercicios predeterminados.
+7. Inhabilitar ejercicios predeterminados.
+8. Consultar catálogo general.
+```
+
+El administrador no debe ser el único que puede crear ejercicios.
+
+El administrador crea ejercicios globales, pero el usuario final también puede crear ejercicios personales.
+
+## 15. Exportación para entrenador externo
+
+El sistema debe permitir exportar o compartir información útil para que un entrenador externo pueda entender el contexto del usuario.
+
+La exportación debe incluir:
+
+* Datos básicos del usuario.
+* Objetivo.
+* Historial de entrenamientos.
+* Ejercicios realizados.
+* Series.
+* Repeticiones.
+* Peso levantado.
+* RIR.
+* Descansos.
+* Ejercicios marcados como énfasis.
+* Ejercicios personalizados.
+* Máquinas e indumentaria asociada.
+* Catálogo disponible del gimnasio, si aplica.
+
+No es obligatorio que el entrenador externo tenga una cuenta en la primera versión. Puede bastar con una exportación en PDF, CSV o una vista compartible.
+
+## 16. Entidades principales del dominio
+
+Entidades mínimas sugeridas:
+
+```txt
+Usuario
+PerfilAntropometrico
+EquipoGym
+Ejercicio
+EjercicioEquipo
+UsuarioEjercicio
+SesionEntrenamiento
+SesionEjercicio
+SerieEntrenamiento
+```
+
+### Usuario
+
+Representa a la persona que usa el sistema.
+
+Campos sugeridos:
+
+* id.
+* email.
+* passwordHash.
+* nombreCompleto.
+* rol.
+* estado.
+* fechaRegistro.
+
+### PerfilAntropometrico
+
+Representa los datos físicos básicos del usuario.
+
+Campos sugeridos:
+
+* id.
+* usuarioId.
+* edad.
+* pesoKg.
+* estaturaCm.
+* objetivo.
+* fechaActualizacion.
+
+### EquipoGym
+
+Representa máquinas, accesorios e indumentaria.
+
+Campos sugeridos:
+
+* id.
+* nombre.
+* tipo.
+* descripcion.
+* estado.
+
+### Ejercicio
+
+Representa un ejercicio global o personal.
+
+Campos sugeridos:
+
+* id.
+* nombre.
+* grupoMuscular.
+* descripcion.
+* tipoEjercicio.
+* createdByUsuarioId.
+* estado.
+
+### EjercicioEquipo
+
+Relaciona ejercicios con máquinas o accesorios.
+
+Campos sugeridos:
+
+* id.
+* ejercicioId.
+* equipoGymId.
+
+### UsuarioEjercicio
+
+Representa los ejercicios seleccionados o frecuentes de un usuario.
+
+Campos sugeridos:
+
+* id.
+* usuarioId.
+* ejercicioId.
+* fechaSeleccion.
+
+### SesionEntrenamiento
+
+Representa una sesión de entrenamiento.
+
+Campos sugeridos:
+
+* id.
+* usuarioId.
+* fechaInicio.
+* fechaFin.
+* estado.
+* observacion.
+
+### SesionEjercicio
+
+Representa un ejercicio realizado dentro de una sesión.
+
+Campos sugeridos:
+
+* id.
+* sesionId.
+* ejercicioId.
+* orden.
+* esEnfasis.
+* nota.
+
+### SerieEntrenamiento
+
+Representa una serie registrada por el usuario.
+
+Campos sugeridos:
+
+* id.
+* sesionEjercicioId.
+* numeroSerie.
+* repeticiones.
+* pesoKg.
+* rir.
+* descansoSegAnterior.
+* fechaRegistro.
+
+## 17. Reglas de negocio principales
+
+El sistema debe cumplir estas reglas:
+
+```txt
+1. El usuario debe iniciar sesión para registrar entrenamientos.
+2. El usuario debe poder completar o actualizar su perfil básico.
+3. El administrador puede crear ejercicios globales.
+4. El usuario puede crear ejercicios personales.
+5. Los ejercicios globales son visibles para todos los usuarios.
+6. Los ejercicios personales solo son visibles para el usuario que los creó.
+7. Todo ejercicio puede asociarse a máquinas, accesorios o indumentaria del gym.
+8. El usuario puede seleccionar ejercicios globales y personales como frecuentes.
+9. Una sesión de entrenamiento puede estar en progreso, finalizada o cancelada.
+10. Una sesión en progreso permite agregar ejercicios y series.
+11. Una sesión finalizada no debe modificarse libremente, salvo que se permita edición controlada.
+12. El énfasis del día se marca por ejercicio dentro de la sesión, no por serie.
+13. Una serie debe tener repeticiones mayores a cero.
+14. El peso levantado no puede ser negativo.
+15. El RIR debe estar entre 0 y 10.
+16. El descanso anterior no puede ser negativo.
+17. No debe repetirse el mismo número de serie dentro del mismo ejercicio de sesión.
+18. El historial debe permitir revisar entrenamientos anteriores.
+19. La exportación debe mostrar el entrenamiento de forma entendible para un entrenador externo.
+20. La interfaz debe priorizar rapidez y simplicidad.
+```
+
+## 18. Alcance técnico inicial
+
+El sistema debe desarrollarse como una aplicación web.
+
+El backend debe desarrollarse en:
+
+```txt
+NestJS
+```
+
+Base de datos recomendada:
+
+```txt
+PostgreSQL
+```
+
+Autenticación recomendada:
+
+```txt
+JWT
+```
+
+ORM recomendado:
+
+```txt
+TypeORM o Sequelize
+```
+
+El sistema puede iniciar como un monolito modular en NestJS, manteniendo una buena separación por módulos.
+
+No es necesario iniciar con microservicios, porque el sistema es sencillo y el cliente requiere una aplicación práctica y mantenible.
+
+Arquitectura inicial recomendada:
+
+```txt
+Frontend Web
+Backend NestJS
+PostgreSQL
+```
+
+## 19. Módulos recomendados en NestJS
+
+La estructura modular recomendada es:
+
+```txt
+AuthModule
+UsersModule
+ProfilesModule
+EquipmentModule
+ExercisesModule
+WorkoutsModule
+ExportModule
+DatabaseModule
+CommonModule
+```
+
+### AuthModule
+
+Responsable de:
+
+* Login.
+* Registro.
+* JWT.
+* Guards.
+* Estrategias de autenticación.
+
+### UsersModule
+
+Responsable de:
+
+* Usuarios.
+* Roles.
+* Estado del usuario.
+
+### ProfilesModule
+
+Responsable de:
+
+* Perfil antropométrico.
+* Edad.
+* Peso.
+* Estatura.
+* Objetivo.
+
+### EquipmentModule
+
+Responsable de:
+
+* Máquinas.
+* Barras.
+* Mancuernas.
+* Poleas.
+* Bancos.
+* Accesorios.
+* Indumentaria disponible.
+
+### ExercisesModule
+
+Responsable de:
+
+* Ejercicios globales.
+* Ejercicios personales.
+* Relación ejercicio-equipo.
+* Ejercicios frecuentes del usuario.
+* Filtros por grupo muscular.
+* Filtros por máquina o accesorio.
+
+### WorkoutsModule
+
+Responsable de:
+
+* Sesiones de entrenamiento.
+* Ejercicios dentro de la sesión.
+* Series.
+* Repeticiones.
+* Peso.
+* RIR.
+* Descanso.
+* Énfasis del día.
+
+### ExportModule
+
+Responsable de:
+
+* Exportar historial.
+* Generar resumen para entrenador externo.
+* Incluir máquinas y accesorios asociados.
+
+### CommonModule
+
+Responsable de:
+
+* Enums.
+* Guards comunes.
+* Decoradores.
+* Filtros de excepción.
+* Interceptores.
+* Utilidades compartidas.
+
+## 20. Estructura de carpetas recomendada
+
+```txt
+src/
+│
+├── app.module.ts
+├── main.ts
+│
+├── auth/
+│   ├── auth.module.ts
+│   ├── auth.controller.ts
+│   ├── auth.service.ts
+│   ├── strategies/
+│   │   └── jwt.strategy.ts
+│   └── dto/
+│       ├── login.dto.ts
+│       └── register.dto.ts
+│
+├── users/
+│   ├── users.module.ts
+│   ├── users.controller.ts
+│   ├── users.service.ts
+│   ├── entities/
+│   │   └── user.entity.ts
+│   └── dto/
+│
+├── profiles/
+│   ├── profiles.module.ts
+│   ├── profiles.controller.ts
+│   ├── profiles.service.ts
+│   ├── entities/
+│   │   └── anthropometric-profile.entity.ts
+│   └── dto/
+│
+├── equipment/
+│   ├── equipment.module.ts
+│   ├── equipment.controller.ts
+│   ├── equipment.service.ts
+│   ├── entities/
+│   │   └── equipment.entity.ts
+│   └── dto/
+│
+├── exercises/
+│   ├── exercises.module.ts
+│   ├── exercises.controller.ts
+│   ├── exercises.service.ts
+│   ├── entities/
+│   │   ├── exercise.entity.ts
+│   │   ├── exercise-equipment.entity.ts
+│   │   └── user-exercise.entity.ts
+│   └── dto/
+│       ├── create-global-exercise.dto.ts
+│       ├── create-personal-exercise.dto.ts
+│       ├── update-exercise.dto.ts
+│       └── filter-exercises.dto.ts
+│
+├── workouts/
+│   ├── workouts.module.ts
+│   ├── workouts.controller.ts
+│   ├── workouts.service.ts
+│   ├── entities/
+│   │   ├── workout-session.entity.ts
+│   │   ├── workout-session-exercise.entity.ts
+│   │   └── workout-set.entity.ts
+│   └── dto/
+│       ├── create-workout-session.dto.ts
+│       ├── add-session-exercise.dto.ts
+│       ├── create-workout-set.dto.ts
+│       └── update-workout-set.dto.ts
+│
+├── export/
+│   ├── export.module.ts
+│   ├── export.controller.ts
+│   └── export.service.ts
+│
+└── common/
+    ├── enums/
+    ├── guards/
+    ├── decorators/
+    ├── filters/
+    └── interceptors/
+```
+
+## 21. Endpoints sugeridos
+
+Endpoints base sugeridos:
+
+```txt
+POST   /auth/register
+POST   /auth/login
+GET    /auth/me
+```
+
+```txt
+GET    /profile
+POST   /profile
+PATCH  /profile
+```
+
+```txt
+GET    /equipment
+POST   /admin/equipment
+PATCH  /admin/equipment/:id
+DELETE /admin/equipment/:id
+```
+
+```txt
+GET    /exercises
+GET    /exercises/:id
+POST   /exercises/personal
+PATCH  /exercises/:id
+DELETE /exercises/:id
+```
+
+```txt
+POST   /admin/exercises/global
+PATCH  /admin/exercises/global/:id
+DELETE /admin/exercises/global/:id
+```
+
+```txt
+GET    /user-exercises
+POST   /user-exercises/:exerciseId
+DELETE /user-exercises/:exerciseId
+```
+
+```txt
+POST   /workouts
+GET    /workouts
+GET    /workouts/:id
+PATCH  /workouts/:id/finish
+PATCH  /workouts/:id/cancel
+```
+
+```txt
+POST   /workouts/:sessionId/exercises
+PATCH  /workouts/session-exercises/:id
+DELETE /workouts/session-exercises/:id
+```
+
+```txt
+POST   /workouts/session-exercises/:id/sets
+PATCH  /workouts/sets/:id
+DELETE /workouts/sets/:id
+```
+
+```txt
+GET    /export/workout-history
+GET    /export/workout-history/pdf
+GET    /export/workout-history/csv
+```
+
+## 22. Seguridad
+
+El sistema debe manejar autenticación y autorización.
+
+Reglas mínimas:
+
+```txt
+1. Las contraseñas deben almacenarse hasheadas.
+2. El sistema debe usar JWT para proteger endpoints privados.
+3. El usuario solo puede ver y modificar su propia información.
+4. El usuario solo puede editar sus propios ejercicios personales.
+5. El usuario no puede editar ejercicios globales.
+6. El administrador puede crear, editar o inhabilitar ejercicios globales.
+7. El administrador puede gestionar máquinas e indumentaria.
+8. El usuario no puede acceder al historial de otro usuario.
+9. Las acciones sensibles deben validar rol.
+```
+
+## 23. Experiencia de usuario esperada
+
+La aplicación debe estar pensada para uso móvil desde navegador.
+
+La pantalla de entrenamiento debe ser extremadamente simple.
+
+Flujo ideal:
+
+```txt
+Abrir app
+→ Iniciar entrenamiento
+→ Elegir ejercicio
+→ Registrar serie
+→ Guardar
+→ Repetir
+→ Finalizar entrenamiento
+```
+
+La app debe evitar pedir información innecesaria.
+
+El usuario no debe tener que navegar por muchas pantallas para registrar una serie.
+
+El diseño debe favorecer:
+
+* Botones grandes.
+* Formularios cortos.
+* Valores reutilizables.
+* Autocompletado de ejercicios frecuentes.
+* Registro rápido de la siguiente serie.
+* Visualización clara del historial reciente.
+
+## 24. Reportes e historial
+
+El sistema debe permitir que el usuario consulte su progreso.
+
+Consultas útiles:
+
+```txt
+Historial por fecha.
+Historial por ejercicio.
+Último peso usado en un ejercicio.
+Mejor peso registrado.
+Promedio de repeticiones.
+Series realizadas por sesión.
+Ejercicios con énfasis.
+```
+
+No es necesario construir analítica avanzada en la primera fase.
+
+La prioridad es que el historial sea claro y útil.
+
+## 25. Diagramas requeridos
 
 El diseño debe incluir como mínimo:
 
 ```txt
-1. Diagrama de clases.
-2. Diagrama de casos de uso.
-3. Diagrama de actividad.
-4. Diagrama de estados.
+1. Diagrama de casos de uso.
+2. Diagrama de clases.
+3. Diagrama relacional o ER.
+4. Diagrama de actividad.
 5. Diagrama de secuencia.
 6. Diagrama de componentes.
-7. Diagrama de despliegue.
+7. Diagrama de estados.
+8. Diagrama de despliegue.
 ```
 
-Los diagramas deben reflejar que el sistema será distribuido y que el backend será construido primero.
+Los diagramas deben reflejar que:
 
-## 25. Criterio final
+* El sistema será web.
+* El backend será construido en NestJS.
+* El usuario final también puede crear ejercicios.
+* El administrador crea ejercicios globales.
+* El sistema debe mantener simplicidad.
+* El foco principal es el registro rápido de entrenamiento.
 
-La solución debe diseñarse como un sistema empresarial distribuido de cadena de suministro.
+## 26. Criterio final de diseño
 
-No debe limitarse a digitalizar Excel.
+La solución debe diseñarse como una aplicación web sencilla, mantenible y práctica para un gimnasio real.
 
-Debe transformar el proceso operativo completo:
+No debe convertirse en una plataforma deportiva excesivamente compleja.
+
+La prioridad final debe ser:
 
 ```txt
-Proveedor
-→ Orden de compra
-→ Recepción real
-→ Stock recibido
-→ Reposición validada
-→ Stock vendible
-→ Venta
-→ Auditoría y trazabilidad
+1. Simplicidad de uso.
+2. Registro rápido de series.
+3. Claridad del historial.
+4. Catálogo real de máquinas e indumentaria.
+5. Ejercicios globales y personales.
+6. Seguridad básica.
+7. Backend modular en NestJS.
+8. Base de datos clara en PostgreSQL.
+9. Facilidad para exportar información.
+10. Mantenibilidad del sistema.
 ```
 
-La regla central del sistema debe mantenerse en todo el diseño:
+La regla central debe mantenerse durante todo el diseño:
 
 ```txt
-RECIBIDO ≠ VENDIBLE
+SI REGISTRAR UNA SERIE TOMA DEMASIADO TIEMPO, EL USUARIO DEJARÁ DE USAR LA APP.
 ```
 
-Y las notificaciones críticas deben estar garantizadas:
-
-```txt
-Orden emitida → notificar proveedor
-Orden recepcionada → notificar comprador/planificador
-Stock vendible → notificar comprador/planificador
-```
-
-La prioridad final del diseño debe ser:
-
-1. Trazabilidad.
-2. Robustez.
-3. Control operativo realista.
-4. Separación distribuida de responsabilidades.
-5. Seguridad.
-6. Notificaciones asincrónicas.
-7. Control de vencimientos por riesgo.
-8. Preparación para operación real en múltiples sucursales.
-9. Mantenibilidad.
-10. Escalabilidad.
+Por lo tanto, toda decisión funcional, visual y técnica debe favorecer la rapidez y la comodidad del usuario final.

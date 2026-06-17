@@ -1,0 +1,94 @@
+{
+  "info": {
+    "name": "GymSheet API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api/v1"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth - Register",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/auth/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"cliente@gym.com\", \"password\": \"Password123\", \"nombreCompleto\": \"Cliente Demo\"}"
+        }
+      }
+    },
+    {
+      "name": "Auth - Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"cliente@gym.com\", \"password\": \"Password123\"}"
+        }
+      }
+    },
+    {
+      "name": "Profile - Upsert",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/profile",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"edad\": 24, \"pesoKg\": 80, \"estaturaCm\": 178, \"objetivo\": \"HIPERTROFIA\"}"
+        }
+      }
+    },
+    {
+      "name": "Workouts - Start",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/workouts",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"observacion\": \"D\\u00eda torso\"}"
+        }
+      }
+    }
+  ]
+}

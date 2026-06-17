@@ -1,0 +1,53 @@
+export enum UserRole {
+  ADMIN = 'ADMIN',
+  CLIENTE = 'CLIENTE',
+  ENTRENADOR_EXTERNO = 'ENTRENADOR_EXTERNO',
+}
+
+export enum UserStatus {
+  ACTIVO = 'ACTIVO',
+  INACTIVO = 'INACTIVO',
+}
+
+export enum TrainingGoal {
+  HIPERTROFIA = 'HIPERTROFIA',
+  FUERZA = 'FUERZA',
+  RESISTENCIA = 'RESISTENCIA',
+  PERDIDA_GRASA = 'PERDIDA_GRASA',
+  SALUD_GENERAL = 'SALUD_GENERAL',
+  REHABILITACION = 'REHABILITACION',
+}
+
+export enum EquipmentType {
+  MAQUINA = 'MAQUINA',
+  MANCUERNA = 'MANCUERNA',
+  BARRA = 'BARRA',
+  DISCO = 'DISCO',
+  BANCO = 'BANCO',
+  POLEA = 'POLEA',
+  BANDA = 'BANDA',
+  ACCESORIO = 'ACCESORIO',
+  OTRO = 'OTRO',
+}
+
+export enum EquipmentStatus {
+  DISPONIBLE = 'DISPONIBLE',
+  MANTENIMIENTO = 'MANTENIMIENTO',
+  INACTIVO = 'INACTIVO',
+}
+
+export enum ExerciseType {
+  GLOBAL = 'GLOBAL',
+  PERSONAL = 'PERSONAL',
+}
+
+export enum ExerciseStatus {
+  ACTIVO = 'ACTIVO',
+  INACTIVO = 'INACTIVO',
+}
+
+export enum WorkoutSessionStatus {
+  EN_PROGRESO = 'EN_PROGRESO',
+  FINALIZADA = 'FINALIZADA',
+  CANCELADA = 'CANCELADA',
+}

@@ -1,0 +1,16 @@
+@startuml
+
+[*] --> EN_PROGRESO : Usuario inicia entrenamiento
+
+EN_PROGRESO --> EN_PROGRESO : Agregar ejercicio
+EN_PROGRESO --> EN_PROGRESO : Registrar serie
+EN_PROGRESO --> EN_PROGRESO : Editar serie
+EN_PROGRESO --> EN_PROGRESO : Eliminar serie
+
+EN_PROGRESO --> FINALIZADA : Usuario finaliza entrenamiento
+EN_PROGRESO --> CANCELADA : Usuario cancela entrenamiento
+
+FINALIZADA --> [*]
+CANCELADA --> [*]
+
+@enduml

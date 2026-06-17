@@ -1,0 +1,68 @@
+@startuml
+
+start
+
+:Usuario ingresa a la app web;
+
+if (¿Tiene cuenta?) then (Sí)
+  :Iniciar sesión;
+else (No)
+  :Registrarse;
+  :Completar perfil básico;
+endif
+
+if (¿Perfil antropométrico completo?) then (Sí)
+else (No)
+  :Registrar edad, peso, estatura y objetivo;
+endif
+
+:Mostrar pantalla principal;
+
+if (¿Tiene ejercicios seleccionados?) then (Sí)
+  :Mostrar ejercicios frecuentes;
+else (No)
+  :Mostrar catálogo de ejercicios;
+  :Usuario selecciona ejercicios;
+endif
+
+if (¿Necesita crear ejercicio personalizado?) then (Sí)
+  :Consultar máquinas e indumentaria disponible;
+  :Crear ejercicio personalizado;
+  :Guardar ejercicio;
+else (No)
+endif
+
+:Iniciar sesión de entrenamiento;
+
+repeat
+  :Seleccionar ejercicio;
+  
+  if (¿Ejercicio es énfasis del día?) then (Sí)
+    :Marcar ejercicio como énfasis;
+  else (No)
+  endif
+
+  repeat
+    :Registrar número de serie;
+    :Registrar repeticiones;
+    :Registrar peso levantado;
+    :Registrar RIR;
+    :Registrar descanso de serie anterior;
+    :Guardar serie;
+  repeat while (¿Agregar otra serie del mismo ejercicio?) is (Sí)
+
+repeat while (¿Agregar otro ejercicio?) is (Sí)
+
+:Finalizar entrenamiento;
+:Guardar historial;
+
+if (¿Desea exportar información?) then (Sí)
+  :Generar resumen de entrenamiento;
+  :Incluir catálogo de máquinas e indumentaria;
+  :Exportar para entrenador externo;
+else (No)
+endif
+
+stop
+
+@enduml

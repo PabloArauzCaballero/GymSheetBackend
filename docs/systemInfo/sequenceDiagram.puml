@@ -1,0 +1,38 @@
+@startuml
+
+actor "Cliente / Usuario" as Cliente
+boundary "Web App" as Web
+control "AuthGuard JWT" as Guard
+control "WorkoutController" as Controller
+control "WorkoutService" as Service
+control "ExerciseService" as ExerciseService
+database "PostgreSQL" as DB
+
+Cliente -> Web: Completa datos de la serie
+Web -> Controller: POST /workouts/session-exercises/{id}/sets
+
+Controller -> Guard: validarTokenJWT()
+Guard --> Controller: usuario autenticado
+
+Controller -> Service: registrarSerie(usuarioId, sesionEjercicioId, dto)
+
+Service -> DB: Buscar sesión ejercicio
+DB --> Service: sesión ejercicio encontrada
+
+Service -> Service: Validar que la sesión esté EN_PROGRESO
+Service -> Service: Validar repeticiones, peso, RIR y descanso
+
+Service -> DB: Verificar número de serie no duplicado
+DB --> Service: no existe duplicado
+
+Service -> DB: Insertar serie_entrenamiento
+DB --> Service: serie guardada
+
+Service -> DB: Consultar resumen actualizado del ejercicio
+DB --> Service: resumen
+
+Service --> Controller: Serie registrada correctamente
+Controller --> Web: 201 Created + datos de la serie
+Web --> Cliente: Mostrar serie agregada en pantalla
+
+@enduml

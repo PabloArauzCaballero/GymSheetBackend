@@ -1,0 +1,83 @@
+@startuml
+
+package "Cliente Web" {
+  [Web App]
+  [Pantalla Login]
+  [Pantalla Perfil]
+  [Pantalla Catálogo]
+  [Pantalla Entrenamiento]
+  [Pantalla Historial]
+}
+
+package "Backend NestJS" {
+  [AppModule]
+
+  package "AuthModule" {
+    [AuthController]
+    [AuthService]
+    [JwtStrategy]
+  }
+
+  package "UsersModule" {
+    [UsersController]
+    [UsersService]
+  }
+
+  package "ProfilesModule" {
+    [ProfilesController]
+    [ProfilesService]
+  }
+
+  package "EquipmentModule" {
+    [EquipmentController]
+    [EquipmentService]
+  }
+
+  package "ExercisesModule" {
+    [ExercisesController]
+    [ExercisesService]
+  }
+
+  package "WorkoutsModule" {
+    [WorkoutsController]
+    [WorkoutsService]
+  }
+
+  package "ExportModule" {
+    [ExportController]
+    [ExportService]
+  }
+
+  package "DatabaseModule" {
+    [ORM / Repositories]
+  }
+}
+
+database "PostgreSQL" as DB
+
+[Web App] --> [AuthController] : Login / JWT
+[Web App] --> [ProfilesController] : Perfil básico
+[Web App] --> [EquipmentController] : Máquinas e indumentaria
+[Web App] --> [ExercisesController] : Ejercicios
+[Web App] --> [WorkoutsController] : Sesiones y series
+[Web App] --> [ExportController] : Exportar historial
+
+[AuthController] --> [AuthService]
+[UsersController] --> [UsersService]
+[ProfilesController] --> [ProfilesService]
+[EquipmentController] --> [EquipmentService]
+[ExercisesController] --> [ExercisesService]
+[WorkoutsController] --> [WorkoutsService]
+[ExportController] --> [ExportService]
+
+[AuthService] --> [ORM / Repositories]
+[UsersService] --> [ORM / Repositories]
+[ProfilesService] --> [ORM / Repositories]
+[EquipmentService] --> [ORM / Repositories]
+[ExercisesService] --> [ORM / Repositories]
+[WorkoutsService] --> [ORM / Repositories]
+[ExportService] --> [ORM / Repositories]
+
+[ORM / Repositories] --> DB
+
+@enduml

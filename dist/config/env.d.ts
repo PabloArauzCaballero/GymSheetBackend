@@ -1,0 +1,21 @@
+export declare const env: {
+    NODE_ENV: "development" | "test" | "production";
+    PORT: number;
+    API_PREFIX: string;
+    CORS_ORIGINS: string[];
+    DB_HOST: string;
+    DB_PORT: number;
+    DB_NAME: string;
+    DB_USER: string;
+    DB_PASSWORD: string;
+    DB_SSL: boolean;
+    DB_LOGGING: boolean;
+    JWT_ACCESS_SECRET: string;
+    JWT_ACCESS_EXPIRES_IN: string;
+    JWT_REFRESH_SECRET: string;
+    JWT_REFRESH_EXPIRES_IN: string;
+    BCRYPT_SALT_ROUNDS: number;
+    RATE_LIMIT_TTL_SECONDS: number;
+    RATE_LIMIT_MAX: number;
+    GATEWAY_ENABLED: boolean;
+};

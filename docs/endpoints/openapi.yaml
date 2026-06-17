@@ -1,0 +1,175 @@
+openapi: 3.0.3
+info:
+  title: GymSheet API
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/api/v1
+security:
+  - bearerAuth: []
+paths:
+  /auth/register:
+    post:
+      security: []
+      summary: Registrar cliente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201': { description: Usuario registrado }
+  /auth/login:
+    post:
+      security: []
+      summary: Iniciar sesión
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '201': { description: Login correcto }
+  /profile:
+    get:
+      summary: Obtener perfil propio
+      responses:
+        '200': { description: Perfil encontrado }
+    post:
+      summary: Crear perfil propio
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileRequest'
+      responses:
+        '201': { description: Perfil guardado }
+    patch:
+      summary: Actualizar perfil propio
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileRequest'
+      responses:
+        '200': { description: Perfil actualizado }
+  /equipment:
+    get:
+      summary: Listar equipo disponible
+      responses:
+        '200': { description: Lista de equipos }
+  /exercises:
+    get:
+      summary: Listar ejercicios visibles
+      responses:
+        '200': { description: Lista de ejercicios }
+  /exercises/personal:
+    post:
+      summary: Crear ejercicio personal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExerciseRequest'
+      responses:
+        '201': { description: Ejercicio creado }
+  /workouts:
+    post:
+      summary: Iniciar sesión de entrenamiento
+      responses:
+        '201': { description: Sesión creada }
+    get:
+      summary: Consultar historial de sesiones
+      responses:
+        '200': { description: Historial }
+  /workouts/{id}/finish:
+    patch:
+      summary: Finalizar sesión
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200': { description: Sesión finalizada }
+  /workouts/session-exercises/{id}/sets:
+    post:
+      summary: Registrar serie
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkoutSetRequest'
+      responses:
+        '201': { description: Serie registrada }
+  /export/workout-history:
+    get:
+      summary: Exportar historial JSON
+      responses:
+        '200': { description: Exportación JSON }
+  /export/workout-history/csv:
+    get:
+      summary: Exportar historial CSV
+      responses:
+        '200': { description: Exportación CSV }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, password, nombreCompleto]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        nombreCompleto: { type: string }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+    ProfileRequest:
+      type: object
+      required: [edad, pesoKg, estaturaCm, objetivo]
+      properties:
+        edad: { type: integer, minimum: 12, maximum: 100 }
+        pesoKg: { type: number, minimum: 1 }
+        estaturaCm: { type: integer, minimum: 80, maximum: 250 }
+        objetivo:
+          type: string
+          enum: [HIPERTROFIA, FUERZA, RESISTENCIA, PERDIDA_GRASA, SALUD_GENERAL, REHABILITACION]
+    ExerciseRequest:
+      type: object
+      required: [nombre, grupoMuscular]
+      properties:
+        nombre: { type: string }
+        grupoMuscular: { type: string }
+        descripcion: { type: string, nullable: true }
+        equipoIds:
+          type: array
+          items: { type: string, format: uuid }
+    WorkoutSetRequest:
+      type: object
+      required: [numeroSerie, repeticiones, pesoKg, rir, descansoSegAnterior]
+      properties:
+        numeroSerie: { type: integer, minimum: 1 }
+        repeticiones: { type: integer, minimum: 1 }
+        pesoKg: { type: number, minimum: 0 }
+        rir: { type: integer, minimum: 0, maximum: 10 }
+        descansoSegAnterior: { type: integer, minimum: 0 }

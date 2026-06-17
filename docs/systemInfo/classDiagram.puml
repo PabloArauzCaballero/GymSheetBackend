@@ -1,0 +1,105 @@
+@startuml
+skinparam classAttributeIconSize 0
+
+class Usuario {
+  +id: UUID
+  +email: String
+  +passwordHash: String
+  +nombreCompleto: String
+  +rol: RolUsuario
+  +estado: EstadoUsuario
+  +fechaRegistro: DateTime
+}
+
+class EquipoGym {
+  +id: UUID
+  +nombre: String
+  +tipo: TipoEquipo
+  +descripcion: String
+  +estado: EstadoEquipo
+}
+
+class Ejercicio {
+  +id: UUID
+  +nombre: String
+  +grupoMuscular: String
+  +descripcion: String
+  +tipoEjercicio: TipoEjercicio
+  +createdByUsuarioId: UUID
+  +estado: EstadoEjercicio
+}
+
+class EjercicioEquipo {
+  +id: UUID
+  +ejercicioId: UUID
+  +equipoGymId: UUID
+}
+
+class UsuarioEjercicio {
+  +id: UUID
+  +usuarioId: UUID
+  +ejercicioId: UUID
+  +fechaSeleccion: DateTime
+}
+
+class SesionEntrenamiento {
+  +id: UUID
+  +usuarioId: UUID
+  +fechaInicio: DateTime
+  +fechaFin: DateTime
+  +estado: EstadoSesion
+}
+
+class SesionEjercicio {
+  +id: UUID
+  +sesionId: UUID
+  +ejercicioId: UUID
+  +orden: Integer
+  +esEnfasis: Boolean
+}
+
+class SerieEntrenamiento {
+  +id: UUID
+  +sesionEjercicioId: UUID
+  +numeroSerie: Integer
+  +repeticiones: Integer
+  +pesoKg: Decimal
+  +rir: Integer
+  +descansoSegAnterior: Integer
+  +fechaRegistro: DateTime
+}
+
+enum TipoEjercicio {
+  GLOBAL
+  PERSONAL
+}
+
+enum RolUsuario {
+  CLIENTE
+  ADMIN
+}
+
+enum EstadoEjercicio {
+  ACTIVO
+  INACTIVO
+}
+
+enum EstadoSesion {
+  EN_PROGRESO
+  FINALIZADA
+  CANCELADA
+}
+
+Usuario "1" -- "0..*" Ejercicio : crea >
+Usuario "1" -- "0..*" UsuarioEjercicio
+Usuario "1" -- "0..*" SesionEntrenamiento
+
+Ejercicio "1" -- "0..*" UsuarioEjercicio
+Ejercicio "1" -- "0..*" EjercicioEquipo
+EquipoGym "1" -- "0..*" EjercicioEquipo
+
+SesionEntrenamiento "1" -- "1..*" SesionEjercicio
+Ejercicio "1" -- "0..*" SesionEjercicio
+SesionEjercicio "1" -- "1..*" SerieEntrenamiento
+
+@enduml
