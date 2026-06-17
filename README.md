@@ -52,7 +52,3 @@ docs/endpoints/endpoints.md
 docs/endpoints/openapi.yaml
 docs/postman/collection.json
 ```
-
-## Prompts usados
-
-La carpeta `prompt/` se conserva porque fue parte del entregable solicitado y contiene las reglas de generación.
