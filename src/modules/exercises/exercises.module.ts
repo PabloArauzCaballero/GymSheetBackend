@@ -17,6 +17,10 @@ import {
 } from './exercises.controller';
 import { ExercisesRepository } from './exercises.repository';
 import { ExercisesService } from './exercises.service';
+import { ExercisesDatasetClient } from './import/exercises-dataset.client';
+import { ExercisesDatasetController } from './import/exercises-dataset.controller';
+import { ExercisesDatasetRepository } from './import/exercises-dataset.repository';
+import { ExercisesDatasetService } from './import/exercises-dataset.service';
 import { UserExerciseModel } from './user-exercise.model';
 
 @Module({
@@ -35,13 +39,22 @@ import { UserExerciseModel } from './user-exercise.model';
     UserExercisesController,
     ExerciseMediaController,
     ExerciseMediaManagementController,
+    ExercisesDatasetController,
   ],
   providers: [
     ExercisesRepository,
     ExercisesService,
     ExerciseMediaRepository,
     ExerciseMediaService,
+    ExercisesDatasetClient,
+    ExercisesDatasetRepository,
+    ExercisesDatasetService,
   ],
-  exports: [ExercisesService, ExercisesRepository, ExerciseMediaRepository],
+  exports: [
+    ExercisesService,
+    ExercisesRepository,
+    ExerciseMediaRepository,
+    ExercisesDatasetService,
+  ],
 })
 export class ExercisesModule {}
