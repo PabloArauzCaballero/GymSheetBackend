@@ -24,7 +24,12 @@ import { ExerciseModel } from './exercise.model';
  * stable references, dimensions, integrity metadata, accessibility text, and
  * licensing information.
  */
-@Table({ tableName: 'exercise_media', underscored: true, timestamps: true })
+@Table({
+  tableName: 'exercise_media',
+  schema: 'training',
+  underscored: true,
+  timestamps: true,
+})
 export class ExerciseMediaModel extends Model {
   @PrimaryKey
   @Default(DataType.UUIDV4)
