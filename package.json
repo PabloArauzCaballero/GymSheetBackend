@@ -20,6 +20,7 @@
     "test": "jest --runInBand",
     "test:coverage": "jest --runInBand --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
+    "audit:prod": "yarn audit --groups dependencies --level high",
     "migration:up": "ts-node src/database/migrate.ts up",
     "migration:down": "ts-node src/database/migrate.ts down",
     "migration:up:prod": "node dist/database/migrate.js up",
