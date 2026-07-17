@@ -3,27 +3,46 @@ import { InjectModel } from '@nestjs/sequelize';
 import { UserStatus } from '../../common/enums/domain.enums';
 import { UserModel } from './user.model';
 
+export type CreateClientUserInput = {
+  email: string;
+  passwordHash: string;
+  fullName: string;
+};
+
 @Injectable()
 export class UsersRepository {
   constructor(@InjectModel(UserModel) private readonly userModel: typeof UserModel) {}
 
-  findById(id: string): Promise<UserModel | null> {
-    return this.userModel.findByPk(id);
+  findById(userId: string): Promise<UserModel | null> {
+    return this.userModel.findByPk(userId);
   }
 
-  findActiveById(id: string): Promise<UserModel | null> {
-    return this.userModel.findOne({ where: { id, estado: UserStatus.ACTIVO } });
+  findActiveById(userId: string): Promise<UserModel | null> {
+    return this.userModel.findOne({
+      where: { id: userId, status: UserStatus.ACTIVO },
+    });
   }
 
-  findByEmail(email: string): Promise<UserModel | null> {
-    return this.userModel.findOne({ where: { email: email.toLowerCase() } });
+  findByEmail(emailAddress: string): Promise<UserModel | null> {
+    return this.userModel.findOne({
+      where: { email: emailAddress.toLowerCase() },
+    });
   }
 
-  createCliente(input: { email: string; passwordHash: string; nombreCompleto: string }): Promise<UserModel> {
+  findActiveByEmail(emailAddress: string): Promise<UserModel | null> {
+    return this.userModel.findOne({
+      where: {
+        email: emailAddress.toLowerCase(),
+        status: UserStatus.ACTIVO,
+      },
+    });
+  }
+
+  createClient(input: CreateClientUserInput): Promise<UserModel> {
     return this.userModel.create({
       email: input.email.toLowerCase(),
       passwordHash: input.passwordHash,
-      nombreCompleto: input.nombreCompleto,
+      fullName: input.fullName,
     });
   }
 }
