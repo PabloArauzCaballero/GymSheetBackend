@@ -95,7 +95,9 @@ jobs:
           exit 0
 
       - name: Type check
-        run: yarn type-check
+        run: |
+          set -o pipefail
+          yarn type-check 2>&1 | tee /tmp/typecheck.log
 
       - name: Unit tests
         run: yarn test
@@ -246,7 +248,8 @@ jobs:
 
           APP_PID="$application_pid" \
           BASE_URL=http://127.0.0.1:3000/api/v1 \
-          node test/load/http-load-smoke.mjs | tee /tmp/load-smoke-result.json
+          node test/load/http-load-smoke.mjs > /tmp/load-smoke-result.json
+          cat /tmp/load-smoke-result.json
 
       - name: Upload verification evidence
         if: always()
@@ -255,6 +258,7 @@ jobs:
           name: hardening-ci-evidence
           path: |
             /tmp/yarn-audit.json
+            /tmp/typecheck.log
             /tmp/gym-sheet-api.log
             /tmp/load-smoke-result.json
           if-no-files-found: ignore
