@@ -112,6 +112,16 @@ const authorizationHeaders = {
   Authorization: `Bearer ${registration.accessToken}`,
   'Content-Type': 'application/json',
 };
+await requestData('/profile', {
+  method: 'POST',
+  headers: authorizationHeaders,
+  body: JSON.stringify({
+    edad: 30,
+    pesoKg: 80,
+    estaturaCm: 178,
+    objetivo: 'FUERZA',
+  }),
+});
 const exercise = await requestData('/exercises/personal', {
   method: 'POST',
   headers: authorizationHeaders,
