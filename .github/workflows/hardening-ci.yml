@@ -18,7 +18,60 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: gym_sheet_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d gym_sheet_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      PORT: 3000
+      API_PREFIX: api/v1
+      CORS_ORIGINS: http://localhost:3000
+      TRUST_PROXY: "false"
+      REQUEST_BODY_LIMIT: 1mb
+      LOG_LEVEL: error
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: gym_sheet_ci
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SSL: "false"
+      DB_SSL_REJECT_UNAUTHORIZED: "true"
+      DB_LOGGING: "false"
+      DB_POOL_MAX: 5
+      DB_POOL_MIN: 0
+      DB_POOL_ACQUIRE_MS: 30000
+      DB_POOL_IDLE_MS: 10000
+      DB_CONNECT_TIMEOUT_MS: 10000
+      DB_STATEMENT_TIMEOUT_MS: 15000
+      JWT_ACCESS_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_SECRET: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+      JWT_REFRESH_EXPIRES_IN: 7d
+      JWT_ISSUER: gym-sheet-api-ci
+      JWT_AUDIENCE: gym-sheet-ci
+      BCRYPT_SALT_ROUNDS: 10
+      RATE_LIMIT_TTL_SECONDS: 60
+      RATE_LIMIT_MAX: 100
+      AUTH_RATE_LIMIT_MAX: 10
+      GATEWAY_ENABLED: "false"
+      EXERCISES_DATASET_ENABLED: "false"
+      EXERCISES_DATASET_IMPORT_MEDIA: "false"
+      EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED: "false"
+      PGPASSWORD: postgres
 
     steps:
       - name: Checkout
@@ -41,3 +94,20 @@ jobs:
 
       - name: Production build
         run: yarn build
+
+      - name: Create baseline schema
+        run: psql -h localhost -U postgres -d gym_sheet_ci -v ON_ERROR_STOP=1 -f docs/db/schema.sql
+
+      - name: Apply migration
+        run: yarn migration:up
+
+      - name: Roll back latest migration
+        run: yarn migration:down
+
+      - name: Reapply migration
+        run: yarn migration:up
+
+      - name: Verify migration metadata
+        run: |
+          test "$(psql -h localhost -U postgres -d gym_sheet_ci -Atc 'SELECT count(*) FROM app_meta.schema_migrations')" = "1"
+          test "$(psql -h localhost -U postgres -d gym_sheet_ci -Atc \"SELECT count(*) FROM information_schema.tables WHERE table_schema = 'training' AND table_name = 'exercise_media'\")" = "1"
