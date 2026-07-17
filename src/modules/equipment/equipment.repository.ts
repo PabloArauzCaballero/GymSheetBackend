@@ -13,7 +13,7 @@ export class EquipmentRepository {
 
   findAvailable(): Promise<EquipmentModel[]> {
     return this.equipmentModel.findAll({
-      where: { status: EquipmentStatus.DISPONIBLE },
+      where: { status: EquipmentStatus.AVAILABLE },
       order: [
         ['type', 'ASC'],
         ['name', 'ASC'],
@@ -44,6 +44,6 @@ export class EquipmentRepository {
   }
 
   markInactive(equipmentId: string): Promise<EquipmentModel | null> {
-    return this.update(equipmentId, { status: EquipmentStatus.INACTIVO });
+    return this.update(equipmentId, { status: EquipmentStatus.INACTIVE });
   }
 }
