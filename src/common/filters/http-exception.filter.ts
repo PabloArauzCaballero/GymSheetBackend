@@ -14,6 +14,11 @@ type PublicErrorPayload = {
   issues?: unknown;
 };
 
+type ErrorWithHttpStatus = {
+  status?: unknown;
+  statusCode?: unknown;
+};
+
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
@@ -22,13 +27,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const httpContext = host.switchToHttp();
     const response = httpContext.getResponse<Response>();
     const request = httpContext.getRequest<Request>();
-    const statusCode =
-      exception instanceof HttpException
-        ? exception.getStatus()
-        : HttpStatus.INTERNAL_SERVER_ERROR;
+    const statusCode = this.resolveStatusCode(exception);
     const requestId = request.header('x-request-id') ?? 'unknown';
     const requestPath = request.originalUrl || request.url;
-    const publicError = this.toPublicError(exception);
+    const publicError = this.toPublicError(exception, statusCode);
 
     this.logException(exception, statusCode, request, requestId);
 
@@ -55,7 +57,33 @@ export class HttpExceptionFilter implements ExceptionFilter {
       });
   }
 
-  private toPublicError(exception: unknown): PublicErrorPayload {
+  private resolveStatusCode(exception: unknown): number {
+    if (exception instanceof HttpException) {
+      return exception.getStatus();
+    }
+
+    if (typeof exception !== 'object' || exception === null) {
+      return HttpStatus.INTERNAL_SERVER_ERROR;
+    }
+
+    const possibleStatus = exception as ErrorWithHttpStatus;
+    const statusCandidates = [possibleStatus.statusCode, possibleStatus.status];
+    const validStatus = statusCandidates.find(
+      (candidate): candidate is number =>
+        typeof candidate === 'number' &&
+        Number.isInteger(candidate) &&
+        candidate >= 400 &&
+        candidate <= 599,
+    );
+
+    return validStatus ?? HttpStatus.INTERNAL_SERVER_ERROR;
+  }
+
+  private toPublicError(exception: unknown, statusCode: number): PublicErrorPayload {
+    if (statusCode === HttpStatus.PAYLOAD_TOO_LARGE) {
+      return { message: 'El cuerpo de la solicitud supera el límite permitido.' };
+    }
+
     if (!(exception instanceof HttpException)) {
       return { message: 'Error interno del servidor.' };
     }
