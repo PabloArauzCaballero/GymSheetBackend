@@ -1,4 +1,15 @@
-import { BelongsTo, Column, CreatedAt, DataType, Default, ForeignKey, Model, PrimaryKey, Table, UpdatedAt } from 'sequelize-typescript';
+import {
+  BelongsTo,
+  Column,
+  CreatedAt,
+  DataType,
+  Default,
+  ForeignKey,
+  Model,
+  PrimaryKey,
+  Table,
+  UpdatedAt,
+} from 'sequelize-typescript';
 import { EquipmentModel } from '../equipment/equipment.model';
 import { ExerciseModel } from './exercise.model';
 
@@ -11,17 +22,17 @@ export class ExerciseEquipmentModel extends Model {
 
   @ForeignKey(() => ExerciseModel)
   @Column({ type: DataType.UUID, allowNull: false, field: 'ejercicio_id' })
-  declare ejercicioId: string;
+  declare exerciseId: string;
 
   @ForeignKey(() => EquipmentModel)
   @Column({ type: DataType.UUID, allowNull: false, field: 'equipo_gym_id' })
-  declare equipoGymId: string;
+  declare equipmentId: string;
 
   @BelongsTo(() => ExerciseModel)
-  declare ejercicio?: ExerciseModel;
+  declare exercise?: ExerciseModel;
 
   @BelongsTo(() => EquipmentModel)
-  declare equipo?: EquipmentModel;
+  declare equipment?: EquipmentModel;
 
   @CreatedAt
   @Column({ field: 'created_at' })
