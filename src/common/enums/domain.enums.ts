@@ -1,39 +1,39 @@
 export enum UserRole {
   ADMIN = 'ADMIN',
-  CLIENTE = 'CLIENTE',
-  ENTRENADOR_EXTERNO = 'ENTRENADOR_EXTERNO',
+  CLIENT = 'CLIENTE',
+  EXTERNAL_TRAINER = 'ENTRENADOR_EXTERNO',
 }
 
 export enum UserStatus {
-  ACTIVO = 'ACTIVO',
-  INACTIVO = 'INACTIVO',
+  ACTIVE = 'ACTIVO',
+  INACTIVE = 'INACTIVO',
 }
 
 export enum TrainingGoal {
-  HIPERTROFIA = 'HIPERTROFIA',
-  FUERZA = 'FUERZA',
-  RESISTENCIA = 'RESISTENCIA',
-  PERDIDA_GRASA = 'PERDIDA_GRASA',
-  SALUD_GENERAL = 'SALUD_GENERAL',
-  REHABILITACION = 'REHABILITACION',
+  HYPERTROPHY = 'HIPERTROFIA',
+  STRENGTH = 'FUERZA',
+  ENDURANCE = 'RESISTENCIA',
+  FAT_LOSS = 'PERDIDA_GRASA',
+  GENERAL_HEALTH = 'SALUD_GENERAL',
+  REHABILITATION = 'REHABILITACION',
 }
 
 export enum EquipmentType {
-  MAQUINA = 'MAQUINA',
-  MANCUERNA = 'MANCUERNA',
-  BARRA = 'BARRA',
-  DISCO = 'DISCO',
-  BANCO = 'BANCO',
-  POLEA = 'POLEA',
-  BANDA = 'BANDA',
-  ACCESORIO = 'ACCESORIO',
-  OTRO = 'OTRO',
+  MACHINE = 'MAQUINA',
+  DUMBBELL = 'MANCUERNA',
+  BARBELL = 'BARRA',
+  PLATE = 'DISCO',
+  BENCH = 'BANCO',
+  CABLE = 'POLEA',
+  BAND = 'BANDA',
+  ACCESSORY = 'ACCESORIO',
+  OTHER = 'OTRO',
 }
 
 export enum EquipmentStatus {
-  DISPONIBLE = 'DISPONIBLE',
-  MANTENIMIENTO = 'MANTENIMIENTO',
-  INACTIVO = 'INACTIVO',
+  AVAILABLE = 'DISPONIBLE',
+  MAINTENANCE = 'MANTENIMIENTO',
+  INACTIVE = 'INACTIVO',
 }
 
 export enum ExerciseType {
@@ -42,12 +42,35 @@ export enum ExerciseType {
 }
 
 export enum ExerciseStatus {
-  ACTIVO = 'ACTIVO',
-  INACTIVO = 'INACTIVO',
+  ACTIVE = 'ACTIVO',
+  INACTIVE = 'INACTIVO',
 }
 
 export enum WorkoutSessionStatus {
-  EN_PROGRESO = 'EN_PROGRESO',
-  FINALIZADA = 'FINALIZADA',
-  CANCELADA = 'CANCELADA',
+  IN_PROGRESS = 'EN_PROGRESO',
+  COMPLETED = 'FINALIZADA',
+  CANCELLED = 'CANCELADA',
+}
+
+export enum ExerciseMediaType {
+  IMAGE = 'IMAGE',
+  GIF = 'GIF',
+  VIDEO = 'VIDEO',
+}
+
+export enum ExerciseMediaProvider {
+  EXTERNAL_URL = 'EXTERNAL_URL',
+  CLOUDINARY = 'CLOUDINARY',
+  S3 = 'S3',
+  LOCAL = 'LOCAL',
+}
+
+export enum ExerciseMediaStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+}
+
+export enum ExerciseDataSource {
+  CUSTOM = 'CUSTOM',
+  EXERCISES_DATASET = 'EXERCISES_DATASET',
 }
