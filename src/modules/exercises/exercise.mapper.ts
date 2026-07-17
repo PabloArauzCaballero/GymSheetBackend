@@ -49,7 +49,9 @@ export type ExerciseResponse = {
   sourceUrl: string | null;
   sourceLicense: string | null;
   sourceAttribution: string | null;
+  category: string | null;
   bodyPart: string | null;
+  requiredEquipment: string | null;
   targetMuscle: string | null;
   synergistMuscleGroup: string | null;
   secondaryMuscles: string[];
@@ -116,7 +118,9 @@ export function mapExerciseToResponse(exercise: ExerciseModel): ExerciseResponse
     sourceUrl: exercise.sourceUrl,
     sourceLicense: exercise.sourceLicense,
     sourceAttribution: exercise.sourceAttribution,
+    category: exercise.category,
     bodyPart: exercise.bodyPart,
+    requiredEquipment: exercise.requiredEquipment,
     targetMuscle: exercise.targetMuscle,
     synergistMuscleGroup: exercise.synergistMuscleGroup,
     secondaryMuscles: exercise.secondaryMuscles,
