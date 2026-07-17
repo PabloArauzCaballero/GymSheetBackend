@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { AnthropometricProfileResponse, mapProfileToResponse } from './profile.mapper';
 import { ProfilesRepository } from './profiles.repository';
 import { UpsertProfileInput } from './profiles.schemas';
 
@@ -6,17 +7,21 @@ import { UpsertProfileInput } from './profiles.schemas';
 export class ProfilesService {
   constructor(private readonly profilesRepository: ProfilesRepository) {}
 
-  async getMyProfile(userId: string) {
+  async getMyProfile(userId: string): Promise<AnthropometricProfileResponse> {
     const profile = await this.profilesRepository.findByUserId(userId);
 
     if (!profile) {
       throw new NotFoundException('El perfil antropométrico todavía no fue registrado.');
     }
 
-    return profile;
+    return mapProfileToResponse(profile);
   }
 
-  upsertMyProfile(userId: string, input: UpsertProfileInput) {
-    return this.profilesRepository.upsertByUserId(userId, input);
+  async upsertMyProfile(
+    userId: string,
+    input: UpsertProfileInput,
+  ): Promise<AnthropometricProfileResponse> {
+    const profile = await this.profilesRepository.upsertByUserId(userId, input);
+    return mapProfileToResponse(profile);
   }
 }
