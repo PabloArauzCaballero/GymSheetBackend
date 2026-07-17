@@ -3,6 +3,9 @@ import { z } from 'zod';
 
 dotenv.config();
 
+type JwtDurationUnit = 'ms' | 's' | 'm' | 'h' | 'd' | 'w' | 'y';
+export type JwtDuration = `${number}${JwtDurationUnit}`;
+
 /**
  * Parses explicit boolean environment values without JavaScript truthiness.
  * This prevents the string "false" from becoming true.
@@ -36,6 +39,16 @@ const commaSeparatedListSchema = z.string().transform((rawValue) =>
     .filter(Boolean),
 );
 
+/**
+ * Restricts JWT expirations to the concise duration units accepted by the
+ * underlying signing library and preserves a template-literal type after validation.
+ */
+const jwtDurationSchema = z
+  .string()
+  .trim()
+  .regex(/^\d+(?:ms|s|m|h|d|w|y)$/)
+  .transform((duration) => duration as JwtDuration);
+
 export const environmentSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -44,7 +57,9 @@ export const environmentSchema = z
     CORS_ORIGINS: commaSeparatedListSchema.default('http://localhost:5173'),
     TRUST_PROXY: environmentBooleanSchema.default(false),
     REQUEST_BODY_LIMIT: z.string().regex(/^\d+(kb|mb)$/i).default('1mb'),
-    LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+    LOG_LEVEL: z
+      .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+      .default('info'),
 
     DB_HOST: z.string().trim().min(1),
     DB_PORT: z.coerce.number().int().positive().max(65535).default(5432),
@@ -59,12 +74,17 @@ export const environmentSchema = z
     DB_POOL_ACQUIRE_MS: z.coerce.number().int().min(1000).max(120000).default(30000),
     DB_POOL_IDLE_MS: z.coerce.number().int().min(1000).max(120000).default(10000),
     DB_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(10000),
-    DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
+    DB_STATEMENT_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1000)
+      .max(120000)
+      .default(15000),
 
     JWT_ACCESS_SECRET: z.string().min(64),
-    JWT_ACCESS_EXPIRES_IN: z.string().trim().min(2).default('15m'),
+    JWT_ACCESS_EXPIRES_IN: jwtDurationSchema.default('15m'),
     JWT_REFRESH_SECRET: z.string().min(64),
-    JWT_REFRESH_EXPIRES_IN: z.string().trim().min(2).default('7d'),
+    JWT_REFRESH_EXPIRES_IN: jwtDurationSchema.default('7d'),
     JWT_ISSUER: z.string().trim().min(3).default('gym-sheet-api'),
     JWT_AUDIENCE: z.string().trim().min(3).default('gym-sheet-web'),
 
@@ -78,10 +98,23 @@ export const environmentSchema = z
     EXERCISES_DATASET_JSON_URL: z
       .string()
       .url()
-      .default('https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json'),
-    EXERCISES_DATASET_ALLOWED_HOSTS: commaSeparatedListSchema.default('raw.githubusercontent.com'),
-    EXERCISES_DATASET_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000),
-    EXERCISES_DATASET_MAX_RESPONSE_BYTES: z.coerce.number().int().min(1024).max(52428800).default(15728640),
+      .default(
+        'https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json',
+      ),
+    EXERCISES_DATASET_ALLOWED_HOSTS:
+      commaSeparatedListSchema.default('raw.githubusercontent.com'),
+    EXERCISES_DATASET_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1000)
+      .max(60000)
+      .default(15000),
+    EXERCISES_DATASET_MAX_RESPONSE_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1024)
+      .max(52428800)
+      .default(15728640),
     EXERCISES_DATASET_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(100),
     EXERCISES_DATASET_IMPORT_MEDIA: environmentBooleanSchema.default(false),
     EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED: environmentBooleanSchema.default(false),
@@ -103,7 +136,10 @@ export const environmentSchema = z
       });
     }
 
-    if (configuration.EXERCISES_DATASET_IMPORT_MEDIA && !configuration.EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED) {
+    if (
+      configuration.EXERCISES_DATASET_IMPORT_MEDIA &&
+      !configuration.EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED'],
@@ -115,7 +151,9 @@ export const environmentSchema = z
 const parsedEnvironment = environmentSchema.safeParse(process.env);
 
 if (!parsedEnvironment.success) {
-  throw new Error(`Invalid environment variables: ${JSON.stringify(parsedEnvironment.error.flatten().fieldErrors)}`);
+  throw new Error(
+    `Invalid environment variables: ${JSON.stringify(parsedEnvironment.error.flatten().fieldErrors)}`,
+  );
 }
 
 export const env = parsedEnvironment.data;
