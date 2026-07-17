@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { WorkoutsService } from './workouts.service';
@@ -9,11 +10,13 @@ import {
   CreateWorkoutSetInput,
   UpdateSessionExerciseInput,
   UpdateWorkoutSetInput,
+  WorkoutSessionListInput,
   addSessionExerciseSchema,
   createWorkoutSessionSchema,
   createWorkoutSetSchema,
   updateSessionExerciseSchema,
   updateWorkoutSetSchema,
+  workoutSessionListSchema,
 } from './workouts.schemas';
 
 @Controller('workouts')
@@ -22,75 +25,112 @@ export class WorkoutsController {
 
   @Post()
   startSession(
-    @CurrentUser() currentUser: AuthenticatedUser,
-    @Body(new ZodValidationPipe(createWorkoutSessionSchema)) input: CreateWorkoutSessionInput,
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Body(new ZodValidationPipe(createWorkoutSessionSchema))
+    input: CreateWorkoutSessionInput,
   ) {
-    return this.workoutsService.startSession(currentUser.id, input);
+    return this.workoutsService.startSession(authenticatedUser.id, input);
   }
 
   @Get()
-  listMySessions(@CurrentUser() currentUser: AuthenticatedUser) {
-    return this.workoutsService.listMySessions(currentUser.id);
+  listMySessions(
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Query(new ZodValidationPipe(workoutSessionListSchema))
+    pagination: WorkoutSessionListInput,
+  ) {
+    return this.workoutsService.listMySessions(authenticatedUser.id, pagination);
   }
 
   @Get(':id')
-  getMySession(@CurrentUser() currentUser: AuthenticatedUser, @Param('id') id: string) {
-    return this.workoutsService.getMySession(currentUser.id, id);
+  getMySession(
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('id', UuidParamPipe) sessionId: string,
+  ) {
+    return this.workoutsService.getMySession(authenticatedUser.id, sessionId);
   }
 
   @Patch(':id/finish')
-  finishSession(@CurrentUser() currentUser: AuthenticatedUser, @Param('id') id: string) {
-    return this.workoutsService.finishSession(currentUser.id, id);
+  finishSession(
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('id', UuidParamPipe) sessionId: string,
+  ) {
+    return this.workoutsService.finishSession(authenticatedUser.id, sessionId);
   }
 
   @Patch(':id/cancel')
-  cancelSession(@CurrentUser() currentUser: AuthenticatedUser, @Param('id') id: string) {
-    return this.workoutsService.cancelSession(currentUser.id, id);
+  cancelSession(
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('id', UuidParamPipe) sessionId: string,
+  ) {
+    return this.workoutsService.cancelSession(authenticatedUser.id, sessionId);
   }
 
   @Post(':sessionId/exercises')
   addExerciseToSession(
-    @CurrentUser() currentUser: AuthenticatedUser,
-    @Param('sessionId') sessionId: string,
-    @Body(new ZodValidationPipe(addSessionExerciseSchema)) input: AddSessionExerciseInput,
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('sessionId', UuidParamPipe) sessionId: string,
+    @Body(new ZodValidationPipe(addSessionExerciseSchema))
+    input: AddSessionExerciseInput,
   ) {
-    return this.workoutsService.addExerciseToSession(currentUser.id, sessionId, input);
+    return this.workoutsService.addExerciseToSession(
+      authenticatedUser.id,
+      sessionId,
+      input,
+    );
   }
 
   @Patch('session-exercises/:id')
   updateSessionExercise(
-    @CurrentUser() currentUser: AuthenticatedUser,
-    @Param('id') id: string,
-    @Body(new ZodValidationPipe(updateSessionExerciseSchema)) input: UpdateSessionExerciseInput,
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('id', UuidParamPipe) sessionExerciseId: string,
+    @Body(new ZodValidationPipe(updateSessionExerciseSchema))
+    input: UpdateSessionExerciseInput,
   ) {
-    return this.workoutsService.updateSessionExercise(currentUser.id, id, input);
+    return this.workoutsService.updateSessionExercise(
+      authenticatedUser.id,
+      sessionExerciseId,
+      input,
+    );
   }
 
   @Delete('session-exercises/:id')
-  deleteSessionExercise(@CurrentUser() currentUser: AuthenticatedUser, @Param('id') id: string) {
-    return this.workoutsService.deleteSessionExercise(currentUser.id, id);
+  deleteSessionExercise(
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('id', UuidParamPipe) sessionExerciseId: string,
+  ) {
+    return this.workoutsService.deleteSessionExercise(
+      authenticatedUser.id,
+      sessionExerciseId,
+    );
   }
 
   @Post('session-exercises/:id/sets')
   addSet(
-    @CurrentUser() currentUser: AuthenticatedUser,
-    @Param('id') id: string,
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('id', UuidParamPipe) sessionExerciseId: string,
     @Body(new ZodValidationPipe(createWorkoutSetSchema)) input: CreateWorkoutSetInput,
   ) {
-    return this.workoutsService.addSet(currentUser.id, id, input);
+    return this.workoutsService.addSet(
+      authenticatedUser.id,
+      sessionExerciseId,
+      input,
+    );
   }
 
   @Patch('sets/:id')
   updateSet(
-    @CurrentUser() currentUser: AuthenticatedUser,
-    @Param('id') id: string,
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('id', UuidParamPipe) setId: string,
     @Body(new ZodValidationPipe(updateWorkoutSetSchema)) input: UpdateWorkoutSetInput,
   ) {
-    return this.workoutsService.updateSet(currentUser.id, id, input);
+    return this.workoutsService.updateSet(authenticatedUser.id, setId, input);
   }
 
   @Delete('sets/:id')
-  deleteSet(@CurrentUser() currentUser: AuthenticatedUser, @Param('id') id: string) {
-    return this.workoutsService.deleteSet(currentUser.id, id);
+  deleteSet(
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('id', UuidParamPipe) setId: string,
+  ) {
+    return this.workoutsService.deleteSet(authenticatedUser.id, setId);
   }
 }
