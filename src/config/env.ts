@@ -78,8 +78,8 @@ export const environmentSchema = z
     EXERCISES_DATASET_JSON_URL: z
       .string()
       .url()
-      .default('https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/dist/exercises.json'),
-    EXERCISES_DATASET_ALLOWED_HOSTS: commaSeparatedListSchema.default('raw.githubusercontent.com,github.com'),
+      .default('https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json'),
+    EXERCISES_DATASET_ALLOWED_HOSTS: commaSeparatedListSchema.default('raw.githubusercontent.com'),
     EXERCISES_DATASET_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000),
     EXERCISES_DATASET_MAX_RESPONSE_BYTES: z.coerce.number().int().min(1024).max(52428800).default(15728640),
     EXERCISES_DATASET_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(100),
