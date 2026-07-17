@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { env } from '../../config/env';
 
 type PublicErrorPayload = {
   message: string | string[];
@@ -26,17 +27,32 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
     const requestId = request.header('x-request-id') ?? 'unknown';
+    const requestPath = request.originalUrl || request.url;
+    const publicError = this.toPublicError(exception);
 
     this.logException(exception, statusCode, request, requestId);
 
-    response.status(statusCode).json({
-      ok: false,
-      statusCode,
-      path: request.originalUrl || request.url,
-      timestamp: new Date().toISOString(),
-      requestId,
-      error: this.toPublicError(exception),
-    });
+    response
+      .type('application/problem+json')
+      .status(statusCode)
+      .json({
+        type: 'about:blank',
+        title: this.getStatusTitle(statusCode),
+        status: statusCode,
+        detail: Array.isArray(publicError.message)
+          ? publicError.message.join('; ')
+          : publicError.message,
+        instance: requestPath,
+        requestId,
+        timestamp: new Date().toISOString(),
+        ...(publicError.issues === undefined ? {} : { issues: publicError.issues }),
+
+        // Compatibility fields retained for existing v1 clients.
+        ok: false,
+        statusCode,
+        path: requestPath,
+        error: publicError,
+      });
   }
 
   private toPublicError(exception: unknown): PublicErrorPayload {
@@ -73,12 +89,23 @@ export class HttpExceptionFilter implements ExceptionFilter {
     return fallbackMessage;
   }
 
+  private getStatusTitle(statusCode: number): string {
+    const statusName = HttpStatus[statusCode] ?? 'HTTP_ERROR';
+    return String(statusName)
+      .toLowerCase()
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+
   private logException(
     exception: unknown,
     statusCode: number,
     request: Request,
     requestId: string,
   ): void {
+    const isUnexpectedError = statusCode >= HttpStatus.INTERNAL_SERVER_ERROR;
+    const shouldRedactTechnicalDetails = isUnexpectedError && env.NODE_ENV === 'production';
     const logContext = {
       event: 'http.request.failed',
       requestId,
@@ -86,11 +113,22 @@ export class HttpExceptionFilter implements ExceptionFilter {
       path: request.originalUrl || request.url,
       statusCode,
       errorName: exception instanceof Error ? exception.name : 'UnknownError',
-      errorMessage: exception instanceof Error ? exception.message : 'Unknown error',
+      errorMessage: shouldRedactTechnicalDetails
+        ? 'Unexpected server error'
+        : exception instanceof Error
+          ? exception.message
+          : 'Unknown error',
     };
 
-    if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
-      this.logger.error(logContext, exception instanceof Error ? exception.stack : undefined);
+    if (isUnexpectedError) {
+      this.logger.error(
+        logContext,
+        shouldRedactTechnicalDetails
+          ? undefined
+          : exception instanceof Error
+            ? exception.stack
+            : undefined,
+      );
       return;
     }
 
