@@ -24,11 +24,11 @@ export class UserModel extends Model {
   @Column({ type: DataType.STRING(180), allowNull: false, field: 'nombre_completo' })
   declare fullName: string;
 
-  @Default(UserRole.CLIENTE)
+  @Default(UserRole.CLIENT)
   @Column({ type: DataType.ENUM(...Object.values(UserRole)), allowNull: false, field: 'rol' })
   declare role: UserRole;
 
-  @Default(UserStatus.ACTIVO)
+  @Default(UserStatus.ACTIVE)
   @Column({ type: DataType.ENUM(...Object.values(UserStatus)), allowNull: false, field: 'estado' })
   declare status: UserStatus;
 
