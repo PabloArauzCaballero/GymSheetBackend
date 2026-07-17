@@ -18,7 +18,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -65,7 +65,7 @@ jobs:
       JWT_AUDIENCE: gym-sheet-ci
       BCRYPT_SALT_ROUNDS: 10
       RATE_LIMIT_TTL_SECONDS: 60
-      RATE_LIMIT_MAX: 100
+      RATE_LIMIT_MAX: 1000
       AUTH_RATE_LIMIT_MAX: 10
       GATEWAY_ENABLED: "false"
       EXERCISES_DATASET_ENABLED: "false"
@@ -212,3 +212,44 @@ jobs:
           test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations WHERE id = '202607170001-hardening-exercise-data'")" = "0"
           yarn migration:up
           test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations WHERE id = '202607170001-hardening-exercise-data'")" = "1"
+
+      - name: Start API and run HTTP load smoke
+        run: |
+          node dist/main.js > /tmp/gym-sheet-api.log 2>&1 &
+          application_pid=$!
+          cleanup() {
+            kill "$application_pid" 2>/dev/null || true
+            wait "$application_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:3000/api/v1/health/ready >/dev/null; then
+              break
+            fi
+            if ! kill -0 "$application_pid" 2>/dev/null; then
+              cat /tmp/gym-sheet-api.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          curl --silent --fail http://127.0.0.1:3000/api/v1/health/ready >/dev/null || {
+            cat /tmp/gym-sheet-api.log
+            exit 1
+          }
+
+          APP_PID="$application_pid" \
+          BASE_URL=http://127.0.0.1:3000/api/v1 \
+          node test/load/http-load-smoke.mjs | tee /tmp/load-smoke-result.json
+
+      - name: Upload diagnostic logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardening-ci-diagnostics
+          path: |
+            /tmp/gym-sheet-api.log
+            /tmp/load-smoke-result.json
+          if-no-files-found: ignore
+          retention-days: 7
