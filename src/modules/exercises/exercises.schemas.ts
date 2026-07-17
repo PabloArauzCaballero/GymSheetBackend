@@ -51,7 +51,7 @@ export const createGlobalExerciseSchema = exerciseRequestSchema.transform(
     name: nombre,
     muscleGroup: grupoMuscular,
     description: descripcion ?? null,
-    equipmentIds: equipmentIds ?? [],
+    equipmentIds: equipoIds ?? [],
     bodyPart: extendedData.bodyPart ?? null,
     targetMuscle: extendedData.targetMuscle ?? null,
     synergistMuscleGroup: extendedData.synergistMuscleGroup ?? null,
