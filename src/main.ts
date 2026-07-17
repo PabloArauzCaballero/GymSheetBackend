@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
+import { requestIdMiddleware } from './common/middleware/request-id.middleware';
 import { env } from './config/env';
 
 async function bootstrap(): Promise<void> {
@@ -21,6 +22,7 @@ async function bootstrap(): Promise<void> {
   }
 
   application.setGlobalPrefix(env.API_PREFIX);
+  application.use(requestIdMiddleware);
   application.use(json({ limit: env.REQUEST_BODY_LIMIT, strict: true }));
   application.use(urlencoded({ limit: env.REQUEST_BODY_LIMIT, extended: false }));
   application.use(
