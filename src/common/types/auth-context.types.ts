@@ -7,11 +7,9 @@ export type AuthenticatedUser = {
   role: UserRole;
 };
 
-/** Minimal access-token claims controlled by this API. */
+/** Custom access-token claims controlled by this API. */
 export type JwtPayload = {
   sub: string;
   email: string;
   role: UserRole;
-  iss: string;
-  aud: string;
 };
