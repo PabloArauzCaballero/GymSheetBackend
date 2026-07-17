@@ -26,7 +26,7 @@ export type LocalizedInstructionSteps = Record<string, string[]>;
 /**
  * Exercise aggregate root. Existing database columns remain compatible while
  * the application layer uses English identifiers and supports provenance,
- * multilingual instructions, and multiple media assets.
+ * multilingual instructions, equipment taxonomy, and multiple media assets.
  */
 @Table({ tableName: 'ejercicios', underscored: true, timestamps: true })
 export class ExerciseModel extends Model {
@@ -82,8 +82,14 @@ export class ExerciseModel extends Model {
   @Column({ type: DataType.TEXT, allowNull: true, field: 'source_attribution' })
   declare sourceAttribution: string | null;
 
+  @Column({ type: DataType.STRING(100), allowNull: true, field: 'category' })
+  declare category: string | null;
+
   @Column({ type: DataType.STRING(100), allowNull: true, field: 'body_part' })
   declare bodyPart: string | null;
+
+  @Column({ type: DataType.STRING(160), allowNull: true, field: 'required_equipment' })
+  declare requiredEquipment: string | null;
 
   @Column({ type: DataType.STRING(120), allowNull: true, field: 'target_muscle' })
   declare targetMuscle: string | null;
