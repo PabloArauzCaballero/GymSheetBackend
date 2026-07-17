@@ -6,31 +6,44 @@ import { CreateEquipmentInput, UpdateEquipmentInput } from './equipment.schemas'
 
 @Injectable()
 export class EquipmentRepository {
-  constructor(@InjectModel(EquipmentModel) private readonly equipmentModel: typeof EquipmentModel) {}
+  constructor(
+    @InjectModel(EquipmentModel)
+    private readonly equipmentModel: typeof EquipmentModel,
+  ) {}
 
   findAvailable(): Promise<EquipmentModel[]> {
     return this.equipmentModel.findAll({
-      where: { estado: EquipmentStatus.DISPONIBLE },
-      order: [['tipo', 'ASC'], ['nombre', 'ASC']],
+      where: { status: EquipmentStatus.DISPONIBLE },
+      order: [
+        ['type', 'ASC'],
+        ['name', 'ASC'],
+      ],
     });
   }
 
-  findById(id: string): Promise<EquipmentModel | null> {
-    return this.equipmentModel.findByPk(id);
+  findById(equipmentId: string): Promise<EquipmentModel | null> {
+    return this.equipmentModel.findByPk(equipmentId);
   }
 
   create(input: CreateEquipmentInput): Promise<EquipmentModel> {
     return this.equipmentModel.create(input);
   }
 
-  async update(id: string, input: UpdateEquipmentInput): Promise<EquipmentModel | null> {
-    const equipment = await this.findById(id);
-    if (!equipment) return null;
+  async update(
+    equipmentId: string,
+    input: UpdateEquipmentInput,
+  ): Promise<EquipmentModel | null> {
+    const equipment = await this.findById(equipmentId);
+
+    if (!equipment) {
+      return null;
+    }
+
     await equipment.update(input);
     return equipment;
   }
 
-  async markInactive(id: string): Promise<EquipmentModel | null> {
-    return this.update(id, { estado: EquipmentStatus.INACTIVO });
+  markInactive(equipmentId: string): Promise<EquipmentModel | null> {
+    return this.update(equipmentId, { status: EquipmentStatus.INACTIVO });
   }
 }
