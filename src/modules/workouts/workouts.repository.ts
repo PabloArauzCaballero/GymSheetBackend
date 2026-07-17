@@ -20,6 +20,16 @@ export type WorkoutSessionPage = {
   count: number;
 };
 
+const sessionExercisesAssociation = {
+  model: WorkoutSessionExerciseModel,
+  as: 'sessionExercises',
+};
+
+const workoutSetsAssociation = {
+  model: WorkoutSetModel,
+  as: 'sets',
+};
+
 @Injectable()
 export class WorkoutsRepository {
   constructor(
@@ -49,13 +59,16 @@ export class WorkoutsRepository {
       where: { id: sessionId, userId },
       include: [
         {
-          model: WorkoutSessionExerciseModel,
-          include: [ExerciseModel, WorkoutSetModel],
+          ...sessionExercisesAssociation,
+          include: [
+            { model: ExerciseModel, as: 'exercise' },
+            workoutSetsAssociation,
+          ],
         },
       ],
       order: [
-        [WorkoutSessionExerciseModel, 'order', 'ASC'],
-        [WorkoutSessionExerciseModel, WorkoutSetModel, 'setNumber', 'ASC'],
+        [sessionExercisesAssociation, 'order', 'ASC'],
+        [sessionExercisesAssociation, workoutSetsAssociation, 'setNumber', 'ASC'],
       ],
     });
   }
@@ -71,8 +84,11 @@ export class WorkoutsRepository {
       offset: (pagination.page - 1) * pagination.pageSize,
       include: [
         {
-          model: WorkoutSessionExerciseModel,
-          include: [ExerciseModel, WorkoutSetModel],
+          ...sessionExercisesAssociation,
+          include: [
+            { model: ExerciseModel, as: 'exercise' },
+            workoutSetsAssociation,
+          ],
         },
       ],
       order: [['startedAt', 'DESC']],
@@ -114,7 +130,10 @@ export class WorkoutsRepository {
     sessionExerciseId: string,
   ): Promise<WorkoutSessionExerciseModel | null> {
     return this.sessionExerciseModel.findByPk(sessionExerciseId, {
-      include: [WorkoutSessionModel, WorkoutSetModel],
+      include: [
+        { model: WorkoutSessionModel, as: 'session' },
+        workoutSetsAssociation,
+      ],
     });
   }
 
@@ -162,7 +181,8 @@ export class WorkoutsRepository {
       include: [
         {
           model: WorkoutSessionExerciseModel,
-          include: [WorkoutSessionModel],
+          as: 'sessionExercise',
+          include: [{ model: WorkoutSessionModel, as: 'session' }],
         },
       ],
     });
