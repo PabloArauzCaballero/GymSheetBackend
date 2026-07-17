@@ -1,0 +1,135 @@
+openapi: 3.0.3
+info:
+  title: GymSheet Operational API
+  version: 1.1.0-hardening
+  description: |
+    Operational surface for liveness, readiness and low-cardinality Prometheus metrics.
+    Production ingress should restrict the metrics route to the monitoring network.
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local development
+paths:
+  /health/live:
+    get:
+      operationId: getLiveness
+      summary: Report Node.js process liveness
+      security: []
+      responses:
+        '200':
+          description: Process can answer HTTP requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LivenessEnvelope'
+  /health/ready:
+    get:
+      operationId: getReadiness
+      summary: Report application readiness including PostgreSQL
+      security: []
+      responses:
+        '200':
+          description: Application dependencies are ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessEnvelope'
+        '503':
+          description: PostgreSQL or another mandatory dependency is not ready
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /health/metrics:
+    get:
+      operationId: getMetrics
+      summary: Export Prometheus-compatible runtime metrics
+      description: |
+        Exposes process memory, Sequelize pool state and bounded HTTP counters and histograms.
+        Labels never include raw URLs, query strings, request bodies, tokens or user identifiers.
+      security: []
+      responses:
+        '200':
+          description: Prometheus text exposition format
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                gym_sheet_process_uptime_seconds 120.500
+                gym_sheet_process_resident_memory_bytes 104857600
+                gym_sheet_database_pool_connections{state="using"} 2
+components:
+  schemas:
+    Liveness:
+      type: object
+      required: [status, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        timestamp:
+          type: string
+          format: date-time
+    LivenessEnvelope:
+      type: object
+      required: [ok, data]
+      properties:
+        ok:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/Liveness'
+    Readiness:
+      allOf:
+        - $ref: '#/components/schemas/Liveness'
+        - type: object
+          required: [dependencies]
+          properties:
+            dependencies:
+              type: object
+              required: [database]
+              properties:
+                database:
+                  type: string
+                  enum: [ready]
+    ReadinessEnvelope:
+      type: object
+      required: [ok, data]
+      properties:
+        ok:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/Readiness'
+    Problem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - detail
+        - instance
+        - requestId
+        - timestamp
+      properties:
+        type:
+          type: string
+          example: about:blank
+        title:
+          type: string
+          example: Service Unavailable
+        status:
+          type: integer
+          example: 503
+        detail:
+          type: string
+          example: Application dependencies are not ready.
+        instance:
+          type: string
+          example: /api/v1/health/ready
+        requestId:
+          type: string
+          example: 5c454f50-1b97-4b94-9ce7-5c85bff02a20
+        timestamp:
+          type: string
+          format: date-time
