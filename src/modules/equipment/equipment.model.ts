@@ -31,7 +31,7 @@ export class EquipmentModel extends Model {
   @Column({ type: DataType.TEXT, allowNull: true, field: 'descripcion' })
   declare description: string | null;
 
-  @Default(EquipmentStatus.DISPONIBLE)
+  @Default(EquipmentStatus.AVAILABLE)
   @Column({
     type: DataType.ENUM(...Object.values(EquipmentStatus)),
     allowNull: false,
