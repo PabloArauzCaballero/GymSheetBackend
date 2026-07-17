@@ -18,7 +18,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     services:
       postgres:
@@ -86,6 +86,9 @@ jobs:
       - name: Install locked dependencies
         run: yarn install --frozen-lockfile
 
+      - name: Audit production dependencies
+        run: yarn audit --groups dependencies --level high
+
       - name: Type check
         run: yarn type-check
 
@@ -98,6 +101,47 @@ jobs:
       - name: Create baseline schema
         run: psql -h localhost -U postgres -d gym_sheet_ci -v ON_ERROR_STOP=1 -f docs/db/schema.sql
 
+      - name: Seed representative baseline rows
+        run: |
+          psql -h localhost -U postgres -d gym_sheet_ci -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO usuarios (id, email, password_hash, nombre_completo, rol, estado)
+          VALUES ('00000000-0000-4000-8000-000000000001', 'ci-owner@example.test', 'not-used', 'CI Owner', 'CLIENTE', 'ACTIVO');
+
+          INSERT INTO ejercicios (
+            id, nombre, grupo_muscular, descripcion, tipo_ejercicio,
+            created_by_usuario_id, estado
+          ) VALUES (
+            '00000000-0000-4000-8000-000000000002', 'CI Bench Press', 'Pectoral',
+            'Representative pre-migration row', 'PERSONAL',
+            '00000000-0000-4000-8000-000000000001', 'ACTIVO'
+          );
+
+          INSERT INTO sesiones_entrenamiento (
+            id, usuario_id, estado, observacion
+          ) VALUES (
+            '00000000-0000-4000-8000-000000000003',
+            '00000000-0000-4000-8000-000000000001',
+            'FINALIZADA', 'Representative migration verification session'
+          );
+
+          INSERT INTO sesiones_ejercicios (
+            id, sesion_id, ejercicio_id, orden, es_enfasis
+          ) VALUES (
+            '00000000-0000-4000-8000-000000000004',
+            '00000000-0000-4000-8000-000000000003',
+            '00000000-0000-4000-8000-000000000002', 1, true
+          );
+
+          INSERT INTO series_entrenamiento (
+            id, sesion_ejercicio_id, numero_serie, repeticiones,
+            peso_kg, rir, descanso_seg_anterior
+          ) VALUES (
+            '00000000-0000-4000-8000-000000000005',
+            '00000000-0000-4000-8000-000000000004',
+            1, 8, 60, 2, 120
+          );
+          SQL
+
       - name: Apply migration
         run: yarn migration:up
 
@@ -107,7 +151,64 @@ jobs:
       - name: Reapply migration
         run: yarn migration:up
 
-      - name: Verify migration metadata
+      - name: Verify migration metadata and preserved data
         run: |
-          test "$(psql -h localhost -U postgres -d gym_sheet_ci -Atc 'SELECT count(*) FROM app_meta.schema_migrations')" = "1"
-          test "$(psql -h localhost -U postgres -d gym_sheet_ci -Atc \"SELECT count(*) FROM information_schema.tables WHERE table_schema = 'training' AND table_name = 'exercise_media'\")" = "1"
+          psql -h localhost -U postgres -d gym_sheet_ci -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE
+            migration_count integer;
+            exercise_count integer;
+            set_count integer;
+          BEGIN
+            SELECT count(*) INTO migration_count
+            FROM app_meta.schema_migrations
+            WHERE id = '202607170001-hardening-exercise-data';
+
+            IF migration_count <> 1 THEN
+              RAISE EXCEPTION 'Expected one hardening migration row, found %', migration_count;
+            END IF;
+
+            IF to_regclass('training.exercise_media') IS NULL THEN
+              RAISE EXCEPTION 'training.exercise_media was not created';
+            END IF;
+
+            SELECT count(*) INTO exercise_count
+            FROM public.ejercicios
+            WHERE id = '00000000-0000-4000-8000-000000000002';
+
+            SELECT count(*) INTO set_count
+            FROM public.series_entrenamiento
+            WHERE id = '00000000-0000-4000-8000-000000000005';
+
+            IF exercise_count <> 1 OR set_count <> 1 THEN
+              RAISE EXCEPTION 'Representative rows were not preserved';
+            END IF;
+          END $$;
+          SQL
+
+      - name: Create and restore database backup
+        run: |
+          pg_dump -h localhost -U postgres -d gym_sheet_ci --format=custom --file=/tmp/gym_sheet_ci.dump
+          createdb -h localhost -U postgres gym_sheet_restore
+          pg_restore -h localhost -U postgres -d gym_sheet_restore --exit-on-error /tmp/gym_sheet_ci.dump
+
+      - name: Verify restored database and migration rollback
+        env:
+          DB_NAME: gym_sheet_restore
+        run: |
+          psql -h localhost -U postgres -d gym_sheet_restore -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF to_regclass('training.exercise_media') IS NULL THEN
+              RAISE EXCEPTION 'Restored media table is missing';
+            END IF;
+
+            IF (SELECT count(*) FROM public.series_entrenamiento) <> 1 THEN
+              RAISE EXCEPTION 'Restored representative rows are incomplete';
+            END IF;
+          END $$;
+          SQL
+          yarn migration:down
+          test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations WHERE id = '202607170001-hardening-exercise-data'")" = "0"
+          yarn migration:up
+          test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations WHERE id = '202607170001-hardening-exercise-data'")" = "1"
