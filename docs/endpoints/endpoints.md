@@ -1,14 +1,14 @@
-# Endpoints GymSheet
+# GymSheet API endpoints
 
-Todos los endpoints usan el prefijo configurable `API_PREFIX`; el valor por defecto es `/api/v1`.
+All routes use the configurable `API_PREFIX`; the default is `/api/v1`.
 
-Salvo los endpoints marcados como públicos, se requiere:
+Authenticated routes require:
 
 ```http
 Authorization: Bearer <access-token>
 ```
 
-Las respuestas JSON exitosas usan el envelope:
+Successful JSON responses use:
 
 ```json
 {
@@ -17,195 +17,209 @@ Las respuestas JSON exitosas usan el envelope:
 }
 ```
 
-Los errores usan `application/problem+json`, incluyen `requestId` y no exponen stack traces en producción.
+Controlled errors use:
 
-## Reglas generales
+```json
+{
+  "ok": false,
+  "statusCode": 400,
+  "path": "/api/v1/exercises/not-a-uuid",
+  "timestamp": "2026-07-17T00:00:00.000Z",
+  "requestId": "5c454f50-1b97-4b94-9ce7-5c85bff02a20",
+  "error": {
+    "message": "El identificador debe ser un UUID válido.",
+    "issues": {}
+  }
+}
+```
 
-- Los identificadores de ruta deben ser UUID válidos.
-- `page` comienza en 1.
-- `pageSize` está limitado a 100.
-- Los bodies están limitados por `REQUEST_BODY_LIMIT`.
-- Las rutas administrativas requieren el rol `ADMIN` revalidado contra PostgreSQL.
-- Las mutaciones de ejercicios personales, media, sesiones y series verifican ownership.
-- Los campos externos en español se conservan por compatibilidad de la API v1; el código interno usa nombres en inglés.
+The API does not return stack traces or raw infrastructure errors to clients.
 
-## Públicos
+## Global rules
 
-| Método | Ruta | Uso | Controles |
-|---|---|---|---|
-| POST | `/auth/register` | Registrar cliente | validación de email/password y límite de autenticación |
-| POST | `/auth/login` | Iniciar sesión | mensaje uniforme de credenciales y límite de autenticación |
-| GET | `/gateway/health` | Liveness HTTP | no incluye secretos ni inventario interno |
-| GET | `/gateway/routes` | Capacidades públicas resumidas | no devuelve rutas administrativas completas |
+- Route identifiers are validated as UUIDs before persistence access.
+- `page` starts at 1.
+- `pageSize` is capped at 100.
+- Request bodies are capped by `REQUEST_BODY_LIMIT`.
+- Administrative routes require an active database user with role `ADMIN`.
+- Personal exercises, media, sessions, and sets enforce object ownership.
+- Legacy Spanish v1 fields remain at the HTTP boundary; internal identifiers are English.
+- Access tokens require the expected signature, expiration, issuer, audience, and algorithm.
+- Every authenticated request revalidates the current user and role in PostgreSQL.
 
-## Identidad y perfil
+## Public operational endpoints
 
-| Método | Ruta | Uso |
+| Method | Route | Purpose |
 |---|---|---|
-| GET | `/auth/me` | Principal revalidado generado por la estrategia JWT |
-| GET | `/users/me` | Datos persistidos y mapeados del usuario activo |
-| GET | `/profile` | Consultar perfil antropométrico propio |
-| POST | `/profile` | Crear o reemplazar el perfil propio |
-| PATCH | `/profile` | Actualizar el perfil propio |
+| GET | `/health/live` | Process liveness without external dependency checks |
+| GET | `/health/ready` | Readiness check including PostgreSQL |
+| GET | `/gateway/health` | Compatibility gateway health response |
+| GET | `/gateway/routes` | Public capability summary without privileged route details |
 
-El JWT exige firma, expiración, issuer, audience y algoritmo esperados. Cada petición autenticada confirma que el usuario siga activo y obtiene su rol actual.
+Liveness remains independent of PostgreSQL to avoid restart loops during temporary database outages. Readiness returns `503` when the application should not receive traffic.
 
-## Equipamiento
+## Authentication
 
-| Método | Ruta | Rol | Uso |
+| Method | Route | Access | Purpose |
 |---|---|---|---|
-| GET | `/equipment` | autenticado | Listar equipo disponible |
-| POST | `/admin/equipment` | ADMIN | Crear equipo |
-| PATCH | `/admin/equipment/:id` | ADMIN | Editar equipo |
-| DELETE | `/admin/equipment/:id` | ADMIN | Inhabilitar equipo; no borra historial |
+| POST | `/auth/register` | public | Register a client account |
+| POST | `/auth/login` | public | Authenticate and issue an access token |
+| GET | `/auth/me` | authenticated | Return the revalidated request principal |
 
-Los ejercicios solo pueden asociarse a equipos existentes y enlazables. La lista enviada se deduplica antes de persistir.
+`register` and `login` use a tighter configurable rate limit than normal API routes. Login failures use a uniform message to reduce account enumeration.
 
-## Ejercicios
+## Users and profile
 
-| Método | Ruta | Rol | Uso |
-|---|---|---|---|
-| GET | `/exercises` | autenticado | Listar ejercicios globales y personales propios |
-| GET | `/exercises/:id` | autenticado | Ver ejercicio visible |
-| POST | `/exercises/personal` | autenticado | Crear ejercicio personal |
-| PATCH | `/exercises/:id` | propietario | Editar ejercicio personal propio |
-| DELETE | `/exercises/:id` | propietario | Inhabilitar ejercicio personal propio |
-| POST | `/admin/exercises/global` | ADMIN | Crear ejercicio global |
-| PATCH | `/admin/exercises/global/:id` | ADMIN | Editar ejercicio global |
-| DELETE | `/admin/exercises/global/:id` | ADMIN | Inhabilitar ejercicio global |
-
-### Filtros de `GET /exercises`
-
-| Parámetro | Tipo | Restricción |
+| Method | Route | Purpose |
 |---|---|---|
-| `page` | integer | mínimo 1; default 1 |
+| GET | `/users/me` | Return mapped persisted user data |
+| GET | `/profile` | Read the caller's anthropometric profile |
+| POST | `/profile` | Create or replace the caller's profile |
+| PATCH | `/profile` | Update the caller's profile |
+
+Canonical internal units are kilograms for body weight, centimeters for height, and explicit timestamps for measurement recency.
+
+## Equipment
+
+| Method | Route | Access | Purpose |
+|---|---|---|---|
+| GET | `/equipment` | authenticated | List available equipment |
+| POST | `/admin/equipment` | ADMIN | Create equipment |
+| PATCH | `/admin/equipment/:id` | ADMIN | Update equipment |
+| DELETE | `/admin/equipment/:id` | ADMIN | Inactivate equipment without deleting history |
+
+Exercise relationships accept only existing, linkable equipment identifiers. Input identifiers are deduplicated before persistence.
+
+## Exercises
+
+| Method | Route | Access | Purpose |
+|---|---|---|---|
+| GET | `/exercises` | authenticated | List global exercises and the caller's active personal exercises |
+| GET | `/exercises/:id` | visible object | Read one visible exercise |
+| POST | `/exercises/personal` | authenticated | Create a personal exercise |
+| PATCH | `/exercises/:id` | owner | Update a personal exercise |
+| DELETE | `/exercises/:id` | owner | Inactivate a personal exercise |
+| POST | `/admin/exercises/global` | ADMIN | Create a global exercise |
+| PATCH | `/admin/exercises/global/:id` | ADMIN | Update a global exercise |
+| DELETE | `/admin/exercises/global/:id` | ADMIN | Inactivate a global exercise |
+
+### `GET /exercises` filters
+
+| Parameter | Type | Restriction |
+|---|---|---|
+| `page` | integer | minimum 1; default 1 |
 | `pageSize` | integer | 1–100; default 25 |
-| `search` | string | 1–120 caracteres |
-| `grupoMuscular` | string | máximo 100 |
-| `equipoId` | UUID | equipo asociado |
-| `bodyPart` | string | máximo 100 |
-| `targetMuscle` | string | máximo 120 |
-| `dataSource` | enum | `CUSTOM` o `EXERCISES_DATASET` |
+| `search` | string | 1–120 characters |
+| `grupoMuscular` | string | maximum 100 |
+| `equipoId` | UUID | associated equipment |
+| `bodyPart` | string | maximum 100 |
+| `targetMuscle` | string | maximum 120 |
+| `dataSource` | enum | `CUSTOM` or `EXERCISES_DATASET` |
 
-La respuesta incluye `items`, `page`, `pageSize`, `total` y `totalPages` dentro de `data`.
+The response contains `items`, `page`, `pageSize`, `total`, and `totalPages` inside `data`.
 
-### Campos extendidos
+### Extended exercise fields
 
-Un ejercicio puede incluir:
+- `category`, `bodyPart`, `requiredEquipment`, `targetMuscle`, and `synergistMuscleGroup`;
+- `secondaryMuscles`, maximum 30;
+- localized `instructions` and `instructionSteps`;
+- `metadata`, with a maximum serialized size of 16 KiB;
+- `equipoIds`, maximum 30;
+- source identity, version, URL, license, attribution, and import timestamp on imported records.
 
-- `bodyPart`, `targetMuscle` y `synergistMuscleGroup`;
-- `secondaryMuscles`, máximo 30;
-- `instructions` e `instructionSteps` por idioma;
-- `metadata`, limitado a 16 KiB;
-- `equipoIds`, máximo 30.
+## Exercise media
 
-## Multimedia de ejercicios
-
-| Método | Ruta | Permiso | Uso |
+| Method | Route | Access | Purpose |
 |---|---|---|---|
-| GET | `/exercises/:exerciseId/media` | ejercicio visible | Listar media activa |
-| POST | `/exercises/:exerciseId/media` | propietario o ADMIN para global | Registrar referencia multimedia |
-| DELETE | `/exercise-media/:mediaId` | propietario o ADMIN para global | Inhabilitar media y promover reemplazo primario |
+| GET | `/exercises/:exerciseId/media` | exercise visible | List active media |
+| POST | `/exercises/:exerciseId/media` | owner or ADMIN for global | Register a media reference |
+| DELETE | `/exercise-media/:mediaId` | owner or ADMIN for global | Inactivate media and promote a replacement primary asset |
 
-Controles relevantes:
+Controls:
 
-- máximo 10 elementos activos por ejercicio;
-- URL HTTPS y máximo 2048 caracteres;
-- `altText` obligatorio;
-- atribución, licencia, checksum SHA-256 y proveedor explícitos;
-- solo un elemento primario lógico por ejercicio;
-- la eliminación es lógica para preservar trazabilidad.
+- maximum ten active media records per exercise through the synchronous API;
+- HTTPS URL with maximum length 2048;
+- required useful `altText`;
+- explicit provider and media type;
+- optional attribution, license, dimensions, MIME type, and SHA-256;
+- only one active primary asset per exercise, also enforced by the database;
+- logical inactivation to preserve traceability.
 
-Registrar una URL no implica que el backend tenga derecho a copiar o redistribuir el archivo. La importación de media externa permanece deshabilitada salvo confirmación explícita de licencia.
+Registering a URL does not grant copying or redistribution rights. External dataset media remains disabled unless deployment configuration explicitly confirms the applicable license.
 
-## Ejercicios frecuentes
+## Favorite exercises
 
-| Método | Ruta | Uso |
+| Method | Route | Purpose |
 |---|---|---|
-| GET | `/user-exercises` | Listar ejercicios frecuentes del usuario |
-| POST | `/user-exercises/:exerciseId` | Agregar frecuente de forma única |
-| DELETE | `/user-exercises/:exerciseId` | Quitar frecuente |
+| GET | `/user-exercises` | List the caller's favorite exercises |
+| POST | `/user-exercises/:exerciseId` | Add a unique favorite |
+| DELETE | `/user-exercises/:exerciseId` | Remove a favorite |
 
-## Sesiones de entrenamiento
+## Workout sessions
 
-| Método | Ruta | Uso |
+| Method | Route | Purpose |
 |---|---|---|
-| POST | `/workouts` | Iniciar una sesión; una sola sesión abierta por usuario |
-| GET | `/workouts` | Historial paginado (`page`, `pageSize`) |
-| GET | `/workouts/:id` | Detalle de sesión propia |
-| PATCH | `/workouts/:id/finish` | Finalizar una sesión en progreso |
-| PATCH | `/workouts/:id/cancel` | Cancelar una sesión en progreso |
-| POST | `/workouts/:sessionId/exercises` | Agregar ejercicio visible a sesión propia |
-| PATCH | `/workouts/session-exercises/:id` | Editar ejercicio de sesión en progreso |
-| DELETE | `/workouts/session-exercises/:id` | Eliminar ejercicio de sesión en progreso |
-| POST | `/workouts/session-exercises/:id/sets` | Registrar serie con número único |
-| PATCH | `/workouts/sets/:id` | Editar serie propia |
-| DELETE | `/workouts/sets/:id` | Eliminar serie propia |
+| POST | `/workouts` | Start one session; only one open session per user |
+| GET | `/workouts` | Read paginated history using `page` and `pageSize` |
+| GET | `/workouts/:id` | Read a session owned by the caller |
+| PATCH | `/workouts/:id/finish` | Complete an in-progress session |
+| PATCH | `/workouts/:id/cancel` | Cancel an in-progress session |
+| POST | `/workouts/:sessionId/exercises` | Add a visible exercise to an owned session |
+| PATCH | `/workouts/session-exercises/:id` | Update an exercise occurrence in an open session |
+| DELETE | `/workouts/session-exercises/:id` | Remove an exercise occurrence from an open session |
+| POST | `/workouts/session-exercises/:id/sets` | Record a uniquely numbered set |
+| PATCH | `/workouts/sets/:id` | Update an owned set |
+| DELETE | `/workouts/sets/:id` | Delete an owned set |
 
-Transiciones permitidas:
+Allowed session transitions:
 
 ```txt
 EN_PROGRESO -> FINALIZADA
 EN_PROGRESO -> CANCELADA
 ```
 
-Una sesión finalizada o cancelada no admite nuevas mutaciones.
+Completed or cancelled sessions reject further mutations.
 
-## Exportaciones
+## Exports
 
-| Método | Ruta | Respuesta | Uso |
+| Method | Route | Response | Purpose |
 |---|---|---|---|
-| GET | `/export/workout-history` | JSON envelope | Exportación acotada del historial propio |
-| GET | `/export/workout-history/csv` | `text/csv` | CSV descargable con neutralización de fórmulas |
+| GET | `/export/workout-history` | JSON envelope | Bounded export of the caller's history |
+| GET | `/export/workout-history/csv` | `text/csv` | Downloadable CSV with formula neutralization |
 
-Las exportaciones leen el historial por páginas para acotar memoria. El CSV escapa separadores, comillas y celdas que podrían ejecutarse como fórmulas en una hoja de cálculo.
+Exports read history in pages to bound memory. Synchronous export rejects histories beyond the configured hard limit rather than allocating an unbounded payload.
 
-## Importación administrativa de dataset
+## Dataset import
 
-| Método | Ruta | Rol | Uso |
+| Method | Route | Access | Purpose |
 |---|---|---|---|
-| POST | `/admin/exercises/import/exercises-dataset` | ADMIN | Importar o actualizar ejercicios externos de forma idempotente |
+| POST | `/admin/exercises/import/exercises-dataset` | ADMIN | Validate and idempotently import the external exercise dataset |
 
-El conector está deshabilitado por defecto. Al habilitarlo aplica:
+The connector is disabled by default and applies:
 
-- HTTPS obligatorio;
-- allowlist de hosts;
-- timeout;
-- límite máximo de bytes;
-- validación Zod de la respuesta;
-- lotes configurables;
-- identidad externa estable para upsert;
-- media externa deshabilitada por defecto;
-- confirmación separada de licencia para importar media.
+- HTTPS-only source;
+- host allowlist;
+- redirect rejection;
+- timeout and maximum response bytes;
+- complete Zod validation before writes;
+- bounded transactional batches;
+- stable source identity for upserts;
+- optional dry run;
+- external media disabled by default;
+- separate explicit media-license confirmation.
 
-Una ejecución repetida no debe duplicar ejercicios con la misma identidad de origen.
+## Main status codes
 
-## Errores
+- `400`: invalid input or route format;
+- `401`: missing, invalid, expired token, or inactive user;
+- `403`: role, ownership, license gate, or state transition denied;
+- `404`: resource absent or not visible;
+- `409`: uniqueness or business-state conflict;
+- `413`: request or synchronous export too large;
+- `429`: rate limit exceeded;
+- `500`: unexpected error without sensitive details;
+- `503`: dependency or connector unavailable.
 
-Ejemplo conceptual:
+## Source contract
 
-```json
-{
-  "type": "about:blank",
-  "title": "Bad Request",
-  "status": 400,
-  "detail": "El identificador debe ser un UUID válido.",
-  "instance": "/api/v1/exercises/not-a-uuid",
-  "requestId": "5c454f50-1b97-4b94-9ce7-5c85bff02a20"
-}
-```
-
-Códigos principales:
-
-- `400`: validación o formato incorrecto;
-- `401`: token ausente, inválido, expirado o usuario inactivo;
-- `403`: rol, ownership o transición no permitidos;
-- `404`: recurso no visible o inexistente;
-- `409`: unicidad, estado o conflicto de negocio;
-- `413`: body demasiado grande;
-- `429`: rate limit;
-- `500`: error inesperado sin detalle sensible.
-
-## Contrato fuente
-
-La especificación OpenAPI se mantiene en `docs/endpoints/openapi.yaml`. Cualquier cambio de controller, schema, ruta, error o límite debe actualizar este documento, OpenAPI y Postman en el mismo PR.
+The OpenAPI contract is maintained at `docs/endpoints/openapi.yaml`. Controller, schema, route, response, error, or limit changes must update this file and the Postman collection in the same pull request.
