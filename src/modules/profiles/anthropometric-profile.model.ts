@@ -1,7 +1,19 @@
-import { BelongsTo, Column, CreatedAt, DataType, Default, ForeignKey, Model, PrimaryKey, Table, UpdatedAt } from 'sequelize-typescript';
+import {
+  BelongsTo,
+  Column,
+  CreatedAt,
+  DataType,
+  Default,
+  ForeignKey,
+  Model,
+  PrimaryKey,
+  Table,
+  UpdatedAt,
+} from 'sequelize-typescript';
 import { TrainingGoal } from '../../common/enums/domain.enums';
 import { UserModel } from '../users/user.model';
 
+/** Anthropometric values supplied by a user for training personalization. */
 @Table({ tableName: 'perfiles_antropometricos', underscored: true, timestamps: true })
 export class AnthropometricProfileModel extends Model {
   @PrimaryKey
@@ -11,26 +23,30 @@ export class AnthropometricProfileModel extends Model {
 
   @ForeignKey(() => UserModel)
   @Column({ type: DataType.UUID, allowNull: false, unique: true, field: 'usuario_id' })
-  declare usuarioId: string;
+  declare userId: string;
 
-  @Column({ type: DataType.INTEGER, allowNull: false })
-  declare edad: number;
+  @Column({ type: DataType.INTEGER, allowNull: false, field: 'edad' })
+  declare age: number;
 
   @Column({ type: DataType.DECIMAL(6, 2), allowNull: false, field: 'peso_kg' })
-  declare pesoKg: string;
+  declare weightKg: string;
 
   @Column({ type: DataType.INTEGER, allowNull: false, field: 'estatura_cm' })
-  declare estaturaCm: number;
+  declare heightCm: number;
 
-  @Column({ type: DataType.ENUM(...Object.values(TrainingGoal)), allowNull: false })
-  declare objetivo: TrainingGoal;
+  @Column({
+    type: DataType.ENUM(...Object.values(TrainingGoal)),
+    allowNull: false,
+    field: 'objetivo',
+  })
+  declare goal: TrainingGoal;
 
   @Default(DataType.NOW)
   @Column({ type: DataType.DATE, allowNull: false, field: 'fecha_actualizacion' })
-  declare fechaActualizacion: Date;
+  declare measurementUpdatedAt: Date;
 
   @BelongsTo(() => UserModel)
-  declare usuario?: UserModel;
+  declare user?: UserModel;
 
   @CreatedAt
   @Column({ field: 'created_at' })
