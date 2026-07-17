@@ -86,13 +86,12 @@ jobs:
       - name: Install locked dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Capture production dependency audit
+      - name: Verify production dependency audit
         run: |
           set +e
           yarn audit --groups dependencies --json > /tmp/yarn-audit.json
-          audit_exit_code=$?
-          echo "Dependency audit exit code: ${audit_exit_code}"
-          exit 0
+          set -e
+          node scripts/verify-yarn-audit.mjs /tmp/yarn-audit.json
 
       - name: Type check
         run: |
