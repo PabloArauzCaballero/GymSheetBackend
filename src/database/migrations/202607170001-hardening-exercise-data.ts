@@ -27,7 +27,7 @@ const upStatements = [
   `CREATE INDEX IF NOT EXISTS ix_ejercicios_training_filters
      ON public.ejercicios (body_part, target_muscle, grupo_muscular)`,
   `CREATE TABLE IF NOT EXISTS training.exercise_media (
-     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     id uuid PRIMARY KEY,
      ejercicio_id uuid NOT NULL REFERENCES public.ejercicios(id) ON DELETE CASCADE,
      media_type varchar(20) NOT NULL,
      provider varchar(40) NOT NULL,
