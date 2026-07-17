@@ -1,9 +1,15 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/domain.enums';
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { EquipmentService } from './equipment.service';
-import { CreateEquipmentInput, UpdateEquipmentInput, createEquipmentSchema, updateEquipmentSchema } from './equipment.schemas';
+import {
+  CreateEquipmentInput,
+  UpdateEquipmentInput,
+  createEquipmentSchema,
+  updateEquipmentSchema,
+} from './equipment.schemas';
 
 @Controller('equipment')
 export class EquipmentController {
@@ -27,14 +33,14 @@ export class AdminEquipmentController {
 
   @Patch(':id')
   updateEquipment(
-    @Param('id') id: string,
+    @Param('id', UuidParamPipe) equipmentId: string,
     @Body(new ZodValidationPipe(updateEquipmentSchema)) input: UpdateEquipmentInput,
   ) {
-    return this.equipmentService.updateEquipment(id, input);
+    return this.equipmentService.updateEquipment(equipmentId, input);
   }
 
   @Delete(':id')
-  inactivateEquipment(@Param('id') id: string) {
-    return this.equipmentService.inactivateEquipment(id);
+  inactivateEquipment(@Param('id', UuidParamPipe) equipmentId: string) {
+    return this.equipmentService.inactivateEquipment(equipmentId);
   }
 }
