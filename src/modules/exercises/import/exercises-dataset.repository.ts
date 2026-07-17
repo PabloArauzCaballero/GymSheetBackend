@@ -38,29 +38,28 @@ export class ExercisesDatasetRepository {
     private readonly mediaModel: typeof ExerciseMediaModel,
   ) {}
 
+  /**
+   * Creates or updates one external exercise using its stable source identity.
+   * `findOrCreate` uses a savepoint inside the caller transaction and safely
+   * recovers when another importer inserts the same unique identity first.
+   */
   async upsertExercise(
     record: ExternalExercise,
     context: ExternalExerciseImportContext,
     transaction: Transaction,
   ): Promise<UpsertExerciseResult> {
-    const existingExercise = await this.exerciseModel.findOne({
+    const exerciseAttributes = this.toExerciseAttributes(record, context);
+    const [exercise, created] = await this.exerciseModel.findOrCreate({
       where: {
         dataSource: ExerciseDataSource.EXERCISES_DATASET,
         externalId: record.id,
       },
+      defaults: exerciseAttributes,
       transaction,
-      lock: transaction.LOCK.UPDATE,
     });
-    const exerciseAttributes = this.toExerciseAttributes(record, context);
-    let exercise: ExerciseModel;
-    let created: boolean;
 
-    if (existingExercise) {
-      exercise = await existingExercise.update(exerciseAttributes, { transaction });
-      created = false;
-    } else {
-      exercise = await this.exerciseModel.create(exerciseAttributes, { transaction });
-      created = true;
+    if (!created) {
+      await exercise.update(exerciseAttributes, { transaction });
     }
 
     let mediaCreated = 0;
@@ -142,15 +141,6 @@ export class ExercisesDatasetRepository {
   ): Promise<{ created: boolean }> {
     const externalId = `${record.id}:${mediaType.toLowerCase()}`;
     const absoluteUrl = new URL(relativePath, context.mediaBaseUrl).toString();
-    const existingMedia = await this.mediaModel.findOne({
-      where: {
-        exerciseId,
-        provider: ExerciseMediaProvider.EXTERNAL_URL,
-        externalId,
-      },
-      transaction,
-      lock: transaction.LOCK.UPDATE,
-    });
     const mediaAttributes = {
       exerciseId,
       mediaType,
@@ -178,13 +168,20 @@ export class ExercisesDatasetRepository {
       },
       createdByUserId: null,
     };
+    const [media, created] = await this.mediaModel.findOrCreate({
+      where: {
+        exerciseId,
+        provider: ExerciseMediaProvider.EXTERNAL_URL,
+        externalId,
+      },
+      defaults: mediaAttributes,
+      transaction,
+    });
 
-    if (existingMedia) {
-      await existingMedia.update(mediaAttributes, { transaction });
-      return { created: false };
+    if (!created) {
+      await media.update(mediaAttributes, { transaction });
     }
 
-    await this.mediaModel.create(mediaAttributes, { transaction });
-    return { created: true };
+    return { created };
   }
 }
