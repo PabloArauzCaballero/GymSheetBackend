@@ -17,15 +17,20 @@ Successful JSON responses use:
 }
 ```
 
-Controlled errors use:
+Controlled errors use `application/problem+json` and include RFC 9457-compatible fields. Compatibility fields remain available for existing v1 clients:
 
 ```json
 {
+  "type": "about:blank",
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "El identificador debe ser un UUID válido.",
+  "instance": "/api/v1/exercises/not-a-uuid",
+  "requestId": "5c454f50-1b97-4b94-9ce7-5c85bff02a20",
+  "timestamp": "2026-07-17T00:00:00.000Z",
   "ok": false,
   "statusCode": 400,
   "path": "/api/v1/exercises/not-a-uuid",
-  "timestamp": "2026-07-17T00:00:00.000Z",
-  "requestId": "5c454f50-1b97-4b94-9ce7-5c85bff02a20",
   "error": {
     "message": "El identificador debe ser un UUID válido.",
     "issues": {}
@@ -33,7 +38,7 @@ Controlled errors use:
 }
 ```
 
-The API does not return stack traces or raw infrastructure errors to clients.
+The API does not return stack traces or raw infrastructure errors to clients. Unexpected production errors are also redacted from normal application logs.
 
 ## Global rules
 
@@ -53,10 +58,11 @@ The API does not return stack traces or raw infrastructure errors to clients.
 |---|---|---|
 | GET | `/health/live` | Process liveness without external dependency checks |
 | GET | `/health/ready` | Readiness check including PostgreSQL |
+| GET | `/health/metrics` | Prometheus-compatible HTTP, memory and database-pool metrics |
 | GET | `/gateway/health` | Compatibility gateway health response |
 | GET | `/gateway/routes` | Public capability summary without privileged route details |
 
-Liveness remains independent of PostgreSQL to avoid restart loops during temporary database outages. Readiness returns `503` when the application should not receive traffic.
+Liveness remains independent of PostgreSQL to avoid restart loops during temporary database outages. Readiness returns `503` when the application should not receive traffic. Production ingress should restrict `/health/metrics` to the monitoring network even though the NestJS route is public for scraper compatibility.
 
 ## Authentication
 
@@ -203,7 +209,7 @@ The connector is disabled by default and applies:
 - timeout and maximum response bytes;
 - complete Zod validation before writes;
 - bounded transactional batches;
-- stable source identity for upserts;
+- stable source identity for race-safe upserts;
 - optional dry run;
 - external media disabled by default;
 - separate explicit media-license confirmation.
@@ -218,8 +224,11 @@ The connector is disabled by default and applies:
 - `413`: request or synchronous export too large;
 - `429`: rate limit exceeded;
 - `500`: unexpected error without sensitive details;
+- `502`: invalid or unavailable external origin;
 - `503`: dependency or connector unavailable.
 
-## Source contract
+## Source contracts
 
-The OpenAPI contract is maintained at `docs/endpoints/openapi.yaml`. Controller, schema, route, response, error, or limit changes must update this file and the Postman collection in the same pull request.
+The primary OpenAPI contract is maintained at `docs/endpoints/openapi.yaml`. The observability endpoints introduced by hardening are also isolated in `docs/endpoints/openapi-observability.yaml` so infrastructure teams can import only the operational surface. The Postman collection mirrors the complete route inventory.
+
+Controller, schema, route, response, error, or limit changes must update OpenAPI, this endpoint guide and the Postman collection in the same pull request.
