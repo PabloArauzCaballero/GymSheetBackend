@@ -19,7 +19,7 @@ export class UsersRepository {
 
   findActiveById(userId: string): Promise<UserModel | null> {
     return this.userModel.findOne({
-      where: { id: userId, status: UserStatus.ACTIVO },
+      where: { id: userId, status: UserStatus.ACTIVE },
     });
   }
 
@@ -33,7 +33,7 @@ export class UsersRepository {
     return this.userModel.findOne({
       where: {
         email: emailAddress.toLowerCase(),
-        status: UserStatus.ACTIVO,
+        status: UserStatus.ACTIVE,
       },
     });
   }
