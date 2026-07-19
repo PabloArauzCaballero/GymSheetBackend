@@ -2,8 +2,11 @@ import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { env } from '../../config/env';
 import { MembershipModule } from '../membership/membership.module';
-import { AccessCredentialModel } from './access-credential.model';
-import { AdminAccessController, AccessHistoryController } from './access-control.controller';
+import { AccessCredentialModule } from './access-credential.module';
+import {
+  AdminAccessController,
+  AccessHistoryController,
+} from './access-control.controller';
 import { AccessControlRepository } from './access-control.repository';
 import { AccessControlService } from './access-control.service';
 import { AccessDecisionModel } from './access-decision.model';
@@ -14,8 +17,8 @@ import { MockAccessController } from './mock-access.controller';
 @Module({
   imports: [
     MembershipModule,
+    AccessCredentialModule,
     SequelizeModule.forFeature([
-      AccessCredentialModel,
       AccessDeviceModel,
       AccessDeviceEventModel,
       AccessDecisionModel,
