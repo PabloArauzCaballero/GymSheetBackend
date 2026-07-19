@@ -67,6 +67,22 @@ export class NotificationRepository {
     return this.preferences.findOne({ where: { userId } });
   }
 
+  createDefaultPreference(userId: string, transaction: Transaction) {
+    return this.preferences.create(
+      {
+        userId,
+        membershipExpiryEnabled: true,
+        preferredChannel: NotificationChannel.IN_APP,
+        externalDeliveryConsentAt: null,
+        consentVersion: null,
+        quietHoursStart: null,
+        quietHoursEnd: null,
+        metadata: {},
+      },
+      { transaction },
+    );
+  }
+
   async upsertPreference(
     userId: string,
     input: UpdateNotificationPreferenceInput,
