@@ -1,11 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { NotificationChannel } from '../../common/enums/domain.enums';
 import { BusinessDateService } from '../../common/time/business-date.service';
+import { env } from '../../config/env';
 import { mapNotification, mapNotificationPreference } from './notification.mapper';
 import { NotificationRepository } from './notification.repository';
-import {
-  NotificationListInput,
-  UpdateNotificationPreferenceInput,
-} from './notifications.schemas';
+import { NotificationListInput, UpdateNotificationPreferenceInput } from './notifications.schemas';
 
 @Injectable()
 export class NotificationService {
@@ -37,6 +36,14 @@ export class NotificationService {
   }
 
   async updateMyPreference(userId: string, input: UpdateNotificationPreferenceInput) {
+    if (
+      input.preferredChannel === NotificationChannel.HTTP_GATEWAY &&
+      !['HTTP_GATEWAY', 'MOCK'].includes(env.NOTIFICATION_DELIVERY_PROVIDER)
+    ) {
+      throw new UnprocessableEntityException(
+        'El canal externo no está habilitado en este entorno.',
+      );
+    }
     return mapNotificationPreference(await this.repository.upsertPreference(userId, input));
   }
 }

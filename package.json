@@ -1,18 +1,20 @@
 {
   "name": "gym-sheet-backend",
-  "version": "1.1.0",
-  "description": "Production-oriented NestJS backend for gym exercise and workout tracking.",
+  "version": "1.2.0",
+  "description": "Production-oriented NestJS backend for gym operations and workout tracking.",
   "private": true,
   "license": "UNLICENSED",
   "packageManager": "yarn@1.22.22",
-  "engines": {
-    "node": ">=20 <24"
-  },
+  "engines": { "node": ">=20 <24" },
   "scripts": {
     "start": "nest start",
     "start:dev": "nest start --watch",
     "build": "nest build",
     "start:prod": "node dist/main.js",
+    "worker:reminders": "ts-node src/workers/membership-reminder.worker.ts",
+    "worker:notifications": "ts-node src/workers/notification-delivery.worker.ts",
+    "worker:reminders:prod": "node dist/workers/membership-reminder.worker.js",
+    "worker:notifications:prod": "node dist/workers/notification-delivery.worker.js",
     "type-check": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -64,23 +66,13 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.7.2"
   },
-  "resolutions": {
-    "uuid": "11.1.1"
-  },
+  "resolutions": { "uuid": "11.1.1" },
   "jest": {
     "moduleFileExtensions": ["js", "json", "ts"],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
-    "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
-    },
-    "collectCoverageFrom": [
-      "**/*.(t|j)s",
-      "!**/*.module.ts",
-      "!database/migrations/**",
-      "!database/migrate.ts",
-      "!main.ts"
-    ],
+    "transform": { "^.+\\.(t|j)s$": "ts-jest" },
+    "collectCoverageFrom": ["**/*.(t|j)s", "!**/*.module.ts", "!database/migrations/**", "!database/migrate.ts", "!main.ts", "!workers/*.worker.ts"],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
   }
