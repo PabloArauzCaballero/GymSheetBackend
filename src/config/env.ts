@@ -18,12 +18,7 @@ export const environmentBooleanSchema = z.preprocess((rawValue) => {
 const commaSeparatedListSchema = z.string().transform((rawValue) =>
   rawValue.split(',').map((entry) => entry.trim()).filter(Boolean),
 );
-
-const jwtDurationSchema = z
-  .string()
-  .trim()
-  .regex(/^\d+(?:ms|s|m|h|d|w|y)$/)
-  .transform((duration) => duration as JwtDuration);
+const jwtDurationSchema = z.string().trim().regex(/^\d+(?:ms|s|m|h|d|w|y)$/).transform((duration) => duration as JwtDuration);
 
 export const environmentSchema = z
   .object({
@@ -35,6 +30,7 @@ export const environmentSchema = z
     REQUEST_BODY_LIMIT: z.string().regex(/^\d+(kb|mb)$/i).default('1mb'),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
     BUSINESS_TIME_ZONE: z.string().trim().min(3).max(80).default('America/La_Paz'),
+    ACCESS_POLICY_VERSION: z.string().trim().min(1).max(80).default('2026-07-19'),
 
     DB_HOST: z.string().trim().min(1),
     DB_PORT: z.coerce.number().int().positive().max(65535).default(5432),
@@ -74,24 +70,12 @@ export const environmentSchema = z
     EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED: environmentBooleanSchema.default(false),
   })
   .superRefine((configuration, context) => {
-    if (configuration.DB_POOL_MIN > configuration.DB_POOL_MAX) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ['DB_POOL_MIN'], message: 'DB_POOL_MIN cannot be greater than DB_POOL_MAX.' });
-    }
-    if (configuration.JWT_ACCESS_SECRET === configuration.JWT_REFRESH_SECRET) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ['JWT_REFRESH_SECRET'], message: 'Access and refresh secrets must be different.' });
-    }
-    if (configuration.EXERCISES_DATASET_IMPORT_MEDIA && !configuration.EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ['EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED'], message: 'Media import requires explicit confirmation of the applicable media license.' });
-    }
-    try {
-      new Intl.DateTimeFormat('en-CA', { timeZone: configuration.BUSINESS_TIME_ZONE }).format();
-    } catch {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ['BUSINESS_TIME_ZONE'], message: 'BUSINESS_TIME_ZONE must be a valid IANA time zone.' });
-    }
+    if (configuration.DB_POOL_MIN > configuration.DB_POOL_MAX) context.addIssue({ code: z.ZodIssueCode.custom, path: ['DB_POOL_MIN'], message: 'DB_POOL_MIN cannot be greater than DB_POOL_MAX.' });
+    if (configuration.JWT_ACCESS_SECRET === configuration.JWT_REFRESH_SECRET) context.addIssue({ code: z.ZodIssueCode.custom, path: ['JWT_REFRESH_SECRET'], message: 'Access and refresh secrets must be different.' });
+    if (configuration.EXERCISES_DATASET_IMPORT_MEDIA && !configuration.EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED) context.addIssue({ code: z.ZodIssueCode.custom, path: ['EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED'], message: 'Media import requires explicit confirmation of the applicable media license.' });
+    try { new Intl.DateTimeFormat('en-CA', { timeZone: configuration.BUSINESS_TIME_ZONE }).format(); } catch { context.addIssue({ code: z.ZodIssueCode.custom, path: ['BUSINESS_TIME_ZONE'], message: 'BUSINESS_TIME_ZONE must be a valid IANA time zone.' }); }
   });
 
 const parsedEnvironment = environmentSchema.safeParse(process.env);
-if (!parsedEnvironment.success) {
-  throw new Error(`Invalid environment variables: ${JSON.stringify(parsedEnvironment.error.flatten().fieldErrors)}`);
-}
+if (!parsedEnvironment.success) throw new Error(`Invalid environment variables: ${JSON.stringify(parsedEnvironment.error.flatten().fieldErrors)}`);
 export const env = parsedEnvironment.data;
