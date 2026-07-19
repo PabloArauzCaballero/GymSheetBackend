@@ -5,42 +5,141 @@ Rama: `HARDENING`
 
 ## Dictamen
 
-La implementación previa contiene piezas correctas —transacciones Sequelize, outbox para notificaciones, workers persistentes, `SKIP LOCKED`, reintentos y deduplicación—, pero todavía no constituye una arquitectura orientada a eventos integral.
+La implementación previa tenía piezas correctas —transacciones Sequelize, outbox para notificaciones, workers persistentes, `SKIP LOCKED`, reintentos y deduplicación—, pero varios endpoints todavía operaban como mutaciones CRUD aisladas.
 
-El problema principal es que varios endpoints siguen modelados como mutaciones CRUD aisladas. En un sistema operativo de gimnasio, una orden de negocio debe coordinar de forma atómica todas las escrituras obligatorias y después publicar únicamente los efectos secundarios que puedan ser asíncronos.
+La corrección aplicada cambia el centro del diseño: un comando de negocio coordina todas las escrituras obligatorias dentro de una sola transacción PostgreSQL, registra un evento de dominio append-only y crea outbox únicamente cuando existe un consumidor asíncrono concreto.
 
-## Hallazgos críticos
-
-1. `integration.outbox_jobs` combina dos responsabilidades: registro del evento de negocio y estado mutable de entrega. Falta un ledger inmutable de eventos separado de la cola.
-2. Las operaciones de cliente, membresía, personal, máquinas y mantenimiento no registran eventos de dominio.
-3. Las membresías no conservan historial estructurado de cambios de estado; únicamente se actualiza la fila actual.
-4. La rama contiene una implementación de alta de cliente con PIN en `CustomerStaffService`, pero el módulo y `MembershipService` todavía ejecutan la versión anterior sin crear la credencial. La funcionalidad quedó parcialmente integrada.
-5. El alta de cliente debe crear, en una sola transacción, usuario, perfil de cliente, credencial PIN, preferencia de notificaciones y evento de dominio.
-6. La activación de una membresía debe crear membresía, historial inicial y evento de dominio en una sola transacción.
-7. Un cambio de estado debe actualizar la membresía, insertar historial y registrar el evento correspondiente de forma atómica.
-8. La asignación de una máquina debe cerrar la asignación anterior, crear la nueva y registrar un evento.
-9. Iniciar o completar mantenimiento debe cambiar equipo y mantenimiento en la misma transacción y registrar el evento.
-10. El procesamiento de acceso crea decisión y actualiza el evento, pero si ya existe la decisión retorna antes de completar la fila de cola. Esto puede dejar eventos reintentándose indefinidamente.
-11. Los workers no aplican fencing por propietario del lock al completar o fallar un trabajo. Un worker atrasado podría sobrescribir el estado de un trabajo reclamado nuevamente.
-12. Un error transitorio durante `claim` puede finalizar el loop del worker.
-13. `sleep` deja listeners de aborto registrados cuando el temporizador finaliza normalmente, produciendo crecimiento de listeners en procesos de larga duración.
-14. Las horas de silencio están almacenadas pero no influyen en `available_at`.
-15. La selección del canal externo debe validar nuevamente consentimiento en la consulta, aunque existan constraints y validación Zod.
-16. El evento actual del molinete representa una solicitud autenticada. No debe confundirse una decisión `GRANTED` con confirmación física de paso; la futura integración debe aportar un evento canónico separado de paso confirmado.
-
-## Diseño objetivo
+## Diseño aplicado
 
 ```text
 Comando de negocio
   -> transacción PostgreSQL
        -> mutaciones canónicas del agregado
        -> historial específico del dominio
-       -> evento inmutable en integration.domain_events
-       -> outbox únicamente para consumidores asíncronos concretos
+       -> evento append-only en integration.domain_events
+       -> outbox para consumidores asíncronos concretos
   -> commit
   -> worker con entrega al menos una vez
   -> consumidor idempotente
 ```
+
+No se afirma `exactly-once`. La entrega es `at-least-once`, con claves de deduplicación, consumidor idempotente y fencing por propietario del lock más número de intento.
+
+## Matriz de comandos y registros generados
+
+### Alta de cliente
+
+Una sola transacción crea:
+
+1. `public.usuarios`;
+2. `membership.customer_profiles`;
+3. `access_control.credentials` con PIN hasheado;
+4. `notifications.preferences` con defaults seguros;
+5. `integration.domain_events` con `customer.registered.v1`.
+
+Si cualquiera de las cinco escrituras falla, ninguna queda confirmada.
+
+### Alta de personal
+
+Una sola transacción crea:
+
+1. `membership.staff_profiles`;
+2. una o varias filas en `membership.staff_branch_scopes`;
+3. `integration.domain_events` con `staff.profile-created.v1`.
+
+Un cambio laboral actualiza el perfil y registra `staff.employment-status-changed.v1` en la misma transacción.
+
+### Activación de membresía
+
+Una sola transacción crea:
+
+1. `membership.memberships`;
+2. `integration.domain_events` con `membership.activated.v1`;
+3. `membership.status_history` con el estado inicial.
+
+### Cambio de estado de membresía
+
+Una sola transacción:
+
+1. bloquea la membresía;
+2. valida la transición;
+3. actualiza `membership.memberships`;
+4. inserta `membership.status_history`;
+5. registra `membership.status-changed.v1`.
+
+Repetir el mismo estado no genera historial artificial.
+
+### Asignación de máquina a sala
+
+Una sola transacción:
+
+1. bloquea la asignación activa;
+2. finaliza la asignación anterior cuando existe;
+3. crea la nueva fila en `facilities.equipment_assignments`;
+4. registra `equipment.assigned-to-room.v1`.
+
+### Mantenimiento
+
+Programar crea el mantenimiento y `equipment.maintenance-scheduled.v1`.
+
+Iniciar actualiza en una sola transacción:
+
+1. `equipos_gym` a mantenimiento;
+2. `facilities.maintenance_events` a `IN_PROGRESS`;
+3. `integration.domain_events` con `equipment.maintenance-started.v1`.
+
+Completar actualiza en una sola transacción:
+
+1. estado y próxima fecha de servicio de `equipos_gym`;
+2. resultado, coste y estado de `facilities.maintenance_events`;
+3. `integration.domain_events` con `equipment.maintenance-completed.v1`.
+
+### Decisión de acceso
+
+El worker, dentro de una sola transacción:
+
+1. bloquea `access_control.device_events`;
+2. verifica el lease del worker;
+3. evalúa la política versionada;
+4. crea `access_control.decisions`;
+5. registra `access.decision-recorded.v1`;
+6. finaliza el evento reclamado.
+
+Si la decisión ya existe, el worker completa correctamente el evento pendiente sin duplicarla.
+
+### Recordatorio de vencimiento
+
+Una sola transacción crea:
+
+1. `notifications.messages`;
+2. `integration.domain_events` con `notification.delivery-requested.v1`;
+3. `integration.outbox_jobs` enlazado al evento de dominio.
+
+El worker de entrega crea después una fila en `notifications.delivery_attempts` y actualiza el mensaje. Las horas de silencio modifican `available_at`, y el canal externo vuelve a validar que exista consentimiento.
+
+## Ledger y outbox
+
+`integration.domain_events` es append-only:
+
+- nombres versionados;
+- agregado y actor;
+- correlation, causation y trace opcionales;
+- payload y metadata JSON objeto;
+- deduplicación única;
+- trigger PostgreSQL que rechaza `UPDATE` y `DELETE`.
+
+`integration.outbox_jobs` es mutable porque representa entrega, no verdad histórica. Cada job puede enlazarse con `domain_event_id`.
+
+## Correcciones de concurrencia y workers
+
+- claim atómico con `FOR UPDATE SKIP LOCKED`;
+- recuperación de leases expirados;
+- fencing por `locked_by` y `attempt_count` al completar o fallar;
+- stale workers no pueden sobrescribir un job reclamado nuevamente;
+- backoff y dead-letter;
+- errores de polling no terminan el proceso persistente;
+- listeners de aborto se retiran al finalizar cada espera;
+- adapters externos reciben clave de idempotencia.
 
 ## Principios obligatorios
 
@@ -48,15 +147,13 @@ Comando de negocio
 - Eventual consistency solo para efectos secundarios.
 - Evento y mutación escritos en la misma transacción.
 - Eventos con nombre y versión explícitos.
-- Correlation, causation, actor y trace cuando estén disponibles.
-- Outbox mutable separado del evento inmutable.
+- Outbox mutable separado del evento histórico.
 - Consumidores idempotentes.
-- Locks con propietario y número de intento como fencing token.
-- No afirmar exactly-once.
 - No crear un bus genérico que oculte reglas de negocio.
-- Cada caso de uso debe expresar explícitamente qué tablas modifica.
+- Cada caso de uso debe expresar qué tablas modifica.
+- No almacenar PIN, imágenes faciales, huellas ni templates biométricos en eventos.
 
-## Eventos iniciales del dominio
+## Catálogo inicial
 
 - `customer.registered.v1`
 - `staff.profile-created.v1`
@@ -64,6 +161,7 @@ Comando de negocio
 - `membership.activated.v1`
 - `membership.status-changed.v1`
 - `equipment.assigned-to-room.v1`
+- `equipment.maintenance-scheduled.v1`
 - `equipment.maintenance-started.v1`
 - `equipment.maintenance-completed.v1`
 - `access.decision-recorded.v1`
@@ -71,7 +169,7 @@ Comando de negocio
 
 ## Límite del hardware
 
-El backend no inventará el protocolo del molinete. La integración futura debe distinguir al menos:
+El backend no inventa el protocolo del molinete. La integración futura debe distinguir:
 
 1. credencial presentada;
 2. decisión de autorización;
@@ -79,4 +177,4 @@ El backend no inventará el protocolo del molinete. La integración futura debe 
 4. confirmación o fallo del dispositivo;
 5. paso físico confirmado, cuando el hardware lo soporte.
 
-Hasta recibir la documentación del fabricante, el mock solo debe probar contratos canónicos y no afirmar una confirmación física inexistente.
+Una decisión `GRANTED` no equivale a paso físico confirmado. El mock prueba el contrato canónico, las transacciones y la idempotencia; no simula capacidades no documentadas por el fabricante.
