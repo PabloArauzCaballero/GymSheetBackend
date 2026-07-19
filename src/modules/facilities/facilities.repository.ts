@@ -75,8 +75,8 @@ export class FacilitiesRepository {
 
   listMaintenance(filters: MaintenanceFilterInput) {
     const where = {
-      ...(filters.equipmentId ? { equipmentId: filters.equipmentId } : {}),
-      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.equipoId ? { equipmentId: filters.equipoId } : {}),
+      ...(filters.estado ? { status: filters.estado } : {}),
     };
     return this.maintenance.findAndCountAll({ where, limit: filters.pageSize, offset: (filters.page - 1) * filters.pageSize, order: [['scheduledFor', 'DESC']] });
   }

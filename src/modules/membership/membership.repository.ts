@@ -44,7 +44,7 @@ export class MembershipRepository {
     });
   }
   listMemberships(filters: MembershipListInput) {
-    const where = { ...(filters.userId ? { userId: filters.userId } : {}), ...(filters.status ? { status: filters.status } : {}) };
+    const where = { ...(filters.userId ? { userId: filters.userId } : {}), ...(filters.estado ? { status: filters.estado } : {}) };
     return this.memberships.findAndCountAll({ where, include: [MembershipPlanModel], limit: filters.pageSize, offset: (filters.page - 1) * filters.pageSize, order: [['endsOn', 'DESC']] });
   }
   async updateMembership(membership: MembershipModel, changes: Record<string, unknown>, transaction?: Transaction) { await membership.update(changes, { transaction }); return membership; }
