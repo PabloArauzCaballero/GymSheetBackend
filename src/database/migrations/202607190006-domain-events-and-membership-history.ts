@@ -26,6 +26,17 @@ const upStatements = [
      ON integration.domain_events(aggregate_type, aggregate_id, occurred_at DESC)`,
   `CREATE INDEX ix_domain_events_name_time
      ON integration.domain_events(event_name, occurred_at DESC)`,
+  `CREATE FUNCTION integration.reject_domain_event_mutation()
+     RETURNS trigger
+     LANGUAGE plpgsql
+     AS $$
+     BEGIN
+       RAISE EXCEPTION 'integration.domain_events is append-only';
+     END;
+     $$`,
+  `CREATE TRIGGER tr_domain_events_append_only
+     BEFORE UPDATE OR DELETE ON integration.domain_events
+     FOR EACH ROW EXECUTE FUNCTION integration.reject_domain_event_mutation()`,
   `ALTER TABLE integration.outbox_jobs
      ADD COLUMN domain_event_id uuid REFERENCES integration.domain_events(id) ON DELETE SET NULL`,
   `CREATE INDEX ix_outbox_domain_event
@@ -58,19 +69,38 @@ const upStatements = [
    )`,
   `CREATE INDEX ix_membership_status_history
      ON membership.status_history(membership_id, occurred_at DESC)`,
+  `ALTER TABLE notifications.preferences
+     DROP CONSTRAINT ck_notification_quiet_hours`,
+  `ALTER TABLE notifications.preferences
+     ADD CONSTRAINT ck_notification_quiet_hours CHECK (
+       (quiet_hours_start IS NULL AND quiet_hours_end IS NULL)
+       OR (
+         quiet_hours_start IS NOT NULL
+         AND quiet_hours_end IS NOT NULL
+         AND quiet_hours_start <> quiet_hours_end
+       )
+     )`,
 ] as const;
 
 const downStatements = [
+  `ALTER TABLE notifications.preferences
+     DROP CONSTRAINT ck_notification_quiet_hours`,
+  `ALTER TABLE notifications.preferences
+     ADD CONSTRAINT ck_notification_quiet_hours CHECK (
+       (quiet_hours_start IS NULL AND quiet_hours_end IS NULL)
+       OR (quiet_hours_start IS NOT NULL AND quiet_hours_end IS NOT NULL)
+     )`,
   `DROP TABLE IF EXISTS membership.status_history`,
   `DROP INDEX IF EXISTS integration.ix_outbox_domain_event`,
   `ALTER TABLE integration.outbox_jobs DROP COLUMN IF EXISTS domain_event_id`,
   `DROP TABLE IF EXISTS integration.domain_events`,
+  `DROP FUNCTION IF EXISTS integration.reject_domain_event_mutation()`,
 ] as const;
 
 export const domainEventsAndMembershipHistoryMigration: DatabaseMigration = {
   id: '202607190006-domain-events-and-membership-history',
   description:
-    'Adds an immutable domain-event ledger, outbox linkage, and membership lifecycle history.',
+    'Adds an append-only domain-event ledger, outbox linkage, lifecycle history, and quiet-hour integrity.',
   up: (queryInterface, transaction) =>
     executeSqlStatements(queryInterface, transaction, upStatements),
   down: (queryInterface, transaction) =>
