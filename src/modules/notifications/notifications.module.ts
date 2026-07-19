@@ -12,6 +12,7 @@ import { NotificationController } from './notification.controller';
 import { NotificationDeliveryService } from './notification-delivery.service';
 import { NotificationPreferenceModel } from './notification-preference.model';
 import { NotificationRepository } from './notification.repository';
+import { NotificationScheduleService } from './notification-schedule.service';
 import { NotificationService } from './notification.service';
 import { NotificationModel } from './notification.model';
 
@@ -30,6 +31,7 @@ import { NotificationModel } from './notification.model';
     NotificationRepository,
     NotificationService,
     MembershipReminderService,
+    NotificationScheduleService,
     NotificationDeliveryService,
     InAppNotificationAdapter,
     HttpGatewayNotificationAdapter,
