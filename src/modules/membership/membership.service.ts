@@ -4,6 +4,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { Sequelize } from 'sequelize-typescript';
 import {
   MembershipStatus,
@@ -12,6 +13,8 @@ import {
 } from '../../common/enums/domain.enums';
 import { BusinessDateService } from '../../common/time/business-date.service';
 import { FacilitiesRepository } from '../facilities/facilities.repository';
+import { GymDomainEvent } from '../integration/domain-event.catalog';
+import { DomainEventPublisher } from '../integration/domain-event.publisher';
 import { UsersRepository } from '../users/users.repository';
 import { CustomerStaffService } from './customer-staff.service';
 import { mapMembership, mapPlan } from './membership.mapper';
@@ -35,6 +38,7 @@ export class MembershipService {
     private readonly usersRepository: UsersRepository,
     private readonly facilitiesRepository: FacilitiesRepository,
     private readonly customerStaff: CustomerStaffService,
+    private readonly events: DomainEventPublisher,
     private readonly dates: BusinessDateService,
     private readonly sequelize: Sequelize,
   ) {}
@@ -74,20 +78,24 @@ export class MembershipService {
     return mapPlan(this.requirePlan(await this.repository.findPlan(planId)));
   }
 
-  createCustomer(input: CreateCustomerInput) {
-    return this.customerStaff.createCustomer(input);
+  createCustomer(input: CreateCustomerInput, actorUserId: string) {
+    return this.customerStaff.createCustomer(input, actorUserId);
   }
 
   listCustomers(page: number, pageSize: number) {
     return this.customerStaff.listCustomers(page, pageSize);
   }
 
-  createStaff(input: CreateStaffInput) {
-    return this.customerStaff.createStaff(input);
+  createStaff(input: CreateStaffInput, actorUserId: string) {
+    return this.customerStaff.createStaff(input, actorUserId);
   }
 
-  updateStaffStatus(userId: string, input: UpdateStaffStatusInput) {
-    return this.customerStaff.updateStaffStatus(userId, input);
+  updateStaffStatus(
+    userId: string,
+    input: UpdateStaffStatusInput,
+    actorUserId: string,
+  ) {
+    return this.customerStaff.updateStaffStatus(userId, input, actorUserId);
   }
 
   async createMembership(
@@ -121,6 +129,35 @@ export class MembershipService {
         },
         transaction,
       );
+      const event = await this.events.record(
+        {
+          eventName: GymDomainEvent.MEMBERSHIP_ACTIVATED,
+          aggregateType: 'membership',
+          aggregateId: membership.id,
+          deduplicationKey: `membership.activated:${membership.id}`,
+          actorUserId,
+          payload: {
+            membershipId: membership.id,
+            userId: input.userId,
+            planId: input.planId,
+            startsOn,
+            endsOn,
+          },
+        },
+        transaction,
+      );
+      await this.repository.createMembershipHistory(
+        {
+          membershipId: membership.id,
+          fromStatus: null,
+          toStatus: MembershipStatus.ACTIVE,
+          reason: null,
+          actorUserId,
+          domainEventId: event.id,
+          metadata: {},
+        },
+        transaction,
+      );
       return membership.id;
     });
 
@@ -132,7 +169,11 @@ export class MembershipService {
     );
   }
 
-  async changeMembershipStatus(id: string, input: MembershipStatusInput) {
+  async changeMembershipStatus(
+    id: string,
+    input: MembershipStatusInput,
+    actorUserId: string,
+  ) {
     const membership = await this.sequelize.transaction(async (transaction) => {
       const current = await this.repository.findMembership(id, transaction);
       if (!current) {
@@ -146,7 +187,10 @@ export class MembershipService {
           'Una membresía cancelada no puede reactivarse.',
         );
       }
-      return this.repository.updateMembership(
+      if (current.status === input.status) return current;
+
+      const fromStatus = current.status;
+      const updated = await this.repository.updateMembership(
         current,
         {
           status: input.status,
@@ -162,7 +206,38 @@ export class MembershipService {
         },
         transaction,
       );
+      const event = await this.events.record(
+        {
+          eventName: GymDomainEvent.MEMBERSHIP_STATUS_CHANGED,
+          aggregateType: 'membership',
+          aggregateId: current.id,
+          deduplicationKey: `membership.status-changed:${current.id}:${randomUUID()}`,
+          actorUserId,
+          payload: {
+            membershipId: current.id,
+            userId: current.userId,
+            fromStatus,
+            toStatus: input.status,
+            reason: input.reason,
+          },
+        },
+        transaction,
+      );
+      await this.repository.createMembershipHistory(
+        {
+          membershipId: current.id,
+          fromStatus,
+          toStatus: input.status,
+          reason: input.reason,
+          actorUserId,
+          domainEventId: event.id,
+          metadata: {},
+        },
+        transaction,
+      );
+      return updated;
     });
+
     return mapMembership(membership, this.dates);
   }
 
