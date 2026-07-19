@@ -16,6 +16,7 @@ import { ExportModule } from './modules/export/export.module';
 import { FacilitiesModule } from './modules/facilities/facilities.module';
 import { HealthModule } from './modules/health/health.module';
 import { MembershipModule } from './modules/membership/membership.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
@@ -43,6 +44,7 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
     FacilitiesModule,
     MembershipModule,
     AccessControlModule,
+    NotificationsModule,
     ExercisesModule,
     WorkoutsModule,
     ExportModule,
