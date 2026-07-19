@@ -10,6 +10,7 @@ export type EnqueueOutboxJobInput = {
   eventType: string;
   aggregateType: string;
   aggregateId: string | null;
+  domainEventId?: string | null;
   deduplicationKey: string;
   payload: Record<string, unknown>;
   maxAttempts?: number;
@@ -17,25 +18,40 @@ export type EnqueueOutboxJobInput = {
   traceId?: string | null;
 };
 
+export type FailedOutboxUpdate = {
+  deadLetter: boolean;
+  updated: boolean;
+};
+
 @Injectable()
 export class OutboxRepository {
   constructor(
-    @InjectModel(OutboxJobModel) private readonly jobs: typeof OutboxJobModel,
+    @InjectModel(OutboxJobModel)
+    private readonly jobs: typeof OutboxJobModel,
     private readonly sequelize: Sequelize,
   ) {}
 
   enqueue(input: EnqueueOutboxJobInput, transaction: Transaction) {
-    return this.jobs.create({
-      ...input,
-      status: QueueItemStatus.PENDING,
-      attemptCount: 0,
-      maxAttempts: input.maxAttempts ?? 5,
-      availableAt: input.availableAt ?? new Date(),
-      traceId: input.traceId ?? null,
-    }, { transaction });
+    return this.jobs.create(
+      {
+        ...input,
+        domainEventId: input.domainEventId ?? null,
+        status: QueueItemStatus.PENDING,
+        attemptCount: 0,
+        maxAttempts: input.maxAttempts ?? 5,
+        availableAt: input.availableAt ?? new Date(),
+        traceId: input.traceId ?? null,
+      },
+      { transaction },
+    );
   }
 
-  async claim(queueName: string, workerId: string, limit: number, lockTimeoutMs: number) {
+  async claim(
+    queueName: string,
+    workerId: string,
+    limit: number,
+    lockTimeoutMs: number,
+  ) {
     return this.sequelize.transaction(async (transaction) => {
       const rows = await this.sequelize.query<{ id: string }>(
         `WITH candidates AS (
@@ -45,7 +61,10 @@ export class OutboxRepository {
              AND available_at <= now()
              AND (
                status IN ('PENDING','FAILED')
-               OR (status = 'PROCESSING' AND locked_at < now() - (:lockTimeoutMs * interval '1 millisecond'))
+               OR (
+                 status = 'PROCESSING'
+                 AND locked_at < now() - (:lockTimeoutMs * interval '1 millisecond')
+               )
              )
            ORDER BY created_at ASC
            FOR UPDATE SKIP LOCKED
@@ -66,7 +85,9 @@ export class OutboxRepository {
           transaction,
         },
       );
+
       if (rows.length === 0) return [];
+
       return this.jobs.findAll({
         where: { id: rows.map(({ id }) => id) },
         order: [['createdAt', 'ASC']],
@@ -75,28 +96,63 @@ export class OutboxRepository {
     });
   }
 
-  async markCompleted(jobId: string) {
-    await this.jobs.update({
-      status: QueueItemStatus.COMPLETED,
-      processedAt: new Date(),
-      lockedAt: null,
-      lockedBy: null,
-      lastError: null,
-    }, { where: { id: jobId } });
+  async markCompleted(
+    jobId: string,
+    workerId: string,
+    attemptCount: number,
+  ): Promise<boolean> {
+    const [updatedRows] = await this.jobs.update(
+      {
+        status: QueueItemStatus.COMPLETED,
+        processedAt: new Date(),
+        lockedAt: null,
+        lockedBy: null,
+        lastError: null,
+      },
+      {
+        where: {
+          id: jobId,
+          status: QueueItemStatus.PROCESSING,
+          lockedBy: workerId,
+          attemptCount,
+        },
+      },
+    );
+    return updatedRows === 1;
   }
 
-  async markFailed(job: OutboxJobModel, errorMessage: string) {
+  async markFailed(
+    job: OutboxJobModel,
+    workerId: string,
+    errorMessage: string,
+  ): Promise<FailedOutboxUpdate> {
     const deadLetter = job.attemptCount >= job.maxAttempts;
-    const delaySeconds = Math.min(3600, 2 ** Math.min(job.attemptCount, 10) * 5);
+    const delaySeconds = Math.min(
+      3600,
+      2 ** Math.min(job.attemptCount, 10) * 5,
+    );
     const availableAt = new Date(Date.now() + delaySeconds * 1000);
-    await this.jobs.update({
-      status: deadLetter ? QueueItemStatus.DEAD_LETTER : QueueItemStatus.FAILED,
-      availableAt,
-      lockedAt: null,
-      lockedBy: null,
-      lastError: errorMessage.slice(0, 4000),
-    }, { where: { id: job.id } });
-    return deadLetter;
+    const [updatedRows] = await this.jobs.update(
+      {
+        status: deadLetter
+          ? QueueItemStatus.DEAD_LETTER
+          : QueueItemStatus.FAILED,
+        availableAt,
+        lockedAt: null,
+        lockedBy: null,
+        lastError: errorMessage.slice(0, 4000),
+      },
+      {
+        where: {
+          id: job.id,
+          status: QueueItemStatus.PROCESSING,
+          lockedBy: workerId,
+          attemptCount: job.attemptCount,
+        },
+      },
+    );
+
+    return { deadLetter, updated: updatedRows === 1 };
   }
 
   findByDeduplicationKey(key: string) {
