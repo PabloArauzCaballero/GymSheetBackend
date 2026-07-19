@@ -24,22 +24,18 @@ export class AccessEventRunner {
     });
 
     while (!signal.aborted) {
-      const events = await this.repository.claimEvents(
-        this.workerId,
-        env.WORKER_BATCH_SIZE,
-        env.WORKER_LOCK_TIMEOUT_MS,
-      );
-
-      if (events.length === 0) {
+      try {
+        await this.processAvailableEvents(signal);
+      } catch (error: unknown) {
+        this.logger.error({
+          event: 'access_event.poll_failed',
+          workerId: this.workerId,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+          errorMessage:
+            error instanceof Error ? error.message : 'Unknown polling error',
+        });
         await sleep(env.WORKER_POLL_INTERVAL_MS, signal);
-        continue;
       }
-
-      await runBounded(
-        events,
-        env.WORKER_CONCURRENCY,
-        (event) => this.process(event),
-      );
     }
 
     this.logger.log({
@@ -48,23 +44,59 @@ export class AccessEventRunner {
     });
   }
 
+  private async processAvailableEvents(signal: AbortSignal): Promise<void> {
+    const events = await this.repository.claimEvents(
+      this.workerId,
+      env.WORKER_BATCH_SIZE,
+      env.WORKER_LOCK_TIMEOUT_MS,
+    );
+
+    if (events.length === 0) {
+      await sleep(env.WORKER_POLL_INTERVAL_MS, signal);
+      return;
+    }
+
+    await runBounded(
+      events,
+      env.WORKER_CONCURRENCY,
+      (event) => this.process(event),
+    );
+  }
+
   private async process(event: AccessDeviceEventModel): Promise<void> {
     try {
-      await this.service.processEvent(event.id);
-    } catch (error: unknown) {
-      const deadLetter = await this.repository.markEventFailed(
-        event,
-        error,
-        env.WORKER_MAX_ATTEMPTS,
+      await this.service.processEvent(
+        event.id,
+        this.workerId,
+        event.attemptCount,
       );
-
-      this.logger.error({
-        event: 'access_event.failed',
-        eventId: event.id,
-        attempt: event.attemptCount,
-        deadLetter,
-        errorName: error instanceof Error ? error.name : 'UnknownError',
-      });
+    } catch (error: unknown) {
+      try {
+        const failure = await this.repository.markEventFailed(
+          event,
+          this.workerId,
+          error,
+          env.WORKER_MAX_ATTEMPTS,
+        );
+        this.logger.error({
+          event: 'access_event.failed',
+          eventId: event.id,
+          attempt: event.attemptCount,
+          deadLetter: failure.deadLetter,
+          leaseUpdated: failure.updated,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        });
+      } catch (failureUpdateError: unknown) {
+        this.logger.error({
+          event: 'access_event.failure_update_failed',
+          eventId: event.id,
+          attempt: event.attemptCount,
+          errorName:
+            failureUpdateError instanceof Error
+              ? failureUpdateError.name
+              : 'UnknownError',
+        });
+      }
     }
   }
 }
