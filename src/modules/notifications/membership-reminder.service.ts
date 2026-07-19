@@ -3,8 +3,10 @@ import { UniqueConstraintError } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { NotificationStatus } from '../../common/enums/domain.enums';
 import { BusinessDateService } from '../../common/time/business-date.service';
-import { OutboxService } from '../integration/outbox.service';
+import { GymDomainEvent } from '../integration/domain-event.catalog';
+import { DomainEventPublisher } from '../integration/domain-event.publisher';
 import { NotificationRepository } from './notification.repository';
+import { NotificationScheduleService } from './notification-schedule.service';
 
 export type ReminderScanResult = {
   candidates: number;
@@ -18,40 +20,82 @@ export class MembershipReminderService {
 
   constructor(
     private readonly repository: NotificationRepository,
-    private readonly outbox: OutboxService,
+    private readonly events: DomainEventPublisher,
+    private readonly schedule: NotificationScheduleService,
     private readonly dates: BusinessDateService,
     private readonly sequelize: Sequelize,
   ) {}
 
   async scan(limit = 500): Promise<ReminderScanResult> {
     const today = this.dates.today();
-    const candidates = await this.repository.findExpiringMemberships(today, limit);
+    const candidates = await this.repository.findExpiringMemberships(
+      today,
+      limit,
+    );
     let created = 0;
     let duplicates = 0;
 
     for (const candidate of candidates) {
-      const key = `membership-expiry:${candidate.membershipId}:${candidate.endsOn}:${candidate.daysRemaining}:${candidate.channel}`;
+      const key = [
+        'membership-expiry',
+        candidate.membershipId,
+        candidate.endsOn,
+        candidate.daysRemaining,
+        candidate.channel,
+      ].join(':');
+
       try {
         await this.sequelize.transaction(async (transaction) => {
-          const message = await this.repository.createMessage({
-            recipientUserId: candidate.userId,
-            membershipId: candidate.membershipId,
-            channel: candidate.channel,
-            subject: 'Tu plan está por vencer',
-            body: this.buildBody(candidate.planName, candidate.daysRemaining, candidate.endsOn),
-            daysRemaining: candidate.daysRemaining,
-            deduplicationKey: key,
-            status: NotificationStatus.PENDING,
-            metadata: { reminderDate: today },
-          }, transaction);
-          await this.outbox.enqueue({
-            queueName: 'notifications.delivery',
-            eventType: 'membership.expiry.reminder.requested',
-            aggregateType: 'notification',
-            aggregateId: message.id,
-            deduplicationKey: `delivery:${key}`,
-            payload: { notificationId: message.id },
-          }, transaction);
+          const message = await this.repository.createMessage(
+            {
+              recipientUserId: candidate.userId,
+              membershipId: candidate.membershipId,
+              channel: candidate.channel,
+              subject: 'Tu plan está por vencer',
+              body: this.buildBody(
+                candidate.planName,
+                candidate.daysRemaining,
+                candidate.endsOn,
+              ),
+              daysRemaining: candidate.daysRemaining,
+              deduplicationKey: key,
+              status: NotificationStatus.PENDING,
+              metadata: { reminderDate: today },
+            },
+            transaction,
+          );
+          const availableAt = this.schedule.nextAllowedAt(
+            new Date(),
+            candidate.quietHoursStart,
+            candidate.quietHoursEnd,
+          );
+
+          await this.events.recordAndEnqueue(
+            {
+              eventName: GymDomainEvent.NOTIFICATION_DELIVERY_REQUESTED,
+              aggregateType: 'notification',
+              aggregateId: message.id,
+              deduplicationKey: `notification.delivery-requested:${message.id}`,
+              payload: {
+                notificationId: message.id,
+                recipientUserId: candidate.userId,
+                channel: candidate.channel,
+              },
+              metadata: {
+                membershipId: candidate.membershipId,
+                daysRemaining: candidate.daysRemaining,
+              },
+            },
+            [
+              {
+                queueName: 'notifications.delivery',
+                deduplicationKey: `delivery:${key}`,
+                payload: { notificationId: message.id },
+                availableAt,
+              },
+            ],
+            transaction,
+          );
         });
         created += 1;
       } catch (error: unknown) {
@@ -73,7 +117,11 @@ export class MembershipReminderService {
     return { candidates: candidates.length, created, duplicates };
   }
 
-  private buildBody(planName: string, daysRemaining: number, endsOn: string): string {
+  private buildBody(
+    planName: string,
+    daysRemaining: number,
+    endsOn: string,
+  ): string {
     if (daysRemaining === 0) {
       return `Tu plan ${planName} vence hoy (${endsOn}). Acércate a recepción para renovarlo.`;
     }
