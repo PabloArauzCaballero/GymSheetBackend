@@ -44,7 +44,7 @@ const upStatements = [
      WHERE domain_event_id IS NOT NULL`,
   `CREATE TABLE membership.status_history (
      id uuid PRIMARY KEY,
-     membership_id uuid NOT NULL REFERENCES membership.memberships(id) ON DELETE CASCADE,
+     membership_id uuid NOT NULL REFERENCES membership.memberships(id) ON DELETE RESTRICT,
      from_status varchar(30),
      to_status varchar(30) NOT NULL,
      reason text,
@@ -69,6 +69,17 @@ const upStatements = [
    )`,
   `CREATE INDEX ix_membership_status_history
      ON membership.status_history(membership_id, occurred_at DESC)`,
+  `CREATE FUNCTION membership.reject_status_history_mutation()
+     RETURNS trigger
+     LANGUAGE plpgsql
+     AS $$
+     BEGIN
+       RAISE EXCEPTION 'membership.status_history is append-only';
+     END;
+     $$`,
+  `CREATE TRIGGER tr_membership_status_history_append_only
+     BEFORE UPDATE OR DELETE ON membership.status_history
+     FOR EACH ROW EXECUTE FUNCTION membership.reject_status_history_mutation()`,
   `ALTER TABLE notifications.preferences
      DROP CONSTRAINT ck_notification_quiet_hours`,
   `ALTER TABLE notifications.preferences
@@ -91,6 +102,7 @@ const downStatements = [
        OR (quiet_hours_start IS NOT NULL AND quiet_hours_end IS NOT NULL)
      )`,
   `DROP TABLE IF EXISTS membership.status_history`,
+  `DROP FUNCTION IF EXISTS membership.reject_status_history_mutation()`,
   `DROP INDEX IF EXISTS integration.ix_outbox_domain_event`,
   `ALTER TABLE integration.outbox_jobs DROP COLUMN IF EXISTS domain_event_id`,
   `DROP TABLE IF EXISTS integration.domain_events`,
@@ -100,7 +112,7 @@ const downStatements = [
 export const domainEventsAndMembershipHistoryMigration: DatabaseMigration = {
   id: '202607190006-domain-events-and-membership-history',
   description:
-    'Adds an append-only domain-event ledger, outbox linkage, lifecycle history, and quiet-hour integrity.',
+    'Adds append-only event and membership histories, outbox linkage, and quiet-hour integrity.',
   up: (queryInterface, transaction) =>
     executeSqlStatements(queryInterface, transaction, upStatements),
   down: (queryInterface, transaction) =>
