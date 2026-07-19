@@ -117,16 +117,15 @@ Una sola transacción crea:
 
 El worker de entrega crea después una fila en `notifications.delivery_attempts` y actualiza el mensaje. Las horas de silencio modifican `available_at`, y el canal externo vuelve a validar que exista consentimiento.
 
-## Ledger y outbox
+## Ledger, historial y outbox
 
-`integration.domain_events` es append-only:
+`integration.domain_events` y `membership.status_history` son append-only mediante triggers PostgreSQL. El ledger conserva:
 
 - nombres versionados;
 - agregado y actor;
 - correlation, causation y trace opcionales;
 - payload y metadata JSON objeto;
-- deduplicación única;
-- trigger PostgreSQL que rechaza `UPDATE` y `DELETE`.
+- deduplicación única.
 
 `integration.outbox_jobs` es mutable porque representa entrega, no verdad histórica. Cada job puede enlazarse con `domain_event_id`.
 
