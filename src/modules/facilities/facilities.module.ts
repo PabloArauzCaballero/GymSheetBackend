@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { EquipmentModule } from '../equipment/equipment.module';
+import { IntegrationModule } from '../integration/integration.module';
 import { AccessPointModel } from './access-point.model';
 import { BranchModel } from './branch.model';
 import { EquipmentAssignmentModel } from './equipment-assignment.model';
@@ -11,7 +12,17 @@ import { MaintenanceEventModel } from './maintenance-event.model';
 import { RoomModel } from './room.model';
 
 @Module({
-  imports: [EquipmentModule, SequelizeModule.forFeature([BranchModel, RoomModel, AccessPointModel, EquipmentAssignmentModel, MaintenanceEventModel])],
+  imports: [
+    EquipmentModule,
+    IntegrationModule,
+    SequelizeModule.forFeature([
+      BranchModel,
+      RoomModel,
+      AccessPointModel,
+      EquipmentAssignmentModel,
+      MaintenanceEventModel,
+    ]),
+  ],
   controllers: [FacilitiesController],
   providers: [FacilitiesRepository, FacilitiesService],
   exports: [FacilitiesRepository, FacilitiesService],
