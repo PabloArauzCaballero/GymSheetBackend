@@ -22,6 +22,7 @@ import { PlanAccessScopeModel } from '../../modules/membership/plan-access-scope
 import { StaffBranchScopeModel } from '../../modules/membership/staff-branch-scope.model';
 import { StaffProfileModel } from '../../modules/membership/staff-profile.model';
 import { DeliveryAttemptModel } from '../../modules/notifications/delivery-attempt.model';
+import { NotificationPreferenceModel } from '../../modules/notifications/notification-preference.model';
 import { NotificationModel } from '../../modules/notifications/notification.model';
 import { AnthropometricProfileModel } from '../../modules/profiles/anthropometric-profile.model';
 import { UserModel } from '../../modules/users/user.model';
@@ -29,7 +30,6 @@ import { WorkoutSessionExerciseModel } from '../../modules/workouts/workout-sess
 import { WorkoutSessionModel } from '../../modules/workouts/workout-session.model';
 import { WorkoutSetModel } from '../../modules/workouts/workout-set.model';
 
-/** Explicit model registry prevents accidental runtime discovery. */
 export const databaseModels = [
   UserModel,
   AnthropometricProfileModel,
@@ -57,6 +57,7 @@ export const databaseModels = [
   AccessDeviceEventModel,
   AccessDecisionModel,
   NotificationModel,
+  NotificationPreferenceModel,
   DeliveryAttemptModel,
   OutboxJobModel,
   LegacyImportBatchModel,

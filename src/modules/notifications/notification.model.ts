@@ -1,4 +1,16 @@
-import { BelongsTo, Column, CreatedAt, DataType, Default, ForeignKey, HasMany, Model, PrimaryKey, Table, UpdatedAt } from 'sequelize-typescript';
+import {
+  BelongsTo,
+  Column,
+  CreatedAt,
+  DataType,
+  Default,
+  ForeignKey,
+  HasMany,
+  Model,
+  PrimaryKey,
+  Table,
+  UpdatedAt,
+} from 'sequelize-typescript';
 import { NotificationChannel, NotificationStatus } from '../../common/enums/domain.enums';
 import { MembershipModel } from '../membership/membership.model';
 import { UserModel } from '../users/user.model';
