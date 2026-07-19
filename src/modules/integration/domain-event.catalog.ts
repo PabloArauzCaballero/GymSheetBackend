@@ -28,6 +28,7 @@ export type GymDomainEventPayloadMap = {
     customerProfileId: string;
     customerNumber: string;
     pinCredentialId: string;
+    notificationPreferenceId: string;
   };
   [GymDomainEvent.STAFF_PROFILE_CREATED]: {
     userId: string;
