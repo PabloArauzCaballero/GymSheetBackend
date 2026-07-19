@@ -39,6 +39,7 @@ export const environmentSchema = z
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
     BUSINESS_TIME_ZONE: z.string().trim().min(3).max(80).default('America/La_Paz'),
     ACCESS_POLICY_VERSION: z.string().trim().min(1).max(80).default('2026-07-19'),
+    ACCESS_MOCK_ENABLED: environmentBooleanSchema.default(false),
 
     DB_HOST: z.string().trim().min(1),
     DB_PORT: z.coerce.number().int().positive().max(65535).default(5432),
@@ -92,6 +93,7 @@ export const environmentSchema = z
   .superRefine((configuration, context) => {
     if (configuration.DB_POOL_MIN > configuration.DB_POOL_MAX) context.addIssue({ code: z.ZodIssueCode.custom, path: ['DB_POOL_MIN'], message: 'DB_POOL_MIN cannot be greater than DB_POOL_MAX.' });
     if (configuration.JWT_ACCESS_SECRET === configuration.JWT_REFRESH_SECRET) context.addIssue({ code: z.ZodIssueCode.custom, path: ['JWT_REFRESH_SECRET'], message: 'Access and refresh secrets must be different.' });
+    if (configuration.NODE_ENV === 'production' && configuration.ACCESS_MOCK_ENABLED) context.addIssue({ code: z.ZodIssueCode.custom, path: ['ACCESS_MOCK_ENABLED'], message: 'Access mock endpoints are forbidden in production.' });
     if (configuration.NODE_ENV === 'production' && configuration.NOTIFICATION_DELIVERY_PROVIDER === 'MOCK') context.addIssue({ code: z.ZodIssueCode.custom, path: ['NOTIFICATION_DELIVERY_PROVIDER'], message: 'MOCK notification delivery is forbidden in production.' });
     if (configuration.NOTIFICATION_DELIVERY_PROVIDER === 'HTTP_GATEWAY') {
       if (!configuration.NOTIFICATION_GATEWAY_URL || !configuration.NOTIFICATION_GATEWAY_SECRET) context.addIssue({ code: z.ZodIssueCode.custom, path: ['NOTIFICATION_GATEWAY_URL'], message: 'HTTP gateway delivery requires URL and secret.' });
