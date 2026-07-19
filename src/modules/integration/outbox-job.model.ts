@@ -1,7 +1,24 @@
-import { Column, CreatedAt, DataType, Default, Model, PrimaryKey, Table, UpdatedAt } from 'sequelize-typescript';
+import {
+  BelongsTo,
+  Column,
+  CreatedAt,
+  DataType,
+  Default,
+  ForeignKey,
+  Model,
+  PrimaryKey,
+  Table,
+  UpdatedAt,
+} from 'sequelize-typescript';
 import { QueueItemStatus } from '../../common/enums/domain.enums';
+import { DomainEventModel } from './domain-event.model';
 
-@Table({ tableName: 'outbox_jobs', schema: 'integration', underscored: true, timestamps: true })
+@Table({
+  tableName: 'outbox_jobs',
+  schema: 'integration',
+  underscored: true,
+  timestamps: true,
+})
 export class OutboxJobModel extends Model {
   @PrimaryKey
   @Default(DataType.UUIDV4)
@@ -20,7 +37,16 @@ export class OutboxJobModel extends Model {
   @Column({ type: DataType.UUID, allowNull: true, field: 'aggregate_id' })
   declare aggregateId: string | null;
 
-  @Column({ type: DataType.STRING(240), allowNull: false, unique: true, field: 'deduplication_key' })
+  @ForeignKey(() => DomainEventModel)
+  @Column({ type: DataType.UUID, allowNull: true, field: 'domain_event_id' })
+  declare domainEventId: string | null;
+
+  @Column({
+    type: DataType.STRING(240),
+    allowNull: false,
+    unique: true,
+    field: 'deduplication_key',
+  })
   declare deduplicationKey: string;
 
   @Column({ type: DataType.JSONB, allowNull: false })
@@ -56,6 +82,9 @@ export class OutboxJobModel extends Model {
 
   @Column({ type: DataType.STRING(128), allowNull: true, field: 'trace_id' })
   declare traceId: string | null;
+
+  @BelongsTo(() => DomainEventModel)
+  declare domainEvent?: DomainEventModel;
 
   @CreatedAt
   @Column({ field: 'created_at' })
