@@ -8,6 +8,7 @@ import { HttpMetricsInterceptor } from './common/metrics/http-metrics.intercepto
 import { env } from './config/env';
 import { DatabaseModule } from './database/database.module';
 import { GatewayModule } from './gateway/gateway.module';
+import { AccessControlModule } from './modules/access-control/access-control.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { EquipmentModule } from './modules/equipment/equipment.module';
 import { ExercisesModule } from './modules/exercises/exercises.module';
@@ -22,7 +23,16 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
 @Module({
   imports: [
     ThrottlerModule.forRoot([{ ttl: env.RATE_LIMIT_TTL_SECONDS * 1000, limit: env.RATE_LIMIT_MAX }]),
-    JwtModule.register({ global: true, secret: env.JWT_ACCESS_SECRET, signOptions: { expiresIn: env.JWT_ACCESS_EXPIRES_IN, issuer: env.JWT_ISSUER, audience: env.JWT_AUDIENCE, algorithm: 'HS256' } }),
+    JwtModule.register({
+      global: true,
+      secret: env.JWT_ACCESS_SECRET,
+      signOptions: {
+        expiresIn: env.JWT_ACCESS_EXPIRES_IN,
+        issuer: env.JWT_ISSUER,
+        audience: env.JWT_AUDIENCE,
+        algorithm: 'HS256',
+      },
+    }),
     DatabaseModule,
     HealthModule,
     GatewayModule,
@@ -32,6 +42,7 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
     EquipmentModule,
     FacilitiesModule,
     MembershipModule,
+    AccessControlModule,
     ExercisesModule,
     WorkoutsModule,
     ExportModule,

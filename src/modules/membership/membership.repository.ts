@@ -9,7 +9,7 @@ import { MembershipModel } from './membership.model';
 import { PlanAccessScopeModel } from './plan-access-scope.model';
 import { StaffBranchScopeModel } from './staff-branch-scope.model';
 import { StaffProfileModel } from './staff-profile.model';
-import { CreateMembershipInput, CreatePlanInput, CreateStaffInput, MembershipListInput, UpdatePlanInput } from './membership.schemas';
+import { CreatePlanInput, CreateStaffInput, MembershipListInput, UpdatePlanInput } from './membership.schemas';
 
 @Injectable()
 export class MembershipRepository {
@@ -26,37 +26,30 @@ export class MembershipRepository {
   findPlan(planId: string, transaction?: Transaction) { return this.plans.findByPk(planId, { include: [PlanAccessScopeModel], transaction, lock: transaction ? transaction.LOCK.UPDATE : undefined }); }
   createPlan(input: Omit<CreatePlanInput, 'scopes'>, transaction: Transaction) { return this.plans.create(input, { transaction }); }
   async updatePlan(plan: MembershipPlanModel, input: UpdatePlanInput) { await plan.update(input); return plan.reload({ include: [PlanAccessScopeModel] }); }
-
-  async replacePlanScopes(planId: string, scopes: { branchId: string; roomId: string | null }[], transaction: Transaction) {
-    await this.planScopes.destroy({ where: { planId }, transaction });
-    await this.planScopes.bulkCreate(scopes.map((scope) => ({ planId, ...scope })), { transaction });
-  }
+  async replacePlanScopes(planId: string, scopes: { branchId: string; roomId: string | null }[], transaction: Transaction) { await this.planScopes.destroy({ where: { planId }, transaction }); await this.planScopes.bulkCreate(scopes.map((scope) => ({ planId, ...scope })), { transaction }); }
 
   createCustomer(input: Record<string, unknown>, transaction: Transaction) { return this.customers.create(input, { transaction }); }
   findCustomerByUserId(userId: string) { return this.customers.findOne({ where: { userId }, include: [UserModel] }); }
   listCustomers(page: number, pageSize: number) { return this.customers.findAndCountAll({ include: [UserModel], limit: pageSize, offset: (page - 1) * pageSize, order: [['customerNumber', 'ASC']] }); }
 
   createMembership(input: Record<string, unknown>, transaction: Transaction) { return this.memberships.create(input, { transaction }); }
-  findMembership(id: string, transaction?: Transaction) { return this.memberships.findByPk(id, { include: [MembershipPlanModel], transaction, lock: transaction ? transaction.LOCK.UPDATE : undefined }); }
-  findCurrentMembership(userId: string, today: string) {
+  findMembership(id: string, transaction?: Transaction) { return this.memberships.findByPk(id, { include: [{ model: MembershipPlanModel, include: [PlanAccessScopeModel] }], transaction, lock: transaction ? transaction.LOCK.UPDATE : undefined }); }
+  findCurrentMembership(userId: string, today: string, transaction?: Transaction) {
     return this.memberships.findOne({
       where: { userId, status: MembershipStatus.ACTIVE, startsOn: { [Op.lte]: today }, endsOn: { [Op.gte]: today } },
       include: [{ model: MembershipPlanModel, where: { status: PlanStatus.ACTIVE }, include: [PlanAccessScopeModel] }],
       order: [['endsOn', 'DESC']],
+      transaction,
+      lock: transaction ? transaction.LOCK.UPDATE : undefined,
     });
   }
-
   listMemberships(filters: MembershipListInput) {
     const where = { ...(filters.userId ? { userId: filters.userId } : {}), ...(filters.status ? { status: filters.status } : {}) };
     return this.memberships.findAndCountAll({ where, include: [MembershipPlanModel], limit: filters.pageSize, offset: (filters.page - 1) * filters.pageSize, order: [['endsOn', 'DESC']] });
   }
-
   async updateMembership(membership: MembershipModel, changes: Record<string, unknown>, transaction?: Transaction) { await membership.update(changes, { transaction }); return membership; }
 
   findStaffByUserId(userId: string, transaction?: Transaction) { return this.staff.findOne({ where: { userId }, include: [StaffBranchScopeModel], transaction, lock: transaction ? transaction.LOCK.UPDATE : undefined }); }
   createStaff(input: Omit<CreateStaffInput, 'branchIds'>, transaction: Transaction) { return this.staff.create(input, { transaction }); }
-  async replaceStaffScopes(staffProfileId: string, branchIds: string[], transaction: Transaction) {
-    await this.staffScopes.destroy({ where: { staffProfileId }, transaction });
-    await this.staffScopes.bulkCreate(branchIds.map((branchId) => ({ staffProfileId, branchId })), { transaction });
-  }
+  async replaceStaffScopes(staffProfileId: string, branchIds: string[], transaction: Transaction) { await this.staffScopes.destroy({ where: { staffProfileId }, transaction }); await this.staffScopes.bulkCreate(branchIds.map((branchId) => ({ staffProfileId, branchId })), { transaction }); }
 }
