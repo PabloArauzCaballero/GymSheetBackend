@@ -4,6 +4,7 @@ import { BusinessDateService } from '../../common/time/business-date.service';
 import { AccessCredentialModule } from '../access-control/access-credential.module';
 import { FacilitiesModule } from '../facilities/facilities.module';
 import { IntegrationModule } from '../integration/integration.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { CustomerProfileModel } from './customer-profile.model';
 import { CustomerStaffService } from './customer-staff.service';
@@ -25,6 +26,7 @@ import { StaffProfileModel } from './staff-profile.model';
     AccessCredentialModule,
     FacilitiesModule,
     IntegrationModule,
+    NotificationsModule,
     UsersModule,
     SequelizeModule.forFeature([
       MembershipPlanModel,
