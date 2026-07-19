@@ -19,6 +19,14 @@ const commaSeparatedListSchema = z.string().transform((rawValue) =>
   rawValue.split(',').map((entry) => entry.trim()).filter(Boolean),
 );
 const jwtDurationSchema = z.string().trim().regex(/^\d+(?:ms|s|m|h|d|w|y)$/).transform((duration) => duration as JwtDuration);
+const optionalUrlSchema = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().url().optional(),
+);
+const optionalSecretSchema = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().min(32).optional(),
+);
 
 export const environmentSchema = z
   .object({
@@ -60,6 +68,18 @@ export const environmentSchema = z
     AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(100).default(10),
     GATEWAY_ENABLED: environmentBooleanSchema.default(true),
 
+    WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60000).default(1000),
+    WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(50),
+    WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
+    WORKER_LOCK_TIMEOUT_MS: z.coerce.number().int().min(5000).max(3600000).default(300000),
+    WORKER_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
+    REMINDER_SCAN_INTERVAL_MS: z.coerce.number().int().min(60000).max(86400000).default(3600000),
+    NOTIFICATION_DELIVERY_PROVIDER: z.enum(['IN_APP', 'HTTP_GATEWAY', 'MOCK']).default('IN_APP'),
+    NOTIFICATION_GATEWAY_URL: optionalUrlSchema,
+    NOTIFICATION_GATEWAY_SECRET: optionalSecretSchema,
+    NOTIFICATION_GATEWAY_ALLOWED_HOSTS: commaSeparatedListSchema.default(''),
+    NOTIFICATION_GATEWAY_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(10000),
+
     EXERCISES_DATASET_ENABLED: environmentBooleanSchema.default(false),
     EXERCISES_DATASET_JSON_URL: z.string().url().default('https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json'),
     EXERCISES_DATASET_ALLOWED_HOSTS: commaSeparatedListSchema.default('raw.githubusercontent.com'),
@@ -72,6 +92,14 @@ export const environmentSchema = z
   .superRefine((configuration, context) => {
     if (configuration.DB_POOL_MIN > configuration.DB_POOL_MAX) context.addIssue({ code: z.ZodIssueCode.custom, path: ['DB_POOL_MIN'], message: 'DB_POOL_MIN cannot be greater than DB_POOL_MAX.' });
     if (configuration.JWT_ACCESS_SECRET === configuration.JWT_REFRESH_SECRET) context.addIssue({ code: z.ZodIssueCode.custom, path: ['JWT_REFRESH_SECRET'], message: 'Access and refresh secrets must be different.' });
+    if (configuration.NODE_ENV === 'production' && configuration.NOTIFICATION_DELIVERY_PROVIDER === 'MOCK') context.addIssue({ code: z.ZodIssueCode.custom, path: ['NOTIFICATION_DELIVERY_PROVIDER'], message: 'MOCK notification delivery is forbidden in production.' });
+    if (configuration.NOTIFICATION_DELIVERY_PROVIDER === 'HTTP_GATEWAY') {
+      if (!configuration.NOTIFICATION_GATEWAY_URL || !configuration.NOTIFICATION_GATEWAY_SECRET) context.addIssue({ code: z.ZodIssueCode.custom, path: ['NOTIFICATION_GATEWAY_URL'], message: 'HTTP gateway delivery requires URL and secret.' });
+      if (configuration.NOTIFICATION_GATEWAY_URL) {
+        const url = new URL(configuration.NOTIFICATION_GATEWAY_URL);
+        if (url.protocol !== 'https:' || !configuration.NOTIFICATION_GATEWAY_ALLOWED_HOSTS.includes(url.hostname)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['NOTIFICATION_GATEWAY_URL'], message: 'Notification gateway must use HTTPS and an allowlisted host.' });
+      }
+    }
     if (configuration.EXERCISES_DATASET_IMPORT_MEDIA && !configuration.EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED) context.addIssue({ code: z.ZodIssueCode.custom, path: ['EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED'], message: 'Media import requires explicit confirmation of the applicable media license.' });
     try { new Intl.DateTimeFormat('en-CA', { timeZone: configuration.BUSINESS_TIME_ZONE }).format(); } catch { context.addIssue({ code: z.ZodIssueCode.custom, path: ['BUSINESS_TIME_ZONE'], message: 'BUSINESS_TIME_ZONE must be a valid IANA time zone.' }); }
   });
