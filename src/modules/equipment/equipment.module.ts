@@ -9,6 +9,6 @@ import { EquipmentService } from './equipment.service';
   imports: [SequelizeModule.forFeature([EquipmentModel])],
   controllers: [EquipmentController, AdminEquipmentController],
   providers: [EquipmentRepository, EquipmentService],
-  exports: [EquipmentRepository, EquipmentService],
+  exports: [EquipmentRepository, EquipmentService, SequelizeModule],
 })
 export class EquipmentModule {}

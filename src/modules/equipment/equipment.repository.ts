@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Op } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 import { EquipmentStatus } from '../../common/enums/domain.enums';
 import { EquipmentModel } from './equipment.model';
 import { CreateEquipmentInput, UpdateEquipmentInput } from './equipment.schemas';
@@ -15,22 +15,16 @@ export class EquipmentRepository {
   findAvailable(): Promise<EquipmentModel[]> {
     return this.equipmentModel.findAll({
       where: { status: EquipmentStatus.AVAILABLE },
-      order: [
-        ['type', 'ASC'],
-        ['name', 'ASC'],
-      ],
+      order: [['name', 'ASC']],
     });
   }
 
-  findById(equipmentId: string): Promise<EquipmentModel | null> {
-    return this.equipmentModel.findByPk(equipmentId);
+  findById(equipmentId: string, transaction?: Transaction): Promise<EquipmentModel | null> {
+    return this.equipmentModel.findByPk(equipmentId, { transaction });
   }
 
   async findLinkableIds(equipmentIds: string[]): Promise<string[]> {
-    if (equipmentIds.length === 0) {
-      return [];
-    }
-
+    if (equipmentIds.length === 0) return [];
     const equipmentItems = await this.equipmentModel.findAll({
       attributes: ['id'],
       where: {
@@ -38,7 +32,6 @@ export class EquipmentRepository {
         status: { [Op.ne]: EquipmentStatus.INACTIVE },
       },
     });
-
     return equipmentItems.map((equipment) => equipment.id);
   }
 
@@ -48,15 +41,12 @@ export class EquipmentRepository {
 
   async update(
     equipmentId: string,
-    input: UpdateEquipmentInput,
+    input: UpdateEquipmentInput | Record<string, unknown>,
+    transaction?: Transaction,
   ): Promise<EquipmentModel | null> {
-    const equipment = await this.findById(equipmentId);
-
-    if (!equipment) {
-      return null;
-    }
-
-    await equipment.update(input);
+    const equipment = await this.findById(equipmentId, transaction);
+    if (!equipment) return null;
+    await equipment.update(input, { transaction });
     return equipment;
   }
 
