@@ -12,6 +12,7 @@ export const GymDomainEvent = {
   MEMBERSHIP_ACTIVATED: 'membership.activated.v1',
   MEMBERSHIP_STATUS_CHANGED: 'membership.status-changed.v1',
   EQUIPMENT_ASSIGNED: 'equipment.assigned-to-room.v1',
+  MAINTENANCE_SCHEDULED: 'equipment.maintenance-scheduled.v1',
   MAINTENANCE_STARTED: 'equipment.maintenance-started.v1',
   MAINTENANCE_COMPLETED: 'equipment.maintenance-completed.v1',
   ACCESS_DECISION_RECORDED: 'access.decision-recorded.v1',
@@ -58,6 +59,11 @@ export type GymDomainEventPayloadMap = {
     assignmentId: string;
     previousRoomId: string | null;
     roomId: string;
+  };
+  [GymDomainEvent.MAINTENANCE_SCHEDULED]: {
+    equipmentId: string;
+    maintenanceEventId: string;
+    scheduledFor: string;
   };
   [GymDomainEvent.MAINTENANCE_STARTED]: {
     equipmentId: string;
