@@ -9,9 +9,9 @@ const upStatements = [
      aggregate_type varchar(120) NOT NULL,
      aggregate_id uuid,
      deduplication_key varchar(240) NOT NULL UNIQUE,
-     actor_user_id uuid REFERENCES public.usuarios(id) ON DELETE SET NULL,
+     actor_user_id uuid REFERENCES public.usuarios(id) ON DELETE RESTRICT,
      correlation_id varchar(128),
-     causation_event_id uuid REFERENCES integration.domain_events(id) ON DELETE SET NULL,
+     causation_event_id uuid REFERENCES integration.domain_events(id) ON DELETE RESTRICT,
      trace_id varchar(128),
      occurred_at timestamptz NOT NULL DEFAULT now(),
      payload jsonb NOT NULL,
@@ -38,7 +38,7 @@ const upStatements = [
      BEFORE UPDATE OR DELETE ON integration.domain_events
      FOR EACH ROW EXECUTE FUNCTION integration.reject_domain_event_mutation()`,
   `ALTER TABLE integration.outbox_jobs
-     ADD COLUMN domain_event_id uuid REFERENCES integration.domain_events(id) ON DELETE SET NULL`,
+     ADD COLUMN domain_event_id uuid REFERENCES integration.domain_events(id) ON DELETE RESTRICT`,
   `CREATE INDEX ix_outbox_domain_event
      ON integration.outbox_jobs(domain_event_id)
      WHERE domain_event_id IS NOT NULL`,
@@ -48,7 +48,7 @@ const upStatements = [
      from_status varchar(30),
      to_status varchar(30) NOT NULL,
      reason text,
-     actor_user_id uuid REFERENCES public.usuarios(id) ON DELETE SET NULL,
+     actor_user_id uuid REFERENCES public.usuarios(id) ON DELETE RESTRICT,
      domain_event_id uuid NOT NULL UNIQUE REFERENCES integration.domain_events(id) ON DELETE RESTRICT,
      occurred_at timestamptz NOT NULL DEFAULT now(),
      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
