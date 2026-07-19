@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { NotificationChannel, NotificationStatus } from '../../common/enums/domain.enums';
+import {
+  NotificationChannel,
+  NotificationStatus,
+} from '../../common/enums/domain.enums';
 
 const metadataSchema = z.record(z.string(), z.unknown()).refine(
   (value) => JSON.stringify(value).length <= 4096,
@@ -15,11 +18,26 @@ export const notificationListSchema = z.object({
 export const updateNotificationPreferenceSchema = z
   .object({
     recordatoriosVencimiento: z.boolean(),
-    canalPreferido: z.enum([NotificationChannel.IN_APP, NotificationChannel.HTTP_GATEWAY]),
-    consentimientoExternoEn: z.string().datetime({ offset: true }).nullable().optional(),
+    canalPreferido: z.enum([
+      NotificationChannel.IN_APP,
+      NotificationChannel.HTTP_GATEWAY,
+    ]),
+    consentimientoExternoEn: z
+      .string()
+      .datetime({ offset: true })
+      .nullable()
+      .optional(),
     versionConsentimiento: z.string().trim().min(1).max(80).nullable().optional(),
-    horaSilencioInicio: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/).nullable().optional(),
-    horaSilencioFin: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/).nullable().optional(),
+    horaSilencioInicio: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/)
+      .nullable()
+      .optional(),
+    horaSilencioFin: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/)
+      .nullable()
+      .optional(),
     metadata: metadataSchema.default({}),
   })
   .superRefine((input, context) => {
@@ -32,10 +50,23 @@ export const updateNotificationPreferenceSchema = z
         message: 'El canal externo requiere consentimiento y versión.',
       });
     }
-    if ((input.horaSilencioInicio === null) !== (input.horaSilencioFin === null)) {
+
+    const startConfigured = input.horaSilencioInicio != null;
+    const endConfigured = input.horaSilencioFin != null;
+    if (startConfigured !== endConfigured) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Las dos horas de silencio deben configurarse juntas.',
+      });
+    }
+    if (
+      startConfigured &&
+      endConfigured &&
+      input.horaSilencioInicio === input.horaSilencioFin
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'El inicio y fin de silencio deben ser diferentes.',
       });
     }
   })
