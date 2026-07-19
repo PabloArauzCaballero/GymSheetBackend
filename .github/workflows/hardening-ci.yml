@@ -43,6 +43,8 @@ jobs:
       TRUST_PROXY: "false"
       REQUEST_BODY_LIMIT: 1mb
       LOG_LEVEL: error
+      BUSINESS_TIME_ZONE: America/La_Paz
+      ACCESS_POLICY_VERSION: ci-policy
       DB_HOST: localhost
       DB_PORT: 5432
       DB_NAME: gym_sheet_ci
@@ -68,6 +70,13 @@ jobs:
       RATE_LIMIT_MAX: 1000
       AUTH_RATE_LIMIT_MAX: 10
       GATEWAY_ENABLED: "false"
+      WORKER_POLL_INTERVAL_MS: 1000
+      WORKER_BATCH_SIZE: 25
+      WORKER_CONCURRENCY: 5
+      WORKER_LOCK_TIMEOUT_MS: 300000
+      WORKER_MAX_ATTEMPTS: 5
+      REMINDER_SCAN_INTERVAL_MS: 3600000
+      NOTIFICATION_DELIVERY_PROVIDER: IN_APP
       EXERCISES_DATASET_ENABLED: "false"
       EXERCISES_DATASET_IMPORT_MEDIA: "false"
       EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED: "false"
@@ -148,13 +157,13 @@ jobs:
           );
           SQL
 
-      - name: Apply migration
+      - name: Apply migrations
         run: yarn migration:up
 
       - name: Roll back latest migration
         run: yarn migration:down
 
-      - name: Reapply migration
+      - name: Reapply latest migration
         run: yarn migration:up
 
       - name: Verify migration metadata and preserved data
@@ -167,15 +176,23 @@ jobs:
             set_count integer;
           BEGIN
             SELECT count(*) INTO migration_count
-            FROM app_meta.schema_migrations
-            WHERE id = '202607170001-hardening-exercise-data';
+            FROM app_meta.schema_migrations;
 
-            IF migration_count <> 1 THEN
-              RAISE EXCEPTION 'Expected one hardening migration row, found %', migration_count;
+            IF migration_count <> 6 THEN
+              RAISE EXCEPTION 'Expected six migration rows, found %', migration_count;
             END IF;
 
-            IF to_regclass('training.exercise_media') IS NULL THEN
-              RAISE EXCEPTION 'training.exercise_media was not created';
+            IF to_regclass('training.exercise_media') IS NULL
+               OR to_regclass('facilities.branches') IS NULL
+               OR to_regclass('facilities.maintenance_events') IS NULL
+               OR to_regclass('membership.memberships') IS NULL
+               OR to_regclass('membership.customer_profiles') IS NULL
+               OR to_regclass('access_control.device_events') IS NULL
+               OR to_regclass('notifications.messages') IS NULL
+               OR to_regclass('notifications.preferences') IS NULL
+               OR to_regclass('integration.outbox_jobs') IS NULL
+               OR to_regclass('integration.legacy_import_batches') IS NULL THEN
+              RAISE EXCEPTION 'One or more enterprise migration objects are missing';
             END IF;
 
             SELECT count(*) INTO exercise_count
@@ -198,26 +215,37 @@ jobs:
           createdb -h localhost -U postgres gym_sheet_restore
           pg_restore -h localhost -U postgres -d gym_sheet_restore --exit-on-error /tmp/gym_sheet_ci.dump
 
-      - name: Verify restored database and migration rollback
+      - name: Verify restored database and latest migration rollback
         env:
           DB_NAME: gym_sheet_restore
         run: |
           psql -h localhost -U postgres -d gym_sheet_restore -v ON_ERROR_STOP=1 <<'SQL'
           DO $$
           BEGIN
-            IF to_regclass('training.exercise_media') IS NULL THEN
-              RAISE EXCEPTION 'Restored media table is missing';
+            IF to_regclass('training.exercise_media') IS NULL
+               OR to_regclass('membership.memberships') IS NULL
+               OR to_regclass('notifications.preferences') IS NULL THEN
+              RAISE EXCEPTION 'Restored enterprise schema is incomplete';
             END IF;
 
             IF (SELECT count(*) FROM public.series_entrenamiento) <> 1 THEN
               RAISE EXCEPTION 'Restored representative rows are incomplete';
             END IF;
+
+            IF (SELECT count(*) FROM app_meta.schema_migrations) <> 6 THEN
+              RAISE EXCEPTION 'Restored migration registry is incomplete';
+            END IF;
           END $$;
           SQL
+
           yarn migration:down
-          test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations WHERE id = '202607170001-hardening-exercise-data'")" = "0"
-          yarn migration:up
+          test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations WHERE id = '202607190005-notification-preferences'")" = "0"
           test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations WHERE id = '202607170001-hardening-exercise-data'")" = "1"
+          test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations")" = "5"
+
+          yarn migration:up
+          test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations WHERE id = '202607190005-notification-preferences'")" = "1"
+          test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations")" = "6"
 
       - name: Start API and run HTTP load smoke
         run: |
