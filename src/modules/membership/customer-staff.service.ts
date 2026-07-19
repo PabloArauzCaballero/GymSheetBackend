@@ -12,10 +12,9 @@ import { EmploymentStatus, UserRole } from '../../common/enums/domain.enums';
 import { env } from '../../config/env';
 import { AccessCredentialRepository } from '../access-control/access-credential.repository';
 import { FacilitiesRepository } from '../facilities/facilities.repository';
-import {
-  GymDomainEvent,
-} from '../integration/domain-event.catalog';
+import { GymDomainEvent } from '../integration/domain-event.catalog';
 import { DomainEventPublisher } from '../integration/domain-event.publisher';
+import { NotificationRepository } from '../notifications/notification.repository';
 import { UsersRepository } from '../users/users.repository';
 import { mapCustomer, mapStaff } from './membership.mapper';
 import { MembershipRepository } from './membership.repository';
@@ -31,6 +30,7 @@ export class CustomerStaffService {
     private readonly repository: MembershipRepository,
     private readonly usersRepository: UsersRepository,
     private readonly credentialsRepository: AccessCredentialRepository,
+    private readonly notificationsRepository: NotificationRepository,
     private readonly facilitiesRepository: FacilitiesRepository,
     private readonly events: DomainEventPublisher,
     private readonly sequelize: Sequelize,
@@ -73,6 +73,11 @@ export class CustomerStaffService {
           pinHash,
           transaction,
         );
+        const preference =
+          await this.notificationsRepository.createDefaultPreference(
+            user.id,
+            transaction,
+          );
 
         await this.events.record(
           {
@@ -86,6 +91,7 @@ export class CustomerStaffService {
               customerProfileId: customer.id,
               customerNumber: customer.customerNumber,
               pinCredentialId: credential.id,
+              notificationPreferenceId: preference.id,
             },
           },
           transaction,
