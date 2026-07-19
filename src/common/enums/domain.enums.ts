@@ -106,6 +106,16 @@ export enum AccessDirection {
   BOTH = 'BOTH',
 }
 
+export enum PlanType {
+  DAY_PASS = 'DAY_PASS',
+  WEEKLY = 'WEEKLY',
+  MONTHLY = 'MONTHLY',
+  QUARTERLY = 'QUARTERLY',
+  SEMIANNUAL = 'SEMIANNUAL',
+  ANNUAL = 'ANNUAL',
+  CUSTOM = 'CUSTOM',
+}
+
 export enum PlanStatus {
   ACTIVE = 'ACTIVE',
   INACTIVE = 'INACTIVE',
@@ -128,6 +138,19 @@ export enum StaffPosition {
   COACH = 'COACH',
   FRONT_DESK = 'FRONT_DESK',
   ADMINISTRATION = 'ADMINISTRATION',
+}
+
+export enum MaintenanceType {
+  PREVENTIVE = 'PREVENTIVE',
+  CORRECTIVE = 'CORRECTIVE',
+  INSPECTION = 'INSPECTION',
+}
+
+export enum MaintenanceStatus {
+  SCHEDULED = 'SCHEDULED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
 }
 
 export enum CredentialType {

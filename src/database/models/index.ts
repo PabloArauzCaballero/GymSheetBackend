@@ -10,10 +10,12 @@ import { UserExerciseModel } from '../../modules/exercises/user-exercise.model';
 import { AccessPointModel } from '../../modules/facilities/access-point.model';
 import { BranchModel } from '../../modules/facilities/branch.model';
 import { EquipmentAssignmentModel } from '../../modules/facilities/equipment-assignment.model';
+import { MaintenanceEventModel } from '../../modules/facilities/maintenance-event.model';
 import { RoomModel } from '../../modules/facilities/room.model';
 import { LegacyImportBatchModel } from '../../modules/integration/legacy-import-batch.model';
 import { LegacyImportRecordModel } from '../../modules/integration/legacy-import-record.model';
 import { OutboxJobModel } from '../../modules/integration/outbox-job.model';
+import { CustomerProfileModel } from '../../modules/membership/customer-profile.model';
 import { MembershipPlanModel } from '../../modules/membership/membership-plan.model';
 import { MembershipModel } from '../../modules/membership/membership.model';
 import { PlanAccessScopeModel } from '../../modules/membership/plan-access-scope.model';
@@ -43,9 +45,11 @@ export const databaseModels = [
   RoomModel,
   AccessPointModel,
   EquipmentAssignmentModel,
+  MaintenanceEventModel,
   MembershipPlanModel,
   PlanAccessScopeModel,
   MembershipModel,
+  CustomerProfileModel,
   StaffProfileModel,
   StaffBranchScopeModel,
   AccessCredentialModel,

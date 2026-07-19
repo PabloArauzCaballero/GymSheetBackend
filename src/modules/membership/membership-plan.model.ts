@@ -1,5 +1,5 @@
 import { Column, CreatedAt, DataType, Default, HasMany, Model, PrimaryKey, Table, UpdatedAt } from 'sequelize-typescript';
-import { PlanStatus } from '../../common/enums/domain.enums';
+import { PlanStatus, PlanType } from '../../common/enums/domain.enums';
 import { MembershipModel } from './membership.model';
 import { PlanAccessScopeModel } from './plan-access-scope.model';
 
@@ -18,6 +18,10 @@ export class MembershipPlanModel extends Model {
 
   @Column({ type: DataType.TEXT, allowNull: true })
   declare description: string | null;
+
+  @Default(PlanType.CUSTOM)
+  @Column({ type: DataType.STRING(30), allowNull: false, field: 'plan_type' })
+  declare planType: PlanType;
 
   @Column({ type: DataType.INTEGER, allowNull: false, field: 'duration_days' })
   declare durationDays: number;
