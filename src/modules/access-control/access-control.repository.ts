@@ -15,13 +15,22 @@ import {
   CreateDeviceInput,
 } from './access-control.schemas';
 
+export type FailedAccessEventUpdate = {
+  deadLetter: boolean;
+  updated: boolean;
+};
+
 @Injectable()
 export class AccessControlRepository {
   constructor(
-    @InjectModel(AccessCredentialModel) private readonly credentials: typeof AccessCredentialModel,
-    @InjectModel(AccessDeviceModel) private readonly devices: typeof AccessDeviceModel,
-    @InjectModel(AccessDeviceEventModel) private readonly events: typeof AccessDeviceEventModel,
-    @InjectModel(AccessDecisionModel) private readonly decisions: typeof AccessDecisionModel,
+    @InjectModel(AccessCredentialModel)
+    private readonly credentials: typeof AccessCredentialModel,
+    @InjectModel(AccessDeviceModel)
+    private readonly devices: typeof AccessDeviceModel,
+    @InjectModel(AccessDeviceEventModel)
+    private readonly events: typeof AccessDeviceEventModel,
+    @InjectModel(AccessDecisionModel)
+    private readonly decisions: typeof AccessDecisionModel,
     private readonly sequelize: Sequelize,
   ) {}
 
@@ -122,9 +131,7 @@ export class AccessControlRepository {
         },
       );
 
-      if (claimedRows.length === 0) {
-        return [];
-      }
+      if (claimedRows.length === 0) return [];
 
       return this.events.findAll({
         where: { id: claimedRows.map(({ id }) => id) },
@@ -134,20 +141,39 @@ export class AccessControlRepository {
     });
   }
 
-  async updateEvent(
-    event: AccessDeviceEventModel,
-    changes: Record<string, unknown>,
+  async completeClaimedEvent(
+    eventId: string,
+    workerId: string,
+    attemptCount: number,
     transaction: Transaction,
-  ) {
-    await event.update(changes, { transaction });
-    return event;
+  ): Promise<boolean> {
+    const [updatedRows] = await this.events.update(
+      {
+        queueStatus: QueueItemStatus.COMPLETED,
+        completedAt: new Date(),
+        lockedAt: null,
+        lockedBy: null,
+        lastError: null,
+      },
+      {
+        where: {
+          id: eventId,
+          queueStatus: QueueItemStatus.PROCESSING,
+          lockedBy: workerId,
+          attemptCount,
+        },
+        transaction,
+      },
+    );
+    return updatedRows === 1;
   }
 
   async markEventFailed(
     event: AccessDeviceEventModel,
+    workerId: string,
     error: unknown,
     maximumAttempts: number,
-  ): Promise<boolean> {
+  ): Promise<FailedAccessEventUpdate> {
     const deadLetter = event.attemptCount >= maximumAttempts;
     const delaySeconds = Math.min(
       300,
@@ -155,8 +181,7 @@ export class AccessControlRepository {
     );
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown access worker error';
-
-    await this.events.update(
+    const [updatedRows] = await this.events.update(
       {
         queueStatus: deadLetter
           ? QueueItemStatus.DEAD_LETTER
@@ -166,10 +191,17 @@ export class AccessControlRepository {
         lockedBy: null,
         lastError: errorMessage.slice(0, 4000),
       },
-      { where: { id: event.id } },
+      {
+        where: {
+          id: event.id,
+          queueStatus: QueueItemStatus.PROCESSING,
+          lockedBy: workerId,
+          attemptCount: event.attemptCount,
+        },
+      },
     );
 
-    return deadLetter;
+    return { deadLetter, updated: updatedRows === 1 };
   }
 
   createDecision(input: Record<string, unknown>, transaction: Transaction) {
