@@ -6,43 +6,19 @@ dotenv.config();
 type JwtDurationUnit = 'ms' | 's' | 'm' | 'h' | 'd' | 'w' | 'y';
 export type JwtDuration = `${number}${JwtDurationUnit}`;
 
-/**
- * Parses explicit boolean environment values without JavaScript truthiness.
- * This prevents the string "false" from becoming true.
- */
 export const environmentBooleanSchema = z.preprocess((rawValue) => {
-  if (typeof rawValue === 'boolean') {
-    return rawValue;
-  }
-
-  if (typeof rawValue !== 'string') {
-    return rawValue;
-  }
-
+  if (typeof rawValue === 'boolean') return rawValue;
+  if (typeof rawValue !== 'string') return rawValue;
   const normalizedValue = rawValue.trim().toLowerCase();
-
-  if (['true', '1', 'yes', 'on'].includes(normalizedValue)) {
-    return true;
-  }
-
-  if (['false', '0', 'no', 'off'].includes(normalizedValue)) {
-    return false;
-  }
-
+  if (['true', '1', 'yes', 'on'].includes(normalizedValue)) return true;
+  if (['false', '0', 'no', 'off'].includes(normalizedValue)) return false;
   return rawValue;
 }, z.boolean());
 
 const commaSeparatedListSchema = z.string().transform((rawValue) =>
-  rawValue
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean),
+  rawValue.split(',').map((entry) => entry.trim()).filter(Boolean),
 );
 
-/**
- * Restricts JWT expirations to the concise duration units accepted by the
- * underlying signing library and preserves a template-literal type after validation.
- */
 const jwtDurationSchema = z
   .string()
   .trim()
@@ -57,9 +33,8 @@ export const environmentSchema = z
     CORS_ORIGINS: commaSeparatedListSchema.default('http://localhost:5173'),
     TRUST_PROXY: environmentBooleanSchema.default(false),
     REQUEST_BODY_LIMIT: z.string().regex(/^\d+(kb|mb)$/i).default('1mb'),
-    LOG_LEVEL: z
-      .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
-      .default('info'),
+    LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+    BUSINESS_TIME_ZONE: z.string().trim().min(3).max(80).default('America/La_Paz'),
 
     DB_HOST: z.string().trim().min(1),
     DB_PORT: z.coerce.number().int().positive().max(65535).default(5432),
@@ -74,12 +49,7 @@ export const environmentSchema = z
     DB_POOL_ACQUIRE_MS: z.coerce.number().int().min(1000).max(120000).default(30000),
     DB_POOL_IDLE_MS: z.coerce.number().int().min(1000).max(120000).default(10000),
     DB_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(10000),
-    DB_STATEMENT_TIMEOUT_MS: z.coerce
-      .number()
-      .int()
-      .min(1000)
-      .max(120000)
-      .default(15000),
+    DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
 
     JWT_ACCESS_SECRET: z.string().min(64),
     JWT_ACCESS_EXPIRES_IN: jwtDurationSchema.default('15m'),
@@ -95,65 +65,33 @@ export const environmentSchema = z
     GATEWAY_ENABLED: environmentBooleanSchema.default(true),
 
     EXERCISES_DATASET_ENABLED: environmentBooleanSchema.default(false),
-    EXERCISES_DATASET_JSON_URL: z
-      .string()
-      .url()
-      .default(
-        'https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json',
-      ),
-    EXERCISES_DATASET_ALLOWED_HOSTS:
-      commaSeparatedListSchema.default('raw.githubusercontent.com'),
-    EXERCISES_DATASET_TIMEOUT_MS: z.coerce
-      .number()
-      .int()
-      .min(1000)
-      .max(60000)
-      .default(15000),
-    EXERCISES_DATASET_MAX_RESPONSE_BYTES: z.coerce
-      .number()
-      .int()
-      .min(1024)
-      .max(52428800)
-      .default(15728640),
+    EXERCISES_DATASET_JSON_URL: z.string().url().default('https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json'),
+    EXERCISES_DATASET_ALLOWED_HOSTS: commaSeparatedListSchema.default('raw.githubusercontent.com'),
+    EXERCISES_DATASET_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000),
+    EXERCISES_DATASET_MAX_RESPONSE_BYTES: z.coerce.number().int().min(1024).max(52428800).default(15728640),
     EXERCISES_DATASET_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(100),
     EXERCISES_DATASET_IMPORT_MEDIA: environmentBooleanSchema.default(false),
     EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED: environmentBooleanSchema.default(false),
   })
   .superRefine((configuration, context) => {
     if (configuration.DB_POOL_MIN > configuration.DB_POOL_MAX) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['DB_POOL_MIN'],
-        message: 'DB_POOL_MIN cannot be greater than DB_POOL_MAX.',
-      });
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['DB_POOL_MIN'], message: 'DB_POOL_MIN cannot be greater than DB_POOL_MAX.' });
     }
-
     if (configuration.JWT_ACCESS_SECRET === configuration.JWT_REFRESH_SECRET) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['JWT_REFRESH_SECRET'],
-        message: 'Access and refresh secrets must be different.',
-      });
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['JWT_REFRESH_SECRET'], message: 'Access and refresh secrets must be different.' });
     }
-
-    if (
-      configuration.EXERCISES_DATASET_IMPORT_MEDIA &&
-      !configuration.EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED'],
-        message: 'Media import requires explicit confirmation of the applicable media license.',
-      });
+    if (configuration.EXERCISES_DATASET_IMPORT_MEDIA && !configuration.EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED'], message: 'Media import requires explicit confirmation of the applicable media license.' });
+    }
+    try {
+      new Intl.DateTimeFormat('en-CA', { timeZone: configuration.BUSINESS_TIME_ZONE }).format();
+    } catch {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['BUSINESS_TIME_ZONE'], message: 'BUSINESS_TIME_ZONE must be a valid IANA time zone.' });
     }
   });
 
 const parsedEnvironment = environmentSchema.safeParse(process.env);
-
 if (!parsedEnvironment.success) {
-  throw new Error(
-    `Invalid environment variables: ${JSON.stringify(parsedEnvironment.error.flatten().fieldErrors)}`,
-  );
+  throw new Error(`Invalid environment variables: ${JSON.stringify(parsedEnvironment.error.flatten().fieldErrors)}`);
 }
-
 export const env = parsedEnvironment.data;
