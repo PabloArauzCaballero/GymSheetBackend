@@ -1,15 +1,25 @@
-export async function sleep(milliseconds: number, signal: AbortSignal): Promise<void> {
+export async function sleep(
+  milliseconds: number,
+  signal: AbortSignal,
+): Promise<void> {
   if (signal.aborted) return;
+
   await new Promise<void>((resolve) => {
-    const timeout = setTimeout(resolve, milliseconds);
-    signal.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timeout);
-        resolve();
-      },
-      { once: true },
-    );
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout>;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    };
+    const onAbort = () => finish();
+
+    timeout = setTimeout(finish, milliseconds);
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) finish();
   });
 }
 
