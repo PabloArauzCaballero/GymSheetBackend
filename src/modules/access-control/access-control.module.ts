@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { env } from '../../config/env';
+import { IntegrationModule } from '../integration/integration.module';
 import { MembershipModule } from '../membership/membership.module';
 import { AccessCredentialModule } from './access-credential.module';
 import {
@@ -18,6 +19,7 @@ import { MockAccessController } from './mock-access.controller';
   imports: [
     MembershipModule,
     AccessCredentialModule,
+    IntegrationModule,
     SequelizeModule.forFeature([
       AccessDeviceModel,
       AccessDeviceEventModel,
