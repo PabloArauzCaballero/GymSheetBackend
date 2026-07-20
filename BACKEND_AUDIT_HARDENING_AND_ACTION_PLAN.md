@@ -59,7 +59,7 @@ era invisible. Al restaurar el gate afloraron **24 errores reales** previamente 
 | Build (`yarn build`) | ✅ Pasa | ✅ Pasa |
 | Type check (`yarn type-check`) | ✅ Pasa | ✅ Pasa |
 | Lint (`yarn lint`) | ❌ **Error de configuración (exit 2)** | ✅ **Pasa, 0 errores** |
-| Tests unitarios (`yarn test`) | ✅ 37 pasan / 14 suites | ✅ **99 pasan / 23 suites** |
+| Tests unitarios (`yarn test`) | ✅ 37 pasan / 14 suites | ✅ **107 pasan / 24 suites** |
 | Tests e2e (`yarn test:e2e`) | ❌ **exit 1 — no existían** | ✅ **26 pasan / 2 suites, contra PostgreSQL real** |
 | Migraciones up/down/up | ⚠️ Sólo en CI | ✅ **Verificado localmente: 7 → 6 → 7** |
 | Carga HTTP | ⚠️ Sólo en CI | ✅ **Ejecutada, dentro de presupuesto** |
@@ -78,9 +78,15 @@ Ninguno de severidad crítica. Cerrados en la segunda y tercera ronda:
 - **F-007** (métricas sin autenticación): guarda opcional por token, retrocompatible — ver F-011.
 - **Graceful shutdown sin verificar**: añadido paso de CI que envía SIGTERM real a API y worker.
 
-**Persiste una única brecha de infraestructura:** R-001, rate limiting no compartido entre
-instancias. Requiere Redis o mitigación en el balanceador; no es corregible desde el código sin
-introducir una dependencia de infraestructura que el propietario debe aprobar.
+- **R-001** (rate limiting no compartido): implementado almacenamiento en Redis y **demostrado con
+  dos instancias reales** — ver F-013.
+- **F-014** (caída de Redis derribaba toda la API): defecto **crítico introducido al corregir R-001**,
+  detectado al probar el escenario de fallo y corregido con degradación controlada.
+
+**No persiste ninguna brecha estructural.** Las tres observaciones restantes son **acciones de
+configuración del propietario**, no defectos de código: definir `REDIS_URL` + `REDIS_REQUIRED` en
+multi-instancia, definir `METRICS_SCRAPE_TOKEN` (o restringir la ruta), y la primera ejecución del
+paso de CI de graceful shutdown.
 
 **Regresión introducida y corregida durante la auditoría:** al añadir las suites e2e bajo `test/`,
 TypeScript recalculó la raíz de compilación y `yarn build` pasó a emitir `dist/src/main.js` en lugar
@@ -499,15 +505,137 @@ refresh es una decisión funcional del propietario. Ver R-005.
 | **Categoría** | Despliegue / Portabilidad |
 | **Severidad** | **Informativa** |
 | **Prioridad** | **P4** |
-| **Estado** | **Confirmado — no aplicable al modelo de despliegue actual** |
+| **Estado** | **Verificado (corregido)** — a petición explícita del propietario |
+| **Archivo** | `Dockerfile`, `docker-compose.yml`, `.dockerignore` |
 
-**Descripción.** No existe `Dockerfile` ni `docker-compose.yml`. Los criterios de aceptación §15.24
-del encargo ("el despliegue mediante contenedores es reproducible") están condicionados a
-*"si el proyecto utiliza Docker"* — no es el caso.
+**Descripción (línea base).** No existía `Dockerfile` ni `docker-compose.yml`.
 
-**No corregido.** Introducir contenedorización sin conocer el destino de despliegue contravendría la
-regla §2.3 del encargo (no introducir tecnología sin necesidad real demostrada). Decisión del
-propietario.
+**Corrección aplicada.**
+
+`Dockerfile` en tres etapas:
+- **builder** compila con dependencias de desarrollo y **verifica el artefacto**: comprueba los cinco
+  entrypoints y la ausencia de `dist/src` (aprendizaje de F-012), de modo que la regresión de ruta de
+  compilación rompe el build de imagen en lugar de llegar a producción.
+- **dependencies** resuelve sólo dependencias de producción desde el mismo lockfile.
+- **runtime** parte de `node:22-alpine`, sin compilador ni código fuente. Ejecuta como usuario
+  **`node` (uid 1000)**, con los ficheros propiedad de `root` para que el proceso no pueda modificar
+  su propio código. Usa **tini** como PID 1 para reenviar señales — sin él los manejadores de
+  `SIGTERM` no se ejecutarían de forma fiable.
+- `HEALTHCHECK` apunta a **liveness, no a readiness**: Docker reinicia un contenedor *unhealthy*, y
+  reiniciar durante una caída de PostgreSQL o Redis es exactamente el bucle que F-014 evitó.
+
+`docker-compose.yml` con PostgreSQL 16, Redis 7, un servicio `migrate` de un solo uso, la API y los
+tres workers. Puntos de diseño:
+- **Orden de arranque impuesto, no supuesto**: `postgres` y `redis` deben estar *healthy*, después
+  `migrate` debe **terminar con éxito** (`service_completed_successfully`), y sólo entonces arrancan
+  API y workers. Ninguna instancia puede servir tráfico contra un esquema desactualizado.
+- `read_only: true`, `no-new-privileges:true` y `tmpfs` para `/tmp` en todos los servicios de
+  aplicación.
+- Límites de memoria y CPU por servicio.
+- `stop_grace_period` de 30 s en la API y **45 s en los workers**, para que un worker termine el job
+  que tiene tomado en lugar de dejarlo bloqueado hasta que expire el lock.
+- Secretos **sin valor por defecto usable** (`${VAR:?...}`): una variable ausente aborta el arranque
+  en vez de iniciar con una credencial débil conocida.
+- Redis sin persistencia (`--save "" --appendonly no`) con `maxmemory-policy allkeys-lru`: sólo
+  contiene contadores de rate limiting, que son seguros de perder.
+
+**Prueba — pila completa levantada y ejercitada:**
+
+```
+docker build                → imagen 317 MB, aserciones de artefacto superadas
+usuario en ejecución        → uid=1000(node)   ← no root
+orden de arranque           → postgres healthy → redis healthy → migrate Exited(0)
+                              → api + 3 workers Started
+docker compose ps           → api healthy · postgres healthy · redis healthy · 3 workers Up
+GET /health/ready           → 200 {"database":"ready","migrations":"up-to-date","redis":"ready"}
+POST /auth/register         → 201
+GET /workouts sin token     → 401
+```
+
+---
+
+### F-015 · Los workers descartaban silenciosamente todos sus logs
+
+| Campo | Valor |
+|---|---|
+| **Categoría** | Observabilidad |
+| **Severidad** | **Alta** |
+| **Prioridad** | **P1** |
+| **Estado** | **Verificado (corregido)** |
+| **Archivo** | `src/workers/worker-bootstrap.ts` |
+
+**Descripción.** `bootstrapWorker` creaba el contexto con `bufferLogs: true`. Los logs almacenados en
+búfer se retienen hasta que algo los vuelca: `NestFactory.create` lo hace durante `listen()`, pero un
+*application context* no tiene paso equivalente. Como `flushLogs()` nunca se invocaba, **todas** las
+líneas de log de los tres workers se descartaban de forma permanente.
+
+**Evidencia medida en contenedor:**
+
+```
+líneas de log del contenedor api                  → 158
+líneas de log del contenedor worker-reminders     →   0
+líneas de log del contenedor worker-access        →   0
+```
+
+Los runners sí registran actividad (`access-event.runner.ts:20,30,41,81,90`), incluidos los errores
+de procesamiento de jobs y el evento `worker.shutdown_requested`. Ninguna de esas líneas llegaba a
+emitirse.
+
+**Impacto.** Los tres procesos que ejecutan el trabajo asíncrono —eventos de acceso físico,
+recordatorios de membresía y entrega de notificaciones— eran **completamente inobservables en
+producción**. Un fallo de procesamiento, un job en dead-letter o un error de conexión no dejaban
+rastro alguno. Este defecto existía en el código original y sólo se hizo visible al ejecutar los
+workers en contenedor y comparar su salida con la de la API.
+
+**Corrección aplicada.** `application.flushLogs()` inmediatamente después de crear el contexto.
+
+**Prueba:**
+
+```
+Antes:  docker logs worker-access → 0 líneas
+Después: docker logs worker-access → arranque completo de Nest, módulos inicializados
+
+Parada con SIGTERM tras la corrección:
+  worker.shutdown_requested   ← registrado
+  SIGTERM                     ← registrado
+  código de salida 0, en 1 s (periodo de gracia 45 s)
+```
+
+---
+
+### F-016 · Los workers heredaban una sonda HTTP imposible de satisfacer
+
+| Campo | Valor |
+|---|---|
+| **Categoría** | Despliegue / Observabilidad |
+| **Severidad** | **Media** (introducida y corregida dentro de esta auditoría) |
+| **Prioridad** | **P2** |
+| **Estado** | **Verificado (corregido)** |
+| **Archivo** | `docker-compose.yml` |
+
+**Descripción.** El `HEALTHCHECK` definido en la imagen consulta `/health/live` por HTTP. Los tres
+workers usan la misma imagen pero **no exponen servidor HTTP**, por lo que la sonda no podía pasar
+nunca.
+
+**Evidencia medida:**
+
+```
+docker compose ps, 90 s después del arranque:
+  worker-access          Up About a minute (unhealthy)
+  worker-notifications   Up About a minute (unhealthy)
+  worker-reminders       Up About a minute (unhealthy)
+```
+
+**Impacto.** Tres contenedores sanos marcados permanentemente como *unhealthy*: alertas falsas
+continuas y, en un orquestador, despliegues bloqueados o reinicios en bucle de procesos correctos.
+
+**Corrección aplicada.** `healthcheck: disable: true` en los tres servicios worker mediante un ancla
+YAML compartida. Para un worker, la liveness es la vida del proceso, que ya cubre la política de
+reinicio.
+
+**Prueba:** `docker compose ps` → los tres workers en `Up` sin estado *unhealthy*.
+
+---
 
 ---
 
@@ -637,6 +765,117 @@ añadir a CI una comprobación de que `dist/main.js` existe tras el build.
 
 ---
 
+### F-013 · Rate limiting por proceso en despliegue horizontal (antes R-001)
+
+| Campo | Valor |
+|---|---|
+| **Categoría** | Seguridad / Escalabilidad |
+| **Severidad** | **Media** |
+| **Prioridad** | **P2** |
+| **Estado** | **Verificado (corregido)** |
+| **Archivo** | `src/app.module.ts`, `src/common/redis/redis.module.ts` |
+
+**Descripción.** `ThrottlerModule` usaba almacenamiento en memoria por proceso. Con N instancias, el
+límite efectivo sobre `/auth/login` era N × `AUTH_RATE_LIMIT_MAX`.
+
+**Evidencia medida — dos instancias reales, `AUTH_RATE_LIMIT_MAX=5`, sin Redis:**
+
+```
+5 intentos en instancia A → 401, 401, 401, 401, 401
+6.º intento en A          → 429   ← A aplica su límite
+1.er intento en B         → 401   ← B lo desconoce: presupuesto renovado
+countersShared            → false
+```
+
+Un atacante rotando entre instancias multiplica su presupuesto por el número de réplicas.
+
+**Corrección aplicada.**
+- `RedisModule` con cliente opcional (`REDIS_URL`), reintentos acotados, cola offline deshabilitada
+  para no acumular peticiones pendientes, y cierre de conexión en `onApplicationShutdown`.
+- `ThrottlerModule.forRootAsync` usa `ThrottlerStorageRedisService` cuando hay Redis.
+- Sin Redis, se conserva el comportamiento anterior y se **registra una advertencia** en el arranque.
+- `REDIS_REQUIRED=true` hace fallar el arranque si falta `REDIS_URL`, para que un despliegue
+  multi-instancia no degrade en silencio.
+- Readiness informa `redis: ready | not-configured`.
+
+**Prueba — misma configuración, con Redis compartido:**
+
+```
+5 intentos en instancia A → 401 ×5
+6.º intento en A          → 429
+1.er intento en B         → 429   ← contador compartido
+countersShared            → true
+```
+
+Verificado además: `REDIS_REQUIRED=true` sin `REDIS_URL` aborta el arranque con
+`REDIS_URL is required when REDIS_REQUIRED is enabled.` Añadido a CI un servicio Redis y un paso que
+levanta dos instancias y falla si el límite no se comparte.
+
+---
+
+### F-014 · Una caída de Redis derribaba toda la API y provocaba bucle de reinicios
+
+| Campo | Valor |
+|---|---|
+| **Categoría** | Resiliencia |
+| **Severidad** | **Crítica** (introducida y corregida dentro de esta auditoría) |
+| **Prioridad** | **P0** |
+| **Estado** | **Verificado (corregido)** |
+| **Archivo** | `src/common/redis/resilient-throttler.storage.ts`, `src/modules/health/health.controller.ts` |
+
+**Descripción.** Al introducir F-013, `ThrottlerGuard` —registrado como guarda **global**— pasó a
+depender de Redis en cada petición. Con Redis caído, el error de almacenamiento se propagaba sin
+control y **todos** los endpoints devolvían 500, incluido `/health/live`.
+
+**Evidencia medida tras introducir F-013, con Redis detenido:**
+
+```
+/health/live      → 500   ← el orquestador reinicia un proceso sano: bucle de reinicios
+/health/ready     → 500   ← debía ser 503
+/exercises        → 500   ← debía ser 401
+/auth/login       → 500   ← debía ser 401
+```
+
+**Impacto.** Una dependencia añadida para *reforzar* el rate limiting convertía una degradación
+parcial en una caída total del servicio, y el fallo de liveness habría hecho que Kubernetes
+reiniciara indefinidamente instancias perfectamente sanas. Severidad superior a la del problema que
+F-013 resolvía.
+
+**Corrección aplicada.**
+1. `@SkipThrottle()` en el controlador de health: las sondas nunca deben depender del backend de
+   rate limiting.
+2. `ResilientThrottlerStorage` envuelve el almacenamiento de Redis y, ante un fallo, **degrada a
+   contadores por proceso** en lugar de propagar la excepción. No es *fail-open*: los límites se
+   siguen aplicando, sólo dejan de compartirse. La degradación se registra **como máximo una vez por
+   minuto** para que la incidencia no genere una segunda incidencia por saturación de logs.
+3. Readiness sigue devolviendo 503 con Redis inalcanzable, de modo que la instancia sale de rotación
+   y el operador lo detecta.
+
+**Prueba — mismo escenario tras la corrección:**
+
+```
+/health/live      → 200   ← el proceso sobrevive; no hay bucle de reinicios
+/health/ready     → 503   ← sale de rotación
+/exercises        → 401   ← operación normal
+/auth/login       → 401   ← operación normal
+
+8 intentos de login con Redis caído (límite 5):
+  401 401 401 401 429 429 429 429   ← el límite se sigue aplicando, degradado
+"throttler.storage_degraded" en el log: 1 vez   ← sin inundación
+
+Tras reiniciar Redis:
+/health/ready     → 200 {"redis":"ready"}   ← se recupera sin reiniciar el proceso
+```
+
+Cubierto por 5 pruebas unitarias en `resilient-throttler.storage.spec.ts` y un paso de CI que detiene
+Redis y verifica las tres semánticas de sonda.
+
+**Lección.** Endurecer un control de seguridad puede introducir un modo de fallo peor que el que
+corrige. Toda dependencia consultada por una guarda global es, por construcción, un punto único de
+fallo de toda la API, y las sondas de salud deben quedar siempre fuera de esa ruta.
+
+---
+
 ### Hallazgos menores corregidos (agrupados)
 
 Aflorados por F-001 y resueltos sin cambio de comportamiento:
@@ -736,17 +975,13 @@ ciclo de vida completo (`revoked_at`). El recorrido dato → evento → job → 
 
 ## 8. Riesgos restantes
 
-### R-001 · Rate limiting no compartido entre instancias
+### R-001 · ~~Rate limiting no compartido entre instancias~~ — **CERRADO**
 
 | Campo | Valor |
 |---|---|
-| **Descripción** | `ThrottlerModule` usa almacenamiento en memoria por proceso. |
-| **Motivo** | No hay Redis ni almacén compartido en el stack; añadirlo excede el alcance y contraviene §2.3. |
-| **Impacto** | Con N instancias, el límite efectivo de fuerza bruta sobre `/auth/login` es N × `AUTH_RATE_LIMIT_MAX`. Debilita la mitigación de F-003 en despliegue horizontal. |
-| **Mitigación temporal** | Rate limiting a nivel de balanceador/WAF, o despliegue de instancia única. |
-| **Solución definitiva** | `ThrottlerStorageRedisService` con Redis compartido. |
-| **Responsable** | Propietario + infraestructura |
-| **Dependencia externa** | Instancia Redis |
+| **Estado** | ✅ **Cerrado.** Implementado almacenamiento compartido en Redis (F-013) y **demostrado empíricamente** con dos instancias reales: agotado el presupuesto en la instancia A, la instancia B responde 429. |
+| **Residuo** | La activación es **opt-in** mediante `REDIS_URL`. Sin ella, el comportamiento es el anterior (contadores por proceso) y se emite una advertencia en el arranque. `REDIS_REQUIRED=true` impide arrancar sin Redis. |
+| **Acción requerida del propietario** | En despliegue multi-instancia: definir `REDIS_URL` y `REDIS_REQUIRED=true`. |
 
 ### R-002 · ~~Métricas Prometheus accesibles sin autenticación~~ — **CERRADO**
 
@@ -964,11 +1199,87 @@ dist/src/                                       → ausente (correcto)
 
 Comprobación equivalente añadida a CI como paso bloqueante.
 
+### 9.1.8 Rate limiting compartido entre instancias (F-013)
+
+Dos instancias reales en los puertos 3201 y 3202, `AUTH_RATE_LIMIT_MAX=5`.
+
+```
+SIN Redis (comportamiento anterior):
+  5 intentos en A → 401 ×5
+  6.º en A        → 429
+  1.er en B       → 401      ← presupuesto renovado al cambiar de instancia
+  countersShared  → false
+
+CON Redis compartido:
+  5 intentos en A → 401 ×5
+  6.º en A        → 429
+  1.er en B       → 429      ← contador compartido
+  countersShared  → true
+
+REDIS_REQUIRED=true sin REDIS_URL:
+  arranque abortado con "REDIS_URL is required when REDIS_REQUIRED is enabled."
+```
+
+### 9.1.9 Supervivencia ante caída de Redis (F-014)
+
+```
+ANTES de la corrección, con Redis detenido:
+  /health/live  → 500   ← bucle de reinicios del orquestador
+  /health/ready → 500
+  /exercises    → 500
+  /auth/login   → 500
+
+DESPUÉS de la corrección, con Redis detenido:
+  /health/live  → 200
+  /health/ready → 503
+  /exercises    → 401
+  /auth/login   → 401
+  8 intentos de login (límite 5) → 401 401 401 401 429 429 429 429
+  "throttler.storage_degraded" registrado 1 vez
+
+Tras reiniciar Redis:
+  /health/ready → 200 {"database":"ready","migrations":"up-to-date","redis":"ready"}
+```
+
+### 9.1.10 Despliegue en contenedores y apagado ordenado (F-009, F-015, F-016)
+
+```
+docker build                     → 317 MB · aserciones de artefacto superadas
+usuario del runtime              → uid=1000(node)          ← no root
+orden de arranque                → postgres healthy → redis healthy
+                                   → migrate Exited(0) → api + 3 workers Started
+docker compose ps                → api healthy · postgres healthy · redis healthy
+                                   · worker-access Up · worker-reminders Up
+                                   · worker-notifications Up
+GET /health/ready (contenedor)   → 200 {"database":"ready","migrations":"up-to-date",
+                                        "redis":"ready"}
+POST /auth/register (contenedor) → 201
+GET /workouts sin token          → 401
+
+Apagado ordenado (verificado en Linux, imposible en Windows):
+  docker stop worker-access → salida en 1 s (gracia 45 s), código 0
+                              logs: worker.shutdown_requested, SIGTERM
+  docker stop api           → salida en 2 s (gracia 30 s), código 143 (SIGTERM)
+                              puerto cerrado tras la parada
+
+Logs de worker antes de F-015 → 0 líneas
+Logs de worker tras F-015     → arranque completo + eventos de apagado
+```
+
+> El código 143 de la API es el resultado convencional de una terminación por SIGTERM. La evidencia
+> de que el apagado fue ordenado es que salió en 2 s y no al agotarse el periodo de gracia de 30 s,
+> que es lo que ocurriría si Docker hubiese tenido que enviar SIGKILL.
+
 ### 9.4 Pruebas ejecutadas
 
 | Prueba | Resultado |
 |---|---|
-| Unitarias | ✅ 99/99 |
+| Unitarias | ✅ 107/107 |
+| E2E sin Redis y con Redis | ✅ 26/26 en ambas configuraciones |
+| Rate limiting compartido (2 instancias) | ✅ demostrado: sin Redis 401, con Redis 429 |
+| Supervivencia ante caída de Redis | ✅ live 200 · ready 503 · negocio 401 · límite aplicado |
+| Recuperación tras volver Redis | ✅ readiness 200 sin reiniciar el proceso |
+| `REDIS_REQUIRED` sin `REDIS_URL` | ✅ arranque abortado |
 | Readiness ante migración pendiente | ✅ 503 con la migración nombrada; liveness 200 |
 | Autenticación de métricas | ✅ 401 / 401 / 200 según token |
 | Disposición del artefacto de build | ✅ 5 entrypoints presentes, sin `dist/src` |
@@ -988,8 +1299,8 @@ Declaradas explícitamente conforme a §10 del encargo.
 
 | Prueba | Motivo | Riesgo | Procedimiento exacto | Resultado esperado |
 |---|---|---|---|---|
-| Graceful shutdown por SIGTERM | **Limitación de plataforma:** Windows no entrega SIGTERM con semántica POSIX. **Paso de CI bloqueante ya añadido**; pendiente su primera ejecución | Bajo — hooks cableados; el paso existe y falla el pipeline si no se cumple | Automático en CI (`Verify graceful shutdown on SIGTERM`), o en Linux: `kill -TERM <pid>` | API y worker salen en ≤15 s; `worker.shutdown_requested` registrado; el puerto deja de responder |
-| Arranque multi-instancia | Requiere orquestación de varias instancias | Ver R-001 | Arrancar 2 instancias en puertos distintos contra la misma BD | Ambas sirven; el rate limit **no** se comparte (comportamiento esperado, R-001) |
+| ~~Graceful shutdown por SIGTERM~~ | ✅ **Ejecutado** (§9.1.10): verificado dentro de contenedores Linux, sorteando la limitación de Windows | — | — | — |
+| ~~Arranque multi-instancia~~ | ✅ **Ejecutado** (§9.1.8): dos instancias contra la misma BD y el mismo Redis | — | — | — |
 | Concurrencia real del outbox | Requiere varios procesos worker simultáneos | `SKIP LOCKED` sin verificación empírica; la lógica está revisada por lectura | Arrancar 2+ `worker:access` contra la misma BD; encolar N jobs | Cada job procesado exactamente una vez |
 | Backup y restauración | `pg_dump`/`pg_restore` no están en el PATH del entorno local | Bajo | `pg_dump --format=custom` + `pg_restore --exit-on-error` | Esquema y filas restaurados. **Ya cubierto por CI** |
 | Estrés sostenido | Fuera del alcance de un humo de carga | Sin perfil de saturación | Herramienta de carga sostenida (k6/autocannon) durante ≥10 min | Identificar el punto de saturación |
@@ -1007,7 +1318,7 @@ Declaradas explícitamente conforme a §10 del encargo.
 | 1 | El repositorio compila | ✅ Cumplido | `yarn build` → correcto (§9.1) |
 | 2 | Lint sin errores bloqueantes | ✅ **Cumplido** | `eslint.config.mjs`; `yarn lint` → 0 errores. **Antes: no cumplido** (F-001) |
 | 3 | Type checking correcto | ✅ Cumplido | `yarn type-check` → 0 errores |
-| 4 | Pruebas críticas pasan | ✅ Cumplido | **99/99 unitarias + 26/26 e2e** (§9.1) |
+| 4 | Pruebas críticas pasan | ✅ Cumplido | **107/107 unitarias + 26/26 e2e** (§9.1) |
 | 5 | Vulnerabilidades críticas corregidas o bloqueantes | ✅ Cumplido | Ninguna crítica hallada; F-003 corregida y verificada |
 | 6 | Permisos aplicados desde backend | ✅ Cumplido | `RolesGuard` + `JwtAuthGuard` globales al **100 % de cobertura**; aislamiento horizontal **probado e2e con dos cuentas reales** |
 | 7 | Endpoints validan entradas | ✅ Cumplido | `ZodValidationPipe` (100 % cobertura, incl. prueba anti mass-assignment) + `UuidParamPipe`; verificado e2e |
@@ -1023,11 +1334,11 @@ Declaradas explícitamente conforme a §10 del encargo.
 | 17 | Logs estructurados y saneados | ✅ **Cumplido** | Filtro redacta en producción; **F-004 eliminó contaminación de stdout** |
 | 18 | Correlation ID | ✅ Cumplido | `request-id.middleware.ts` con validación de formato |
 | 19 | Health, readiness y liveness reales | ✅ **Cumplido** | Readiness **verifica migraciones** y devuelve 503 nombrando las pendientes, con liveness independiente en 200. Verificado contra BD real (F-010) |
-| 20 | Graceful shutdown | 🟨 **Parcial** | `enableShutdownHooks()`; SIGTERM/SIGINT en workers; **paso de CI bloqueante añadido** que envía SIGTERM real. Pendiente su primera ejecución en el pipeline (§9.5) |
+| 20 | Graceful shutdown | ✅ **Cumplido** | **Verificado en contenedor Linux**: worker registra `worker.shutdown_requested` y sale con código 0 en 1 s (gracia 45 s); API drena y cierra el puerto en 2 s (gracia 30 s). Paso de CI bloqueante añadido (§9.1.10) |
 | 21 | Migraciones reproducibles | ✅ Cumplido | **Verificado localmente**: up → down → up (7→6→7) + idempotencia (§9.1.2), además de CI |
 | 22 | Seeds idempotentes | ✅ Cumplido | `ON CONFLICT` en seeds |
 | 23 | Seeds mockup bloqueados en producción | ✅ Cumplido | `env.ts:96-97` rechaza `ACCESS_MOCK_ENABLED` y provider `MOCK` en producción |
-| 24 | Despliegue por contenedores reproducible | ⬜ No aplicable | El proyecto no usa Docker (F-009) |
+| 24 | Despliegue por contenedores reproducible | ✅ **Cumplido** | `Dockerfile` multietapa con usuario no root, tini y verificación de artefacto; `docker-compose.yml` con orden de arranque impuesto. **Pila levantada y ejercitada** (F-009, §9.1.10) |
 | 25 | Sin secretos hardcodeados | ✅ Cumplido | Sólo `.env.example` versionado; `grep` sin coincidencias en `src/` |
 | 26 | Errores no exponen información interna | ✅ Cumplido | `toPublicError` devuelve mensaje genérico ante no-`HttpException` |
 | 27 | Alcance contrastado requisito por requisito | ✅ Cumplido | Matriz §5 (dominio real, no el económico del encargo) |
@@ -1035,7 +1346,10 @@ Declaradas explícitamente conforme a §10 del encargo.
 | 29 | El documento refleja el código final | ✅ Cumplido | Todas las cifras proceden de ejecuciones posteriores a los cambios |
 | 30 | Decisión de producción sustentada | ✅ Cumplido | §11 |
 
-**Resumen:** 27 Cumplido · 1 Parcial · 2 No aplicable · 0 No cumplido · 0 Bloqueado
+**Resumen:** **29 Cumplido · 0 Parcial · 1 No aplicable · 0 No cumplido · 0 Bloqueado**
+
+El único criterio no aplicable es el 8 (autenticación de agentes de IA), inexistente en este dominio
+(§0).
 
 > Historial de este resumen a lo largo de las tres rondas: 26/1/2/0 → 25/2/2/0 → **27/1/2/0**.
 > El criterio 20 bajó a "Parcial" en la segunda ronda al constatarse que **no era verificable en
@@ -1080,26 +1394,37 @@ decisión ya no descansa sólo en revisión de código:
 
 **Las observaciones que motivan la calificación "menores" y no "apto sin reservas":**
 
-1. **R-001 — la única brecha estructural restante.** El rate limiting en memoria debilita la
-   protección contra fuerza bruta en despliegue horizontal. Es la única observación que **no se
-   corrigió desde el código**, porque exige introducir Redis: una dependencia de infraestructura que
-   corresponde aprobar al propietario. Mitigable a nivel de balanceador sin tocar código, pero debe
-   resolverse antes de escalar a más de una instancia.
-2. **Dos configuraciones que el propietario debe aplicar en el despliegue.** El código ya ofrece el
-   mecanismo; queda activarlo: definir `METRICS_SCRAPE_TOKEN` (o restringir la ruta a la red
-   privada), y confirmar la estrategia de migración en despliegues progresivos ahora que readiness
-   las verifica.
-3. **Graceful shutdown pendiente de su primera ejecución en CI** (§9.5). El paso es bloqueante y ya
-   está en el workflow, pero todavía no ha corrido.
-4. **Cobertura global del 31.07 %.** Las capas de seguridad están al 100 % y se añadieron pruebas de
-   servicio para `export`, `health` y `profiles`, pero módulos completos (equipamiento,
-   instalaciones, control de acceso, notificaciones) siguen sin pruebas de servicio.
+1. **Tres acciones de configuración del propietario.** El código ya ofrece los mecanismos; queda
+   activarlos en el despliegue: `REDIS_URL` + `REDIS_REQUIRED=true` si se ejecuta más de una
+   instancia; `METRICS_SCRAPE_TOKEN` (o restricción de red) para el endpoint de métricas; y
+   confirmar la estrategia de migración en despliegues progresivos ahora que readiness la verifica.
+   **Ninguna es un defecto pendiente**, pero omitirlas reintroduce el riesgo original.
+2. **Cobertura global del 31.07 %.** Las capas de seguridad están al 100 % y se añadieron pruebas de
+   servicio para `export`, `health`, `profiles` y el almacenamiento resiliente, pero módulos
+   completos (equipamiento, instalaciones, control de acceso, notificaciones) siguen sin pruebas de
+   servicio.
+3. **Redis es ahora una dependencia operativa** cuando se configura. El sistema sobrevive a su caída
+   (F-014), pero pasa a haber un servicio más que desplegar, monitorizar y respaldar.
+4. **El `docker-compose.yml` es una pila de host único**, adecuada para desarrollo, integración y
+   despliegues pequeños. No sustituye a un orquestador con réplicas, despliegue progresivo y
+   almacenamiento gestionado en un entorno de alta disponibilidad.
 
-**Sobre F-012.** Merece señalarse que la regresión más grave detectada en toda la auditoría —un build
-que compilaba correctamente pero producía un artefacto no arrancable— **fue introducida por el propio
-trabajo de hardening** y no la detectó ningún gate. Sólo apareció al ejecutar la aplicación real
-contra una base de datos real. Refuerza la conclusión de que la verificación de despliegue no es
-sustituible por build y tests.
+**Sobre los defectos que sólo aparecieron al ejecutar el sistema.** Cuatro de los hallazgos más
+relevantes de todo el trabajo fueron invisibles para los cinco gates —lint, type-check, tests
+unitarios, e2e y build—, que estaban en verde en los cuatro casos:
+
+| Hallazgo | Origen | Cómo apareció |
+|---|---|---|
+| F-012 · artefacto de build no arrancable | Introducido por la auditoría | Ejecutar la API real y ver que faltaba un campo recién añadido |
+| F-014 · caída de Redis derribaba toda la API | Introducido por la auditoría | Detener deliberadamente la dependencia recién añadida |
+| **F-015 · workers sin ningún log** | **Presente en el código original** | Comparar la salida de los contenedores worker con la de la API |
+| F-016 · workers marcados *unhealthy* de forma permanente | Introducido por la auditoría | Observar `docker compose ps` 90 s después del arranque |
+
+Dos fueron introducidos al endurecer el sistema; uno llevaba tiempo en el código original y ninguna
+prueba podía revelarlo, porque no era un fallo de comportamiento sino una **ausencia de salida**.
+
+Es la conclusión operativa más importante de esta auditoría: endurecer un sistema puede empeorarlo, y
+ni los tests ni el build sustituyen a ejecutar el sistema completo, observarlo y romperlo a propósito.
 
 **Condición de la recomendación.** Esta calificación asume despliegue con (a) mitigación de R-001 a
 nivel de red o instancia única, y (b) `/health/metrics` restringido a red privada (R-002). Ambas son
@@ -1131,6 +1456,12 @@ aptitud alguna como plataforma de inteligencia económica: ese dominio no existe
 | `src/modules/export/export.service.spec.ts` | Inyección CSV y límite de exportación (F-006) |
 | `src/modules/profiles/profiles.service.spec.ts` | Ámbito por usuario del perfil antropométrico (F-006) |
 | `tsconfig.build.json` | Excluye pruebas del build de producción — corrige F-012 |
+| `src/common/redis/redis.module.ts` | Cliente Redis opcional con cierre en shutdown (F-013) |
+| `src/common/redis/resilient-throttler.storage.ts` | Degradación controlada ante caída de Redis (F-014) |
+| `src/common/redis/resilient-throttler.storage.spec.ts` | 5 pruebas de degradación y limitación de logs (F-014) |
+| `Dockerfile` | Imagen multietapa, no root, tini, verificación de artefacto (F-009) |
+| `docker-compose.yml` | Pila completa con orden de arranque impuesto (F-009, F-016) |
+| `.dockerignore` | Contexto mínimo; excluye `.env` y estado local (F-009) |
 
 ### Modificados (15)
 
@@ -1189,6 +1520,43 @@ docker run -d --name gymsheet_postgres \
 docker exec -i gymsheet_postgres psql -U postgres -d gym_sheet -v ON_ERROR_STOP=1 < docs/db/schema.sql
 yarn migration:up
 
+# Redis, sólo si se despliega más de una instancia (rate limiting compartido)
+docker run -d --name gymsheet_redis -p 6379:6379 redis:7-alpine
+# y en el entorno: REDIS_URL=redis://127.0.0.1:6379  REDIS_REQUIRED=true
+```
+
+## 13.1 Despliegue con contenedores
+
+```bash
+# Requiere un fichero de entorno con, como mínimo:
+#   DB_NAME, DB_USER, DB_PASSWORD, JWT_ACCESS_SECRET, JWT_REFRESH_SECRET
+# El arranque falla de inmediato si falta cualquiera de ellas.
+cp .env.example .env.deploy   # y completar los valores
+
+docker compose --env-file .env.deploy up -d --build
+docker compose --env-file .env.deploy ps          # api healthy, workers Up
+curl http://127.0.0.1:3000/api/v1/health/ready
+
+# Escalar la API a varias réplicas requiere ANTES eliminar el mapeo fijo
+# `ports:` del servicio api y poner un proxy inverso por delante: un puerto de
+# host sólo puede ser tomado por una réplica y el comando falla con
+# "port is already allocated" (verificado). Con esa condición cumplida, el rate
+# limiting es correcto entre réplicas porque REDIS_URL está definido en la pila
+# y REDIS_REQUIRED impide arrancar sin él.
+docker compose --env-file .env.deploy up -d --scale api=3
+
+# Apagado ordenado (respeta stop_grace_period)
+docker compose --env-file .env.deploy down
+
+# Copia de seguridad y restauración del volumen de datos
+docker compose --env-file .env.deploy exec -T postgres \
+  pg_dump -U "$DB_USER" -d "$DB_NAME" --format=custom > backup.dump
+docker compose --env-file .env.deploy exec -T postgres \
+  pg_restore -U "$DB_USER" -d "$DB_NAME" --clean --exit-on-error < backup.dump
+
+# Rollback de la última migración
+docker compose --env-file .env.deploy run --rm migrate node dist/database/migrate.js down
+
 # Cobertura y auditoría
 yarn test:coverage
 yarn audit --groups dependencies --level high
@@ -1207,11 +1575,14 @@ yarn worker:notifications:prod      # worker de notificaciones
 
 ## 14. Variables de entorno
 
-**Nuevas (1):**
+**Nuevas (4):**
 
 | Variable | Obligatoria | Descripción |
 |---|---|---|
 | `METRICS_SCRAPE_TOKEN` | **No** — opcional | Token bearer exigido por `GET /health/metrics`. Mínimo 32 caracteres. **Si se omite, el endpoint permanece abierto** y el comportamiento es idéntico al anterior, de modo que una instalación existente puede actualizar sin cambios. Se recomienda definirla en producción o restringir la ruta a la red privada. |
+| `REDIS_URL` | **No** — opcional | Conexión Redis (`redis://` o `rediss://`) para contadores de rate limiting compartidos. **Si se omite, los contadores son por proceso** y el arranque emite una advertencia. **Obligatoria de facto en despliegue multi-instancia.** |
+| `REDIS_REQUIRED` | No — por defecto `false` | Con `true`, el arranque falla si falta `REDIS_URL`. Impide que un despliegue multi-instancia degrade en silencio a rate limiting por proceso. |
+| `REDIS_CONNECT_TIMEOUT_MS` | No — por defecto `5000` | Timeout de conexión a Redis. |
 
 Documentada en `.env.example` sin valor. No se exponen valores de secretos en este documento.
 

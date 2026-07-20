@@ -1,0 +1,34 @@
+# Keep the build context small and never ship local state or secrets.
+node_modules
+dist
+coverage
+.nyc_output
+*.tsbuildinfo
+
+# Runtime secrets must arrive as environment variables, never baked into a layer.
+.env
+.env.*
+!.env.example
+
+.git
+.github
+.gitignore
+.gitattributes
+.claude
+.vscode
+.idea
+
+graphify-out
+docs/progress
+docs/reviews
+*.md
+!README.md
+
+logs
+*.log
+*.tmp
+.tmp
+tmp
+imports
+*.dump
+*.sql.gz

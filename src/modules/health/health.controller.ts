@@ -1,10 +1,18 @@
 import { Controller, Get, Header, UseGuards } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
 import { HttpMetricsService } from '../../common/metrics/http-metrics.service';
 import { HealthService, LivenessResponse, ReadinessResponse } from './health.service';
 import { MetricsScrapeGuard } from './metrics-scrape.guard';
 
 @Public()
+/**
+ * Health probes must never depend on the rate-limit backend. When that backend
+ * is a remote Redis, letting the throttler run here would make an orchestrator's
+ * liveness probe fail during a Redis outage and restart otherwise healthy
+ * processes in a loop.
+ */
+@SkipThrottle()
 @Controller('health')
 export class HealthController {
   constructor(

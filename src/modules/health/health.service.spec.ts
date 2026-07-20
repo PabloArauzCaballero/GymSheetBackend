@@ -1,5 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { Sequelize } from 'sequelize-typescript';
+import { OptionalRedisClient } from '../../common/redis/redis.module';
 import { databaseMigrations } from '../../database/migrations';
 import { HealthService } from './health.service';
 
@@ -16,6 +17,16 @@ function createSequelize(appliedMigrations: { id: string }[]): Sequelize {
       .mockResolvedValueOnce([{ ready: 1 }])
       .mockResolvedValueOnce(appliedMigrations),
   } as unknown as Sequelize;
+}
+
+/** Redis is optional; `null` models a deployment without it configured. */
+function createRedis(pingResult: 'ok' | 'fail'): OptionalRedisClient {
+  return {
+    ping:
+      pingResult === 'ok'
+        ? jest.fn().mockResolvedValue('PONG')
+        : jest.fn().mockRejectedValue(new Error('connection refused')),
+  } as unknown as OptionalRedisClient;
 }
 
 describe('HealthService', () => {
@@ -64,6 +75,30 @@ describe('HealthService', () => {
 
   it('refuses traffic when the migration registry is empty', async () => {
     const service = new HealthService(createSequelize([]));
+
+    await expect(service.getReadiness()).rejects.toThrow(ServiceUnavailableException);
+  });
+
+  it('reports Redis as not configured when the client is absent', async () => {
+    const service = new HealthService(createSequelize(allMigrationIds), null);
+
+    await expect(service.getReadiness()).resolves.toMatchObject({
+      dependencies: { redis: 'not-configured' },
+    });
+  });
+
+  it('reports Redis as ready when it answers PING', async () => {
+    const service = new HealthService(createSequelize(allMigrationIds), createRedis('ok'));
+
+    await expect(service.getReadiness()).resolves.toMatchObject({
+      dependencies: { redis: 'ready' },
+    });
+  });
+
+  it('refuses traffic when a configured Redis is unreachable', async () => {
+    // Degrading silently would leave rate limits per-process while the operator
+    // believes they are shared, so this must remove the instance from rotation.
+    const service = new HealthService(createSequelize(allMigrationIds), createRedis('fail'));
 
     await expect(service.getReadiness()).rejects.toThrow(ServiceUnavailableException);
   });

@@ -21,6 +21,16 @@ jobs:
     timeout-minutes: 30
 
     services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
       postgres:
         image: postgres:16-alpine
         env:
@@ -309,6 +319,91 @@ jobs:
           node test/load/http-load-smoke.mjs > /tmp/load-smoke-result.json
           cat /tmp/load-smoke-result.json
 
+      - name: Verify rate limits are shared across instances
+        env:
+          REDIS_URL: redis://127.0.0.1:6379
+          AUTH_RATE_LIMIT_MAX: 5
+        run: |
+          set -o pipefail
+
+          # Two instances behind one shared Redis. Exhausting the auth budget on
+          # instance A must also block instance B; otherwise an attacker simply
+          # rotates instances and the effective limit multiplies by the count.
+          PORT=3301 node dist/main.js > /tmp/instance-a.log 2>&1 &
+          instance_a=$!
+          PORT=3302 node dist/main.js > /tmp/instance-b.log 2>&1 &
+          instance_b=$!
+          trap 'kill $instance_a $instance_b 2>/dev/null || true' EXIT
+
+          for port in 3301 3302; do
+            for _ in $(seq 1 30); do
+              curl --silent --fail "http://127.0.0.1:${port}/api/v1/health/ready" >/dev/null && break
+              sleep 1
+            done
+          done
+
+          attempt_login() {
+            curl --silent --output /dev/null --write-out '%{http_code}' \
+              --request POST \
+              --header 'Content-Type: application/json' \
+              --data '{"email":"ratelimit-probe@example.test","password":"irrelevant-password"}' \
+              "http://127.0.0.1:$1/api/v1/auth/login"
+          }
+
+          for _ in $(seq 1 5); do attempt_login 3301 >/dev/null; done
+
+          status_on_b="$(attempt_login 3302)"
+          if [ "$status_on_b" != "429" ]; then
+            echo "Rate limit not shared: instance B answered $status_on_b, expected 429"
+            cat /tmp/instance-a.log /tmp/instance-b.log
+            exit 1
+          fi
+
+          # Neither instance may have fallen back to per-process counters.
+          if grep -q "throttler.storage_in_memory" /tmp/instance-a.log /tmp/instance-b.log; then
+            echo "An instance used in-memory storage despite REDIS_URL being set"
+            exit 1
+          fi
+          echo "Rate limits verified as shared across instances"
+
+      - name: Verify the API survives a Redis outage
+        env:
+          REDIS_URL: redis://127.0.0.1:6379
+        run: |
+          set -o pipefail
+
+          # A rate-limit backend outage must not become an API outage: the
+          # throttler guard runs ahead of every handler, so an unhandled storage
+          # error would fail every request including the liveness probe.
+          PORT=3303 node dist/main.js > /tmp/outage.log 2>&1 &
+          outage_pid=$!
+          trap 'kill $outage_pid 2>/dev/null || true' EXIT
+
+          for _ in $(seq 1 30); do
+            curl --silent --fail http://127.0.0.1:3303/api/v1/health/ready >/dev/null && break
+            sleep 1
+          done
+
+          docker stop "$(docker ps --filter ancestor=redis:7-alpine --format '{{.ID}}' | head -1)"
+          sleep 8
+
+          liveness="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 http://127.0.0.1:3303/api/v1/health/live)"
+          readiness="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 http://127.0.0.1:3303/api/v1/health/ready)"
+          business="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 http://127.0.0.1:3303/api/v1/exercises)"
+
+          # Liveness must stay healthy or the orchestrator restart-loops the pod.
+          test "$liveness" = "200" || { echo "Liveness returned $liveness during Redis outage"; cat /tmp/outage.log; exit 1; }
+          # Readiness must fail so the instance leaves rotation.
+          test "$readiness" = "503" || { echo "Readiness returned $readiness, expected 503"; exit 1; }
+          # Business endpoints must answer normally (401 unauthenticated), not 500.
+          test "$business" = "401" || { echo "Business endpoint returned $business, expected 401"; exit 1; }
+
+          grep -q "throttler.storage_degraded" /tmp/outage.log || {
+            echo "Degradation to per-process counters was not logged"
+            exit 1
+          }
+          echo "API survived the Redis outage with correct probe semantics"
+
       - name: Verify graceful shutdown on SIGTERM
         run: |
           set -o pipefail
@@ -379,6 +474,9 @@ jobs:
             /tmp/e2e.log
             /tmp/shutdown-api.log
             /tmp/shutdown-worker.log
+            /tmp/instance-a.log
+            /tmp/instance-b.log
+            /tmp/outage.log
             /tmp/gym-sheet-api.log
             /tmp/load-smoke-result.json
           if-no-files-found: ignore

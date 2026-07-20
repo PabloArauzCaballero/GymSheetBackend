@@ -1,6 +1,7 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
+import { OptionalRedisClient, REDIS_CLIENT } from '../../common/redis/redis.module';
 import { databaseMigrations } from '../../database/migrations';
 
 export type LivenessResponse = {
@@ -12,12 +13,17 @@ export type ReadinessResponse = LivenessResponse & {
   dependencies: {
     database: 'ready';
     migrations: 'up-to-date';
+    /** `not-configured` means rate limits are per-process; see RedisModule. */
+    redis: 'ready' | 'not-configured';
   };
 };
 
 @Injectable()
 export class HealthService {
-  constructor(private readonly sequelize: Sequelize) {}
+  constructor(
+    private readonly sequelize: Sequelize,
+    @Inject(REDIS_CLIENT) private readonly redisClient: OptionalRedisClient = null,
+  ) {}
 
   /**
    * Reports whether the Node.js process can serve HTTP requests.
@@ -60,13 +66,35 @@ export class HealthService {
       );
     }
 
+    const redisStatus = await this.resolveRedisStatus();
+
     return {
       ...this.getLiveness(),
       dependencies: {
         database: 'ready',
         migrations: 'up-to-date',
+        redis: redisStatus,
       },
     };
+  }
+
+  /**
+   * Treats a configured-but-unreachable Redis as not ready: rate limits would
+   * silently stop being shared across instances, which is a security-relevant
+   * degradation rather than a cosmetic one. An unconfigured Redis is reported
+   * as such and does not block readiness.
+   */
+  private async resolveRedisStatus(): Promise<'ready' | 'not-configured'> {
+    if (!this.redisClient) {
+      return 'not-configured';
+    }
+
+    try {
+      await this.redisClient.ping();
+      return 'ready';
+    } catch {
+      throw new ServiceUnavailableException('Application dependencies are not ready.');
+    }
   }
 
   private async readAppliedMigrationIds(): Promise<string[]> {

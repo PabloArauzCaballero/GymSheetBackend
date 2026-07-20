@@ -8,6 +8,13 @@ export async function bootstrapWorker<T extends { run(signal: AbortSignal): Prom
   const application = await NestFactory.createApplicationContext(moduleType, {
     bufferLogs: true,
   });
+
+  // Buffered logs are held until something flushes them. `NestFactory.create`
+  // flushes during `listen()`, but an application context has no equivalent
+  // step, so without this call every worker log line — including startup and
+  // shutdown — is discarded and the process runs completely unobservable.
+  application.flushLogs();
+
   const runner = application.get(runnerType);
   const controller = new AbortController();
   let stopping = false;
