@@ -1,56 +1,103 @@
 {
   "name": "gym-sheet-backend",
-  "version": "1.0.0",
-  "description": "Backend NestJS para registro rápido de entrenamientos de gimnasio.",
+  "version": "1.2.0",
+  "description": "Production-oriented NestJS backend for gym operations and workout tracking.",
   "private": true,
   "license": "UNLICENSED",
+  "packageManager": "yarn@1.22.22",
+  "engines": {
+    "node": ">=20 <24"
+  },
   "scripts": {
     "start": "nest start",
     "start:dev": "nest start --watch",
     "build": "nest build",
     "start:prod": "node dist/main.js",
+    "worker:access": "ts-node src/workers/access-event.worker.ts",
+    "worker:reminders": "ts-node src/workers/membership-reminder.worker.ts",
+    "worker:notifications": "ts-node src/workers/notification-delivery.worker.ts",
+    "worker:access:prod": "node dist/workers/access-event.worker.js",
+    "worker:reminders:prod": "node dist/workers/membership-reminder.worker.js",
+    "worker:notifications:prod": "node dist/workers/notification-delivery.worker.js",
     "type-check": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "jest --passWithNoTests",
-    "test:e2e": "jest --config ./test/jest-e2e.json --passWithNoTests"
+    "format:check": "prettier --check .",
+    "test": "jest --runInBand",
+    "test:coverage": "jest --runInBand --coverage",
+    "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
+    "audit:prod": "yarn audit --groups dependencies --level high",
+    "migration:up": "ts-node src/database/migrate.ts up",
+    "migration:down": "ts-node src/database/migrate.ts down",
+    "migration:up:prod": "node dist/database/migrate.js up",
+    "migration:down:prod": "node dist/database/migrate.js down"
   },
   "dependencies": {
-    "@nestjs/common": "^10.4.15",
-    "@nestjs/config": "^3.3.0",
-    "@nestjs/core": "^10.4.15",
-    "@nestjs/jwt": "^10.2.0",
-    "@nestjs/passport": "^10.0.3",
-    "@nestjs/platform-express": "^10.4.15",
-    "@nestjs/sequelize": "^10.0.1",
-    "@nestjs/throttler": "^5.2.0",
+    "@nest-lab/throttler-storage-redis": "^1.2.0",
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.1.28",
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/passport": "^11.0.5",
+    "@nestjs/platform-express": "^11.1.28",
+    "@nestjs/sequelize": "^11.0.1",
+    "@nestjs/throttler": "^6.5.0",
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",
-    "dotenv": "^16.4.7",
+    "dotenv": "^17.4.2",
     "helmet": "^7.2.0",
+    "ioredis": "^5",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.13.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "sequelize": "^6.37.5",
+    "sequelize": "^6.37.8",
     "sequelize-typescript": "^2.1.6",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@nestjs/cli": "^10.4.8",
-    "@nestjs/schematics": "^10.2.3",
-    "@nestjs/testing": "^10.4.15",
+    "@nestjs/cli": "^11.0.7",
+    "@nestjs/schematics": "^11.0.0",
+    "@nestjs/testing": "^11.1.28",
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.2",
     "@types/passport-jwt": "^4.0.1",
+    "@types/supertest": "^7.2.1",
     "eslint": "^9.17.0",
     "jest": "^29.7.0",
     "prettier": "^3.4.2",
+    "supertest": "^7.2.2",
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8"
+  },
+  "resolutions": {
+    "uuid": "11.1.1"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "collectCoverageFrom": [
+      "**/*.(t|j)s",
+      "!**/*.module.ts",
+      "!database/migrations/**",
+      "!database/migrate.ts",
+      "!main.ts",
+      "!workers/*.worker.ts"
+    ],
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node"
   }
 }

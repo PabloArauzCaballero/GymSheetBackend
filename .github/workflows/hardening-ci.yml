@@ -1,0 +1,483 @@
+name: Hardening CI
+
+on:
+  push:
+    branches:
+      - HARDENING
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hardening-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: gym_sheet_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d gym_sheet_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      PORT: 3000
+      API_PREFIX: api/v1
+      CORS_ORIGINS: http://localhost:3000
+      TRUST_PROXY: "false"
+      REQUEST_BODY_LIMIT: 1mb
+      LOG_LEVEL: error
+      BUSINESS_TIME_ZONE: America/La_Paz
+      ACCESS_POLICY_VERSION: ci-policy
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: gym_sheet_ci
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SSL: "false"
+      DB_SSL_REJECT_UNAUTHORIZED: "true"
+      DB_LOGGING: "false"
+      DB_POOL_MAX: 5
+      DB_POOL_MIN: 0
+      DB_POOL_ACQUIRE_MS: 30000
+      DB_POOL_IDLE_MS: 10000
+      DB_CONNECT_TIMEOUT_MS: 10000
+      DB_STATEMENT_TIMEOUT_MS: 15000
+      JWT_ACCESS_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_SECRET: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+      JWT_REFRESH_EXPIRES_IN: 7d
+      JWT_ISSUER: gym-sheet-api-ci
+      JWT_AUDIENCE: gym-sheet-ci
+      BCRYPT_SALT_ROUNDS: 10
+      RATE_LIMIT_TTL_SECONDS: 60
+      RATE_LIMIT_MAX: 1000
+      AUTH_RATE_LIMIT_MAX: 10
+      GATEWAY_ENABLED: "false"
+      WORKER_POLL_INTERVAL_MS: 1000
+      WORKER_BATCH_SIZE: 25
+      WORKER_CONCURRENCY: 5
+      WORKER_LOCK_TIMEOUT_MS: 300000
+      WORKER_MAX_ATTEMPTS: 5
+      REMINDER_SCAN_INTERVAL_MS: 3600000
+      NOTIFICATION_DELIVERY_PROVIDER: IN_APP
+      EXERCISES_DATASET_ENABLED: "false"
+      EXERCISES_DATASET_IMPORT_MEDIA: "false"
+      EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED: "false"
+      PGPASSWORD: postgres
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Install locked dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Verify production dependency audit
+        run: |
+          set +e
+          yarn audit --groups dependencies --json > /tmp/yarn-audit.json
+          set -e
+          node scripts/verify-yarn-audit.mjs /tmp/yarn-audit.json
+
+      - name: Lint
+        run: |
+          set -o pipefail
+          yarn lint 2>&1 | tee /tmp/lint.log
+
+      - name: Type check
+        run: |
+          set -o pipefail
+          yarn type-check 2>&1 | tee /tmp/typecheck.log
+
+      - name: Unit tests
+        run: yarn test
+
+      - name: Production build
+        run: yarn build
+
+      - name: Verify deployable artifact layout
+        run: |
+          # A successful `nest build` does not prove the artifact is deployable:
+          # including files outside `src/` shifts the inferred root and moves the
+          # entrypoint to `dist/src/main.js`, breaking start:prod and the workers.
+          for entrypoint in \
+            dist/main.js \
+            dist/database/migrate.js \
+            dist/workers/access-event.worker.js \
+            dist/workers/membership-reminder.worker.js \
+            dist/workers/notification-delivery.worker.js
+          do
+            test -f "$entrypoint" || { echo "Missing build entrypoint: $entrypoint"; exit 1; }
+          done
+          test ! -d dist/src || { echo "Unexpected dist/src: build root shifted"; exit 1; }
+          echo "Build artifact layout verified"
+
+      - name: Create baseline schema
+        run: psql -h localhost -U postgres -d gym_sheet_ci -v ON_ERROR_STOP=1 -f docs/db/schema.sql
+
+      - name: Seed representative baseline rows
+        run: |
+          psql -h localhost -U postgres -d gym_sheet_ci -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO usuarios (id, email, password_hash, nombre_completo, rol, estado)
+          VALUES ('00000000-0000-4000-8000-000000000001', 'ci-owner@example.test', 'not-used', 'CI Owner', 'CLIENTE', 'ACTIVO');
+
+          INSERT INTO ejercicios (
+            id, nombre, grupo_muscular, descripcion, tipo_ejercicio,
+            created_by_usuario_id, estado
+          ) VALUES (
+            '00000000-0000-4000-8000-000000000002', 'CI Bench Press', 'Pectoral',
+            'Representative pre-migration row', 'PERSONAL',
+            '00000000-0000-4000-8000-000000000001', 'ACTIVO'
+          );
+
+          INSERT INTO sesiones_entrenamiento (
+            id, usuario_id, estado, observacion
+          ) VALUES (
+            '00000000-0000-4000-8000-000000000003',
+            '00000000-0000-4000-8000-000000000001',
+            'FINALIZADA', 'Representative migration verification session'
+          );
+
+          INSERT INTO sesiones_ejercicios (
+            id, sesion_id, ejercicio_id, orden, es_enfasis
+          ) VALUES (
+            '00000000-0000-4000-8000-000000000004',
+            '00000000-0000-4000-8000-000000000003',
+            '00000000-0000-4000-8000-000000000002', 1, true
+          );
+
+          INSERT INTO series_entrenamiento (
+            id, sesion_ejercicio_id, numero_serie, repeticiones,
+            peso_kg, rir, descanso_seg_anterior
+          ) VALUES (
+            '00000000-0000-4000-8000-000000000005',
+            '00000000-0000-4000-8000-000000000004',
+            1, 8, 60, 2, 120
+          );
+          SQL
+
+      - name: Apply migrations
+        run: yarn migration:up
+
+      - name: Roll back latest migration
+        run: yarn migration:down
+
+      - name: Reapply latest migration
+        run: yarn migration:up
+
+      - name: Verify migration metadata and preserved data
+        run: |
+          psql -h localhost -U postgres -d gym_sheet_ci -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE
+            migration_count integer;
+            exercise_count integer;
+            set_count integer;
+          BEGIN
+            SELECT count(*) INTO migration_count
+            FROM app_meta.schema_migrations;
+
+            IF migration_count <> 7 THEN
+              RAISE EXCEPTION 'Expected seven migration rows, found %', migration_count;
+            END IF;
+
+            IF to_regclass('training.exercise_media') IS NULL
+               OR to_regclass('facilities.branches') IS NULL
+               OR to_regclass('facilities.maintenance_events') IS NULL
+               OR to_regclass('membership.memberships') IS NULL
+               OR to_regclass('membership.customer_profiles') IS NULL
+               OR to_regclass('membership.status_history') IS NULL
+               OR to_regclass('access_control.device_events') IS NULL
+               OR to_regclass('notifications.messages') IS NULL
+               OR to_regclass('notifications.preferences') IS NULL
+               OR to_regclass('integration.domain_events') IS NULL
+               OR to_regclass('integration.outbox_jobs') IS NULL
+               OR to_regclass('integration.legacy_import_batches') IS NULL THEN
+              RAISE EXCEPTION 'One or more enterprise migration objects are missing';
+            END IF;
+
+            SELECT count(*) INTO exercise_count
+            FROM public.ejercicios
+            WHERE id = '00000000-0000-4000-8000-000000000002';
+
+            SELECT count(*) INTO set_count
+            FROM public.series_entrenamiento
+            WHERE id = '00000000-0000-4000-8000-000000000005';
+
+            IF exercise_count <> 1 OR set_count <> 1 THEN
+              RAISE EXCEPTION 'Representative rows were not preserved';
+            END IF;
+          END $$;
+          SQL
+
+      - name: End-to-end tests
+        run: |
+          set -o pipefail
+          yarn test:e2e 2>&1 | tee /tmp/e2e.log
+
+      - name: Create and restore database backup
+        run: |
+          pg_dump -h localhost -U postgres -d gym_sheet_ci --format=custom --file=/tmp/gym_sheet_ci.dump
+          createdb -h localhost -U postgres gym_sheet_restore
+          pg_restore -h localhost -U postgres -d gym_sheet_restore --exit-on-error /tmp/gym_sheet_ci.dump
+
+      - name: Verify restored database and latest migration rollback
+        env:
+          DB_NAME: gym_sheet_restore
+        run: |
+          psql -h localhost -U postgres -d gym_sheet_restore -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF to_regclass('training.exercise_media') IS NULL
+               OR to_regclass('membership.memberships') IS NULL
+               OR to_regclass('membership.status_history') IS NULL
+               OR to_regclass('integration.domain_events') IS NULL
+               OR to_regclass('notifications.preferences') IS NULL THEN
+              RAISE EXCEPTION 'Restored enterprise schema is incomplete';
+            END IF;
+
+            IF (SELECT count(*) FROM public.series_entrenamiento) <> 1 THEN
+              RAISE EXCEPTION 'Restored representative rows are incomplete';
+            END IF;
+
+            IF (SELECT count(*) FROM app_meta.schema_migrations) <> 7 THEN
+              RAISE EXCEPTION 'Restored migration registry is incomplete';
+            END IF;
+          END $$;
+          SQL
+
+          yarn migration:down
+          test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations WHERE id = '202607190006-domain-events-and-membership-history'")" = "0"
+          test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations WHERE id = '202607190005-notification-preferences'")" = "1"
+          test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations")" = "6"
+
+          yarn migration:up
+          test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations WHERE id = '202607190006-domain-events-and-membership-history'")" = "1"
+          test "$(psql -h localhost -U postgres -d gym_sheet_restore -Atc "SELECT count(*) FROM app_meta.schema_migrations")" = "7"
+
+      - name: Start API and run HTTP load smoke
+        run: |
+          node dist/main.js > /tmp/gym-sheet-api.log 2>&1 &
+          application_pid=$!
+          cleanup() {
+            kill "$application_pid" 2>/dev/null || true
+            wait "$application_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:3000/api/v1/health/ready >/dev/null; then
+              break
+            fi
+            if ! kill -0 "$application_pid" 2>/dev/null; then
+              cat /tmp/gym-sheet-api.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          curl --silent --fail http://127.0.0.1:3000/api/v1/health/ready >/dev/null || {
+            cat /tmp/gym-sheet-api.log
+            exit 1
+          }
+
+          APP_PID="$application_pid" \
+          BASE_URL=http://127.0.0.1:3000/api/v1 \
+          node test/load/http-load-smoke.mjs > /tmp/load-smoke-result.json
+          cat /tmp/load-smoke-result.json
+
+      - name: Verify rate limits are shared across instances
+        env:
+          REDIS_URL: redis://127.0.0.1:6379
+          AUTH_RATE_LIMIT_MAX: 5
+        run: |
+          set -o pipefail
+
+          # Two instances behind one shared Redis. Exhausting the auth budget on
+          # instance A must also block instance B; otherwise an attacker simply
+          # rotates instances and the effective limit multiplies by the count.
+          PORT=3301 node dist/main.js > /tmp/instance-a.log 2>&1 &
+          instance_a=$!
+          PORT=3302 node dist/main.js > /tmp/instance-b.log 2>&1 &
+          instance_b=$!
+          trap 'kill $instance_a $instance_b 2>/dev/null || true' EXIT
+
+          for port in 3301 3302; do
+            for _ in $(seq 1 30); do
+              curl --silent --fail "http://127.0.0.1:${port}/api/v1/health/ready" >/dev/null && break
+              sleep 1
+            done
+          done
+
+          attempt_login() {
+            curl --silent --output /dev/null --write-out '%{http_code}' \
+              --request POST \
+              --header 'Content-Type: application/json' \
+              --data '{"email":"ratelimit-probe@example.test","password":"irrelevant-password"}' \
+              "http://127.0.0.1:$1/api/v1/auth/login"
+          }
+
+          for _ in $(seq 1 5); do attempt_login 3301 >/dev/null; done
+
+          status_on_b="$(attempt_login 3302)"
+          if [ "$status_on_b" != "429" ]; then
+            echo "Rate limit not shared: instance B answered $status_on_b, expected 429"
+            cat /tmp/instance-a.log /tmp/instance-b.log
+            exit 1
+          fi
+
+          # Neither instance may have fallen back to per-process counters.
+          if grep -q "throttler.storage_in_memory" /tmp/instance-a.log /tmp/instance-b.log; then
+            echo "An instance used in-memory storage despite REDIS_URL being set"
+            exit 1
+          fi
+          echo "Rate limits verified as shared across instances"
+
+      - name: Verify the API survives a Redis outage
+        env:
+          REDIS_URL: redis://127.0.0.1:6379
+        run: |
+          set -o pipefail
+
+          # A rate-limit backend outage must not become an API outage: the
+          # throttler guard runs ahead of every handler, so an unhandled storage
+          # error would fail every request including the liveness probe.
+          PORT=3303 node dist/main.js > /tmp/outage.log 2>&1 &
+          outage_pid=$!
+          trap 'kill $outage_pid 2>/dev/null || true' EXIT
+
+          for _ in $(seq 1 30); do
+            curl --silent --fail http://127.0.0.1:3303/api/v1/health/ready >/dev/null && break
+            sleep 1
+          done
+
+          docker stop "$(docker ps --filter ancestor=redis:7-alpine --format '{{.ID}}' | head -1)"
+          sleep 8
+
+          liveness="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 http://127.0.0.1:3303/api/v1/health/live)"
+          readiness="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 http://127.0.0.1:3303/api/v1/health/ready)"
+          business="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 http://127.0.0.1:3303/api/v1/exercises)"
+
+          # Liveness must stay healthy or the orchestrator restart-loops the pod.
+          test "$liveness" = "200" || { echo "Liveness returned $liveness during Redis outage"; cat /tmp/outage.log; exit 1; }
+          # Readiness must fail so the instance leaves rotation.
+          test "$readiness" = "503" || { echo "Readiness returned $readiness, expected 503"; exit 1; }
+          # Business endpoints must answer normally (401 unauthenticated), not 500.
+          test "$business" = "401" || { echo "Business endpoint returned $business, expected 401"; exit 1; }
+
+          grep -q "throttler.storage_degraded" /tmp/outage.log || {
+            echo "Degradation to per-process counters was not logged"
+            exit 1
+          }
+          echo "API survived the Redis outage with correct probe semantics"
+
+      - name: Verify graceful shutdown on SIGTERM
+        run: |
+          set -o pipefail
+
+          # API: must stop accepting connections after SIGTERM rather than being
+          # killed. Verified on Linux because Windows does not deliver SIGTERM
+          # with POSIX semantics.
+          node dist/main.js > /tmp/shutdown-api.log 2>&1 &
+          api_pid=$!
+          for _ in $(seq 1 30); do
+            curl --silent --fail http://127.0.0.1:3000/api/v1/health/live >/dev/null && break
+            sleep 1
+          done
+
+          kill -TERM "$api_pid"
+          shutdown_deadline=15
+          while kill -0 "$api_pid" 2>/dev/null; do
+            shutdown_deadline=$((shutdown_deadline - 1))
+            if [ "$shutdown_deadline" -le 0 ]; then
+              echo "API did not exit within 15s of SIGTERM"
+              cat /tmp/shutdown-api.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          wait "$api_pid" || true
+          if curl --silent --fail --max-time 3 http://127.0.0.1:3000/api/v1/health/live >/dev/null; then
+            echo "API still answering after shutdown"
+            exit 1
+          fi
+          echo "API exited cleanly on SIGTERM"
+
+          # Worker: must log the shutdown request and release its loop.
+          node dist/workers/access-event.worker.js > /tmp/shutdown-worker.log 2>&1 &
+          worker_pid=$!
+          sleep 5
+          kill -TERM "$worker_pid"
+
+          worker_deadline=15
+          while kill -0 "$worker_pid" 2>/dev/null; do
+            worker_deadline=$((worker_deadline - 1))
+            if [ "$worker_deadline" -le 0 ]; then
+              echo "Worker did not exit within 15s of SIGTERM"
+              cat /tmp/shutdown-worker.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          wait "$worker_pid" || true
+          grep -q "worker.shutdown_requested" /tmp/shutdown-worker.log || {
+            echo "Worker did not record worker.shutdown_requested"
+            cat /tmp/shutdown-worker.log
+            exit 1
+          }
+          echo "Worker exited cleanly on SIGTERM"
+
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardening-ci-evidence
+          path: |
+            /tmp/yarn-audit.json
+            /tmp/lint.log
+            /tmp/typecheck.log
+            /tmp/e2e.log
+            /tmp/shutdown-api.log
+            /tmp/shutdown-worker.log
+            /tmp/instance-a.log
+            /tmp/instance-b.log
+            /tmp/outage.log
+            /tmp/gym-sheet-api.log
+            /tmp/load-smoke-result.json
+          if-no-files-found: ignore
+          retention-days: 7

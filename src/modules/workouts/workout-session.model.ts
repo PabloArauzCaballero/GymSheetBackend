@@ -1,4 +1,16 @@
-import { BelongsTo, Column, CreatedAt, DataType, Default, ForeignKey, HasMany, Model, PrimaryKey, Table, UpdatedAt } from 'sequelize-typescript';
+import {
+  BelongsTo,
+  Column,
+  CreatedAt,
+  DataType,
+  Default,
+  ForeignKey,
+  HasMany,
+  Model,
+  PrimaryKey,
+  Table,
+  UpdatedAt,
+} from 'sequelize-typescript';
 import { WorkoutSessionStatus } from '../../common/enums/domain.enums';
 import { UserModel } from '../users/user.model';
 import { WorkoutSessionExerciseModel } from './workout-session-exercise.model';
@@ -12,27 +24,31 @@ export class WorkoutSessionModel extends Model {
 
   @ForeignKey(() => UserModel)
   @Column({ type: DataType.UUID, allowNull: false, field: 'usuario_id' })
-  declare usuarioId: string;
+  declare userId: string;
 
   @Default(DataType.NOW)
   @Column({ type: DataType.DATE, allowNull: false, field: 'fecha_inicio' })
-  declare fechaInicio: Date;
+  declare startedAt: Date;
 
   @Column({ type: DataType.DATE, allowNull: true, field: 'fecha_fin' })
-  declare fechaFin: Date | null;
+  declare finishedAt: Date | null;
 
-  @Default(WorkoutSessionStatus.EN_PROGRESO)
-  @Column({ type: DataType.ENUM(...Object.values(WorkoutSessionStatus)), allowNull: false })
-  declare estado: WorkoutSessionStatus;
+  @Default(WorkoutSessionStatus.IN_PROGRESS)
+  @Column({
+    type: DataType.ENUM(...Object.values(WorkoutSessionStatus)),
+    allowNull: false,
+    field: 'estado',
+  })
+  declare status: WorkoutSessionStatus;
 
-  @Column({ type: DataType.TEXT, allowNull: true })
-  declare observacion: string | null;
+  @Column({ type: DataType.TEXT, allowNull: true, field: 'observacion' })
+  declare observation: string | null;
 
   @BelongsTo(() => UserModel)
-  declare usuario?: UserModel;
+  declare user?: UserModel;
 
   @HasMany(() => WorkoutSessionExerciseModel)
-  declare ejercicios?: WorkoutSessionExerciseModel[];
+  declare sessionExercises?: WorkoutSessionExerciseModel[];
 
   @CreatedAt
   @Column({ field: 'created_at' })

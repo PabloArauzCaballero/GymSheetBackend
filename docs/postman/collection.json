@@ -1,94 +1,128 @@
 {
   "info": {
-    "name": "GymSheet API",
+    "name": "GymSheet API — HARDENING",
+    "description": "Colección sincronizada con OpenAPI. Las rutas admin requieren un token ADMIN.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{bearerToken}}",
+        "type": "string"
+      }
+    ]
+  },
   "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:3000/api/v1"
-    },
-    {
-      "key": "accessToken",
-      "value": ""
-    }
+    { "key": "baseUrl", "value": "http://localhost:3000/api/v1" },
+    { "key": "bearerToken", "value": "" },
+    { "key": "testEmail", "value": "cliente.hardening@example.test" },
+    { "key": "testPassword", "value": "" },
+    { "key": "equipmentId", "value": "00000000-0000-4000-8000-000000000010" },
+    { "key": "exerciseId", "value": "00000000-0000-4000-8000-000000000011" },
+    { "key": "workoutId", "value": "00000000-0000-4000-8000-000000000012" },
+    { "key": "sessionExerciseId", "value": "00000000-0000-4000-8000-000000000013" },
+    { "key": "setId", "value": "00000000-0000-4000-8000-000000000014" },
+    { "key": "mediaId", "value": "00000000-0000-4000-8000-000000000015" }
   ],
   "item": [
     {
-      "name": "Auth - Register",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{baseUrl}}/auth/register",
-        "body": {
-          "mode": "raw",
-          "raw": "{\"email\": \"cliente@gym.com\", \"password\": \"Password123\", \"nombreCompleto\": \"Cliente Demo\"}"
-        }
-      }
+      "name": "Health",
+      "item": [
+        { "name": "Liveness", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/health/live", "auth": { "type": "noauth" } } },
+        { "name": "Readiness", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/health/ready", "auth": { "type": "noauth" } } },
+        { "name": "Metrics", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "text/plain" }], "url": "{{baseUrl}}/health/metrics", "auth": { "type": "noauth" } } },
+        { "name": "Gateway health", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/gateway/health", "auth": { "type": "noauth" } } },
+        { "name": "Gateway routes", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/gateway/routes", "auth": { "type": "noauth" } } }
+      ]
     },
     {
-      "name": "Auth - Login",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/register",
+            "auth": { "type": "noauth" },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\",\n  \"nombreCompleto\": \"Cliente Prueba\"\n}", "options": { "raw": { "language": "json" } } }
           }
-        ],
-        "url": "{{baseUrl}}/auth/login",
-        "body": {
-          "mode": "raw",
-          "raw": "{\"email\": \"cliente@gym.com\", \"password\": \"Password123\"}"
-        }
-      }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "auth": { "type": "noauth" },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\"\n}", "options": { "raw": { "language": "json" } } }
+          }
+        },
+        { "name": "Authenticated principal", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/auth/me" } },
+        { "name": "Persisted user", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/users/me" } }
+      ]
     },
     {
-      "name": "Profile - Upsert",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{accessToken}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{baseUrl}}/profile",
-        "body": {
-          "mode": "raw",
-          "raw": "{\"edad\": 24, \"pesoKg\": 80, \"estaturaCm\": 178, \"objetivo\": \"HIPERTROFIA\"}"
-        }
-      }
+      "name": "Profile",
+      "item": [
+        { "name": "Get profile", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/profile" } },
+        { "name": "Create profile", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/profile", "body": { "mode": "raw", "raw": "{\n  \"edad\": 24,\n  \"pesoKg\": 80,\n  \"estaturaCm\": 178,\n  \"objetivo\": \"HIPERTROFIA\"\n}", "options": { "raw": { "language": "json" } } } } },
+        { "name": "Update profile", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/profile", "body": { "mode": "raw", "raw": "{\n  \"edad\": 25,\n  \"pesoKg\": 81,\n  \"estaturaCm\": 178,\n  \"objetivo\": \"FUERZA\"\n}", "options": { "raw": { "language": "json" } } } } }
+      ]
     },
     {
-      "name": "Workouts - Start",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{accessToken}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{baseUrl}}/workouts",
-        "body": {
-          "mode": "raw",
-          "raw": "{\"observacion\": \"D\\u00eda torso\"}"
-        }
-      }
+      "name": "Equipment",
+      "item": [
+        { "name": "List equipment", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/equipment" } },
+        { "name": "Admin create equipment", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/admin/equipment", "body": { "mode": "raw", "raw": "{\n  \"nombre\": \"Banco ajustable\",\n  \"tipo\": \"BANCO\",\n  \"descripcion\": \"Ejemplo\"\n}", "options": { "raw": { "language": "json" } } } } },
+        { "name": "Admin update equipment", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/admin/equipment/{{equipmentId}}", "body": { "mode": "raw", "raw": "{\n  \"descripcion\": \"Actualizado\",\n  \"estado\": \"DISPONIBLE\"\n}", "options": { "raw": { "language": "json" } } } } },
+        { "name": "Admin inactivate equipment", "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/admin/equipment/{{equipmentId}}" } }
+      ]
+    },
+    {
+      "name": "Exercises",
+      "item": [
+        { "name": "List exercises", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/exercises?page=1&pageSize=25&search=press" } },
+        { "name": "Get exercise", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/exercises/{{exerciseId}}" } },
+        { "name": "Create personal exercise", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/exercises/personal", "body": { "mode": "raw", "raw": "{\n  \"nombre\": \"Press personal\",\n  \"grupoMuscular\": \"Pectoral\",\n  \"descripcion\": \"Ejemplo\",\n  \"equipoIds\": [],\n  \"bodyPart\": \"upper body\",\n  \"targetMuscle\": \"pectoralis major\",\n  \"secondaryMuscles\": [\"triceps\"],\n  \"instructions\": {\"es\": \"Controlar el movimiento.\"},\n  \"instructionSteps\": {\"es\": [\"Ajustar posición.\", \"Ejecutar con control.\"]},\n  \"metadata\": {\"source\": \"postman\"}\n}", "options": { "raw": { "language": "json" } } } } },
+        { "name": "Update personal exercise", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/exercises/{{exerciseId}}", "body": { "mode": "raw", "raw": "{\n  \"descripcion\": \"Actualizado\"\n}", "options": { "raw": { "language": "json" } } } } },
+        { "name": "Inactivate personal exercise", "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/exercises/{{exerciseId}}" } },
+        { "name": "Admin create global exercise", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/admin/exercises/global", "body": { "mode": "raw", "raw": "{\n  \"nombre\": \"Press global\",\n  \"grupoMuscular\": \"Pectoral\",\n  \"descripcion\": \"Ejemplo global\",\n  \"equipoIds\": []\n}", "options": { "raw": { "language": "json" } } } } },
+        { "name": "Admin update global exercise", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/admin/exercises/global/{{exerciseId}}", "body": { "mode": "raw", "raw": "{\n  \"descripcion\": \"Actualizado\"\n}", "options": { "raw": { "language": "json" } } } } },
+        { "name": "Admin inactivate global exercise", "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/admin/exercises/global/{{exerciseId}}" } }
+      ]
+    },
+    {
+      "name": "Favorites and media",
+      "item": [
+        { "name": "List favorites", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/user-exercises" } },
+        { "name": "Add favorite", "request": { "method": "POST", "header": [], "url": "{{baseUrl}}/user-exercises/{{exerciseId}}" } },
+        { "name": "Remove favorite", "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/user-exercises/{{exerciseId}}" } },
+        { "name": "List media", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/exercises/{{exerciseId}}/media" } },
+        { "name": "Add media", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/exercises/{{exerciseId}}/media", "body": { "mode": "raw", "raw": "{\n  \"mediaType\": \"IMAGE\",\n  \"provider\": \"EXTERNAL_URL\",\n  \"externalId\": \"example-image\",\n  \"url\": \"https://example.test/exercise.jpg\",\n  \"altText\": \"Demostración del ejercicio\",\n  \"isPrimary\": true,\n  \"sortOrder\": 0,\n  \"metadata\": {}\n}", "options": { "raw": { "language": "json" } } } } },
+        { "name": "Remove media", "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/exercise-media/{{mediaId}}" } },
+        { "name": "Admin dataset dry run", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/admin/exercises/import/exercises-dataset", "body": { "mode": "raw", "raw": "{\n  \"dryRun\": true,\n  \"importMedia\": false\n}", "options": { "raw": { "language": "json" } } } } }
+      ]
+    },
+    {
+      "name": "Workouts and export",
+      "item": [
+        { "name": "Start workout", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/workouts", "body": { "mode": "raw", "raw": "{\n  \"observacion\": \"Día torso\"\n}", "options": { "raw": { "language": "json" } } } } },
+        { "name": "List workouts", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/workouts?page=1&pageSize=20" } },
+        { "name": "Get workout", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/workouts/{{workoutId}}" } },
+        { "name": "Add exercise", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/workouts/{{workoutId}}/exercises", "body": { "mode": "raw", "raw": "{\n  \"ejercicioId\": \"{{exerciseId}}\",\n  \"orden\": 1,\n  \"esEnfasis\": true,\n  \"nota\": \"Principal\"\n}", "options": { "raw": { "language": "json" } } } } },
+        { "name": "Update session exercise", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/workouts/session-exercises/{{sessionExerciseId}}", "body": { "mode": "raw", "raw": "{\n  \"orden\": 1,\n  \"esEnfasis\": true,\n  \"nota\": \"Actualizada\"\n}", "options": { "raw": { "language": "json" } } } } },
+        { "name": "Delete session exercise", "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/workouts/session-exercises/{{sessionExerciseId}}" } },
+        { "name": "Add set", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/workouts/session-exercises/{{sessionExerciseId}}/sets", "body": { "mode": "raw", "raw": "{\n  \"numeroSerie\": 1,\n  \"repeticiones\": 8,\n  \"pesoKg\": 60,\n  \"rir\": 2,\n  \"descansoSegAnterior\": 120\n}", "options": { "raw": { "language": "json" } } } } },
+        { "name": "Update set", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/workouts/sets/{{setId}}", "body": { "mode": "raw", "raw": "{\n  \"repeticiones\": 9,\n  \"pesoKg\": 62.5,\n  \"rir\": 1\n}", "options": { "raw": { "language": "json" } } } } },
+        { "name": "Delete set", "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/workouts/sets/{{setId}}" } },
+        { "name": "Finish workout", "request": { "method": "PATCH", "header": [], "url": "{{baseUrl}}/workouts/{{workoutId}}/finish" } },
+        { "name": "Cancel workout", "request": { "method": "PATCH", "header": [], "url": "{{baseUrl}}/workouts/{{workoutId}}/cancel" } },
+        { "name": "Export JSON", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/export/workout-history" } },
+        { "name": "Export CSV", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "text/csv" }], "url": "{{baseUrl}}/export/workout-history/csv" } }
+      ]
     }
   ]
 }

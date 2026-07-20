@@ -1,0 +1,211 @@
+##
+## Local and single-host deployment stack.
+##
+## Startup order is enforced, not assumed: PostgreSQL and Redis must report
+## healthy, then `migrate` runs to completion, and only then do the API and
+## workers start. Without that gate an instance can serve traffic against a
+## schema older than its own code.
+##
+## Secrets arrive from the environment (see .env.example); none are defaulted to
+## a usable value, so a missing variable fails fast instead of starting with a
+## known-weak credential.
+##
+
+x-app-image: &app-image
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: gym-sheet-backend:local
+
+x-app-environment: &app-environment
+  NODE_ENV: ${NODE_ENV:-production}
+  API_PREFIX: ${API_PREFIX:-api/v1}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  BUSINESS_TIME_ZONE: ${BUSINESS_TIME_ZONE:-America/La_Paz}
+  ACCESS_POLICY_VERSION: ${ACCESS_POLICY_VERSION:-2026-07-19}
+
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_NAME: ${DB_NAME:?DB_NAME is required}
+  DB_USER: ${DB_USER:?DB_USER is required}
+  DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+  DB_SSL: ${DB_SSL:-false}
+  DB_POOL_MAX: ${DB_POOL_MAX:-10}
+  DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-15000}
+
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET is required}
+  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+  JWT_ISSUER: ${JWT_ISSUER:-gym-sheet-api}
+  JWT_AUDIENCE: ${JWT_AUDIENCE:-gym-sheet-web}
+
+  # Shared rate-limit counters. Required here because this stack can scale the
+  # api service beyond one replica.
+  REDIS_URL: redis://redis:6379
+  REDIS_REQUIRED: "true"
+
+  METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+  TRUST_PROXY: ${TRUST_PROXY:-false}
+  RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
+  AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
+
+x-worker-runtime: &worker-runtime
+  # The image ships an HTTP liveness probe for the API. Workers serve no HTTP,
+  # so that probe can never pass and would leave them permanently `unhealthy`,
+  # tripping alerts and blocking orchestrator rollouts. Liveness for a worker is
+  # process liveness, which the restart policy already covers.
+  healthcheck:
+    disable: true
+
+x-app-security: &app-security
+  # No process in these containers needs to escalate privileges or write to its
+  # own filesystem.
+  security_opt:
+    - no-new-privileges:true
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:?DB_NAME is required}
+      POSTGRES_USER: ${DB_USER:?DB_USER is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Applied only when the data directory is empty, i.e. on first creation.
+      # Subsequent schema changes belong to the migrate service.
+      - ./docs/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  redis:
+    image: redis:7-alpine
+    # Persistence is deliberately off: this instance holds only rate-limit
+    # counters, which are safe to lose and cheap to rebuild.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 320m
+
+  migrate:
+    <<: *app-image
+    command: ["node", "dist/database/migrate.js", "up"]
+    environment:
+      <<: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # One-shot: compose treats a non-zero exit as a failed dependency, so the
+    # API never starts against a half-migrated schema.
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+
+  api:
+    <<: [*app-image, *app-security]
+    environment:
+      <<: *app-environment
+      PORT: 3000
+    # A fixed host port can only be bound by one replica, so `--scale api=N`
+    # fails while this mapping is present. To run several replicas, remove it
+    # and front the service with a reverse proxy on the compose network; the
+    # shared Redis already makes rate limiting correct across replicas.
+    ports:
+      - "${API_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
+    # SIGTERM is forwarded by tini and handled by enableShutdownHooks(); allow
+    # in-flight requests to drain before the container is killed.
+    stop_grace_period: 30s
+
+  worker-access:
+    <<: [*app-image, *app-security, *worker-runtime]
+    command: ["node", "dist/workers/access-event.worker.js"]
+    environment:
+      <<: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+    # Longer than the API: a worker must be allowed to finish the job it holds
+    # rather than leave it locked until the lock timeout expires.
+    stop_grace_period: 45s
+
+  worker-reminders:
+    <<: [*app-image, *app-security, *worker-runtime]
+    command: ["node", "dist/workers/membership-reminder.worker.js"]
+    environment:
+      <<: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+    stop_grace_period: 45s
+
+  worker-notifications:
+    <<: [*app-image, *app-security, *worker-runtime]
+    command: ["node", "dist/workers/notification-delivery.worker.js"]
+    environment:
+      <<: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+    stop_grace_period: 45s
+
+volumes:
+  postgres-data:

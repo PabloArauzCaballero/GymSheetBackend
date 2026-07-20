@@ -2,6 +2,12 @@ import { Column, CreatedAt, DataType, Default, HasOne, Model, PrimaryKey, Table,
 import { UserRole, UserStatus } from '../../common/enums/domain.enums';
 import { AnthropometricProfileModel } from '../profiles/anthropometric-profile.model';
 
+/**
+ * Persistence model for an application user.
+ *
+ * English property names are used in TypeScript while `field` preserves the
+ * existing Spanish PostgreSQL schema during the hardening migration.
+ */
 @Table({ tableName: 'usuarios', underscored: true, timestamps: true })
 export class UserModel extends Model {
   @PrimaryKey
@@ -16,22 +22,22 @@ export class UserModel extends Model {
   declare passwordHash: string;
 
   @Column({ type: DataType.STRING(180), allowNull: false, field: 'nombre_completo' })
-  declare nombreCompleto: string;
+  declare fullName: string;
 
-  @Default(UserRole.CLIENTE)
-  @Column({ type: DataType.ENUM(...Object.values(UserRole)), allowNull: false })
-  declare rol: UserRole;
+  @Default(UserRole.CLIENT)
+  @Column({ type: DataType.ENUM(...Object.values(UserRole)), allowNull: false, field: 'rol' })
+  declare role: UserRole;
 
-  @Default(UserStatus.ACTIVO)
-  @Column({ type: DataType.ENUM(...Object.values(UserStatus)), allowNull: false })
-  declare estado: UserStatus;
+  @Default(UserStatus.ACTIVE)
+  @Column({ type: DataType.ENUM(...Object.values(UserStatus)), allowNull: false, field: 'estado' })
+  declare status: UserStatus;
 
   @Default(DataType.NOW)
   @Column({ type: DataType.DATE, allowNull: false, field: 'fecha_registro' })
-  declare fechaRegistro: Date;
+  declare registeredAt: Date;
 
   @HasOne(() => AnthropometricProfileModel)
-  declare perfilAntropometrico?: AnthropometricProfileModel;
+  declare anthropometricProfile?: AnthropometricProfileModel;
 
   @CreatedAt
   @Column({ field: 'created_at' })

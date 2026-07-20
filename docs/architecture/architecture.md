@@ -2,40 +2,80 @@
 
 ## Decisión principal
 
-El backend se implementa como monolito modular con NestJS, TypeScript, Sequelize y PostgreSQL.
+El backend es un monolito modular con NestJS, TypeScript, Sequelize y PostgreSQL. Los procesos asíncronos se despliegan como workers persistentes separados del API y reutilizan módulos de aplicación mediante contextos Nest sin servidor HTTP.
 
-Aunque `prompt/index.md` conserva una referencia heredada a Express, el prompt especializado `programacionBackend.md` establece que todo backend debe implementarse con NestJS. Por eso la solución usa NestJS y adapta las reglas de rutas, middlewares y controllers al modelo de módulos, controllers, services, repositories, guards, pipes y filters de NestJS.
-
-## Módulos generados
+## Módulos existentes
 
 - `AuthModule`: registro, login y JWT.
-- `UsersModule`: usuario autenticado y soporte a auth.
-- `ProfilesModule`: perfil antropométrico básico.
+- `UsersModule`: identidad autenticada.
+- `ProfilesModule`: perfil antropométrico.
 - `EquipmentModule`: catálogo de máquinas e indumentaria.
-- `ExercisesModule`: ejercicios globales, personales y frecuentes.
-- `WorkoutsModule`: sesiones, ejercicios de sesión y series.
-- `ExportModule`: exportación JSON y CSV para entrenador externo.
-- `GatewayModule`: punto de entrada interno para health y rutas.
-- `DatabaseModule`: configuración Sequelize.
+- `ExercisesModule`: ejercicios y multimedia.
+- `WorkoutsModule`: sesiones y series.
+- `ExportModule`: exportación JSON/CSV.
+- `GatewayModule`: información operativa controlada.
+- `HealthModule`: liveness, readiness y métricas.
+- `DatabaseModule`: Sequelize y PostgreSQL.
 
-## Supuestos documentados
+## Expansión empresarial
 
-- No existe `domainModel.puml`; se usaron `classDiagram.puml`, `caseUseModel.puml`, `activityDiagramMainFlow.puml`, diagramas de estado, componentes, secuencia y despliegue.
-- No existe un ER `.puml`; se generó `docs/db/schema.sql` desde las entidades del diagrama de clases y el contexto del sistema.
-- El rol `ENTRENADOR_EXTERNO` está incluido porque aparece en el contexto, aunque la primera versión usa exportación sin cuenta obligatoria para entrenador externo.
-- La exportación PDF no se implementa en esta fase porque el contexto permite PDF, CSV o vista compartible. Se implementan JSON y CSV.
-- No se generaron workers porque el dominio actual no define colas ni procesamiento asíncrono obligatorio.
+El nuevo alcance añade cinco límites de dominio:
 
-## Seguridad
+```text
+facilities
+→ sedes, salas, puntos de acceso y asignación de máquinas
 
-- JWT Bearer token.
-- Contraseñas con bcrypt.
-- Rate limiter global con `@nestjs/throttler`.
-- Guard global de autenticación.
-- Guard de roles para endpoints administrativos.
-- Validación de entrada con Zod.
-- Filtro global de errores.
+membership
+→ planes, membresías, clientes y personal
 
-## Persistencia
+access_control
+→ credenciales, eventos de dispositivo y decisiones
 
-Sequelize opera con `synchronize: false`. El esquema debe gestionarse con SQL/migraciones, no con sincronización automática en producción.
+notifications
+→ mensajes in-app, preferencias, entrega y recordatorios
+
+integration
+→ outbox, simulador PACS e importación heredada
+```
+
+## Frontera de hardware
+
+El frontend nunca habla directamente con el molinete. Un adapter transforma eventos del fabricante al contrato canónico del backend. Hasta recibir documentación real se usa un worker mock no productivo.
+
+```text
+molinete/lector
+→ adapter del fabricante
+→ evento canónico idempotente
+→ worker de acceso
+→ motor de decisión
+→ resultado persistido
+→ adapter aplica apertura/denegación
+```
+
+El dominio no conoce protocolos, SDKs ni payloads propietarios.
+
+## Biometría
+
+GymSheet no almacena muestras ni templates biométricos. Conserva únicamente referencias externas opacas y metadata de ciclo de vida. Esta minimización sigue la frontera definida en `ADR-0002` y el threat model.
+
+## Consistencia
+
+- Mutaciones y outbox se escriben en la misma transacción.
+- Los workers asumen entrega al menos una vez.
+- Claims y deduplicación se respaldan con constraints PostgreSQL.
+- Recordatorios y eventos físicos tienen claves de idempotencia estables.
+- Las decisiones de acceso se calculan con estado actual, no con datos confiados del dispositivo.
+
+## Compatibilidad
+
+Los endpoints v1 de entrenamiento se preservan. Los nuevos módulos se añaden sin cambiar contratos existentes. `equipos_gym` recibe campos opcionales de ubicación e inventario mediante migración incremental.
+
+## Supuestos y faltantes
+
+- No existe `domainModel.puml`; los diagramas originales cubren únicamente entrenamiento.
+- El fabricante y protocolo del molinete son desconocidos.
+- El contrato del backend heredado no fue entregado.
+- El proveedor de mensajería externo no fue definido.
+- La exportación PDF sigue fuera del alcance actual.
+
+Los faltantes se aíslan mediante adapters y contratos canónicos, no mediante lógica condicional dispersa.

@@ -1,4 +1,15 @@
-import { BelongsTo, Column, CreatedAt, DataType, Default, ForeignKey, Model, PrimaryKey, Table, UpdatedAt } from 'sequelize-typescript';
+import {
+  BelongsTo,
+  Column,
+  CreatedAt,
+  DataType,
+  Default,
+  ForeignKey,
+  Model,
+  PrimaryKey,
+  Table,
+  UpdatedAt,
+} from 'sequelize-typescript';
 import { UserModel } from '../users/user.model';
 import { ExerciseModel } from './exercise.model';
 
@@ -11,21 +22,21 @@ export class UserExerciseModel extends Model {
 
   @ForeignKey(() => UserModel)
   @Column({ type: DataType.UUID, allowNull: false, field: 'usuario_id' })
-  declare usuarioId: string;
+  declare userId: string;
 
   @ForeignKey(() => ExerciseModel)
   @Column({ type: DataType.UUID, allowNull: false, field: 'ejercicio_id' })
-  declare ejercicioId: string;
+  declare exerciseId: string;
 
   @Default(DataType.NOW)
   @Column({ type: DataType.DATE, allowNull: false, field: 'fecha_seleccion' })
-  declare fechaSeleccion: Date;
+  declare selectedAt: Date;
 
   @BelongsTo(() => UserModel)
-  declare usuario?: UserModel;
+  declare user?: UserModel;
 
   @BelongsTo(() => ExerciseModel)
-  declare ejercicio?: ExerciseModel;
+  declare exercise?: ExerciseModel;
 
   @CreatedAt
   @Column({ field: 'created_at' })

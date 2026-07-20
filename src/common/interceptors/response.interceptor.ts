@@ -8,12 +8,15 @@ export class ResponseInterceptor implements NestInterceptor {
     const response = context.switchToHttp().getResponse<Response>();
     const contentType = response.getHeader('Content-Type');
 
-    if (typeof contentType === 'string' && contentType.includes('text/csv')) {
+    if (
+      typeof contentType === 'string' &&
+      (contentType.includes('text/csv') || contentType.includes('text/plain'))
+    ) {
       return next.handle();
     }
 
     return next.handle().pipe(
-      map((data) => ({
+      map((data: unknown) => ({
         ok: true,
         data,
       })),

@@ -1,1 +1,34 @@
-node_modules
+# Dependencies
+node_modules/
+
+# Runtime secrets
+.env
+.env.*
+!.env.example
+
+# Build and test output
+dist/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# Logs and temporary files
+logs/
+*.log
+*.tmp
+.tmp/
+tmp/
+
+# IDE and operating system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local database and import artifacts
+*.dump
+*.sql.gz
+imports/
+
+# Knowledge graph build output
+graphify-out/

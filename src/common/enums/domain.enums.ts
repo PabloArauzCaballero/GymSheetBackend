@@ -1,39 +1,41 @@
 export enum UserRole {
   ADMIN = 'ADMIN',
-  CLIENTE = 'CLIENTE',
-  ENTRENADOR_EXTERNO = 'ENTRENADOR_EXTERNO',
+  CLIENT = 'CLIENTE',
+  EXTERNAL_TRAINER = 'ENTRENADOR_EXTERNO',
+  COACH = 'COACH',
+  FRONT_DESK = 'FRONT_DESK',
 }
 
 export enum UserStatus {
-  ACTIVO = 'ACTIVO',
-  INACTIVO = 'INACTIVO',
+  ACTIVE = 'ACTIVO',
+  INACTIVE = 'INACTIVO',
 }
 
 export enum TrainingGoal {
-  HIPERTROFIA = 'HIPERTROFIA',
-  FUERZA = 'FUERZA',
-  RESISTENCIA = 'RESISTENCIA',
-  PERDIDA_GRASA = 'PERDIDA_GRASA',
-  SALUD_GENERAL = 'SALUD_GENERAL',
-  REHABILITACION = 'REHABILITACION',
+  HYPERTROPHY = 'HIPERTROFIA',
+  STRENGTH = 'FUERZA',
+  ENDURANCE = 'RESISTENCIA',
+  FAT_LOSS = 'PERDIDA_GRASA',
+  GENERAL_HEALTH = 'SALUD_GENERAL',
+  REHABILITATION = 'REHABILITACION',
 }
 
 export enum EquipmentType {
-  MAQUINA = 'MAQUINA',
-  MANCUERNA = 'MANCUERNA',
-  BARRA = 'BARRA',
-  DISCO = 'DISCO',
-  BANCO = 'BANCO',
-  POLEA = 'POLEA',
-  BANDA = 'BANDA',
-  ACCESORIO = 'ACCESORIO',
-  OTRO = 'OTRO',
+  MACHINE = 'MAQUINA',
+  DUMBBELL = 'MANCUERNA',
+  BARBELL = 'BARRA',
+  PLATE = 'DISCO',
+  BENCH = 'BANCO',
+  CABLE = 'POLEA',
+  BAND = 'BANDA',
+  ACCESSORY = 'ACCESORIO',
+  OTHER = 'OTRO',
 }
 
 export enum EquipmentStatus {
-  DISPONIBLE = 'DISPONIBLE',
-  MANTENIMIENTO = 'MANTENIMIENTO',
-  INACTIVO = 'INACTIVO',
+  AVAILABLE = 'DISPONIBLE',
+  MAINTENANCE = 'MANTENIMIENTO',
+  INACTIVE = 'INACTIVO',
 }
 
 export enum ExerciseType {
@@ -42,12 +44,189 @@ export enum ExerciseType {
 }
 
 export enum ExerciseStatus {
-  ACTIVO = 'ACTIVO',
-  INACTIVO = 'INACTIVO',
+  ACTIVE = 'ACTIVO',
+  INACTIVE = 'INACTIVO',
 }
 
 export enum WorkoutSessionStatus {
-  EN_PROGRESO = 'EN_PROGRESO',
-  FINALIZADA = 'FINALIZADA',
-  CANCELADA = 'CANCELADA',
+  IN_PROGRESS = 'EN_PROGRESO',
+  COMPLETED = 'FINALIZADA',
+  CANCELLED = 'CANCELADA',
+}
+
+export enum ExerciseMediaType {
+  IMAGE = 'IMAGE',
+  GIF = 'GIF',
+  VIDEO = 'VIDEO',
+}
+
+export enum ExerciseMediaProvider {
+  EXTERNAL_URL = 'EXTERNAL_URL',
+  CLOUDINARY = 'CLOUDINARY',
+  S3 = 'S3',
+  LOCAL = 'LOCAL',
+}
+
+export enum ExerciseMediaStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+}
+
+export enum ExerciseDataSource {
+  CUSTOM = 'CUSTOM',
+  EXERCISES_DATASET = 'EXERCISES_DATASET',
+}
+
+export enum FacilityStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+}
+
+export enum RoomType {
+  TRAINING = 'TRAINING',
+  CARDIO = 'CARDIO',
+  FUNCTIONAL = 'FUNCTIONAL',
+  CLASSROOM = 'CLASSROOM',
+  LOCKER = 'LOCKER',
+  RECEPTION = 'RECEPTION',
+  STAFF = 'STAFF',
+  OTHER = 'OTHER',
+}
+
+export enum RoomStatus {
+  ACTIVE = 'ACTIVE',
+  MAINTENANCE = 'MAINTENANCE',
+  CLOSED = 'CLOSED',
+  INACTIVE = 'INACTIVE',
+}
+
+export enum AccessDirection {
+  ENTRY = 'ENTRY',
+  EXIT = 'EXIT',
+  BOTH = 'BOTH',
+}
+
+export enum PlanType {
+  DAY_PASS = 'DAY_PASS',
+  WEEKLY = 'WEEKLY',
+  MONTHLY = 'MONTHLY',
+  QUARTERLY = 'QUARTERLY',
+  SEMIANNUAL = 'SEMIANNUAL',
+  ANNUAL = 'ANNUAL',
+  CUSTOM = 'CUSTOM',
+}
+
+export enum PlanStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+}
+
+export enum MembershipStatus {
+  ACTIVE = 'ACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  CANCELLED = 'CANCELLED',
+  EXPIRED = 'EXPIRED',
+}
+
+export enum EmploymentStatus {
+  ACTIVE = 'ACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  TERMINATED = 'TERMINATED',
+}
+
+export enum StaffPosition {
+  COACH = 'COACH',
+  FRONT_DESK = 'FRONT_DESK',
+  ADMINISTRATION = 'ADMINISTRATION',
+}
+
+export enum MaintenanceType {
+  PREVENTIVE = 'PREVENTIVE',
+  CORRECTIVE = 'CORRECTIVE',
+  INSPECTION = 'INSPECTION',
+}
+
+export enum MaintenanceStatus {
+  SCHEDULED = 'SCHEDULED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum CredentialType {
+  PIN = 'PIN',
+  FACE = 'FACE',
+  FINGERPRINT = 'FINGERPRINT',
+}
+
+export enum CredentialStatus {
+  ACTIVE = 'ACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  REVOKED = 'REVOKED',
+}
+
+export enum AccessDeviceStatus {
+  ACTIVE = 'ACTIVE',
+  MAINTENANCE = 'MAINTENANCE',
+  OFFLINE = 'OFFLINE',
+  INACTIVE = 'INACTIVE',
+}
+
+export enum QueueItemStatus {
+  PENDING = 'PENDING',
+  PROCESSING = 'PROCESSING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  DEAD_LETTER = 'DEAD_LETTER',
+}
+
+export enum AccessDecisionOutcome {
+  GRANTED = 'GRANTED',
+  DENIED = 'DENIED',
+}
+
+export enum AccessDecisionReason {
+  STAFF_ACCESS = 'STAFF_ACCESS',
+  ACTIVE_MEMBERSHIP = 'ACTIVE_MEMBERSHIP',
+  USER_INACTIVE = 'USER_INACTIVE',
+  CREDENTIAL_INACTIVE = 'CREDENTIAL_INACTIVE',
+  DEVICE_INACTIVE = 'DEVICE_INACTIVE',
+  MEMBERSHIP_NOT_FOUND = 'MEMBERSHIP_NOT_FOUND',
+  MEMBERSHIP_NOT_STARTED = 'MEMBERSHIP_NOT_STARTED',
+  MEMBERSHIP_EXPIRED = 'MEMBERSHIP_EXPIRED',
+  MEMBERSHIP_SUSPENDED = 'MEMBERSHIP_SUSPENDED',
+  ACCESS_SCOPE_DENIED = 'ACCESS_SCOPE_DENIED',
+  DIRECTION_NOT_ALLOWED = 'DIRECTION_NOT_ALLOWED',
+  INVALID_EVENT = 'INVALID_EVENT',
+}
+
+export enum NotificationChannel {
+  IN_APP = 'IN_APP',
+  HTTP_GATEWAY = 'HTTP_GATEWAY',
+  MOCK = 'MOCK',
+}
+
+export enum NotificationStatus {
+  PENDING = 'PENDING',
+  SENT = 'SENT',
+  FAILED = 'FAILED',
+  DEAD_LETTER = 'DEAD_LETTER',
+  READ = 'READ',
+}
+
+export enum LegacyImportBatchStatus {
+  VALIDATING = 'VALIDATING',
+  READY = 'READY',
+  IMPORTING = 'IMPORTING',
+  COMPLETED = 'COMPLETED',
+  COMPLETED_WITH_ERRORS = 'COMPLETED_WITH_ERRORS',
+  FAILED = 'FAILED',
+}
+
+export enum LegacyImportRecordStatus {
+  VALID = 'VALID',
+  INVALID = 'INVALID',
+  IMPORTED = 'IMPORTED',
+  SKIPPED = 'SKIPPED',
+  FAILED = 'FAILED',
 }

@@ -5,32 +5,38 @@ import { UpsertProfileInput } from './profiles.schemas';
 
 @Injectable()
 export class ProfilesRepository {
-  constructor(@InjectModel(AnthropometricProfileModel) private readonly profileModel: typeof AnthropometricProfileModel) {}
+  constructor(
+    @InjectModel(AnthropometricProfileModel)
+    private readonly profileModel: typeof AnthropometricProfileModel,
+  ) {}
 
-  findByUserId(usuarioId: string): Promise<AnthropometricProfileModel | null> {
-    return this.profileModel.findOne({ where: { usuarioId } });
+  findByUserId(userId: string): Promise<AnthropometricProfileModel | null> {
+    return this.profileModel.findOne({ where: { userId } });
   }
 
-  async upsertByUserId(usuarioId: string, input: UpsertProfileInput): Promise<AnthropometricProfileModel> {
-    const existingProfile = await this.findByUserId(usuarioId);
+  async upsertByUserId(
+    userId: string,
+    input: UpsertProfileInput,
+  ): Promise<AnthropometricProfileModel> {
+    const existingProfile = await this.findByUserId(userId);
 
     if (existingProfile) {
       await existingProfile.update({
-        edad: input.edad,
-        pesoKg: input.pesoKg,
-        estaturaCm: input.estaturaCm,
-        objetivo: input.objetivo,
-        fechaActualizacion: new Date(),
+        age: input.age,
+        weightKg: input.weightKg,
+        heightCm: input.heightCm,
+        goal: input.goal,
+        measurementUpdatedAt: new Date(),
       });
       return existingProfile;
     }
 
     return this.profileModel.create({
-      usuarioId,
-      edad: input.edad,
-      pesoKg: input.pesoKg,
-      estaturaCm: input.estaturaCm,
-      objetivo: input.objetivo,
+      userId,
+      age: input.age,
+      weightKg: input.weightKg,
+      heightCm: input.heightCm,
+      goal: input.goal,
     });
   }
 }

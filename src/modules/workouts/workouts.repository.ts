@@ -6,81 +6,203 @@ import { ExerciseModel } from '../exercises/exercise.model';
 import { WorkoutSessionExerciseModel } from './workout-session-exercise.model';
 import { WorkoutSessionModel } from './workout-session.model';
 import { WorkoutSetModel } from './workout-set.model';
-import { AddSessionExerciseInput, CreateWorkoutSessionInput, CreateWorkoutSetInput, UpdateSessionExerciseInput, UpdateWorkoutSetInput } from './workouts.schemas';
+import {
+  AddSessionExerciseInput,
+  CreateWorkoutSessionInput,
+  CreateWorkoutSetInput,
+  UpdateSessionExerciseInput,
+  UpdateWorkoutSetInput,
+  WorkoutSessionListInput,
+} from './workouts.schemas';
+
+export type WorkoutSessionPage = {
+  rows: WorkoutSessionModel[];
+  count: number;
+};
+
+const sessionExercisesAssociation = {
+  model: WorkoutSessionExerciseModel,
+  as: 'sessionExercises',
+};
+
+const workoutSetsAssociation = {
+  model: WorkoutSetModel,
+  as: 'sets',
+};
 
 @Injectable()
 export class WorkoutsRepository {
   constructor(
-    @InjectModel(WorkoutSessionModel) private readonly sessionModel: typeof WorkoutSessionModel,
-    @InjectModel(WorkoutSessionExerciseModel) private readonly sessionExerciseModel: typeof WorkoutSessionExerciseModel,
-    @InjectModel(WorkoutSetModel) private readonly setModel: typeof WorkoutSetModel,
+    @InjectModel(WorkoutSessionModel)
+    private readonly sessionModel: typeof WorkoutSessionModel,
+    @InjectModel(WorkoutSessionExerciseModel)
+    private readonly sessionExerciseModel: typeof WorkoutSessionExerciseModel,
+    @InjectModel(WorkoutSetModel)
+    private readonly setModel: typeof WorkoutSetModel,
   ) {}
 
-  createSession(userId: string, input: CreateWorkoutSessionInput): Promise<WorkoutSessionModel> {
-    return this.sessionModel.create({ usuarioId: userId, observacion: input.observacion ?? null });
+  createSession(
+    userId: string,
+    input: CreateWorkoutSessionInput,
+  ): Promise<WorkoutSessionModel> {
+    return this.sessionModel.create({
+      userId,
+      observation: input.observation,
+    });
   }
 
-  findSessionByIdForUser(sessionId: string, userId: string): Promise<WorkoutSessionModel | null> {
+  findSessionByIdForUser(
+    sessionId: string,
+    userId: string,
+  ): Promise<WorkoutSessionModel | null> {
     return this.sessionModel.findOne({
-      where: { id: sessionId, usuarioId: userId },
-      include: [{ model: WorkoutSessionExerciseModel, include: [ExerciseModel, WorkoutSetModel] }],
+      where: { id: sessionId, userId },
+      include: [
+        {
+          ...sessionExercisesAssociation,
+          include: [
+            { model: ExerciseModel, as: 'exercise' },
+            workoutSetsAssociation,
+          ],
+        },
+      ],
+      order: [
+        [sessionExercisesAssociation, 'order', 'ASC'],
+        [sessionExercisesAssociation, workoutSetsAssociation, 'setNumber', 'ASC'],
+      ],
     });
   }
 
-  listSessionsForUser(userId: string): Promise<WorkoutSessionModel[]> {
-    return this.sessionModel.findAll({
-      where: { usuarioId: userId },
-      include: [{ model: WorkoutSessionExerciseModel, include: [ExerciseModel, WorkoutSetModel] }],
-      order: [['fechaInicio', 'DESC']],
+  listSessionsForUser(
+    userId: string,
+    pagination: WorkoutSessionListInput,
+  ): Promise<WorkoutSessionPage> {
+    return this.sessionModel.findAndCountAll({
+      where: { userId },
+      distinct: true,
+      limit: pagination.pageSize,
+      offset: (pagination.page - 1) * pagination.pageSize,
+      include: [
+        {
+          ...sessionExercisesAssociation,
+          include: [
+            { model: ExerciseModel, as: 'exercise' },
+            workoutSetsAssociation,
+          ],
+        },
+      ],
+      order: [['startedAt', 'DESC']],
     });
   }
 
-  async changeSessionStatus(session: WorkoutSessionModel, status: WorkoutSessionStatus): Promise<WorkoutSessionModel> {
-    await session.update({ estado: status, fechaFin: new Date() });
+  findOpenSessionForUser(userId: string): Promise<WorkoutSessionModel | null> {
+    return this.sessionModel.findOne({
+      where: { userId, status: WorkoutSessionStatus.IN_PROGRESS },
+      order: [['startedAt', 'DESC']],
+    });
+  }
+
+  async changeSessionStatus(
+    session: WorkoutSessionModel,
+    status: WorkoutSessionStatus,
+  ): Promise<WorkoutSessionModel> {
+    await session.update({
+      status,
+      finishedAt: new Date(),
+    });
     return session;
   }
 
-  addExerciseToSession(sessionId: string, input: AddSessionExerciseInput): Promise<WorkoutSessionExerciseModel> {
+  addExerciseToSession(
+    sessionId: string,
+    input: AddSessionExerciseInput,
+  ): Promise<WorkoutSessionExerciseModel> {
     return this.sessionExerciseModel.create({
-      sesionId: sessionId,
-      ejercicioId: input.ejercicioId,
-      orden: input.orden,
-      esEnfasis: input.esEnfasis,
-      nota: input.nota ?? null,
+      sessionId,
+      exerciseId: input.exerciseId,
+      order: input.order,
+      isEmphasis: input.isEmphasis,
+      note: input.note,
     });
   }
 
-  findSessionExerciseById(id: string): Promise<WorkoutSessionExerciseModel | null> {
-    return this.sessionExerciseModel.findByPk(id, { include: [WorkoutSessionModel, WorkoutSetModel] });
+  findSessionExerciseById(
+    sessionExerciseId: string,
+  ): Promise<WorkoutSessionExerciseModel | null> {
+    return this.sessionExerciseModel.findByPk(sessionExerciseId, {
+      include: [
+        { model: WorkoutSessionModel, as: 'session' },
+        workoutSetsAssociation,
+      ],
+    });
   }
 
-  async updateSessionExercise(sessionExercise: WorkoutSessionExerciseModel, input: UpdateSessionExerciseInput): Promise<WorkoutSessionExerciseModel> {
+  async updateSessionExercise(
+    sessionExercise: WorkoutSessionExerciseModel,
+    input: UpdateSessionExerciseInput,
+  ): Promise<WorkoutSessionExerciseModel> {
     await sessionExercise.update(input);
     return sessionExercise;
   }
 
-  deleteSessionExercise(id: string): Promise<number> {
-    return this.sessionExerciseModel.destroy({ where: { id } });
+  deleteSessionExercise(sessionExerciseId: string): Promise<number> {
+    return this.sessionExerciseModel.destroy({ where: { id: sessionExerciseId } });
   }
 
-  findSetBySessionExerciseAndNumber(sessionExerciseId: string, numeroSerie: number): Promise<WorkoutSetModel | null> {
-    return this.setModel.findOne({ where: { sesionEjercicioId: sessionExerciseId, numeroSerie } });
+  findSetBySessionExerciseAndNumber(
+    sessionExerciseId: string,
+    setNumber: number,
+    transaction?: Transaction,
+  ): Promise<WorkoutSetModel | null> {
+    return this.setModel.findOne({
+      where: { sessionExerciseId, setNumber },
+      transaction,
+      lock: transaction ? transaction.LOCK.UPDATE : undefined,
+    });
   }
 
-  createSet(sessionExerciseId: string, input: CreateWorkoutSetInput, transaction?: Transaction): Promise<WorkoutSetModel> {
-    return this.setModel.create({ sesionEjercicioId: sessionExerciseId, ...input }, { transaction });
+  createSet(
+    sessionExerciseId: string,
+    input: CreateWorkoutSetInput,
+    transaction?: Transaction,
+  ): Promise<WorkoutSetModel> {
+    return this.setModel.create(
+      {
+        sessionExerciseId,
+        ...input,
+        weightKg: input.weightKg.toString(),
+      },
+      { transaction },
+    );
   }
 
-  findSetById(id: string): Promise<WorkoutSetModel | null> {
-    return this.setModel.findByPk(id, { include: [{ model: WorkoutSessionExerciseModel, include: [WorkoutSessionModel] }] });
+  findSetById(setId: string): Promise<WorkoutSetModel | null> {
+    return this.setModel.findByPk(setId, {
+      include: [
+        {
+          model: WorkoutSessionExerciseModel,
+          as: 'sessionExercise',
+          include: [{ model: WorkoutSessionModel, as: 'session' }],
+        },
+      ],
+    });
   }
 
-  async updateSet(set: WorkoutSetModel, input: UpdateWorkoutSetInput): Promise<WorkoutSetModel> {
-    await set.update(input);
+  async updateSet(
+    set: WorkoutSetModel,
+    input: UpdateWorkoutSetInput,
+  ): Promise<WorkoutSetModel> {
+    const changes = {
+      ...input,
+      ...(input.weightKg !== undefined
+        ? { weightKg: input.weightKg.toString() }
+        : {}),
+    };
+    await set.update(changes);
     return set;
   }
 
-  deleteSet(id: string): Promise<number> {
-    return this.setModel.destroy({ where: { id } });
+  deleteSet(setId: string): Promise<number> {
+    return this.setModel.destroy({ where: { id: setId } });
   }
 }

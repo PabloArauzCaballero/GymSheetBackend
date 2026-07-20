@@ -1,4 +1,16 @@
-import { BelongsTo, Column, CreatedAt, DataType, Default, ForeignKey, HasMany, Model, PrimaryKey, Table, UpdatedAt } from 'sequelize-typescript';
+import {
+  BelongsTo,
+  Column,
+  CreatedAt,
+  DataType,
+  Default,
+  ForeignKey,
+  HasMany,
+  Model,
+  PrimaryKey,
+  Table,
+  UpdatedAt,
+} from 'sequelize-typescript';
 import { ExerciseModel } from '../exercises/exercise.model';
 import { WorkoutSessionModel } from './workout-session.model';
 import { WorkoutSetModel } from './workout-set.model';
@@ -12,30 +24,30 @@ export class WorkoutSessionExerciseModel extends Model {
 
   @ForeignKey(() => WorkoutSessionModel)
   @Column({ type: DataType.UUID, allowNull: false, field: 'sesion_id' })
-  declare sesionId: string;
+  declare sessionId: string;
 
   @ForeignKey(() => ExerciseModel)
   @Column({ type: DataType.UUID, allowNull: false, field: 'ejercicio_id' })
-  declare ejercicioId: string;
+  declare exerciseId: string;
 
-  @Column({ type: DataType.INTEGER, allowNull: false })
-  declare orden: number;
+  @Column({ type: DataType.INTEGER, allowNull: false, field: 'orden' })
+  declare order: number;
 
   @Default(false)
   @Column({ type: DataType.BOOLEAN, allowNull: false, field: 'es_enfasis' })
-  declare esEnfasis: boolean;
+  declare isEmphasis: boolean;
 
-  @Column({ type: DataType.TEXT, allowNull: true })
-  declare nota: string | null;
+  @Column({ type: DataType.TEXT, allowNull: true, field: 'nota' })
+  declare note: string | null;
 
   @BelongsTo(() => WorkoutSessionModel)
-  declare sesion?: WorkoutSessionModel;
+  declare session?: WorkoutSessionModel;
 
   @BelongsTo(() => ExerciseModel)
-  declare ejercicio?: ExerciseModel;
+  declare exercise?: ExerciseModel;
 
   @HasMany(() => WorkoutSetModel)
-  declare series?: WorkoutSetModel[];
+  declare sets?: WorkoutSetModel[];
 
   @CreatedAt
   @Column({ field: 'created_at' })

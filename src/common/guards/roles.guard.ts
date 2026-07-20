@@ -14,14 +14,14 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    if (!requiredRoles || requiredRoles.length === 0) {
+    if (!requiredRoles?.length) {
       return true;
     }
 
     const request = context.switchToHttp().getRequest<{ user?: AuthenticatedUser }>();
-    const currentUser = request.user;
+    const authenticatedUser = request.user;
 
-    if (!currentUser || !requiredRoles.includes(currentUser.rol)) {
+    if (!authenticatedUser || !requiredRoles.includes(authenticatedUser.role)) {
       throw new ForbiddenException('No tienes permisos para realizar esta acción.');
     }
 
