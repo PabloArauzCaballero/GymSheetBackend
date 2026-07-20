@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { json, urlencoded } from 'express';
+import { Express, json, urlencoded } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -13,7 +13,8 @@ async function bootstrap(): Promise<void> {
     bufferLogs: true,
     bodyParser: false,
   });
-  const expressApplication = application.getHttpAdapter().getInstance();
+  // Nest types `getInstance()` as `any`; the adapter is Express in this build.
+  const expressApplication = application.getHttpAdapter().getInstance() as Express;
 
   expressApplication.disable('x-powered-by');
 

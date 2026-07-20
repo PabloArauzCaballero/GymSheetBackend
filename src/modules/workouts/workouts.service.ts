@@ -50,8 +50,22 @@ export class WorkoutsService {
       );
     }
 
-    const session = await this.workoutsRepository.createSession(userId, input);
-    return mapWorkoutSessionToResponse(session);
+    try {
+      const session = await this.workoutsRepository.createSession(userId, input);
+      return mapWorkoutSessionToResponse(session);
+    } catch (error: unknown) {
+      // Two concurrent requests can both pass the check above before either
+      // inserts. The `uq_active_workout_per_user` partial unique index is the
+      // real guard; without translating its violation the loser of the race
+      // received a 500 instead of the same 409 a sequential caller gets.
+      if (error instanceof UniqueConstraintError) {
+        throw new ConflictException(
+          'Ya existe una sesión de entrenamiento en progreso para este usuario.',
+        );
+      }
+
+      throw error;
+    }
   }
 
   async listMySessions(

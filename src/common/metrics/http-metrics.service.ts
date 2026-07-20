@@ -64,7 +64,7 @@ export class HttpMetricsService {
     series.durationSecondsSum += durationSeconds;
     durationBucketsSeconds.forEach((bucket, index) => {
       if (durationSeconds <= bucket) {
-        series!.buckets[index] += 1;
+        series.buckets[index] += 1;
       }
     });
   }

@@ -6,6 +6,9 @@ export async function sleep(
 
   await new Promise<void>((resolve) => {
     let settled = false;
+    // `finish` closes over the handle before `setTimeout` returns it, so the
+    // binding must be declared ahead of its assignment and cannot be `const`.
+    // eslint-disable-next-line prefer-const
     let timeout: ReturnType<typeof setTimeout>;
 
     const finish = () => {

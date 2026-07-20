@@ -102,6 +102,11 @@ jobs:
           set -e
           node scripts/verify-yarn-audit.mjs /tmp/yarn-audit.json
 
+      - name: Lint
+        run: |
+          set -o pipefail
+          yarn lint 2>&1 | tee /tmp/lint.log
+
       - name: Type check
         run: |
           set -o pipefail
@@ -112,6 +117,23 @@ jobs:
 
       - name: Production build
         run: yarn build
+
+      - name: Verify deployable artifact layout
+        run: |
+          # A successful `nest build` does not prove the artifact is deployable:
+          # including files outside `src/` shifts the inferred root and moves the
+          # entrypoint to `dist/src/main.js`, breaking start:prod and the workers.
+          for entrypoint in \
+            dist/main.js \
+            dist/database/migrate.js \
+            dist/workers/access-event.worker.js \
+            dist/workers/membership-reminder.worker.js \
+            dist/workers/notification-delivery.worker.js
+          do
+            test -f "$entrypoint" || { echo "Missing build entrypoint: $entrypoint"; exit 1; }
+          done
+          test ! -d dist/src || { echo "Unexpected dist/src: build root shifted"; exit 1; }
+          echo "Build artifact layout verified"
 
       - name: Create baseline schema
         run: psql -h localhost -U postgres -d gym_sheet_ci -v ON_ERROR_STOP=1 -f docs/db/schema.sql
@@ -211,6 +233,11 @@ jobs:
           END $$;
           SQL
 
+      - name: End-to-end tests
+        run: |
+          set -o pipefail
+          yarn test:e2e 2>&1 | tee /tmp/e2e.log
+
       - name: Create and restore database backup
         run: |
           pg_dump -h localhost -U postgres -d gym_sheet_ci --format=custom --file=/tmp/gym_sheet_ci.dump
@@ -282,6 +309,64 @@ jobs:
           node test/load/http-load-smoke.mjs > /tmp/load-smoke-result.json
           cat /tmp/load-smoke-result.json
 
+      - name: Verify graceful shutdown on SIGTERM
+        run: |
+          set -o pipefail
+
+          # API: must stop accepting connections after SIGTERM rather than being
+          # killed. Verified on Linux because Windows does not deliver SIGTERM
+          # with POSIX semantics.
+          node dist/main.js > /tmp/shutdown-api.log 2>&1 &
+          api_pid=$!
+          for _ in $(seq 1 30); do
+            curl --silent --fail http://127.0.0.1:3000/api/v1/health/live >/dev/null && break
+            sleep 1
+          done
+
+          kill -TERM "$api_pid"
+          shutdown_deadline=15
+          while kill -0 "$api_pid" 2>/dev/null; do
+            shutdown_deadline=$((shutdown_deadline - 1))
+            if [ "$shutdown_deadline" -le 0 ]; then
+              echo "API did not exit within 15s of SIGTERM"
+              cat /tmp/shutdown-api.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          wait "$api_pid" || true
+          if curl --silent --fail --max-time 3 http://127.0.0.1:3000/api/v1/health/live >/dev/null; then
+            echo "API still answering after shutdown"
+            exit 1
+          fi
+          echo "API exited cleanly on SIGTERM"
+
+          # Worker: must log the shutdown request and release its loop.
+          node dist/workers/access-event.worker.js > /tmp/shutdown-worker.log 2>&1 &
+          worker_pid=$!
+          sleep 5
+          kill -TERM "$worker_pid"
+
+          worker_deadline=15
+          while kill -0 "$worker_pid" 2>/dev/null; do
+            worker_deadline=$((worker_deadline - 1))
+            if [ "$worker_deadline" -le 0 ]; then
+              echo "Worker did not exit within 15s of SIGTERM"
+              cat /tmp/shutdown-worker.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          wait "$worker_pid" || true
+          grep -q "worker.shutdown_requested" /tmp/shutdown-worker.log || {
+            echo "Worker did not record worker.shutdown_requested"
+            cat /tmp/shutdown-worker.log
+            exit 1
+          }
+          echo "Worker exited cleanly on SIGTERM"
+
       - name: Upload verification evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -289,7 +374,11 @@ jobs:
           name: hardening-ci-evidence
           path: |
             /tmp/yarn-audit.json
+            /tmp/lint.log
             /tmp/typecheck.log
+            /tmp/e2e.log
+            /tmp/shutdown-api.log
+            /tmp/shutdown-worker.log
             /tmp/gym-sheet-api.log
             /tmp/load-smoke-result.json
           if-no-files-found: ignore

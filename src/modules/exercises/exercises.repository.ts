@@ -227,7 +227,7 @@ export class ExercisesRepository {
   }
 
   private toExerciseAttributes(
-    input: CreateGlobalExerciseInput | CreatePersonalExerciseInput,
+    input: CreateGlobalExerciseInput,
   ): Omit<CreateGlobalExerciseInput, 'equipmentIds'> {
     const { equipmentIds: _equipmentIds, ...attributes } = input;
     return attributes;

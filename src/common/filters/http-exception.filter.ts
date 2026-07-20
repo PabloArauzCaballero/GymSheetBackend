@@ -57,7 +57,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       });
   }
 
-  private resolveStatusCode(exception: unknown): number {
+  private resolveStatusCode(exception: unknown): HttpStatus {
     if (exception instanceof HttpException) {
       return exception.getStatus();
     }
@@ -69,7 +69,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const possibleStatus = exception as ErrorWithHttpStatus;
     const statusCandidates = [possibleStatus.statusCode, possibleStatus.status];
     const validStatus = statusCandidates.find(
-      (candidate): candidate is number =>
+      (candidate): candidate is HttpStatus =>
         typeof candidate === 'number' &&
         Number.isInteger(candidate) &&
         candidate >= 400 &&
@@ -79,7 +79,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     return validStatus ?? HttpStatus.INTERNAL_SERVER_ERROR;
   }
 
-  private toPublicError(exception: unknown, statusCode: number): PublicErrorPayload {
+  private toPublicError(exception: unknown, statusCode: HttpStatus): PublicErrorPayload {
     if (statusCode === HttpStatus.PAYLOAD_TOO_LARGE) {
       return { message: 'El cuerpo de la solicitud supera el límite permitido.' };
     }
@@ -128,7 +128,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
   private logException(
     exception: unknown,
-    statusCode: number,
+    statusCode: HttpStatus,
     request: Request,
     requestId: string,
   ): void {

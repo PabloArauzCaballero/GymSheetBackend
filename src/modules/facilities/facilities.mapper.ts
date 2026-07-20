@@ -1,4 +1,3 @@
-import { AccessDirection, FacilityStatus, MaintenanceStatus, MaintenanceType, RoomStatus, RoomType } from '../../common/enums/domain.enums';
 import { AccessPointModel } from './access-point.model';
 import { BranchModel } from './branch.model';
 import { EquipmentAssignmentModel } from './equipment-assignment.model';
@@ -6,15 +5,15 @@ import { MaintenanceEventModel } from './maintenance-event.model';
 import { RoomModel } from './room.model';
 
 export function mapBranch(branch: BranchModel) {
-  return { id: branch.id, codigo: branch.code, nombre: branch.name, descripcion: branch.description, zonaHoraria: branch.timeZone, estado: branch.status as FacilityStatus, metadata: branch.metadata };
+  return { id: branch.id, codigo: branch.code, nombre: branch.name, descripcion: branch.description, zonaHoraria: branch.timeZone, estado: branch.status, metadata: branch.metadata };
 }
 
 export function mapRoom(room: RoomModel) {
-  return { id: room.id, sedeId: room.branchId, codigo: room.code, nombre: room.name, tipoSala: room.roomType as RoomType, capacidad: room.capacity, estado: room.status as RoomStatus, metadata: room.metadata };
+  return { id: room.id, sedeId: room.branchId, codigo: room.code, nombre: room.name, tipoSala: room.roomType, capacidad: room.capacity, estado: room.status, metadata: room.metadata };
 }
 
 export function mapAccessPoint(point: AccessPointModel) {
-  return { id: point.id, sedeId: point.branchId, salaId: point.roomId, codigo: point.code, nombre: point.name, direccionPermitida: point.allowedDirection as AccessDirection, estado: point.status, metadata: point.metadata };
+  return { id: point.id, sedeId: point.branchId, salaId: point.roomId, codigo: point.code, nombre: point.name, direccionPermitida: point.allowedDirection, estado: point.status, metadata: point.metadata };
 }
 
 export function mapEquipmentAssignment(assignment: EquipmentAssignmentModel) {
@@ -25,8 +24,8 @@ export function mapMaintenance(event: MaintenanceEventModel) {
   return {
     id: event.id,
     equipoId: event.equipmentId,
-    tipo: event.maintenanceType as MaintenanceType,
-    estado: event.status as MaintenanceStatus,
+    tipo: event.maintenanceType,
+    estado: event.status,
     programadoPara: event.scheduledFor,
     iniciadoEn: event.startedAt,
     completadoEn: event.completedAt,

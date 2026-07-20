@@ -1,7 +1,9 @@
 import * as dotenv from 'dotenv';
 import { z } from 'zod';
 
-dotenv.config();
+// dotenv v17 prints an unstructured banner to stdout on load, which corrupts
+// the structured JSON log stream this service emits. Values are never logged.
+dotenv.config({ quiet: true });
 
 type JwtDurationUnit = 'ms' | 's' | 'm' | 'h' | 'd' | 'w' | 'y';
 export type JwtDuration = `${number}${JwtDurationUnit}`;
@@ -40,6 +42,12 @@ export const environmentSchema = z
     BUSINESS_TIME_ZONE: z.string().trim().min(3).max(80).default('America/La_Paz'),
     ACCESS_POLICY_VERSION: z.string().trim().min(1).max(80).default('2026-07-19'),
     ACCESS_MOCK_ENABLED: environmentBooleanSchema.default(false),
+    /**
+     * Optional bearer token required by GET /health/metrics. When unset the
+     * endpoint stays open, preserving existing scrape configurations; the
+     * recommended deployment sets it or restricts the route at network level.
+     */
+    METRICS_SCRAPE_TOKEN: optionalSecretSchema,
 
     DB_HOST: z.string().trim().min(1),
     DB_PORT: z.coerce.number().int().positive().max(65535).default(5432),
@@ -68,6 +76,29 @@ export const environmentSchema = z
     RATE_LIMIT_MAX: z.coerce.number().int().positive().max(10000).default(100),
     AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(100).default(10),
     GATEWAY_ENABLED: environmentBooleanSchema.default(true),
+    /**
+     * Optional Redis connection for shared rate-limit counters. When unset the
+     * throttler keeps per-process in-memory counters, which means the effective
+     * limit multiplies by the number of instances. Required in any horizontally
+     * scaled deployment; see REDIS_REQUIRED to fail fast instead of degrading.
+     */
+    REDIS_URL: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z
+        .string()
+        .url()
+        .refine(
+          (value) => value.startsWith('redis://') || value.startsWith('rediss://'),
+          'REDIS_URL must use the redis:// or rediss:// scheme.',
+        )
+        .optional(),
+    ),
+    /**
+     * When true, startup fails if REDIS_URL is absent. Prevents a multi-instance
+     * deployment from silently falling back to per-process rate limiting.
+     */
+    REDIS_REQUIRED: environmentBooleanSchema.default(false),
+    REDIS_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(5000),
 
     WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60000).default(1000),
     WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(50),
@@ -103,6 +134,7 @@ export const environmentSchema = z
       }
     }
     if (configuration.EXERCISES_DATASET_IMPORT_MEDIA && !configuration.EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED) context.addIssue({ code: z.ZodIssueCode.custom, path: ['EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED'], message: 'Media import requires explicit confirmation of the applicable media license.' });
+    if (configuration.REDIS_REQUIRED && !configuration.REDIS_URL) context.addIssue({ code: z.ZodIssueCode.custom, path: ['REDIS_URL'], message: 'REDIS_URL is required when REDIS_REQUIRED is enabled.' });
     try { new Intl.DateTimeFormat('en-CA', { timeZone: configuration.BUSINESS_TIME_ZONE }).format(); } catch { context.addIssue({ code: z.ZodIssueCode.custom, path: ['BUSINESS_TIME_ZONE'], message: 'BUSINESS_TIME_ZONE must be a valid IANA time zone.' }); }
   });
 

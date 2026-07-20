@@ -8,6 +8,16 @@ import { env } from '../../config/env';
 import { UsersRepository } from '../users/users.repository';
 import { LoginInput, RegisterInput } from './auth.schemas';
 
+/**
+ * Decoy hash compared against when no account matches the submitted email.
+ * Generated at load time with the configured cost factor so the fallback
+ * comparison takes the same time as a real one.
+ */
+const UNKNOWN_ACCOUNT_PASSWORD_HASH = bcrypt.hashSync(
+  'unknown-account-placeholder',
+  env.BCRYPT_SALT_ROUNDS,
+);
+
 export type AuthResponse = {
   accessToken: string;
   tokenType: 'Bearer';
@@ -60,13 +70,16 @@ export class AuthService {
   async login(input: LoginInput): Promise<AuthResponse> {
     const activeUser = await this.usersRepository.findActiveByEmail(input.email);
 
-    if (!activeUser) {
-      throw new UnauthorizedException('Credenciales inválidas.');
-    }
+    // Always spend the cost of one bcrypt comparison, even when no account
+    // matches. Returning early for unknown emails made the response measurably
+    // faster than for known ones, which let an unauthenticated caller confirm
+    // whether an address is registered by timing alone.
+    const passwordMatches = await bcrypt.compare(
+      input.password,
+      activeUser?.passwordHash ?? UNKNOWN_ACCOUNT_PASSWORD_HASH,
+    );
 
-    const passwordMatches = await bcrypt.compare(input.password, activeUser.passwordHash);
-
-    if (!passwordMatches) {
+    if (!activeUser || !passwordMatches) {
       throw new UnauthorizedException('Credenciales inválidas.');
     }
 

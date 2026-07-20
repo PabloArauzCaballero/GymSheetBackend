@@ -1,3 +1,4 @@
+import { MembershipStatus } from '../../common/enums/domain.enums';
 import { BusinessDateService } from '../../common/time/business-date.service';
 import { CustomerProfileModel } from './customer-profile.model';
 import { MembershipPlanModel } from './membership-plan.model';
@@ -32,7 +33,9 @@ export function mapMembership(membership: MembershipModel, dates: BusinessDateSe
     estado: membership.status,
     diasRestantes: Math.max(0, daysRemaining),
     venceHoy: daysRemaining === 0,
-    vigenteHoy: dates.isWithin(today, membership.startsOn, membership.endsOn) && membership.status === 'ACTIVE',
+    vigenteHoy:
+      dates.isWithin(today, membership.startsOn, membership.endsOn) &&
+      membership.status === MembershipStatus.ACTIVE,
     referenciaExterna: membership.externalReference,
     notas: membership.notes,
   };

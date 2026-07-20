@@ -29,3 +29,6 @@ Thumbs.db
 *.dump
 *.sql.gz
 imports/
+
+# Knowledge graph build output
+graphify-out/
