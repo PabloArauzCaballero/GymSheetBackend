@@ -244,6 +244,12 @@ jobs:
           SQL
 
       - name: End-to-end tests
+        env:
+          # The two e2e suites register several accounts each in one --runInBand
+          # process; a low auth throttle can trip across suites and flake. Raise
+          # it for the test run only (rate limiting itself is covered by the
+          # "shared across instances" step).
+          AUTH_RATE_LIMIT_MAX: 100
         run: |
           set -o pipefail
           yarn test:e2e 2>&1 | tee /tmp/e2e.log
