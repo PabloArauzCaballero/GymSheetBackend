@@ -18,9 +18,9 @@ El objetivo del sistema es que el cliente del gimnasio registre ejercicios, seri
 ## Instalación
 
 ```bash
-npm install
+yarn install --frozen-lockfile
 cp .env.example .env
-npm run start:dev
+yarn start:dev
 ```
 
 ## Base de datos
@@ -36,11 +36,13 @@ Ejecuta ese archivo en PostgreSQL antes de levantar el backend si no usarás mig
 ## Scripts principales
 
 ```bash
-npm run start:dev
-npm run build
-npm run start:prod
-npm run type-check
-npm run test
+yarn start:dev
+yarn build
+yarn start:prod
+yarn type-check
+yarn test
+yarn migration:up
+yarn db:seed:base
 ```
 
 ## Documentación

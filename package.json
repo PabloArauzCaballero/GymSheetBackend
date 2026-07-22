@@ -30,7 +30,11 @@
     "migration:up": "ts-node src/database/migrate.ts up",
     "migration:down": "ts-node src/database/migrate.ts down",
     "migration:up:prod": "node dist/database/migrate.js up",
-    "migration:down:prod": "node dist/database/migrate.js down"
+    "migration:down:prod": "node dist/database/migrate.js down",
+    "db:seed": "yarn db:seed:base",
+    "db:seed:base": "ts-node src/database/seeders/seed.ts base",
+    "db:seed:mock": "ts-node src/database/seeders/seed.ts mock",
+    "db:seed:all:development": "ts-node src/database/seeders/seed.ts all"
   },
   "dependencies": {
     "@nest-lab/throttler-storage-redis": "^1.2.0",

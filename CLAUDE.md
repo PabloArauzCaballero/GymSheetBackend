@@ -56,6 +56,7 @@ Invócalas por nombre para procedimientos especializados:
 | Revisión de seguridad (BOLA/BFLA, JWT, inyección…) | `security-audit` |
 | Revisión de Clean Code | `clean-code-review` |
 | Elegir/añadir una librería | `library-selection` |
+| Preguntar sobre el grafo de conocimiento ya construido (bajo coste en tokens) | `graphify-ask` |
 
 ## Documentación
 

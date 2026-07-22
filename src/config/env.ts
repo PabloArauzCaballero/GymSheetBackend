@@ -120,6 +120,10 @@ export const environmentSchema = z
     EXERCISES_DATASET_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(100),
     EXERCISES_DATASET_IMPORT_MEDIA: environmentBooleanSchema.default(false),
     EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED: environmentBooleanSchema.default(false),
+    SEED_ADMIN_EMAIL: z.preprocess((value) => (value === '' ? undefined : value), z.string().email().optional()),
+    SEED_ADMIN_PASSWORD: z.preprocess((value) => (value === '' ? undefined : value), z.string().min(12).max(128).optional()),
+    SEED_ADMIN_FULL_NAME: z.string().trim().min(2).max(180).default('GymSheet Administrator'),
+    SEED_MOCK_PASSWORD: z.preprocess((value) => (value === '' ? undefined : value), z.string().min(12).max(128).optional()),
   })
   .superRefine((configuration, context) => {
     if (configuration.DB_POOL_MIN > configuration.DB_POOL_MAX) context.addIssue({ code: z.ZodIssueCode.custom, path: ['DB_POOL_MIN'], message: 'DB_POOL_MIN cannot be greater than DB_POOL_MAX.' });
