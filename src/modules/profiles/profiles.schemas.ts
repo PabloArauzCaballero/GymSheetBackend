@@ -1,5 +1,5 @@
-import { z } from 'zod';
-import { TrainingGoal } from '../../common/enums/domain.enums';
+import { z } from "zod";
+import { TrainingGoal } from "../../common/enums/domain.enums";
 
 /**
  * Preserves the v1 Spanish request contract while producing an English
