@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 const languageCodeSchema = z.string().regex(/^[a-z]{2}$/);
 const instructionMapSchema = z.record(
@@ -42,7 +42,7 @@ export const externalExerciseDatasetSchema = z
       if (seenIdentifiers.has(record.id)) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          path: [index, 'id'],
+          path: [index, "id"],
           message: `Duplicate external exercise identifier: ${record.id}.`,
         });
       }
@@ -55,7 +55,20 @@ export const exerciseDatasetImportOptionsSchema = z.object({
   importMedia: z.boolean().optional(),
 });
 
+export const openExerciseMediaCatalogSchema = z.array(
+  z
+    .object({
+      id: z.string().trim().min(1).max(180),
+      name: z.string().trim().min(1).max(180),
+      images: z.array(z.string().trim().min(1).max(500)).min(1).max(10),
+    })
+    .passthrough(),
+);
+
 export type ExternalExercise = z.infer<typeof externalExerciseSchema>;
+export type OpenExerciseMediaRecord = z.infer<
+  typeof openExerciseMediaCatalogSchema
+>[number];
 export type ExerciseDatasetImportOptions = z.infer<
   typeof exerciseDatasetImportOptionsSchema
 >;

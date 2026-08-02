@@ -2,57 +2,26 @@
 
 ## Purpose
 
-This connector imports exercise catalog data from `hasaneyldrm/exercises-dataset` without replacing the application's native exercise workflow. Imported records and user-created records coexist through the `dataSource` field:
+This connector synchronizes structured exercise data from
+`hasaneyldrm/exercises-dataset`. Imported records use the
+`EXERCISES_DATASET` data source; user-created records remain `CUSTOM` and are
+never overwritten by the connector.
 
-- `CUSTOM`: manually created global or personal exercises.
-- `EXERCISES_DATASET`: records synchronized from the external dataset.
+Application reads never call GitHub. The API serves the catalog from PostgreSQL,
+so the last validated snapshot remains available during an upstream outage.
 
-The connector is administrator-only and disabled by default.
+## External source and validation
 
-## Source contract
+The source URL is configured through `EXERCISES_DATASET_JSON_URL`. Before any
+write, the client enforces HTTPS, a host allowlist, no credentials or custom port,
+no redirects, timeout and byte limits, strict Zod validation, unique external IDs
+and a minimum safe record count.
 
-The runtime schema expects the documented dataset structure:
+The runtime contract validates `id`, names, taxonomy, equipment, multilingual
+instructions and steps, muscles, media paths, attribution and source timestamps.
+The response SHA-256 and source version are stored as provenance.
 
-```txt
-id
-name
-category
-body_part
-equipment
-instructions
-instruction_steps
-muscle_group
-secondary_muscles
-target
-media_id
-image
-gif_url
-attribution
-created_at
-```
-
-Unknown properties, malformed records, duplicate source identifiers, unexpected media paths, invalid dates, oversized values, and unsupported language keys are rejected before persistence.
-
-## Import flow
-
-```txt
-POST /api/v1/admin/exercises/import/exercises-dataset
-→ validate administrator role
-→ verify feature flag
-→ verify media-license gate when media is requested
-→ validate HTTPS source and host allowlist
-→ fetch with redirect rejection and timeout
-→ stream with a maximum byte count
-→ parse JSON as unknown
-→ validate the complete dataset with Zod
-→ calculate SHA-256 and source version
-→ process bounded batches
-→ upsert by (dataSource, externalId)
-→ commit each batch transactionally
-→ return import counters
-```
-
-## Idempotency
+## PostgreSQL cache and idempotency
 
 The stable identity is:
 
@@ -60,82 +29,78 @@ The stable identity is:
 (data_source = EXERCISES_DATASET, external_id = source.id)
 ```
 
-Repeated imports update the same exercise rather than creating duplicates. Media uses:
+After each daily download, the connector compares the validated snapshot SHA-256
+and record count with the successful checkpoint. An identical structured-data
+snapshot is a catalog no-op: no exercise row or `updated_at` value is rewritten;
+only the freshness checkpoint advances. Media-enabled imports deliberately run
+the reconciliation because media may have been enabled after the earlier import.
+
+Changed imports update the same stable rows. Once every transactional batch succeeds,
+external records absent from the complete snapshot are marked `INACTIVO`; they
+are reactivated if they return in a later source snapshot. Custom records are
+never included in that reconciliation.
+
+The final reconciliation and successful-refresh checkpoint are committed in one
+transaction. A partial import cannot advance the checkpoint.
+
+## Daily refresh worker
+
+`worker-exercises-dataset` checks the PostgreSQL checkpoint. It populates an empty
+cache immediately, then downloads a new snapshot when the last fully successful
+refresh is at least 24 hours old.
 
 ```txt
-(exercise_id, provider, external_id)
+EXERCISES_DATASET_REFRESH_INTERVAL_MS=86400000
+EXERCISES_DATASET_REFRESH_RETRY_MS=3600000
+EXERCISES_DATASET_MIN_RECORDS=1000
 ```
 
-Custom records do not share this identity and are never overwritten by the connector.
+Failure policy is stale-on-error: if download, validation or persistence fails,
+the existing PostgreSQL catalog stays available and the worker retries after the
+configured delay. A truncated response below the minimum safe count is rejected
+before writes or deactivations.
 
-## Resource controls
+Administrators can inspect cache scheduling without contacting the source:
 
-- HTTP timeout: `EXERCISES_DATASET_TIMEOUT_MS`.
-- Maximum response size: `EXERCISES_DATASET_MAX_RESPONSE_BYTES`.
-- Transactional batch size: `EXERCISES_DATASET_BATCH_SIZE`.
-- Redirect policy: rejected.
-- Protocol: HTTPS only.
-- Hosts: explicit allowlist.
-- Dataset records: maximum enforced by the Zod schema.
-- Media binaries are not downloaded by this API; only validated references and metadata are stored.
+```txt
+GET /api/v1/admin/exercises/import/exercises-dataset/status
+```
 
-## Security model
+The existing administrator-only POST endpoint supports controlled manual imports
+and dry runs:
 
-The connector treats external data as hostile input. It implements controls corresponding to OWASP API7:2023 and API10:2023:
+```txt
+POST /api/v1/admin/exercises/import/exercises-dataset
+```
 
-- no caller-controlled source URL;
-- HTTPS and host allowlist;
-- no URL credentials or custom ports;
-- no redirects;
-- request timeout;
-- streamed byte limit;
-- strict response contract;
-- bounded batches;
-- administrator authorization;
-- no execution of source-provided HTML or scripts.
+## Media licensing
 
-## Media licensing gate
-
-The upstream repository licenses dataset code and structured data under MIT, while images and GIFs are attributed to Gym Visual and are governed by separate terms. Therefore:
+Structured code/data is MIT according to the upstream repository. Images and GIFs
+are attributed to Gym Visual and have separate terms, so safe defaults remain:
 
 ```txt
 EXERCISES_DATASET_IMPORT_MEDIA=false
 EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED=false
 ```
 
-are the safe defaults. Media references can be imported only after the deployer has independently confirmed that its intended use is authorized and sets both flags accordingly. The backend preserves attribution and license metadata but cannot grant rights that the deployer does not hold.
+The worker synchronizes structured records daily without importing media unless a
+deployer explicitly confirms the applicable media license.
 
-## Dry run
-
-Request:
-
-```json
-{
-  "dryRun": true,
-  "importMedia": false
-}
-```
-
-A dry run downloads and validates the complete snapshot, computes its fingerprint, and returns record counts without writing to PostgreSQL.
-
-## Adding another source
-
-Do not add conditionals to this connector. A new source requires its own:
+For commercial-safe thumbnails, the same daily reconciliation optionally reads
+`yuhonas/free-exercise-db`, published under the Unlicense. Only unambiguous exact
+matches after name normalization are linked; unmatched exercises keep the
+accessible UI fallback rather than receiving an incorrect image. The media
+identity is stable and repeated runs do not create or update unchanged rows.
 
 ```txt
-<source>.schemas.ts
-<source>.client.ts
-<source>.repository.ts
-<source>.service.ts
-<source>.controller.ts
-README.md
+EXERCISES_OPEN_MEDIA_ENABLED=true
+EXERCISES_OPEN_MEDIA_JSON_URL=https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json
+EXERCISES_OPEN_MEDIA_BASE_URL=https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/
 ```
 
-The source must define stable identity, licensing, provenance, retry behavior, resource limits, deletion semantics, and conflict resolution. Shared abstractions should be introduced only after real semantic repetition exists.
+## Observability
 
-## Operational notes
-
-- Imports are synchronous but bounded. Move them to a persistent worker if the dataset or execution time grows beyond the platform's HTTP timeout.
-- Never enable scheduled imports without an explicit stale-data and failure-notification policy.
-- Record counts and source fingerprints should be monitored for unexpected upstream changes.
-- A source record disappearing from a later snapshot is not automatically deleted; deletion semantics require a separate business decision.
+Successful refresh logs include source URL, version, SHA-256, fetched time, record
+count and create/update/deactivation counters. Failures state that cached rows were
+preserved and include the retry delay. The checkpoint table is
+`integration.exercise_dataset_sync_state`.

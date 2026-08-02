@@ -147,7 +147,12 @@ Media: (exerciseId, provider, externalId)
 - Each batch is transactional.
 - A failed batch is rolled back without rolling back earlier completed batches.
 - Repeating the import converges on the same source state.
-- Source deletion is intentionally not propagated until a deletion policy is approved.
+- Public-domain media enrichment matches only unique normalized names and uses a
+  separate stable identity, attribution and license record.
+- A successful checkpoint is written only after every batch completes.
+- The dedicated worker refreshes a stale checkpoint every 24 hours.
+- If refresh fails, the previous PostgreSQL cache remains readable and retry occurs after one hour.
+- Missing external records are marked inactive only after a complete, validated snapshot above the minimum safe count.
 
 ## Resource efficiency
 
@@ -172,16 +177,18 @@ The existing repository predates the rule that application objects must not live
 
 ## Failure modes
 
-| Failure | Expected behavior |
-|---|---|
-| external timeout | import fails with 503; no current batch writes |
-| redirect from source | request rejected |
-| source contract drift | complete snapshot rejected before writes |
-| duplicated external ID | validation fails |
-| media license not confirmed | media import forbidden |
-| invalid equipment relation | exercise write rejected before relation replacement |
-| duplicate favorite or set | conflict response; database constraint remains authoritative |
-| database unavailable | readiness returns 503; liveness remains available |
+| Failure                            | Expected behavior                                            |
+| ---------------------------------- | ------------------------------------------------------------ |
+| external timeout                   | import fails with 503; no current batch writes               |
+| redirect from source               | request rejected                                             |
+| source contract drift              | complete snapshot rejected before writes                     |
+| source temporarily unavailable     | cached PostgreSQL snapshot remains available; worker retries |
+| source response unexpectedly small | refresh rejected before writes or deactivation               |
+| duplicated external ID             | validation fails                                             |
+| media license not confirmed        | media import forbidden                                       |
+| invalid equipment relation         | exercise write rejected before relation replacement          |
+| duplicate favorite or set          | conflict response; database constraint remains authoritative |
+| database unavailable               | readiness returns 503; liveness remains available            |
 
 ## Production observability
 
