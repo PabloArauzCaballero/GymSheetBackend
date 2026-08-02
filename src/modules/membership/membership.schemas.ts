@@ -1,16 +1,18 @@
-import { z } from 'zod';
+import { z } from "zod";
 import {
   EmploymentStatus,
   MembershipStatus,
   PlanStatus,
   PlanType,
   StaffPosition,
-} from '../../common/enums/domain.enums';
+} from "../../common/enums/domain.enums";
 
-const metadataSchema = z.record(z.string(), z.unknown()).refine(
-  (value) => JSON.stringify(value).length <= 16384,
-  'Los metadatos no pueden superar 16 KiB.',
-);
+const metadataSchema = z
+  .record(z.string(), z.unknown())
+  .refine(
+    (value) => JSON.stringify(value).length <= 16384,
+    "Los metadatos no pueden superar 16 KiB.",
+  );
 
 const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -29,7 +31,12 @@ export const membershipListSchema = paginationSchema.extend({
 
 export const createPlanSchema = z
   .object({
-    codigo: z.string().trim().min(2).max(80).regex(/^[A-Za-z0-9._-]+$/),
+    codigo: z
+      .string()
+      .trim()
+      .min(2)
+      .max(80)
+      .regex(/^[A-Za-z0-9._-]+$/),
     nombre: z.string().trim().min(2).max(180),
     descripcion: z.string().trim().max(2000).nullable().optional(),
     tipo: z.nativeEnum(PlanType),
@@ -156,6 +163,12 @@ export const membershipStatusSchema = z
     reason: input.motivo ?? null,
   }));
 
+export const membershipIntentSchema = z.object({
+  planId: z.string().uuid(),
+  months: z.number().int().min(1).max(24).default(1),
+  idempotencyKey: z.string().trim().min(8).max(120),
+});
+
 export const createStaffSchema = z
   .object({
     usuarioId: z.string().uuid(),
@@ -191,5 +204,6 @@ export type ReplacePlanScopesInput = z.infer<typeof replacePlanScopesSchema>;
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 export type CreateMembershipInput = z.infer<typeof createMembershipSchema>;
 export type MembershipStatusInput = z.infer<typeof membershipStatusSchema>;
+export type MembershipIntentInput = z.infer<typeof membershipIntentSchema>;
 export type CreateStaffInput = z.infer<typeof createStaffSchema>;
 export type UpdateStaffStatusInput = z.infer<typeof updateStaffStatusSchema>;
