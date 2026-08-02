@@ -22,6 +22,7 @@ import { HealthModule } from './modules/health/health.module';
 import { MembershipModule } from './modules/membership/membership.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
+import { TrainingModule } from './modules/training/training.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 
@@ -88,6 +89,7 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
     NotificationsModule,
     ExercisesModule,
     WorkoutsModule,
+    TrainingModule,
     ExportModule,
   ],
   providers: [

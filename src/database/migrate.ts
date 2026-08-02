@@ -1,4 +1,6 @@
 import { Logger } from '@nestjs/common';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { env } from '../config/env';
@@ -83,7 +85,10 @@ async function migrateUp(sequelize: Sequelize): Promise<void> {
         `INSERT INTO app_meta.schema_migrations (id, description)
          VALUES (:id, :description)`,
         {
-          replacements: { id: migration.id, description: migration.description },
+          replacements: {
+            id: migration.id,
+            description: migration.description,
+          },
           transaction,
         },
       );
@@ -113,26 +118,40 @@ async function migrateDown(sequelize: Sequelize): Promise<void> {
     );
   }
 
-  logger.warn({ event: 'migration.rollback_started', migrationId: migration.id });
+  logger.warn({
+    event: 'migration.rollback_started',
+    migrationId: migration.id,
+  });
   await sequelize.transaction(async (transaction) => {
     await migration.down(sequelize.getQueryInterface(), transaction);
-    await sequelize.query('DELETE FROM app_meta.schema_migrations WHERE id = :id', {
-      replacements: { id: migration.id },
-      transaction,
-    });
+    await sequelize.query(
+      'DELETE FROM app_meta.schema_migrations WHERE id = :id',
+      {
+        replacements: { id: migration.id },
+        transaction,
+      },
+    );
   });
-  logger.warn({ event: 'migration.rollback_completed', migrationId: migration.id });
+  logger.warn({
+    event: 'migration.rollback_completed',
+    migrationId: migration.id,
+  });
 }
 
-export async function runMigrations(direction: MigrationDirection): Promise<void> {
+export async function runMigrations(
+  direction: MigrationDirection,
+): Promise<void> {
   const sequelize = createMigrationConnection();
   let lockAcquired = false;
 
   try {
     await sequelize.authenticate();
-    await ensureMigrationMetadata(sequelize);
     await acquireMigrationLock(sequelize);
     lockAcquired = true;
+    if (direction === 'up') {
+      await ensureBaseSchema(sequelize);
+    }
+    await ensureMigrationMetadata(sequelize);
 
     if (direction === 'down') {
       await migrateDown(sequelize);
@@ -161,14 +180,26 @@ function parseDirection(rawDirection: string | undefined): MigrationDirection {
   return direction;
 }
 
-void runMigrations(parseDirection(process.argv[2])).catch((error: unknown) => {
-  logger.error(
-    {
-      event: 'migration.failed',
-      errorName: error instanceof Error ? error.name : 'UnknownError',
-      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+if (require.main === module) {
+  void runMigrations(parseDirection(process.argv[2])).catch(
+    (error: unknown) => {
+      logger.error(
+        {
+          event: 'migration.failed',
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+          errorMessage:
+            error instanceof Error ? error.message : 'Unknown error',
+        },
+        error instanceof Error ? error.stack : undefined,
+      );
+      process.exitCode = 1;
     },
-    error instanceof Error ? error.stack : undefined,
   );
-  process.exitCode = 1;
-});
+}
+
+async function ensureBaseSchema(sequelize: Sequelize): Promise<void> {
+  const schemaPath = resolve(process.cwd(), 'docs', 'db', 'schema.sql');
+  const schemaSql = await readFile(schemaPath, 'utf8');
+  await sequelize.query(schemaSql);
+  logger.log({ event: 'database.schema.ready', schemaPath });
+}

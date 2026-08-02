@@ -7,14 +7,18 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { requestIdMiddleware } from './common/middleware/request-id.middleware';
 import { env } from './config/env';
+import { bootstrapDatabase } from './database/database-bootstrap';
 
 async function bootstrap(): Promise<void> {
+  await bootstrapDatabase();
   const application = await NestFactory.create(AppModule, {
     bufferLogs: true,
     bodyParser: false,
   });
   // Nest types `getInstance()` as `any`; the adapter is Express in this build.
-  const expressApplication = application.getHttpAdapter().getInstance() as Express;
+  const expressApplication = application
+    .getHttpAdapter()
+    .getInstance() as Express;
 
   expressApplication.disable('x-powered-by');
 
@@ -25,7 +29,9 @@ async function bootstrap(): Promise<void> {
   application.setGlobalPrefix(env.API_PREFIX);
   application.use(requestIdMiddleware);
   application.use(json({ limit: env.REQUEST_BODY_LIMIT, strict: true }));
-  application.use(urlencoded({ limit: env.REQUEST_BODY_LIMIT, extended: false }));
+  application.use(
+    urlencoded({ limit: env.REQUEST_BODY_LIMIT, extended: false }),
+  );
   application.use(
     helmet({
       crossOriginResourcePolicy: { policy: 'same-site' },
