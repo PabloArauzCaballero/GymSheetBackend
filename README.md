@@ -43,6 +43,7 @@ yarn type-check
 yarn test
 yarn migration:up
 yarn db:seed:base
+yarn worker:exercises-dataset
 ```
 
 ## Documentación
@@ -53,4 +54,5 @@ docs/architecture/flows.md
 docs/endpoints/endpoints.md
 docs/endpoints/openapi.yaml
 docs/postman/collection.json
+src/modules/exercises/import/README.md
 ```

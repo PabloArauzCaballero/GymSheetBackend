@@ -6,7 +6,7 @@ info:
     API autenticada para perfiles, catálogo de ejercicios, multimedia y sesiones de entrenamiento.
     Los nombres externos en español se mantienen por compatibilidad con la versión 1.
 servers:
-  - url: http://localhost:3000/api/v1
+  - url: http://localhost:3001/api/v1
     description: Desarrollo local
 security:
   - bearerAuth: []
@@ -14,6 +14,8 @@ tags:
   - name: Auth
   - name: Users
   - name: Profile
+  - name: Onboarding
+  - name: Membership
   - name: Equipment
   - name: Exercises
   - name: Exercise media
@@ -33,17 +35,17 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RegisterRequest'
+              $ref: "#/components/schemas/RegisterRequest"
       responses:
-        '201':
+        "201":
           description: Usuario registrado y token emitido
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
-        '409': { $ref: '#/components/responses/Problem409' }
-        '429': { $ref: '#/components/responses/Problem429' }
+                $ref: "#/components/schemas/AuthEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "429": { $ref: "#/components/responses/Problem429" }
   /auth/login:
     post:
       tags: [Auth]
@@ -54,54 +56,54 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/LoginRequest'
+              $ref: "#/components/schemas/LoginRequest"
       responses:
-        '201':
+        "201":
           description: Credenciales válidas
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
-        '401': { $ref: '#/components/responses/Problem401' }
-        '429': { $ref: '#/components/responses/Problem429' }
+                $ref: "#/components/schemas/AuthEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "429": { $ref: "#/components/responses/Problem429" }
   /auth/me:
     get:
       tags: [Auth]
       summary: Obtener el principal autenticado
       responses:
-        '200':
+        "200":
           description: Principal revalidado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthenticatedPrincipalEnvelope'
-        '401': { $ref: '#/components/responses/Problem401' }
+                $ref: "#/components/schemas/AuthenticatedPrincipalEnvelope"
+        "401": { $ref: "#/components/responses/Problem401" }
   /users/me:
     get:
       tags: [Users]
       summary: Obtener el usuario activo persistido
       responses:
-        '200':
+        "200":
           description: Usuario activo
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserEnvelope'
-        '401': { $ref: '#/components/responses/Problem401' }
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/UserEnvelope"
+        "401": { $ref: "#/components/responses/Problem401" }
+        "404": { $ref: "#/components/responses/Problem404" }
   /profile:
     get:
       tags: [Profile]
       summary: Consultar el perfil antropométrico propio
       responses:
-        '200':
+        "200":
           description: Perfil encontrado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProfileEnvelope'
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/ProfileEnvelope"
+        "404": { $ref: "#/components/responses/Problem404" }
     post:
       tags: [Profile]
       summary: Crear o reemplazar el perfil propio
@@ -110,15 +112,15 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ProfileRequest'
+              $ref: "#/components/schemas/ProfileRequest"
       responses:
-        '201':
+        "201":
           description: Perfil guardado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProfileEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
+                $ref: "#/components/schemas/ProfileEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
     patch:
       tags: [Profile]
       summary: Actualizar el perfil propio
@@ -127,26 +129,26 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ProfileRequest'
+              $ref: "#/components/schemas/ProfileRequest"
       responses:
-        '200':
+        "200":
           description: Perfil actualizado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProfileEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
+                $ref: "#/components/schemas/ProfileEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
   /equipment:
     get:
       tags: [Equipment]
       summary: Listar equipamiento disponible
       responses:
-        '200':
+        "200":
           description: Catálogo disponible
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EquipmentListEnvelope'
+                $ref: "#/components/schemas/EquipmentListEnvelope"
   /admin/equipment:
     post:
       tags: [Administration]
@@ -157,20 +159,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateEquipmentRequest'
+              $ref: "#/components/schemas/CreateEquipmentRequest"
       responses:
-        '201':
+        "201":
           description: Equipamiento creado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EquipmentEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
-        '403': { $ref: '#/components/responses/Problem403' }
-        '409': { $ref: '#/components/responses/Problem409' }
+                $ref: "#/components/schemas/EquipmentEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
   /admin/equipment/{id}:
     parameters:
-      - $ref: '#/components/parameters/IdParam'
+      - $ref: "#/components/parameters/IdParam"
     patch:
       tags: [Administration]
       summary: Actualizar equipamiento
@@ -180,37 +182,37 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateEquipmentRequest'
+              $ref: "#/components/schemas/UpdateEquipmentRequest"
       responses:
-        '200':
+        "200":
           description: Equipamiento actualizado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EquipmentEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/EquipmentEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
     delete:
       tags: [Administration]
       summary: Inhabilitar equipamiento
       x-required-role: ADMIN
       responses:
-        '200':
+        "200":
           description: Equipamiento inhabilitado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EquipmentEnvelope'
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/EquipmentEnvelope"
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
   /exercises:
     get:
       tags: [Exercises]
       summary: Listar ejercicios visibles
       parameters:
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/PageSize25Param'
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSize25Param"
         - name: search
           in: query
           schema: { type: string, minLength: 1, maxLength: 120 }
@@ -232,27 +234,27 @@ paths:
             type: string
             enum: [CUSTOM, EXERCISES_DATASET]
       responses:
-        '200':
+        "200":
           description: Página de ejercicios
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExercisePageEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
+                $ref: "#/components/schemas/ExercisePageEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
   /exercises/{id}:
     parameters:
-      - $ref: '#/components/parameters/IdParam'
+      - $ref: "#/components/parameters/IdParam"
     get:
       tags: [Exercises]
       summary: Obtener ejercicio visible
       responses:
-        '200':
+        "200":
           description: Ejercicio visible
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExerciseEnvelope'
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/ExerciseEnvelope"
+        "404": { $ref: "#/components/responses/Problem404" }
     patch:
       tags: [Exercises]
       summary: Actualizar ejercicio personal propio
@@ -261,29 +263,29 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateExerciseRequest'
+              $ref: "#/components/schemas/UpdateExerciseRequest"
       responses:
-        '200':
+        "200":
           description: Ejercicio actualizado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExerciseEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/ExerciseEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
     delete:
       tags: [Exercises]
       summary: Inhabilitar ejercicio personal propio
       responses:
-        '200':
+        "200":
           description: Ejercicio inhabilitado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExerciseEnvelope'
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/ExerciseEnvelope"
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
   /exercises/personal:
     post:
       tags: [Exercises]
@@ -293,15 +295,15 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateExerciseRequest'
+              $ref: "#/components/schemas/CreateExerciseRequest"
       responses:
-        '201':
+        "201":
           description: Ejercicio creado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExerciseEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
+                $ref: "#/components/schemas/ExerciseEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
   /admin/exercises/global:
     post:
       tags: [Administration]
@@ -312,19 +314,19 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateExerciseRequest'
+              $ref: "#/components/schemas/CreateExerciseRequest"
       responses:
-        '201':
+        "201":
           description: Ejercicio global creado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExerciseEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
-        '403': { $ref: '#/components/responses/Problem403' }
+                $ref: "#/components/schemas/ExerciseEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
   /admin/exercises/global/{id}:
     parameters:
-      - $ref: '#/components/parameters/IdParam'
+      - $ref: "#/components/parameters/IdParam"
     patch:
       tags: [Administration]
       summary: Actualizar ejercicio global
@@ -334,30 +336,30 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateExerciseRequest'
+              $ref: "#/components/schemas/UpdateExerciseRequest"
       responses:
-        '200':
+        "200":
           description: Ejercicio global actualizado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExerciseEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/ExerciseEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
     delete:
       tags: [Administration]
       summary: Inhabilitar ejercicio global
       x-required-role: ADMIN
       responses:
-        '200':
+        "200":
           description: Ejercicio global inhabilitado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExerciseEnvelope'
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/ExerciseEnvelope"
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
   /exercises/{exerciseId}/media:
     parameters:
       - name: exerciseId
@@ -368,13 +370,13 @@ paths:
       tags: [Exercise media]
       summary: Listar multimedia activa del ejercicio visible
       responses:
-        '200':
+        "200":
           description: Multimedia activa
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExerciseMediaListEnvelope'
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/ExerciseMediaListEnvelope"
+        "404": { $ref: "#/components/responses/Problem404" }
     post:
       tags: [Exercise media]
       summary: Registrar multimedia
@@ -384,18 +386,18 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateExerciseMediaRequest'
+              $ref: "#/components/schemas/CreateExerciseMediaRequest"
       responses:
-        '201':
+        "201":
           description: Multimedia registrada
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExerciseMediaEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
-        '409': { $ref: '#/components/responses/Problem409' }
+                $ref: "#/components/schemas/ExerciseMediaEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
   /exercise-media/{mediaId}:
     parameters:
       - name: mediaId
@@ -406,25 +408,25 @@ paths:
       tags: [Exercise media]
       summary: Inhabilitar multimedia
       responses:
-        '200':
+        "200":
           description: Multimedia inhabilitada
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DeleteEnvelope'
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/DeleteEnvelope"
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
   /user-exercises:
     get:
       tags: [Favorites]
       summary: Listar ejercicios frecuentes
       responses:
-        '200':
+        "200":
           description: Ejercicios frecuentes
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FavoriteListEnvelope'
+                $ref: "#/components/schemas/FavoriteListEnvelope"
   /user-exercises/{exerciseId}:
     parameters:
       - name: exerciseId
@@ -435,25 +437,25 @@ paths:
       tags: [Favorites]
       summary: Agregar ejercicio frecuente
       responses:
-        '201':
+        "201":
           description: Frecuente creado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GenericObjectEnvelope'
-        '404': { $ref: '#/components/responses/Problem404' }
-        '409': { $ref: '#/components/responses/Problem409' }
+                $ref: "#/components/schemas/GenericObjectEnvelope"
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
     delete:
       tags: [Favorites]
       summary: Quitar ejercicio frecuente
       responses:
-        '200':
+        "200":
           description: Frecuente eliminado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DeleteEnvelope'
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/DeleteEnvelope"
+        "404": { $ref: "#/components/responses/Problem404" }
   /workouts:
     post:
       tags: [Workouts]
@@ -463,74 +465,74 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateWorkoutRequest'
+              $ref: "#/components/schemas/CreateWorkoutRequest"
       responses:
-        '201':
+        "201":
           description: Sesión creada
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkoutEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
-        '409': { $ref: '#/components/responses/Problem409' }
+                $ref: "#/components/schemas/WorkoutEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "409": { $ref: "#/components/responses/Problem409" }
     get:
       tags: [Workouts]
       summary: Listar historial propio
       parameters:
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/PageSize20Param'
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSize20Param"
       responses:
-        '200':
+        "200":
           description: Página de sesiones
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkoutPageEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
+                $ref: "#/components/schemas/WorkoutPageEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
   /workouts/{id}:
     parameters:
-      - $ref: '#/components/parameters/IdParam'
+      - $ref: "#/components/parameters/IdParam"
     get:
       tags: [Workouts]
       summary: Obtener sesión propia
       responses:
-        '200':
+        "200":
           description: Sesión encontrada
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkoutEnvelope'
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/WorkoutEnvelope"
+        "404": { $ref: "#/components/responses/Problem404" }
   /workouts/{id}/finish:
     parameters:
-      - $ref: '#/components/parameters/IdParam'
+      - $ref: "#/components/parameters/IdParam"
     patch:
       tags: [Workouts]
       summary: Finalizar sesión en progreso
       responses:
-        '200':
+        "200":
           description: Sesión finalizada
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkoutEnvelope'
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/WorkoutEnvelope"
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
   /workouts/{id}/cancel:
     parameters:
-      - $ref: '#/components/parameters/IdParam'
+      - $ref: "#/components/parameters/IdParam"
     patch:
       tags: [Workouts]
       summary: Cancelar sesión en progreso
       responses:
-        '200':
+        "200":
           description: Sesión cancelada
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkoutEnvelope'
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/WorkoutEnvelope"
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
   /workouts/{sessionId}/exercises:
     parameters:
       - name: sessionId
@@ -545,21 +547,21 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddSessionExerciseRequest'
+              $ref: "#/components/schemas/AddSessionExerciseRequest"
       responses:
-        '201':
+        "201":
           description: Ejercicio agregado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GenericObjectEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
-        '409': { $ref: '#/components/responses/Problem409' }
+                $ref: "#/components/schemas/GenericObjectEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
   /workouts/session-exercises/{id}:
     parameters:
-      - $ref: '#/components/parameters/IdParam'
+      - $ref: "#/components/parameters/IdParam"
     patch:
       tags: [Workouts]
       summary: Actualizar ejercicio de sesión
@@ -568,33 +570,33 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateSessionExerciseRequest'
+              $ref: "#/components/schemas/UpdateSessionExerciseRequest"
       responses:
-        '200':
+        "200":
           description: Ejercicio de sesión actualizado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GenericObjectEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
-        '409': { $ref: '#/components/responses/Problem409' }
+                $ref: "#/components/schemas/GenericObjectEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
     delete:
       tags: [Workouts]
       summary: Eliminar ejercicio de sesión
       responses:
-        '200':
+        "200":
           description: Ejercicio eliminado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DeleteEnvelope'
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/DeleteEnvelope"
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
   /workouts/session-exercises/{id}/sets:
     parameters:
-      - $ref: '#/components/parameters/IdParam'
+      - $ref: "#/components/parameters/IdParam"
     post:
       tags: [Workouts]
       summary: Registrar serie
@@ -603,21 +605,21 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WorkoutSetRequest'
+              $ref: "#/components/schemas/WorkoutSetRequest"
       responses:
-        '201':
+        "201":
           description: Serie registrada
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GenericObjectEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
-        '409': { $ref: '#/components/responses/Problem409' }
+                $ref: "#/components/schemas/GenericObjectEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
   /workouts/sets/{id}:
     parameters:
-      - $ref: '#/components/parameters/IdParam'
+      - $ref: "#/components/parameters/IdParam"
     patch:
       tags: [Workouts]
       summary: Actualizar serie propia
@@ -626,46 +628,46 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateWorkoutSetRequest'
+              $ref: "#/components/schemas/UpdateWorkoutSetRequest"
       responses:
-        '200':
+        "200":
           description: Serie actualizada
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GenericObjectEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/GenericObjectEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
     delete:
       tags: [Workouts]
       summary: Eliminar serie propia
       responses:
-        '200':
+        "200":
           description: Serie eliminada
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DeleteEnvelope'
-        '403': { $ref: '#/components/responses/Problem403' }
-        '404': { $ref: '#/components/responses/Problem404' }
+                $ref: "#/components/schemas/DeleteEnvelope"
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
   /export/workout-history:
     get:
       tags: [Export]
       summary: Exportar historial propio como JSON
       responses:
-        '200':
+        "200":
           description: Historial acotado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GenericObjectEnvelope'
+                $ref: "#/components/schemas/GenericObjectEnvelope"
   /export/workout-history/csv:
     get:
       tags: [Export]
       summary: Exportar historial propio como CSV
       responses:
-        '200':
+        "200":
           description: CSV protegido contra fórmulas
           headers:
             Content-Disposition:
@@ -684,47 +686,163 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DatasetImportRequest'
+              $ref: "#/components/schemas/DatasetImportRequest"
       responses:
-        '201':
+        "201":
           description: Resultado de importación o dry run
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GenericObjectEnvelope'
-        '400': { $ref: '#/components/responses/Problem400' }
-        '403': { $ref: '#/components/responses/Problem403' }
-        '409': { $ref: '#/components/responses/Problem409' }
-        '502':
+                $ref: "#/components/schemas/GenericObjectEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "502":
           description: El origen externo respondió de forma inválida o no disponible
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/Problem'
+                $ref: "#/components/schemas/Problem"
+  /admin/exercises/import/exercises-dataset/status:
+    get:
+      tags: [Administration]
+      summary: Consultar el estado de la caché externa de ejercicios
+      description: Lee el checkpoint PostgreSQL sin contactar el origen externo.
+      x-required-role: ADMIN
+      responses:
+        "200":
+          description: Último refresco exitoso y próxima ejecución diaria
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObjectEnvelope"
+        "403": { $ref: "#/components/responses/Problem403" }
   /gateway/health:
     get:
       tags: [Gateway]
       security: []
       summary: Liveness HTTP
       responses:
-        '200':
+        "200":
           description: Proceso activo
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GenericObjectEnvelope'
+                $ref: "#/components/schemas/GenericObjectEnvelope"
   /gateway/routes:
     get:
       tags: [Gateway]
       security: []
       summary: Capacidades públicas resumidas
       responses:
-        '200':
+        "200":
           description: Resumen no sensible
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GenericObjectEnvelope'
+                $ref: "#/components/schemas/GenericObjectEnvelope"
+  /me/onboarding:
+    get:
+      tags: [Onboarding]
+      summary: Consultar estado y campos pendientes del onboarding
+      responses:
+        "200": { description: Estado persistente del onboarding }
+  /me/onboarding/profile:
+    put:
+      tags: [Onboarding]
+      summary: Guardar medidas, unidades y fecha de medición
+      responses:
+        "200": { description: Progreso actualizado }
+        "400": { $ref: "#/components/responses/Problem400" }
+  /me/onboarding/goals:
+    put:
+      tags: [Onboarding]
+      summary: Guardar objetivo principal
+      responses:
+        "200": { description: Progreso actualizado }
+  /me/onboarding/preferences:
+    put:
+      tags: [Onboarding]
+      summary: Guardar preferencias y consentimientos
+      responses:
+        "200": { description: Progreso actualizado }
+  /me/onboarding/equipment:
+    put:
+      tags: [Onboarding]
+      summary: Guardar equipamiento disponible
+      responses:
+        "200": { description: Progreso actualizado }
+  /me/onboarding/complete:
+    post:
+      tags: [Onboarding]
+      summary: Completar idempotentemente el onboarding validado
+      responses:
+        "200": { description: Onboarding completado }
+        "422": { description: Existen campos obligatorios pendientes }
+  /me/body-measurements:
+    get:
+      tags: [Profile]
+      summary: Listar historial corporal propio
+      responses:
+        "200": { description: Mediciones ordenadas por fecha }
+    post:
+      tags: [Profile]
+      summary: Añadir medición corporal sin sobrescribir el historial
+      responses:
+        "201": { description: Medición registrada }
+  /membership/plans:
+    get:
+      tags: [Membership]
+      summary: Listar planes comerciales, precios, beneficios e imágenes
+      responses:
+        "200": { description: Planes disponibles }
+  /membership/plans/{id}:
+    get:
+      tags: [Membership]
+      summary: Consultar plan comercial
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Plan encontrado }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /me/membership:
+    get:
+      tags: [Membership]
+      summary: Consultar membresía efectiva, pago pendiente, historial y acciones
+      responses:
+        "200": { description: Proyección de membresía }
+  /me/accesses:
+    get:
+      tags: [Membership]
+      summary: Consultar derechos efectivos sin inferirlos desde el rol
+      responses:
+        "200": { description: Derechos efectivos }
+  /me/membership/options:
+    get:
+      tags: [Membership]
+      summary: Consultar opciones compatibles según estado
+      responses:
+        "200": { description: Opciones compatibles }
+  /me/membership/renewal-intent:
+    post:
+      tags: [Membership]
+      summary: Registrar intención idempotente de renovación pendiente
+      responses:
+        "201": { description: Intención pendiente; no concede acceso }
+  /me/membership/extension-intent:
+    post:
+      tags: [Membership]
+      summary: Registrar intención idempotente de extensión
+      responses:
+        "201": { description: Intención pendiente; no extiende aún }
+  /admin/membership/intents/{id}/confirm:
+    post:
+      tags: [Administration, Membership]
+      summary: Confirmar una intención y aplicar tiempo transaccionalmente
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "201": { description: Intención confirmada una sola vez }
 components:
   securitySchemes:
     bearerAuth:
@@ -754,32 +872,32 @@ components:
       description: Solicitud inválida
       content:
         application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
+          schema: { $ref: "#/components/schemas/Problem" }
     Problem401:
       description: Autenticación requerida o inválida
       content:
         application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
+          schema: { $ref: "#/components/schemas/Problem" }
     Problem403:
       description: Operación no autorizada
       content:
         application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
+          schema: { $ref: "#/components/schemas/Problem" }
     Problem404:
       description: Recurso no encontrado o no visible
       content:
         application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
+          schema: { $ref: "#/components/schemas/Problem" }
     Problem409:
       description: Conflicto de estado, identidad o regla de negocio
       content:
         application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
+          schema: { $ref: "#/components/schemas/Problem" }
     Problem429:
       description: Límite de peticiones excedido
       content:
         application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
+          schema: { $ref: "#/components/schemas/Problem" }
   schemas:
     Problem:
       type: object
@@ -804,7 +922,7 @@ components:
         data: {}
     GenericObjectEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
             data:
@@ -812,7 +930,7 @@ components:
               additionalProperties: true
     DeleteEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
             data:
@@ -826,7 +944,8 @@ components:
       additionalProperties: false
       properties:
         email: { type: string, format: email, maxLength: 180 }
-        password: { type: string, minLength: 8, maxLength: 128, format: password }
+        password:
+          { type: string, minLength: 8, maxLength: 128, format: password }
         nombreCompleto: { type: string, minLength: 3, maxLength: 180 }
     LoginRequest:
       type: object
@@ -834,7 +953,8 @@ components:
       additionalProperties: false
       properties:
         email: { type: string, format: email, maxLength: 180 }
-        password: { type: string, minLength: 8, maxLength: 128, format: password }
+        password:
+          { type: string, minLength: 8, maxLength: 128, format: password }
     AuthUser:
       type: object
       required: [id, email, nombreCompleto, rol]
@@ -847,7 +967,7 @@ components:
           enum: [ADMIN, CLIENTE, ENTRENADOR_EXTERNO]
     AuthEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
             data:
@@ -856,10 +976,10 @@ components:
               properties:
                 accessToken: { type: string }
                 tokenType: { type: string, enum: [Bearer] }
-                user: { $ref: '#/components/schemas/AuthUser' }
+                user: { $ref: "#/components/schemas/AuthUser" }
     AuthenticatedPrincipalEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
             data:
@@ -873,7 +993,7 @@ components:
                   enum: [ADMIN, CLIENTE, ENTRENADOR_EXTERNO]
     UserEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
             data:
@@ -889,10 +1009,18 @@ components:
         estaturaCm: { type: integer, minimum: 80, maximum: 250 }
         objetivo:
           type: string
-          enum: [HIPERTROFIA, FUERZA, RESISTENCIA, PERDIDA_GRASA, SALUD_GENERAL, REHABILITACION]
+          enum:
+            [
+              HIPERTROFIA,
+              FUERZA,
+              RESISTENCIA,
+              PERDIDA_GRASA,
+              SALUD_GENERAL,
+              REHABILITACION,
+            ]
     ProfileEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
             data:
@@ -900,7 +1028,8 @@ components:
               additionalProperties: true
     EquipmentType:
       type: string
-      enum: [MAQUINA, MANCUERNA, BARRA, DISCO, BANCO, POLEA, BANDA, ACCESORIO, OTRO]
+      enum:
+        [MAQUINA, MANCUERNA, BARRA, DISCO, BANCO, POLEA, BANDA, ACCESORIO, OTRO]
     EquipmentStatus:
       type: string
       enum: [DISPONIBLE, MANTENIMIENTO, INACTIVO]
@@ -910,7 +1039,7 @@ components:
       additionalProperties: false
       properties:
         nombre: { type: string, minLength: 2, maxLength: 140 }
-        tipo: { $ref: '#/components/schemas/EquipmentType' }
+        tipo: { $ref: "#/components/schemas/EquipmentType" }
         descripcion: { type: string, nullable: true, maxLength: 500 }
     UpdateEquipmentRequest:
       type: object
@@ -918,32 +1047,32 @@ components:
       additionalProperties: false
       properties:
         nombre: { type: string, minLength: 2, maxLength: 140 }
-        tipo: { $ref: '#/components/schemas/EquipmentType' }
+        tipo: { $ref: "#/components/schemas/EquipmentType" }
         descripcion: { type: string, nullable: true, maxLength: 500 }
-        estado: { $ref: '#/components/schemas/EquipmentStatus' }
+        estado: { $ref: "#/components/schemas/EquipmentStatus" }
     Equipment:
       type: object
       required: [id, nombre, tipo, estado]
       properties:
         id: { type: string, format: uuid }
         nombre: { type: string }
-        tipo: { $ref: '#/components/schemas/EquipmentType' }
+        tipo: { $ref: "#/components/schemas/EquipmentType" }
         descripcion: { type: string, nullable: true }
-        estado: { $ref: '#/components/schemas/EquipmentStatus' }
+        estado: { $ref: "#/components/schemas/EquipmentStatus" }
     EquipmentEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
-            data: { $ref: '#/components/schemas/Equipment' }
+            data: { $ref: "#/components/schemas/Equipment" }
     EquipmentListEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
             data:
               type: array
-              items: { $ref: '#/components/schemas/Equipment' }
+              items: { $ref: "#/components/schemas/Equipment" }
     LocalizedInstructions:
       type: object
       maxProperties: 20
@@ -972,14 +1101,17 @@ components:
           maxItems: 30
           items: { type: string, format: uuid }
         bodyPart: { type: string, nullable: true, minLength: 2, maxLength: 100 }
-        targetMuscle: { type: string, nullable: true, minLength: 2, maxLength: 120 }
-        synergistMuscleGroup: { type: string, nullable: true, minLength: 2, maxLength: 120 }
+        targetMuscle:
+          { type: string, nullable: true, minLength: 2, maxLength: 120 }
+        synergistMuscleGroup:
+          { type: string, nullable: true, minLength: 2, maxLength: 120 }
         secondaryMuscles:
           type: array
           maxItems: 30
           items: { type: string, minLength: 2, maxLength: 120 }
-        instructions: { $ref: '#/components/schemas/LocalizedInstructions' }
-        instructionSteps: { $ref: '#/components/schemas/LocalizedInstructionSteps' }
+        instructions: { $ref: "#/components/schemas/LocalizedInstructions" }
+        instructionSteps:
+          { $ref: "#/components/schemas/LocalizedInstructionSteps" }
         metadata:
           type: object
           description: El JSON serializado no puede superar 16 KiB.
@@ -997,14 +1129,17 @@ components:
           maxItems: 30
           items: { type: string, format: uuid }
         bodyPart: { type: string, nullable: true, minLength: 2, maxLength: 100 }
-        targetMuscle: { type: string, nullable: true, minLength: 2, maxLength: 120 }
-        synergistMuscleGroup: { type: string, nullable: true, minLength: 2, maxLength: 120 }
+        targetMuscle:
+          { type: string, nullable: true, minLength: 2, maxLength: 120 }
+        synergistMuscleGroup:
+          { type: string, nullable: true, minLength: 2, maxLength: 120 }
         secondaryMuscles:
           type: array
           maxItems: 30
           items: { type: string, minLength: 2, maxLength: 120 }
-        instructions: { $ref: '#/components/schemas/LocalizedInstructions' }
-        instructionSteps: { $ref: '#/components/schemas/LocalizedInstructionSteps' }
+        instructions: { $ref: "#/components/schemas/LocalizedInstructions" }
+        instructionSteps:
+          { $ref: "#/components/schemas/LocalizedInstructionSteps" }
         metadata:
           type: object
           additionalProperties: true
@@ -1022,16 +1157,16 @@ components:
         dataSource: { type: string, enum: [CUSTOM, EXERCISES_DATASET] }
         media:
           type: array
-          items: { $ref: '#/components/schemas/ExerciseMedia' }
+          items: { $ref: "#/components/schemas/ExerciseMedia" }
     ExerciseEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
-            data: { $ref: '#/components/schemas/Exercise' }
+            data: { $ref: "#/components/schemas/Exercise" }
     ExercisePageEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
             data:
@@ -1040,7 +1175,7 @@ components:
               properties:
                 items:
                   type: array
-                  items: { $ref: '#/components/schemas/Exercise' }
+                  items: { $ref: "#/components/schemas/Exercise" }
                 page: { type: integer, minimum: 1 }
                 pageSize: { type: integer, minimum: 1, maximum: 100 }
                 total: { type: integer, minimum: 0 }
@@ -1052,13 +1187,23 @@ components:
       properties:
         mediaType: { type: string, enum: [IMAGE, GIF, VIDEO] }
         provider: { type: string, enum: [EXTERNAL_URL, CLOUDINARY, S3, LOCAL] }
-        externalId: { type: string, nullable: true, minLength: 1, maxLength: 180 }
-        url: { type: string, format: uri, maxLength: 2048, pattern: '^https://' }
-        thumbnailUrl: { type: string, format: uri, nullable: true, maxLength: 2048, pattern: '^https://' }
+        externalId:
+          { type: string, nullable: true, minLength: 1, maxLength: 180 }
+        url:
+          { type: string, format: uri, maxLength: 2048, pattern: "^https://" }
+        thumbnailUrl:
+          {
+            type: string,
+            format: uri,
+            nullable: true,
+            maxLength: 2048,
+            pattern: "^https://",
+          }
         mimeType: { type: string, nullable: true, minLength: 3, maxLength: 120 }
         width: { type: integer, nullable: true, minimum: 1, maximum: 10000 }
         height: { type: integer, nullable: true, minimum: 1, maximum: 10000 }
-        checksumSha256: { type: string, nullable: true, pattern: '^[a-fA-F0-9]{64}$' }
+        checksumSha256:
+          { type: string, nullable: true, pattern: "^[a-fA-F0-9]{64}$" }
         altText: { type: string, minLength: 3, maxLength: 500 }
         attribution: { type: string, nullable: true, maxLength: 2000 }
         license: { type: string, nullable: true, maxLength: 160 }
@@ -1070,7 +1215,18 @@ components:
           default: {}
     ExerciseMedia:
       type: object
-      required: [id, exerciseId, mediaType, provider, url, altText, isPrimary, sortOrder, status]
+      required:
+        [
+          id,
+          exerciseId,
+          mediaType,
+          provider,
+          url,
+          altText,
+          isPrimary,
+          sortOrder,
+          status,
+        ]
       additionalProperties: true
       properties:
         id: { type: string, format: uuid }
@@ -1084,21 +1240,21 @@ components:
         status: { type: string, enum: [ACTIVE, INACTIVE] }
     ExerciseMediaEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
-            data: { $ref: '#/components/schemas/ExerciseMedia' }
+            data: { $ref: "#/components/schemas/ExerciseMedia" }
     ExerciseMediaListEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
             data:
               type: array
-              items: { $ref: '#/components/schemas/ExerciseMedia' }
+              items: { $ref: "#/components/schemas/ExerciseMedia" }
     FavoriteListEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
             data:
@@ -1157,13 +1313,13 @@ components:
         estado: { type: string, enum: [EN_PROGRESO, FINALIZADA, CANCELADA] }
     WorkoutEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
-            data: { $ref: '#/components/schemas/Workout' }
+            data: { $ref: "#/components/schemas/Workout" }
     WorkoutPageEnvelope:
       allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
+        - $ref: "#/components/schemas/SuccessEnvelope"
         - type: object
           properties:
             data:
@@ -1172,7 +1328,7 @@ components:
               properties:
                 items:
                   type: array
-                  items: { $ref: '#/components/schemas/Workout' }
+                  items: { $ref: "#/components/schemas/Workout" }
                 page: { type: integer, minimum: 1 }
                 pageSize: { type: integer, minimum: 1, maximum: 100 }
                 total: { type: integer, minimum: 0 }

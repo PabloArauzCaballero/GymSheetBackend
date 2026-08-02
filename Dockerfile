@@ -22,6 +22,7 @@ RUN yarn build \
     && test -f dist/workers/access-event.worker.js \
     && test -f dist/workers/membership-reminder.worker.js \
     && test -f dist/workers/notification-delivery.worker.js \
+    && test -f dist/workers/exercises-dataset-refresh.worker.js \
     && test ! -d dist/src
 
 ##
@@ -54,6 +55,7 @@ WORKDIR /app
 # world-readable so the runtime user cannot modify its own code.
 COPY --from=dependencies --chown=root:root /app/node_modules ./node_modules
 COPY --from=builder --chown=root:root /app/dist ./dist
+COPY --chown=root:root docs/db/schema.sql ./docs/db/schema.sql
 COPY --chown=root:root package.json ./
 
 USER node

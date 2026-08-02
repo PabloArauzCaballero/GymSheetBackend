@@ -54,73 +54,73 @@ The API does not return stack traces or raw infrastructure errors to clients. Un
 
 ## Public operational endpoints
 
-| Method | Route | Purpose |
-|---|---|---|
-| GET | `/health/live` | Process liveness without external dependency checks |
-| GET | `/health/ready` | Readiness check including PostgreSQL |
-| GET | `/health/metrics` | Prometheus-compatible HTTP, memory and database-pool metrics |
-| GET | `/gateway/health` | Compatibility gateway health response |
-| GET | `/gateway/routes` | Public capability summary without privileged route details |
+| Method | Route             | Purpose                                                      |
+| ------ | ----------------- | ------------------------------------------------------------ |
+| GET    | `/health/live`    | Process liveness without external dependency checks          |
+| GET    | `/health/ready`   | Readiness check including PostgreSQL                         |
+| GET    | `/health/metrics` | Prometheus-compatible HTTP, memory and database-pool metrics |
+| GET    | `/gateway/health` | Compatibility gateway health response                        |
+| GET    | `/gateway/routes` | Public capability summary without privileged route details   |
 
 Liveness remains independent of PostgreSQL to avoid restart loops during temporary database outages. Readiness returns `503` when the application should not receive traffic. Production ingress should restrict `/health/metrics` to the monitoring network even though the NestJS route is public for scraper compatibility.
 
 ## Authentication
 
-| Method | Route | Access | Purpose |
-|---|---|---|---|
-| POST | `/auth/register` | public | Register a client account |
-| POST | `/auth/login` | public | Authenticate and issue an access token |
-| GET | `/auth/me` | authenticated | Return the revalidated request principal |
+| Method | Route            | Access        | Purpose                                  |
+| ------ | ---------------- | ------------- | ---------------------------------------- |
+| POST   | `/auth/register` | public        | Register a client account                |
+| POST   | `/auth/login`    | public        | Authenticate and issue an access token   |
+| GET    | `/auth/me`       | authenticated | Return the revalidated request principal |
 
 `register` and `login` use a tighter configurable rate limit than normal API routes. Login failures use a uniform message to reduce account enumeration.
 
 ## Users and profile
 
-| Method | Route | Purpose |
-|---|---|---|
-| GET | `/users/me` | Return mapped persisted user data |
-| GET | `/profile` | Read the caller's anthropometric profile |
-| POST | `/profile` | Create or replace the caller's profile |
-| PATCH | `/profile` | Update the caller's profile |
+| Method | Route       | Purpose                                  |
+| ------ | ----------- | ---------------------------------------- |
+| GET    | `/users/me` | Return mapped persisted user data        |
+| GET    | `/profile`  | Read the caller's anthropometric profile |
+| POST   | `/profile`  | Create or replace the caller's profile   |
+| PATCH  | `/profile`  | Update the caller's profile              |
 
 Canonical internal units are kilograms for body weight, centimeters for height, and explicit timestamps for measurement recency.
 
 ## Equipment
 
-| Method | Route | Access | Purpose |
-|---|---|---|---|
-| GET | `/equipment` | authenticated | List available equipment |
-| POST | `/admin/equipment` | ADMIN | Create equipment |
-| PATCH | `/admin/equipment/:id` | ADMIN | Update equipment |
-| DELETE | `/admin/equipment/:id` | ADMIN | Inactivate equipment without deleting history |
+| Method | Route                  | Access        | Purpose                                       |
+| ------ | ---------------------- | ------------- | --------------------------------------------- |
+| GET    | `/equipment`           | authenticated | List available equipment                      |
+| POST   | `/admin/equipment`     | ADMIN         | Create equipment                              |
+| PATCH  | `/admin/equipment/:id` | ADMIN         | Update equipment                              |
+| DELETE | `/admin/equipment/:id` | ADMIN         | Inactivate equipment without deleting history |
 
 Exercise relationships accept only existing, linkable equipment identifiers. Input identifiers are deduplicated before persistence.
 
 ## Exercises
 
-| Method | Route | Access | Purpose |
-|---|---|---|---|
-| GET | `/exercises` | authenticated | List global exercises and the caller's active personal exercises |
-| GET | `/exercises/:id` | visible object | Read one visible exercise |
-| POST | `/exercises/personal` | authenticated | Create a personal exercise |
-| PATCH | `/exercises/:id` | owner | Update a personal exercise |
-| DELETE | `/exercises/:id` | owner | Inactivate a personal exercise |
-| POST | `/admin/exercises/global` | ADMIN | Create a global exercise |
-| PATCH | `/admin/exercises/global/:id` | ADMIN | Update a global exercise |
-| DELETE | `/admin/exercises/global/:id` | ADMIN | Inactivate a global exercise |
+| Method | Route                         | Access         | Purpose                                                          |
+| ------ | ----------------------------- | -------------- | ---------------------------------------------------------------- |
+| GET    | `/exercises`                  | authenticated  | List global exercises and the caller's active personal exercises |
+| GET    | `/exercises/:id`              | visible object | Read one visible exercise                                        |
+| POST   | `/exercises/personal`         | authenticated  | Create a personal exercise                                       |
+| PATCH  | `/exercises/:id`              | owner          | Update a personal exercise                                       |
+| DELETE | `/exercises/:id`              | owner          | Inactivate a personal exercise                                   |
+| POST   | `/admin/exercises/global`     | ADMIN          | Create a global exercise                                         |
+| PATCH  | `/admin/exercises/global/:id` | ADMIN          | Update a global exercise                                         |
+| DELETE | `/admin/exercises/global/:id` | ADMIN          | Inactivate a global exercise                                     |
 
 ### `GET /exercises` filters
 
-| Parameter | Type | Restriction |
-|---|---|---|
-| `page` | integer | minimum 1; default 1 |
-| `pageSize` | integer | 1–100; default 25 |
-| `search` | string | 1–120 characters |
-| `grupoMuscular` | string | maximum 100 |
-| `equipoId` | UUID | associated equipment |
-| `bodyPart` | string | maximum 100 |
-| `targetMuscle` | string | maximum 120 |
-| `dataSource` | enum | `CUSTOM` or `EXERCISES_DATASET` |
+| Parameter       | Type    | Restriction                     |
+| --------------- | ------- | ------------------------------- |
+| `page`          | integer | minimum 1; default 1            |
+| `pageSize`      | integer | 1–100; default 25               |
+| `search`        | string  | 1–120 characters                |
+| `grupoMuscular` | string  | maximum 100                     |
+| `equipoId`      | UUID    | associated equipment            |
+| `bodyPart`      | string  | maximum 100                     |
+| `targetMuscle`  | string  | maximum 120                     |
+| `dataSource`    | enum    | `CUSTOM` or `EXERCISES_DATASET` |
 
 The response contains `items`, `page`, `pageSize`, `total`, and `totalPages` inside `data`.
 
@@ -135,11 +135,11 @@ The response contains `items`, `page`, `pageSize`, `total`, and `totalPages` ins
 
 ## Exercise media
 
-| Method | Route | Access | Purpose |
-|---|---|---|---|
-| GET | `/exercises/:exerciseId/media` | exercise visible | List active media |
-| POST | `/exercises/:exerciseId/media` | owner or ADMIN for global | Register a media reference |
-| DELETE | `/exercise-media/:mediaId` | owner or ADMIN for global | Inactivate media and promote a replacement primary asset |
+| Method | Route                          | Access                    | Purpose                                                  |
+| ------ | ------------------------------ | ------------------------- | -------------------------------------------------------- |
+| GET    | `/exercises/:exerciseId/media` | exercise visible          | List active media                                        |
+| POST   | `/exercises/:exerciseId/media` | owner or ADMIN for global | Register a media reference                               |
+| DELETE | `/exercise-media/:mediaId`     | owner or ADMIN for global | Inactivate media and promote a replacement primary asset |
 
 Controls:
 
@@ -155,27 +155,27 @@ Registering a URL does not grant copying or redistribution rights. External data
 
 ## Favorite exercises
 
-| Method | Route | Purpose |
-|---|---|---|
-| GET | `/user-exercises` | List the caller's favorite exercises |
-| POST | `/user-exercises/:exerciseId` | Add a unique favorite |
-| DELETE | `/user-exercises/:exerciseId` | Remove a favorite |
+| Method | Route                         | Purpose                              |
+| ------ | ----------------------------- | ------------------------------------ |
+| GET    | `/user-exercises`             | List the caller's favorite exercises |
+| POST   | `/user-exercises/:exerciseId` | Add a unique favorite                |
+| DELETE | `/user-exercises/:exerciseId` | Remove a favorite                    |
 
 ## Workout sessions
 
-| Method | Route | Purpose |
-|---|---|---|
-| POST | `/workouts` | Start one session; only one open session per user |
-| GET | `/workouts` | Read paginated history using `page` and `pageSize` |
-| GET | `/workouts/:id` | Read a session owned by the caller |
-| PATCH | `/workouts/:id/finish` | Complete an in-progress session |
-| PATCH | `/workouts/:id/cancel` | Cancel an in-progress session |
-| POST | `/workouts/:sessionId/exercises` | Add a visible exercise to an owned session |
-| PATCH | `/workouts/session-exercises/:id` | Update an exercise occurrence in an open session |
-| DELETE | `/workouts/session-exercises/:id` | Remove an exercise occurrence from an open session |
-| POST | `/workouts/session-exercises/:id/sets` | Record a uniquely numbered set |
-| PATCH | `/workouts/sets/:id` | Update an owned set |
-| DELETE | `/workouts/sets/:id` | Delete an owned set |
+| Method | Route                                  | Purpose                                            |
+| ------ | -------------------------------------- | -------------------------------------------------- |
+| POST   | `/workouts`                            | Start one session; only one open session per user  |
+| GET    | `/workouts`                            | Read paginated history using `page` and `pageSize` |
+| GET    | `/workouts/:id`                        | Read a session owned by the caller                 |
+| PATCH  | `/workouts/:id/finish`                 | Complete an in-progress session                    |
+| PATCH  | `/workouts/:id/cancel`                 | Cancel an in-progress session                      |
+| POST   | `/workouts/:sessionId/exercises`       | Add a visible exercise to an owned session         |
+| PATCH  | `/workouts/session-exercises/:id`      | Update an exercise occurrence in an open session   |
+| DELETE | `/workouts/session-exercises/:id`      | Remove an exercise occurrence from an open session |
+| POST   | `/workouts/session-exercises/:id/sets` | Record a uniquely numbered set                     |
+| PATCH  | `/workouts/sets/:id`                   | Update an owned set                                |
+| DELETE | `/workouts/sets/:id`                   | Delete an owned set                                |
 
 Allowed session transitions:
 
@@ -188,18 +188,19 @@ Completed or cancelled sessions reject further mutations.
 
 ## Exports
 
-| Method | Route | Response | Purpose |
-|---|---|---|---|
-| GET | `/export/workout-history` | JSON envelope | Bounded export of the caller's history |
-| GET | `/export/workout-history/csv` | `text/csv` | Downloadable CSV with formula neutralization |
+| Method | Route                         | Response      | Purpose                                      |
+| ------ | ----------------------------- | ------------- | -------------------------------------------- |
+| GET    | `/export/workout-history`     | JSON envelope | Bounded export of the caller's history       |
+| GET    | `/export/workout-history/csv` | `text/csv`    | Downloadable CSV with formula neutralization |
 
 Exports read history in pages to bound memory. Synchronous export rejects histories beyond the configured hard limit rather than allocating an unbounded payload.
 
 ## Dataset import
 
-| Method | Route | Access | Purpose |
-|---|---|---|---|
-| POST | `/admin/exercises/import/exercises-dataset` | ADMIN | Validate and idempotently import the external exercise dataset |
+| Method | Route                                              | Access | Purpose                                                        |
+| ------ | -------------------------------------------------- | ------ | -------------------------------------------------------------- |
+| POST   | `/admin/exercises/import/exercises-dataset`        | ADMIN  | Validate and idempotently import the external exercise dataset |
+| GET    | `/admin/exercises/import/exercises-dataset/status` | ADMIN  | Inspect PostgreSQL cache freshness and the next daily refresh  |
 
 The connector is disabled by default and applies:
 
