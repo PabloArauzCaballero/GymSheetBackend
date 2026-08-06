@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "project": "gymsheet-backend",
+  "generatedAt": "2026-08-06",
+  "sourceRevision": "27f3fd2",
+  "mode": "bootstrap",
+  "vaultRoot": "docs/obsidian/backend",
+  "sections": {
+    "00-home": { "generated": true },
+    "01-overview": { "generated": true },
+    "02-architecture": { "generated": true, "agent": "architecture" },
+    "03-domains": { "generated": true, "agent": "domains" },
+    "04-api": { "generated": true, "agent": "api" },
+    "05-data": { "generated": true, "agent": "data" },
+    "06-integrations": { "generated": true, "agent": "async-integ-ops" },
+    "07-async-processing": { "generated": true, "agent": "async-integ-ops" },
+    "08-security": { "generated": true, "agent": "security-obs" },
+    "09-observability": { "generated": true, "agent": "security-obs" },
+    "10-operations": { "generated": true, "agent": "async-integ-ops" },
+    "14-audits": { "generated": true },
+    "15-reference": { "generated": true }
+  },
+  "notes": {
+    "manualSectionMarkers": ["<!-- MANUAL:START -->", "<!-- MANUAL:END -->"],
+    "regenerationPolicy": "En modo update/delta, comparar hashes de src/ y docs/ y regenerar solo notas impactadas."
+  }
+}
