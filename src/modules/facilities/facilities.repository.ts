@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op, Transaction } from 'sequelize';
-import { MaintenanceStatus } from '../../common/enums/domain.enums';
+import {
+  FacilityStatus,
+  MaintenanceStatus,
+  RoomStatus,
+} from '../../common/enums/domain.enums';
 import { AccessPointModel } from './access-point.model';
 import { BranchModel } from './branch.model';
 import { EquipmentAssignmentModel } from './equipment-assignment.model';
@@ -15,6 +19,7 @@ import {
   MaintenanceFilterInput,
   PaginationInput,
   ScheduleMaintenanceInput,
+  UpdateAccessPointInput,
   UpdateBranchInput,
   UpdateRoomInput,
 } from './facilities.schemas';
@@ -51,6 +56,33 @@ export class FacilitiesRepository {
   async updateBranch(branch: BranchModel, input: UpdateBranchInput) {
     await branch.update(input);
     return branch;
+  }
+
+  async deactivateBranch(branch: BranchModel) {
+    await branch.update({ status: FacilityStatus.INACTIVE });
+    return branch;
+  }
+
+  async deactivateRoom(room: RoomModel) {
+    await room.update({ status: RoomStatus.INACTIVE });
+    return room;
+  }
+
+  findAccessPoint(id: string) {
+    return this.accessPoints.findByPk(id);
+  }
+
+  async updateAccessPoint(
+    accessPoint: AccessPointModel,
+    input: UpdateAccessPointInput,
+  ) {
+    await accessPoint.update(input);
+    return accessPoint;
+  }
+
+  async deactivateAccessPoint(accessPoint: AccessPointModel) {
+    await accessPoint.update({ status: FacilityStatus.INACTIVE });
+    return accessPoint;
   }
 
   listRooms(branchId: string | undefined, pagination: PaginationInput) {

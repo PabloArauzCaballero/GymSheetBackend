@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -23,6 +24,7 @@ import {
   MaintenanceFilterInput,
   PaginationInput,
   ScheduleMaintenanceInput,
+  UpdateAccessPointInput,
   UpdateBranchInput,
   UpdateRoomInput,
   assignEquipmentSchema,
@@ -33,6 +35,7 @@ import {
   maintenanceFilterSchema,
   paginationSchema,
   scheduleMaintenanceSchema,
+  updateAccessPointSchema,
   updateBranchSchema,
   updateRoomSchema,
 } from './facilities.schemas';
@@ -66,6 +69,12 @@ export class FacilitiesController {
     return this.service.updateBranch(id, input);
   }
 
+  @Delete('branches/:id')
+  @Roles(UserRole.ADMIN)
+  deactivateBranch(@Param('id', UuidParamPipe) id: string) {
+    return this.service.deactivateBranch(id);
+  }
+
   @Get('rooms')
   listRooms(
     @Query('branchId') branchId: string | undefined,
@@ -91,6 +100,12 @@ export class FacilitiesController {
     return this.service.updateRoom(id, input);
   }
 
+  @Delete('rooms/:id')
+  @Roles(UserRole.ADMIN)
+  deactivateRoom(@Param('id', UuidParamPipe) id: string) {
+    return this.service.deactivateRoom(id);
+  }
+
   @Get('access-points')
   listAccessPoints(@Query('branchId') branchId?: string) {
     return this.service.listAccessPoints(branchId);
@@ -103,6 +118,22 @@ export class FacilitiesController {
     input: CreateAccessPointInput,
   ) {
     return this.service.createAccessPoint(input);
+  }
+
+  @Patch('access-points/:id')
+  @Roles(UserRole.ADMIN)
+  updateAccessPoint(
+    @Param('id', UuidParamPipe) id: string,
+    @Body(new ZodValidationPipe(updateAccessPointSchema))
+    input: UpdateAccessPointInput,
+  ) {
+    return this.service.updateAccessPoint(id, input);
+  }
+
+  @Delete('access-points/:id')
+  @Roles(UserRole.ADMIN)
+  deactivateAccessPoint(@Param('id', UuidParamPipe) id: string) {
+    return this.service.deactivateAccessPoint(id);
   }
 
   @Post('equipment-assignments')

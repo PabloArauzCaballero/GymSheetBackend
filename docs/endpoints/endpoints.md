@@ -215,6 +215,108 @@ The connector is disabled by default and applies:
 - external media disabled by default;
 - separate explicit media-license confirmation.
 
+## Onboarding and body measurements
+
+| Method | Route                        | Purpose                                          |
+| ------ | ---------------------------- | ------------------------------------------------ |
+| GET    | `/me/onboarding`             | Read onboarding state, current step and missing fields |
+| PUT    | `/me/onboarding/profile`     | Save weight/height with explicit units and date  |
+| PUT    | `/me/onboarding/goals`       | Save the primary fitness goal                    |
+| PUT    | `/me/onboarding/preferences` | Save experience, frequency, location, consents   |
+| PUT    | `/me/onboarding/equipment`   | Save available equipment                         |
+| POST   | `/me/onboarding/complete`    | Idempotently complete onboarding (`201`; `409`/`422`) |
+| GET    | `/me/body-measurements`      | List the caller's body-measurement history       |
+| POST   | `/me/body-measurements`      | Append a measurement without overwriting (`201`) |
+
+Body weight uses `KG`/`LB` and height `CM`/`IN` at the boundary; `measuredOn` is a date. Goals use the English `FitnessGoal` enum.
+
+## Membership
+
+| Method | Route                             | Access        | Purpose                                       |
+| ------ | --------------------------------- | ------------- | --------------------------------------------- |
+| GET    | `/membership/plans`               | authenticated | List commercial plans                         |
+| GET    | `/membership/plans/:id`           | authenticated | Read one commercial plan                      |
+| GET    | `/me/membership`                  | authenticated | Effective membership projection and actions   |
+| GET    | `/me/accesses`                    | authenticated | Effective entitlements (not inferred from role) |
+| GET    | `/me/membership/options`          | authenticated | Options compatible with current state         |
+| POST   | `/me/membership/renewal-intent`   | authenticated | Register an idempotent renewal intent         |
+| POST   | `/me/membership/extension-intent` | authenticated | Register an idempotent extension intent        |
+
+> `GET /memberships/me` also exists (legacy plural path returning the current membership, `404` when none). It duplicates `/me/membership` and is pending unification; prefer `/me/membership`.
+
+### Membership administration (`ADMIN`, some `FRONT_DESK`)
+
+| Method | Route                                          | Access            |
+| ------ | ---------------------------------------------- | ----------------- |
+| GET/POST | `/admin/membership/plans`                    | GET ADMIN+FRONT_DESK / POST ADMIN |
+| PATCH  | `/admin/membership/plans/:id`                  | ADMIN             |
+| PATCH  | `/admin/membership/plans/:id/scopes`           | ADMIN             |
+| POST/GET | `/admin/membership/customers`                | ADMIN+FRONT_DESK  |
+| POST/GET | `/admin/membership/memberships`              | ADMIN+FRONT_DESK  |
+| PATCH  | `/admin/membership/memberships/:id/status`     | ADMIN+FRONT_DESK  |
+| POST   | `/admin/membership/staff`                      | ADMIN             |
+| PATCH  | `/admin/membership/staff/:userId/status`       | ADMIN             |
+| POST   | `/admin/membership/intents/:id/confirm`        | ADMIN             |
+
+## Physical access control (`ADMIN`, some `FRONT_DESK`)
+
+| Method | Route                                          | Access            |
+| ------ | ---------------------------------------------- | ----------------- |
+| GET    | `/access/me`                                   | authenticated     |
+| GET/POST | `/admin/access/devices`                      | GET ADMIN+FRONT_DESK / POST ADMIN |
+| PATCH  | `/admin/access/devices/:id/status`             | ADMIN             |
+| GET    | `/admin/access/events/:id`                     | ADMIN+FRONT_DESK  |
+| GET    | `/admin/access/history`                        | ADMIN+FRONT_DESK  |
+| GET    | `/access/credentials/me`                       | authenticated     |
+| POST   | `/admin/access/credentials/pin`                | ADMIN+FRONT_DESK  |
+| POST   | `/admin/access/credentials/external-reference` | ADMIN+FRONT_DESK  |
+| GET    | `/admin/access/credentials/user/:userId`       | ADMIN+FRONT_DESK  |
+| PATCH  | `/admin/access/credentials/:id/revoke`         | ADMIN+FRONT_DESK  |
+| POST   | `/admin/access/mock/events`                    | ADMIN             |
+
+## Facilities (`ADMIN`, some `FRONT_DESK`)
+
+| Method | Route                                             | Access           |
+| ------ | ------------------------------------------------- | ---------------- |
+| GET/POST | `/admin/facilities/branches`                    | GET ADMIN+FRONT_DESK / POST ADMIN |
+| PATCH  | `/admin/facilities/branches/:id`                  | ADMIN            |
+| GET/POST | `/admin/facilities/rooms`                       | GET ADMIN+FRONT_DESK / POST ADMIN |
+| PATCH  | `/admin/facilities/rooms/:id`                     | ADMIN            |
+| GET/POST | `/admin/facilities/access-points`               | GET ADMIN+FRONT_DESK / POST ADMIN |
+| POST   | `/admin/facilities/equipment-assignments`         | ADMIN            |
+| GET/POST | `/admin/facilities/maintenance`                 | ADMIN+FRONT_DESK |
+| PATCH  | `/admin/facilities/maintenance/:id/start`         | ADMIN+FRONT_DESK |
+| PATCH  | `/admin/facilities/maintenance/:id/complete`      | ADMIN+FRONT_DESK |
+
+## Notifications
+
+| Method | Route                          | Purpose                                |
+| ------ | ------------------------------ | -------------------------------------- |
+| GET    | `/notifications/me`            | List the caller's notifications (paged) |
+| PATCH  | `/notifications/:id/read`      | Mark one notification as read          |
+| GET    | `/notifications/preferences/me`| Read the caller's notification preferences |
+| PATCH  | `/notifications/preferences/me`| Update preferences (`422` if channel disabled) |
+
+## Routines and training
+
+| Method | Route                          | Access        | Purpose                                    |
+| ------ | ------------------------------ | ------------- | ------------------------------------------ |
+| POST   | `/routines`                    | authenticated | Create a routine                           |
+| GET    | `/routines`                    | authenticated | List routines (`scope` = `mine`\|`templates`) |
+| GET    | `/routines/assignments/me`     | authenticated | Routines assigned to the caller            |
+| GET    | `/routines/assignments/coach`  | COACH/ADMIN   | Routines the coach has assigned            |
+| POST   | `/routines/import`             | authenticated | Bulk import routines (1–200)               |
+| PATCH  | `/routines/exercises/:id`      | owner         | Update a routine exercise                  |
+| DELETE | `/routines/exercises/:id`      | owner         | Remove a routine exercise                  |
+| GET    | `/routines/:id`                | owner/visible | Read a routine                             |
+| PATCH  | `/routines/:id`                | owner         | Update a routine (incl. `estado`)          |
+| DELETE | `/routines/:id`                | owner         | Delete a routine                           |
+| POST   | `/routines/:id/exercises`      | owner         | Add an exercise to a routine               |
+| POST   | `/routines/:id/assign`         | COACH/ADMIN   | Assign a routine to a client               |
+| POST   | `/routines/:id/start`          | owner         | Start a workout session from a routine     |
+
+Physical access control, facilities and membership responses use the same `{ ok, data }` envelope and `application/problem+json` errors as the rest of the API. Full request/response schemas live in `openapi.yaml`.
+
 ## Main status codes
 
 - `400`: invalid input or route format;
@@ -230,6 +332,6 @@ The connector is disabled by default and applies:
 
 ## Source contracts
 
-The primary OpenAPI contract is maintained at `docs/endpoints/openapi.yaml`. The observability endpoints introduced by hardening are also isolated in `docs/endpoints/openapi-observability.yaml` so infrastructure teams can import only the operational surface. The Postman collection mirrors the complete route inventory.
+The primary OpenAPI contract is maintained at `docs/endpoints/openapi.yaml` and covers the full client and administrative surface (auth, profile, onboarding, equipment, exercises, media, favorites, workouts, export, dataset import, membership, physical access control, facilities, notifications and routines). The observability endpoints introduced by hardening are isolated in `docs/endpoints/openapi-observability.yaml` so infrastructure teams can import only the operational surface. The Postman collection currently covers the core client and catalog flows (health, auth, profile, equipment, exercises, media, favorites, workouts, export) and does **not** yet mirror the full route inventory; onboarding, membership, access control, facilities, notifications and routines are pending.
 
 Controller, schema, route, response, error, or limit changes must update OpenAPI, this endpoint guide and the Postman collection in the same pull request.

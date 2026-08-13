@@ -25,7 +25,11 @@ x-app-environment: &app-environment
   SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
   SEED_ADMIN_FULL_NAME: ${SEED_ADMIN_FULL_NAME:-GymSheet Administrator}
   SEED_MOCK_PASSWORD: ${SEED_MOCK_PASSWORD:-}
-  EXERCISES_DATASET_ENABLED: ${EXERCISES_DATASET_ENABLED:-false}
+  # Forzado a false en runtime Docker: las imágenes de ejercicios ya están
+  # espejadas en almacenamiento local (yarn db:media:mirror). Reactivar el
+  # refresco volvería a apuntar exercise_media.url a raw.githubusercontent. Para
+  # reimportar el catálogo desde cero, ponlo temporalmente en "true".
+  EXERCISES_DATASET_ENABLED: "false"
   EXERCISES_DATASET_JSON_URL: ${EXERCISES_DATASET_JSON_URL:-https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json}
   EXERCISES_DATASET_ALLOWED_HOSTS: ${EXERCISES_DATASET_ALLOWED_HOSTS:-raw.githubusercontent.com}
   EXERCISES_DATASET_TIMEOUT_MS: ${EXERCISES_DATASET_TIMEOUT_MS:-15000}
@@ -39,6 +43,25 @@ x-app-environment: &app-environment
   EXERCISES_OPEN_MEDIA_ENABLED: ${EXERCISES_OPEN_MEDIA_ENABLED:-true}
   EXERCISES_OPEN_MEDIA_JSON_URL: ${EXERCISES_OPEN_MEDIA_JSON_URL:-https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json}
   EXERCISES_OPEN_MEDIA_BASE_URL: ${EXERCISES_OPEN_MEDIA_BASE_URL:-https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/}
+  # Canonical exercises source at boot (ADR-0006, option b). `github` requires
+  # EXERCISES_DATASET_ENABLED=true; the app fails fast otherwise (no silent fallback).
+  CANONICAL_EXERCISES_SOURCE: ${CANONICAL_EXERCISES_SOURCE:-seeders}
+
+  # Media storage (ports & adapters). `local` writes to the media-data volume the
+  # api service mounts at /app/storage/media and serves under the public base URL.
+  # Switch to cloudinary/s3 by implementing the adapter and setting the provider.
+  MEDIA_STORAGE_PROVIDER: ${MEDIA_STORAGE_PROVIDER:-local}
+  MEDIA_STORAGE_LOCAL_ROOT: ${MEDIA_STORAGE_LOCAL_ROOT:-/app/storage/media}
+  MEDIA_STORAGE_PUBLIC_BASE_URL: ${MEDIA_STORAGE_PUBLIC_BASE_URL:-http://localhost:3001/media}
+  MEDIA_UPLOAD_MAX_BYTES: ${MEDIA_UPLOAD_MAX_BYTES:-5242880}
+  MEDIA_ALLOWED_MIME: ${MEDIA_ALLOWED_MIME:-image/jpeg,image/png,image/webp,image/gif}
+  # `db:media:mirror` copies external media into local storage (forces JPEG/PNG).
+  MEDIA_MIRROR_ALLOWED_HOSTS: ${MEDIA_MIRROR_ALLOWED_HOSTS:-images.unsplash.com,raw.githubusercontent.com}
+  MEDIA_MIRROR_TIMEOUT_MS: ${MEDIA_MIRROR_TIMEOUT_MS:-15000}
+  CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+  CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+  CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+  CLOUDINARY_FOLDER: ${CLOUDINARY_FOLDER:-gymsheet}
 
   DB_HOST: postgres
   DB_PORT: 5432
@@ -108,6 +131,10 @@ services:
       resources:
         limits:
           memory: 1g
+          cpus: "1.0"
+        reservations:
+          memory: 256m
+          cpus: "0.25"
 
   redis:
     image: redis:7-alpine
@@ -137,6 +164,9 @@ services:
       resources:
         limits:
           memory: 320m
+          cpus: "0.5"
+        reservations:
+          memory: 64m
 
   migrate:
     <<: *app-image
@@ -163,6 +193,12 @@ services:
     environment:
       <<: *app-environment
       PORT: 3000
+    # Writable media root for the local storage adapter, mounted over the
+    # read-only root filesystem. On a single host this volume can be shared by
+    # multiple api replicas; across hosts, use a remote provider (Cloudinary/S3)
+    # instead of local storage.
+    volumes:
+      - media-data:/app/storage/media
     # A fixed host port can only be bound by one replica, so `--scale api=N`
     # fails while this mapping is present. To run several replicas, remove it
     # and front the service with a reverse proxy on the compose network; the
@@ -182,6 +218,9 @@ services:
         limits:
           memory: 512m
           cpus: "1.0"
+        reservations:
+          memory: 256m
+          cpus: "0.25"
     # SIGTERM is forwarded by tini and handled by enableShutdownHooks(); allow
     # in-flight requests to drain before the container is killed.
     stop_grace_period: 30s
@@ -220,6 +259,9 @@ services:
       resources:
         limits:
           memory: 384m
+          cpus: "0.5"
+        reservations:
+          memory: 128m
     stop_grace_period: 45s
 
   worker-notifications:
@@ -236,6 +278,9 @@ services:
       resources:
         limits:
           memory: 384m
+          cpus: "0.5"
+        reservations:
+          memory: 128m
     stop_grace_period: 45s
 
   worker-exercises-dataset:
@@ -252,7 +297,12 @@ services:
       resources:
         limits:
           memory: 512m
+          cpus: "1.0"
+        reservations:
+          memory: 192m
     stop_grace_period: 45s
 
 volumes:
   postgres-data:
+  # Uploaded media for MEDIA_STORAGE_PROVIDER=local; persists across restarts.
+  media-data:

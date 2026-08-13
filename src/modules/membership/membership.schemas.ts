@@ -198,6 +198,36 @@ export const updateStaffStatusSchema = z
   }));
 
 export type MembershipListInput = z.infer<typeof membershipListSchema>;
+export const createFeatureSchema = z
+  .object({
+    code: z
+      .string()
+      .trim()
+      .min(2)
+      .max(100)
+      .regex(/^[A-Z][A-Z0-9_]*$/, "El código debe ser UPPER_SNAKE_CASE."),
+    name: z.string().trim().min(2).max(180),
+    description: z.string().trim().max(2000).nullable().optional(),
+  })
+  .strict();
+
+export const updateFeatureSchema = z
+  .object({
+    name: z.string().trim().min(2).max(180).optional(),
+    description: z.string().trim().max(2000).nullable().optional(),
+    status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.name !== undefined ||
+      value.description !== undefined ||
+      value.status !== undefined,
+    "Envía al menos un campo.",
+  );
+
+export type CreateFeatureInput = z.infer<typeof createFeatureSchema>;
+export type UpdateFeatureInput = z.infer<typeof updateFeatureSchema>;
 export type CreatePlanInput = z.infer<typeof createPlanSchema>;
 export type UpdatePlanInput = z.infer<typeof updatePlanSchema>;
 export type ReplacePlanScopesInput = z.infer<typeof replacePlanScopesSchema>;

@@ -2,6 +2,7 @@ import { Controller, Get, Header, UseGuards } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
 import { HttpMetricsService } from '../../common/metrics/http-metrics.service';
+import { OutboxMetricsService } from '../integration/outbox-metrics.service';
 import { HealthService, LivenessResponse, ReadinessResponse } from './health.service';
 import { MetricsScrapeGuard } from './metrics-scrape.guard';
 
@@ -18,6 +19,7 @@ export class HealthController {
   constructor(
     private readonly healthService: HealthService,
     private readonly metricsService: HttpMetricsService,
+    private readonly outboxMetricsService: OutboxMetricsService,
   ) {}
 
   @Get('live')
@@ -33,7 +35,11 @@ export class HealthController {
   @Get('metrics')
   @UseGuards(MetricsScrapeGuard)
   @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
-  getMetrics(): string {
-    return this.metricsService.renderPrometheus();
+  async getMetrics(): Promise<string> {
+    const [httpMetrics, outboxMetrics] = await Promise.all([
+      Promise.resolve(this.metricsService.renderPrometheus()),
+      this.outboxMetricsService.renderPrometheus(),
+    ]);
+    return `${httpMetrics}${outboxMetrics}`;
   }
 }

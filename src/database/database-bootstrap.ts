@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { env } from '../config/env';
+import { bootstrapCanonicalExercises } from './canonical-exercises-bootstrap';
 import { runMigrations } from './migrate';
 import { runSeeds, SeedMode } from './seeders/seed';
 
@@ -21,8 +22,10 @@ export async function bootstrapDatabase(): Promise<void> {
   });
   await runMigrations('up');
   await runSeeds(startupSeedMode());
+  bootstrapCanonicalExercises();
   logger.log({
     event: 'database.bootstrap.completed',
     seedMode: startupSeedMode(),
+    canonicalExercisesSource: env.CANONICAL_EXERCISES_SOURCE,
   });
 }

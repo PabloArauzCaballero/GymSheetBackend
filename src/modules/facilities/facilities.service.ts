@@ -31,6 +31,7 @@ import {
   MaintenanceFilterInput,
   PaginationInput,
   ScheduleMaintenanceInput,
+  UpdateAccessPointInput,
   UpdateBranchInput,
   UpdateRoomInput,
 } from './facilities.schemas';
@@ -59,6 +60,12 @@ export class FacilitiesService {
     return mapBranch(await this.repository.updateBranch(branch, input));
   }
 
+  async deactivateBranch(branchId: string) {
+    const branch = await this.repository.findBranch(branchId);
+    if (!branch) throw new NotFoundException('Sede no encontrada.');
+    return mapBranch(await this.repository.deactivateBranch(branch));
+  }
+
   async listRooms(branchId: string | undefined, pagination: PaginationInput) {
     const result = await this.repository.listRooms(branchId, pagination);
     return this.page(result.rows.map(mapRoom), result.count, pagination);
@@ -78,6 +85,12 @@ export class FacilitiesService {
     const room = await this.repository.findRoom(roomId);
     if (!room) throw new NotFoundException('Sala no encontrada.');
     return mapRoom(await this.repository.updateRoom(room, input));
+  }
+
+  async deactivateRoom(roomId: string) {
+    const room = await this.repository.findRoom(roomId);
+    if (!room) throw new NotFoundException('Sala no encontrada.');
+    return mapRoom(await this.repository.deactivateRoom(room));
   }
 
   async createAccessPoint(input: CreateAccessPointInput) {
@@ -105,6 +118,24 @@ export class FacilitiesService {
   async listAccessPoints(branchId?: string) {
     return (await this.repository.listAccessPoints(branchId)).map(
       mapAccessPoint,
+    );
+  }
+
+  async updateAccessPoint(id: string, input: UpdateAccessPointInput) {
+    const accessPoint = await this.repository.findAccessPoint(id);
+    if (!accessPoint)
+      throw new NotFoundException('Punto de acceso no encontrado.');
+    return mapAccessPoint(
+      await this.repository.updateAccessPoint(accessPoint, input),
+    );
+  }
+
+  async deactivateAccessPoint(id: string) {
+    const accessPoint = await this.repository.findAccessPoint(id);
+    if (!accessPoint)
+      throw new NotFoundException('Punto de acceso no encontrado.');
+    return mapAccessPoint(
+      await this.repository.deactivateAccessPoint(accessPoint),
     );
   }
 

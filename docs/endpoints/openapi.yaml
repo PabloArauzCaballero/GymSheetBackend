@@ -24,6 +24,10 @@ tags:
   - name: Export
   - name: Administration
   - name: Gateway
+  - name: Access control
+  - name: Facilities
+  - name: Notifications
+  - name: Training
 paths:
   /auth/register:
     post:
@@ -662,6 +666,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericObjectEnvelope"
+        "413": { $ref: "#/components/responses/Problem413" }
   /export/workout-history/csv:
     get:
       tags: [Export]
@@ -675,6 +680,7 @@ paths:
           content:
             text/csv:
               schema: { type: string }
+        "413": { $ref: "#/components/responses/Problem413" }
   /admin/exercises/import/exercises-dataset:
     post:
       tags: [Administration]
@@ -696,13 +702,7 @@ paths:
                 $ref: "#/components/schemas/GenericObjectEnvelope"
         "400": { $ref: "#/components/responses/Problem400" }
         "403": { $ref: "#/components/responses/Problem403" }
-        "409": { $ref: "#/components/responses/Problem409" }
-        "502":
-          description: El origen externo respondió de forma inválida o no disponible
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
+        "503": { $ref: "#/components/responses/Problem503" }
   /admin/exercises/import/exercises-dataset/status:
     get:
       tags: [Administration]
@@ -746,56 +746,155 @@ paths:
       tags: [Onboarding]
       summary: Consultar estado y campos pendientes del onboarding
       responses:
-        "200": { description: Estado persistente del onboarding }
+        "200":
+          description: Estado persistente del onboarding
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OnboardingStateEnvelope" }
+        "401": { $ref: "#/components/responses/Problem401" }
   /me/onboarding/profile:
     put:
       tags: [Onboarding]
       summary: Guardar medidas, unidades y fecha de medición
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OnboardingProfileRequest" }
       responses:
-        "200": { description: Progreso actualizado }
+        "200":
+          description: Progreso actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OnboardingStateEnvelope" }
         "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
   /me/onboarding/goals:
     put:
       tags: [Onboarding]
       summary: Guardar objetivo principal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OnboardingGoalsRequest" }
       responses:
-        "200": { description: Progreso actualizado }
+        "200":
+          description: Progreso actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OnboardingStateEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
   /me/onboarding/preferences:
     put:
       tags: [Onboarding]
       summary: Guardar preferencias y consentimientos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/OnboardingPreferencesRequest" }
       responses:
-        "200": { description: Progreso actualizado }
+        "200":
+          description: Progreso actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OnboardingStateEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
   /me/onboarding/equipment:
     put:
       tags: [Onboarding]
       summary: Guardar equipamiento disponible
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/OnboardingEquipmentRequest" }
       responses:
-        "200": { description: Progreso actualizado }
+        "200":
+          description: Progreso actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OnboardingStateEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
   /me/onboarding/complete:
     post:
       tags: [Onboarding]
       summary: Completar idempotentemente el onboarding validado
       responses:
-        "200": { description: Onboarding completado }
-        "422": { description: Existen campos obligatorios pendientes }
+        "201":
+          description: Onboarding completado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OnboardingStateEnvelope" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "409":
+          { $ref: "#/components/responses/Problem409" }
+        "422":
+          description: Existen campos obligatorios pendientes
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /me/body-measurements:
     get:
-      tags: [Profile]
+      tags: [Onboarding]
       summary: Listar historial corporal propio
       responses:
-        "200": { description: Mediciones ordenadas por fecha }
+        "200":
+          description: Mediciones ordenadas por fecha
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/BodyMeasurementListEnvelope" }
+        "401": { $ref: "#/components/responses/Problem401" }
     post:
-      tags: [Profile]
+      tags: [Onboarding]
       summary: Añadir medición corporal sin sobrescribir el historial
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BodyMeasurementRequest" }
       responses:
-        "201": { description: Medición registrada }
+        "201":
+          description: Medición registrada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BodyMeasurementEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+  /memberships/me:
+    get:
+      tags: [Membership]
+      deprecated: true
+      summary: >-
+        (Legacy) Membresía vigente del usuario. Duplica `/me/membership` con
+        distinta semántica (404 si no hay membresía). Pendiente de unificación;
+        prefiera `/me/membership`.
+      responses:
+        "200":
+          description: Membresía vigente
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObjectEnvelope" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "404": { $ref: "#/components/responses/Problem404" }
   /membership/plans:
     get:
       tags: [Membership]
       summary: Listar planes comerciales, precios, beneficios e imágenes
       responses:
-        "200": { description: Planes disponibles }
+        "200":
+          description: Planes disponibles
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MembershipPlanListEnvelope" }
+        "401": { $ref: "#/components/responses/Problem401" }
   /membership/plans/{id}:
     get:
       tags: [Membership]
@@ -803,38 +902,83 @@ paths:
       parameters:
         - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
       responses:
-        "200": { description: Plan encontrado }
+        "200":
+          description: Plan encontrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MembershipPlanEnvelope" }
+        "401": { $ref: "#/components/responses/Problem401" }
         "404": { $ref: "#/components/responses/Problem404" }
   /me/membership:
     get:
       tags: [Membership]
       summary: Consultar membresía efectiva, pago pendiente, historial y acciones
       responses:
-        "200": { description: Proyección de membresía }
+        "200":
+          description: Proyección de membresía
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObjectEnvelope" }
+        "401": { $ref: "#/components/responses/Problem401" }
   /me/accesses:
     get:
       tags: [Membership]
       summary: Consultar derechos efectivos sin inferirlos desde el rol
       responses:
-        "200": { description: Derechos efectivos }
+        "200":
+          description: Derechos efectivos
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MembershipAccessListEnvelope" }
+        "401": { $ref: "#/components/responses/Problem401" }
   /me/membership/options:
     get:
       tags: [Membership]
       summary: Consultar opciones compatibles según estado
       responses:
-        "200": { description: Opciones compatibles }
+        "200":
+          description: Opciones compatibles
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObjectEnvelope" }
+        "401": { $ref: "#/components/responses/Problem401" }
   /me/membership/renewal-intent:
     post:
       tags: [Membership]
       summary: Registrar intención idempotente de renovación pendiente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MembershipIntentRequest" }
       responses:
-        "201": { description: Intención pendiente; no concede acceso }
+        "201":
+          description: Intención pendiente; no concede acceso
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObjectEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "404": { $ref: "#/components/responses/Problem404" }
   /me/membership/extension-intent:
     post:
       tags: [Membership]
       summary: Registrar intención idempotente de extensión
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MembershipIntentRequest" }
       responses:
-        "201": { description: Intención pendiente; no extiende aún }
+        "201":
+          description: Intención pendiente; no extiende aún
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObjectEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "422": { $ref: "#/components/responses/Problem422" }
   /admin/membership/intents/{id}/confirm:
     post:
       tags: [Administration, Membership]
@@ -843,6 +987,1182 @@ paths:
         - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
       responses:
         "201": { description: Intención confirmada una sola vez }
+  # ==== access ====
+  /access/me:
+    get:
+      tags: [Access control]
+      summary: Consultar el historial de acceso propio
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSize25Param"
+        - name: usuarioId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: resultado
+          in: query
+          schema: { type: string, enum: [GRANTED, DENIED] }
+      responses:
+        "200":
+          description: Página de decisiones de acceso del usuario autenticado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessHistoryPageEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+  /admin/access/devices:
+    get:
+      tags: [Access control]
+      summary: Listar dispositivos de acceso
+      x-required-role: "ADMIN, FRONT_DESK"
+      responses:
+        "200":
+          description: Dispositivos registrados
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessDeviceListEnvelope"
+        "403": { $ref: "#/components/responses/Problem403" }
+    post:
+      tags: [Access control]
+      summary: Registrar un dispositivo de acceso
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccessCreateDeviceRequest"
+      responses:
+        "201":
+          description: Dispositivo registrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessDeviceEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+  /admin/access/devices/{id}/status:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Access control]
+      summary: Cambiar el estado de un dispositivo de acceso
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccessUpdateDeviceStatusRequest"
+      responses:
+        "200":
+          description: Estado del dispositivo actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessDeviceEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /admin/access/events/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Access control]
+      summary: Consultar un evento de dispositivo de acceso
+      x-required-role: "ADMIN, FRONT_DESK"
+      responses:
+        "200":
+          description: Evento de acceso encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessDeviceEventEnvelope"
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /admin/access/history:
+    get:
+      tags: [Access control]
+      summary: Listar el historial global de decisiones de acceso
+      x-required-role: "ADMIN, FRONT_DESK"
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSize25Param"
+        - name: usuarioId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: resultado
+          in: query
+          schema: { type: string, enum: [GRANTED, DENIED] }
+      responses:
+        "200":
+          description: Página de decisiones de acceso
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessHistoryPageEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+  /access/credentials/me:
+    get:
+      tags: [Access control]
+      summary: Listar las credenciales de acceso propias
+      responses:
+        "200":
+          description: Credenciales del usuario autenticado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessCredentialListEnvelope"
+  /admin/access/credentials/pin:
+    post:
+      tags: [Access control]
+      summary: Emitir una credencial PIN para un usuario
+      x-required-role: "ADMIN, FRONT_DESK"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccessCreatePinCredentialRequest"
+      responses:
+        "201":
+          description: Credencial PIN emitida (reemplaza la anterior activa)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessCredentialEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+  /admin/access/credentials/external-reference:
+    post:
+      tags: [Access control]
+      summary: Registrar una referencia de credencial biométrica externa
+      x-required-role: "ADMIN, FRONT_DESK"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccessCreateExternalCredentialRequest"
+      responses:
+        "201":
+          description: Referencia externa registrada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessCredentialEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /admin/access/credentials/user/{userId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Access control]
+      summary: Listar las credenciales de acceso de un usuario
+      x-required-role: "ADMIN, FRONT_DESK"
+      responses:
+        "200":
+          description: Credenciales del usuario indicado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessCredentialListEnvelope"
+        "403": { $ref: "#/components/responses/Problem403" }
+  /admin/access/credentials/{id}/revoke:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Access control]
+      summary: Revocar una credencial de acceso
+      x-required-role: "ADMIN, FRONT_DESK"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccessRevokeCredentialRequest"
+      responses:
+        "200":
+          description: Credencial revocada (idempotente si ya estaba revocada)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessCredentialEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /admin/access/mock/events:
+    post:
+      tags: [Access control]
+      summary: Encolar un evento de acceso simulado (solo desarrollo)
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccessMockEventRequest"
+      responses:
+        "201":
+          description: Evento encolado (idempotente por dispositivo y evento de origen)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessDeviceEventEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+  # ==== facilities ====
+  # Fragmentos de paths OpenAPI 3.0.3 para el dominio FACILITIES.
+  # Insertar bajo `paths:` del documento principal (docs/endpoints/openapi.yaml).
+  # Añadir tag `Facilities` a la lista de tags del documento.
+  # Reutiliza parameters PageParam/PageSize25Param, responses ProblemNNN y schema Problem ya definidos.
+
+  /admin/facilities/branches:
+    get:
+      tags: [Facilities]
+      summary: Listar sedes paginadas
+      x-required-role: ADMIN, FRONT_DESK
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSize25Param"
+      responses:
+        "200":
+          description: Página de sedes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FacilityBranchPageEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+    post:
+      tags: [Facilities]
+      summary: Crear una sede
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FacilityCreateBranchRequest"
+      responses:
+        "201":
+          description: Sede creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FacilityBranchEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /admin/facilities/branches/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Facilities]
+      summary: Actualizar una sede
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FacilityUpdateBranchRequest"
+      responses:
+        "200":
+          description: Sede actualizada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FacilityBranchEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /admin/facilities/rooms:
+    get:
+      tags: [Facilities]
+      summary: Listar salas paginadas
+      x-required-role: ADMIN, FRONT_DESK
+      parameters:
+        - name: branchId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: Filtra las salas por sede.
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSize25Param"
+      responses:
+        "200":
+          description: Página de salas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FacilityRoomPageEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+    post:
+      tags: [Facilities]
+      summary: Crear una sala
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FacilityCreateRoomRequest"
+      responses:
+        "201":
+          description: Sala creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FacilityRoomEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "422":
+          description: La sede no existe o está inactiva
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /admin/facilities/rooms/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Facilities]
+      summary: Actualizar una sala
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FacilityUpdateRoomRequest"
+      responses:
+        "200":
+          description: Sala actualizada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FacilityRoomEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /admin/facilities/access-points:
+    get:
+      tags: [Facilities]
+      summary: Listar puntos de acceso
+      x-required-role: ADMIN, FRONT_DESK
+      parameters:
+        - name: branchId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: Filtra los puntos de acceso por sede.
+      responses:
+        "200":
+          description: Puntos de acceso
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FacilityAccessPointListEnvelope"
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+    post:
+      tags: [Facilities]
+      summary: Crear un punto de acceso
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FacilityCreateAccessPointRequest"
+      responses:
+        "201":
+          description: Punto de acceso creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FacilityAccessPointEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "422":
+          description: La sede no existe o está inactiva, o la sala no pertenece a la sede
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /admin/facilities/equipment-assignments:
+    post:
+      tags: [Facilities]
+      summary: Asignar un equipo a una sala
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FacilityAssignEquipmentRequest"
+      responses:
+        "201":
+          description: Equipo asignado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FacilityEquipmentAssignmentEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "422":
+          description: El equipo o la sala no existen o están inactivos
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /admin/facilities/maintenance:
+    get:
+      tags: [Facilities]
+      summary: Listar mantenimientos paginados
+      x-required-role: ADMIN, FRONT_DESK
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSize25Param"
+        - name: equipoId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: estado
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/FacilityMaintenanceStatus"
+      responses:
+        "200":
+          description: Página de mantenimientos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FacilityMaintenancePageEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+    post:
+      tags: [Facilities]
+      summary: Programar un mantenimiento
+      x-required-role: ADMIN, FRONT_DESK
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FacilityScheduleMaintenanceRequest"
+      responses:
+        "201":
+          description: Mantenimiento programado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FacilityMaintenanceEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "422":
+          description: El equipo no existe o está inactivo
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /admin/facilities/maintenance/{id}/start:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Facilities]
+      summary: Iniciar un mantenimiento programado
+      x-required-role: ADMIN, FRONT_DESK
+      responses:
+        "200":
+          description: Mantenimiento iniciado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FacilityMaintenanceEnvelope"
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /admin/facilities/maintenance/{id}/complete:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Facilities]
+      summary: Completar un mantenimiento en progreso
+      x-required-role: ADMIN, FRONT_DESK
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FacilityCompleteMaintenanceRequest"
+      responses:
+        "200":
+          description: Mantenimiento completado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FacilityMaintenanceEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  # ==== training ====
+  /routines:
+    post:
+      tags: [Training]
+      summary: Crear una rutina propia
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutineCreateRequest"
+      responses:
+        "201":
+          description: Rutina creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+    get:
+      tags: [Training]
+      summary: Listar rutinas propias o plantillas
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSize20Param"
+        - name: scope
+          in: query
+          description: Ámbito de la consulta. "mine" = rutinas propias; "templates" = plantillas visibles.
+          schema:
+            type: string
+            enum: [mine, templates]
+            default: mine
+      responses:
+        "200":
+          description: Página de rutinas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutinePageEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+  /routines/assignments/me:
+    get:
+      tags: [Training]
+      summary: Listar las asignaciones de rutina propias (como cliente)
+      responses:
+        "200":
+          description: Asignaciones del cliente autenticado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineAssignmentListEnvelope"
+        "401": { $ref: "#/components/responses/Problem401" }
+  /routines/assignments/coach:
+    get:
+      tags: [Training]
+      summary: Listar las asignaciones emitidas por el coach autenticado
+      x-required-role: "COACH, ADMIN"
+      responses:
+        "200":
+          description: Asignaciones emitidas por el coach
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineAssignmentListEnvelope"
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+  /routines/import:
+    post:
+      tags: [Training]
+      summary: Importar rutinas en bloque (1-200)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutineImportRequest"
+      responses:
+        "201":
+          description: Resultado de la importación (por rutina)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineImportEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "413": { $ref: "#/components/responses/Problem413" }
+  /routines/exercises/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador del ejercicio prescrito dentro de la rutina.
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Training]
+      summary: Actualizar un ejercicio prescrito de la rutina
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutineExerciseUpdateRequest"
+      responses:
+        "200":
+          description: Rutina actualizada con el ejercicio modificado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+    delete:
+      tags: [Training]
+      summary: Eliminar un ejercicio prescrito de la rutina
+      responses:
+        "200":
+          description: Rutina actualizada sin el ejercicio eliminado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineEnvelope"
+        "401": { $ref: "#/components/responses/Problem401" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /routines/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Training]
+      summary: Obtener una rutina visible
+      responses:
+        "200":
+          description: Rutina encontrada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineEnvelope"
+        "401": { $ref: "#/components/responses/Problem401" }
+        "404": { $ref: "#/components/responses/Problem404" }
+    patch:
+      tags: [Training]
+      summary: Actualizar una rutina propia
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutineUpdateRequest"
+      responses:
+        "200":
+          description: Rutina actualizada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "404": { $ref: "#/components/responses/Problem404" }
+    delete:
+      tags: [Training]
+      summary: Eliminar una rutina propia
+      responses:
+        "200":
+          description: Rutina eliminada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineDeleteEnvelope"
+        "401": { $ref: "#/components/responses/Problem401" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /routines/{id}/exercises:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Training]
+      summary: Agregar un ejercicio prescrito a la rutina
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutineExerciseCreateRequest"
+      responses:
+        "201":
+          description: Rutina actualizada con el nuevo ejercicio
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /routines/{id}/assign:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Training]
+      summary: Asignar la rutina a un cliente
+      x-required-role: "COACH, ADMIN"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutineAssignRequest"
+      responses:
+        "201":
+          description: Asignación creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineAssignmentEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /routines/{id}/start:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Training]
+      summary: Iniciar una sesión de entrenamiento desde la rutina
+      responses:
+        "201":
+          description: Sesión de entrenamiento creada a partir de la rutina
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineStartedSessionEnvelope"
+        "401": { $ref: "#/components/responses/Problem401" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  # ==== notifications ====
+  /notifications/me:
+    get:
+      tags: [Notifications]
+      summary: Listar las notificaciones propias paginadas
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSize25Param"
+        - name: estado
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/NotificationStatus" }
+      responses:
+        "200":
+          description: Página de notificaciones del usuario autenticado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPageEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /notifications/{id}/read:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Notifications]
+      summary: Marcar una notificación propia como leída
+      responses:
+        "200":
+          description: Notificación marcada como leída
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /notifications/preferences/me:
+    get:
+      tags: [Notifications]
+      summary: Consultar las preferencias de notificación propias
+      responses:
+        "200":
+          description: Preferencias efectivas (valores por defecto si no existen)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPreferenceEnvelope"
+        "401": { $ref: "#/components/responses/Problem401" }
+        "429": { $ref: "#/components/responses/Problem429" }
+    patch:
+      tags: [Notifications]
+      summary: Actualizar las preferencias de notificación propias
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNotificationPreferenceRequest"
+      responses:
+        "200":
+          description: Preferencias actualizadas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPreferenceEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "429": { $ref: "#/components/responses/Problem429" }
+  # ==== membership-admin ====
+  /admin/membership/plans:
+    get:
+      tags: [Membership]
+      summary: Listar planes de membresía para administración
+      x-required-role: ADMIN, FRONT_DESK
+      responses:
+        "200":
+          description: Catálogo completo de planes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipAdminPlanListEnvelope"
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "429": { $ref: "#/components/responses/Problem429" }
+    post:
+      tags: [Membership]
+      summary: Crear un plan de membresía con sus alcances
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MembershipAdminCreatePlanRequest"
+      responses:
+        "201":
+          description: Plan creado con sus alcances
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipAdminPlanEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "422":
+          description: Una sede o sala del alcance no existe o la sala no pertenece a su sede
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429": { $ref: "#/components/responses/Problem429" }
+  /admin/membership/plans/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Membership]
+      summary: Actualizar atributos de un plan de membresía
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MembershipAdminUpdatePlanRequest"
+      responses:
+        "200":
+          description: Plan actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipAdminPlanEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /admin/membership/plans/{id}/scopes:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Membership]
+      summary: Reemplazar por completo los alcances de un plan
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MembershipAdminReplaceScopesRequest"
+      responses:
+        "200":
+          description: Plan con sus alcances reemplazados
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipAdminPlanEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "422":
+          description: Una sede o sala del alcance no existe o la sala no pertenece a su sede
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429": { $ref: "#/components/responses/Problem429" }
+  /admin/membership/customers:
+    post:
+      tags: [Membership]
+      summary: Registrar un cliente con credencial de acceso
+      x-required-role: ADMIN, FRONT_DESK
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MembershipAdminCreateCustomerRequest"
+      responses:
+        "201":
+          description: Cliente registrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipAdminCustomerEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "429": { $ref: "#/components/responses/Problem429" }
+    get:
+      tags: [Membership]
+      summary: Listar clientes registrados de forma paginada
+      x-required-role: ADMIN, FRONT_DESK
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSize25Param"
+      responses:
+        "200":
+          description: Página de clientes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipAdminCustomerPageEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /admin/membership/memberships:
+    post:
+      tags: [Membership]
+      summary: Activar una membresía para un cliente
+      x-required-role: ADMIN, FRONT_DESK
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MembershipAdminCreateMembershipRequest"
+      responses:
+        "201":
+          description: Membresía activada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipAdminMembershipEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "422":
+          description: El cliente no existe o no tiene rol de cliente, o el plan no existe o está inactivo
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429": { $ref: "#/components/responses/Problem429" }
+    get:
+      tags: [Membership]
+      summary: Listar membresías con filtros de forma paginada
+      x-required-role: ADMIN, FRONT_DESK
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSize25Param"
+        - in: query
+          name: userId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: estado
+          schema:
+            $ref: "#/components/schemas/MembershipAdminMembershipStatus"
+      responses:
+        "200":
+          description: Página de membresías
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipAdminMembershipPageEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /admin/membership/memberships/{id}/status:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Membership]
+      summary: Cambiar el estado de una membresía
+      x-required-role: ADMIN, FRONT_DESK
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MembershipAdminMembershipStatusRequest"
+      responses:
+        "200":
+          description: Membresía con estado actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipAdminMembershipEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /admin/membership/staff:
+    post:
+      tags: [Membership]
+      summary: Crear un perfil laboral para un usuario con rol de trabajo
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MembershipAdminCreateStaffRequest"
+      responses:
+        "201":
+          description: Perfil laboral creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipAdminStaffEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "422":
+          description: El usuario no tiene un rol laboral permitido o una sede asignada no existe
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429": { $ref: "#/components/responses/Problem429" }
+  /admin/membership/staff/{userId}/status:
+    parameters:
+      - in: path
+        name: userId
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Membership]
+      summary: Cambiar el estado laboral de un perfil de personal
+      x-required-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MembershipAdminUpdateStaffStatusRequest"
+      responses:
+        "200":
+          description: Perfil laboral con estado actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipAdminStaffEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "422":
+          description: La fecha de terminación es obligatoria cuando el estado es TERMINATED
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429": { $ref: "#/components/responses/Problem429" }
 components:
   securitySchemes:
     bearerAuth:
@@ -893,8 +2213,23 @@ components:
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
+    Problem413:
+      description: Petición o exportación síncrona demasiado grande
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Problem422:
+      description: Entidad no procesable por regla de negocio o estado requerido
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
     Problem429:
       description: Límite de peticiones excedido
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Problem503:
+      description: Dependencia o conector externo no disponible
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
@@ -964,7 +2299,7 @@ components:
         nombreCompleto: { type: string }
         rol:
           type: string
-          enum: [ADMIN, CLIENTE, ENTRENADOR_EXTERNO]
+          enum: [ADMIN, CLIENTE, ENTRENADOR_EXTERNO, COACH, FRONT_DESK]
     AuthEnvelope:
       allOf:
         - $ref: "#/components/schemas/SuccessEnvelope"
@@ -990,7 +2325,7 @@ components:
                 email: { type: string, format: email }
                 role:
                   type: string
-                  enum: [ADMIN, CLIENTE, ENTRENADOR_EXTERNO]
+                  enum: [ADMIN, CLIENTE, ENTRENADOR_EXTERNO, COACH, FRONT_DESK]
     UserEnvelope:
       allOf:
         - $ref: "#/components/schemas/SuccessEnvelope"
@@ -1033,6 +2368,191 @@ components:
     EquipmentStatus:
       type: string
       enum: [DISPONIBLE, MANTENIMIENTO, INACTIVO]
+    OnboardingProfileRequest:
+      type: object
+      required: [weight, weightUnit, height, heightUnit, measuredOn]
+      additionalProperties: false
+      properties:
+        weight:
+          { type: number, minimum: 0, exclusiveMinimum: true, maximum: 1000 }
+        weightUnit: { type: string, enum: [KG, LB] }
+        height:
+          { type: number, minimum: 0, exclusiveMinimum: true, maximum: 300 }
+        heightUnit: { type: string, enum: [CM, IN] }
+        measuredOn: { type: string, format: date }
+        idempotencyKey: { type: string, minLength: 8, maxLength: 120 }
+    OnboardingGoalsRequest:
+      type: object
+      required: [primaryGoal]
+      additionalProperties: false
+      properties:
+        primaryGoal:
+          type: string
+          enum:
+            [
+              GAIN_MUSCLE,
+              LOSE_FAT,
+              IMPROVE_STRENGTH,
+              IMPROVE_ENDURANCE,
+              MAINTAIN_FITNESS,
+              GENERAL_HEALTH,
+              SPORT_PERFORMANCE,
+            ]
+    OnboardingPreferencesRequest:
+      type: object
+      required:
+        [
+          experienceLevel,
+          weeklyFrequency,
+          trainingLocation,
+          trainingPreferences,
+          consentHealth,
+          consentData,
+        ]
+      additionalProperties: false
+      properties:
+        experienceLevel:
+          { type: string, enum: [BEGINNER, INTERMEDIATE, ADVANCED] }
+        weeklyFrequency: { type: integer, minimum: 1, maximum: 7 }
+        trainingLocation:
+          { type: string, enum: [GYM, HOME, OUTDOORS, MIXED] }
+        trainingPreferences:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 80 }
+        physicalConsiderations:
+          { type: string, nullable: true, maxLength: 2000 }
+        consentHealth: { type: boolean }
+        consentData: { type: boolean }
+    OnboardingEquipmentRequest:
+      type: object
+      required: [availableEquipment]
+      additionalProperties: false
+      properties:
+        availableEquipment:
+          type: array
+          maxItems: 50
+          items: { type: string, minLength: 1, maxLength: 80 }
+    BodyMeasurementRequest:
+      type: object
+      required: [weight, unit, measuredOn]
+      additionalProperties: false
+      properties:
+        weight:
+          { type: number, minimum: 0, exclusiveMinimum: true, maximum: 1000 }
+        unit: { type: string, enum: [KG, LB] }
+        measuredOn: { type: string, format: date }
+        idempotencyKey: { type: string, minLength: 8, maxLength: 120 }
+    OnboardingState:
+      type: object
+      additionalProperties: true
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [NOT_STARTED, IN_PROGRESS, COMPLETED, REQUIRES_UPDATE]
+        currentStep: { type: string, nullable: true }
+        completedSteps:
+          type: array
+          items: { type: string }
+        missingFields:
+          type: array
+          items: { type: string }
+        profileComplete: { type: boolean }
+    BodyMeasurement:
+      type: object
+      additionalProperties: true
+      required: [id, weight, unit, measuredOn]
+      properties:
+        id: { type: string, format: uuid }
+        weight: { type: number }
+        unit: { type: string, enum: [KG, LB] }
+        measuredOn: { type: string, format: date }
+        source: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    OnboardingStateEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/OnboardingState" }
+    BodyMeasurementEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/BodyMeasurement" }
+    BodyMeasurementListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/BodyMeasurement" }
+    MembershipIntentRequest:
+      type: object
+      required: [planId, idempotencyKey]
+      additionalProperties: false
+      properties:
+        planId: { type: string, format: uuid }
+        months: { type: integer, minimum: 1, maximum: 24, default: 1 }
+        idempotencyKey: { type: string, minLength: 8, maxLength: 120 }
+    MembershipPlan:
+      type: object
+      additionalProperties: true
+      required: [id, nombre]
+      properties:
+        id: { type: string, format: uuid }
+        codigo: { type: string }
+        nombre: { type: string }
+        tipo:
+          type: string
+          enum:
+            [DAY_PASS, WEEKLY, MONTHLY, QUARTERLY, SEMIANNUAL, ANNUAL, CUSTOM]
+        duracionDias: { type: integer }
+        estado: { type: string, enum: [ACTIVE, INACTIVE] }
+    MembershipPlanEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/MembershipPlan" }
+    MembershipPlanListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/MembershipPlan" }
+    MembershipAccessListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+    EquipmentAssetFields:
+      type: object
+      properties:
+        etiquetaActivo: { type: string, nullable: true, minLength: 1, maxLength: 100 }
+        numeroSerie: { type: string, nullable: true, minLength: 1, maxLength: 180 }
+        fabricante: { type: string, nullable: true, minLength: 1, maxLength: 160 }
+        modelo: { type: string, nullable: true, minLength: 1, maxLength: 160 }
+        fechaCompra: { type: string, format: date, nullable: true }
+        garantiaHasta: { type: string, format: date, nullable: true }
+        intervaloServicioDias:
+          { type: integer, nullable: true, minimum: 1, maximum: 3650 }
+        proximoServicio: { type: string, format: date, nullable: true }
+        razonFueraServicio: { type: string, nullable: true, minLength: 1, maxLength: 2000 }
+        metadata:
+          type: object
+          description: El JSON serializado no puede superar 16 KiB.
+          additionalProperties: true
     CreateEquipmentRequest:
       type: object
       required: [nombre, tipo]
@@ -1040,7 +2560,18 @@ components:
       properties:
         nombre: { type: string, minLength: 2, maxLength: 140 }
         tipo: { $ref: "#/components/schemas/EquipmentType" }
-        descripcion: { type: string, nullable: true, maxLength: 500 }
+        descripcion: { type: string, nullable: true, maxLength: 1000 }
+        etiquetaActivo: { type: string, nullable: true, minLength: 1, maxLength: 100 }
+        numeroSerie: { type: string, nullable: true, minLength: 1, maxLength: 180 }
+        fabricante: { type: string, nullable: true, minLength: 1, maxLength: 160 }
+        modelo: { type: string, nullable: true, minLength: 1, maxLength: 160 }
+        fechaCompra: { type: string, format: date, nullable: true }
+        garantiaHasta: { type: string, format: date, nullable: true }
+        intervaloServicioDias:
+          { type: integer, nullable: true, minimum: 1, maximum: 3650 }
+        proximoServicio: { type: string, format: date, nullable: true }
+        razonFueraServicio: { type: string, nullable: true, minLength: 1, maxLength: 2000 }
+        metadata: { type: object, additionalProperties: true }
     UpdateEquipmentRequest:
       type: object
       minProperties: 1
@@ -1048,11 +2579,24 @@ components:
       properties:
         nombre: { type: string, minLength: 2, maxLength: 140 }
         tipo: { $ref: "#/components/schemas/EquipmentType" }
-        descripcion: { type: string, nullable: true, maxLength: 500 }
+        descripcion: { type: string, nullable: true, maxLength: 1000 }
         estado: { $ref: "#/components/schemas/EquipmentStatus" }
+        etiquetaActivo: { type: string, nullable: true, minLength: 1, maxLength: 100 }
+        numeroSerie: { type: string, nullable: true, minLength: 1, maxLength: 180 }
+        fabricante: { type: string, nullable: true, minLength: 1, maxLength: 160 }
+        modelo: { type: string, nullable: true, minLength: 1, maxLength: 160 }
+        fechaCompra: { type: string, format: date, nullable: true }
+        garantiaHasta: { type: string, format: date, nullable: true }
+        intervaloServicioDias:
+          { type: integer, nullable: true, minimum: 1, maximum: 3650 }
+        proximoServicio: { type: string, format: date, nullable: true }
+        razonFueraServicio: { type: string, nullable: true, minLength: 1, maxLength: 2000 }
+        metadata: { type: object, additionalProperties: true }
     Equipment:
       type: object
       required: [id, nombre, tipo, estado]
+      allOf:
+        - $ref: "#/components/schemas/EquipmentAssetFields"
       properties:
         id: { type: string, format: uuid }
         nombre: { type: string }
@@ -1145,14 +2689,14 @@ components:
           additionalProperties: true
     Exercise:
       type: object
-      required: [id, nombre, grupoMuscular, tipo, estado]
+      required: [id, nombre, grupoMuscular, tipoEjercicio, estado]
       additionalProperties: true
       properties:
         id: { type: string, format: uuid }
         nombre: { type: string }
         grupoMuscular: { type: string }
         descripcion: { type: string, nullable: true }
-        tipo: { type: string, enum: [GLOBAL, PERSONAL] }
+        tipoEjercicio: { type: string, enum: [GLOBAL, PERSONAL] }
         estado: { type: string, enum: [ACTIVO, INACTIVO] }
         dataSource: { type: string, enum: [CUSTOM, EXERCISES_DATASET] }
         media:
@@ -1341,3 +2885,1273 @@ components:
         importMedia:
           type: boolean
           description: Solo se permite si la configuración confirma explícitamente la licencia.
+    # ==== access ====
+    AccessDeviceStatus:
+      type: string
+      enum: [ACTIVE, MAINTENANCE, OFFLINE, INACTIVE]
+    AccessCredentialType:
+      type: string
+      enum: [PIN, FACE, FINGERPRINT]
+    AccessCredentialStatus:
+      type: string
+      enum: [ACTIVE, SUSPENDED, REVOKED]
+    AccessDecisionOutcome:
+      type: string
+      enum: [GRANTED, DENIED]
+    AccessDecisionReason:
+      type: string
+      enum:
+        - STAFF_ACCESS
+        - ACTIVE_MEMBERSHIP
+        - USER_INACTIVE
+        - CREDENTIAL_INACTIVE
+        - DEVICE_INACTIVE
+        - MEMBERSHIP_NOT_FOUND
+        - MEMBERSHIP_NOT_STARTED
+        - MEMBERSHIP_EXPIRED
+        - MEMBERSHIP_SUSPENDED
+        - ACCESS_SCOPE_DENIED
+        - DIRECTION_NOT_ALLOWED
+        - INVALID_EVENT
+    AccessQueueItemStatus:
+      type: string
+      enum: [PENDING, PROCESSING, COMPLETED, FAILED, DEAD_LETTER]
+    AccessCreateDeviceRequest:
+      type: object
+      additionalProperties: false
+      required: [puntoAccesoId, adapterKey, dispositivoExternoId, nombre]
+      properties:
+        puntoAccesoId: { type: string, format: uuid }
+        adapterKey:
+          type: string
+          minLength: 2
+          maxLength: 100
+          pattern: "^[A-Za-z0-9._-]+$"
+        dispositivoExternoId: { type: string, minLength: 2, maxLength: 180 }
+        nombre: { type: string, minLength: 2, maxLength: 180 }
+        metadata:
+          type: object
+          description: El JSON serializado no puede superar 8 KiB.
+          additionalProperties: true
+          default: {}
+    AccessUpdateDeviceStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [estado]
+      properties:
+        estado: { $ref: "#/components/schemas/AccessDeviceStatus" }
+    AccessCreatePinCredentialRequest:
+      type: object
+      additionalProperties: false
+      required: [usuarioId, pin]
+      properties:
+        usuarioId: { type: string, format: uuid }
+        pin: { type: string, pattern: "^\\d{4,12}$" }
+        proveedor:
+          type: string
+          minLength: 2
+          maxLength: 100
+          default: INTERNAL_PIN
+    AccessCreateExternalCredentialRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - usuarioId
+        - modalidad
+        - proveedor
+        - referenciaExterna
+        - versionConsentimiento
+        - consentimientoRegistradoEn
+      properties:
+        usuarioId: { type: string, format: uuid }
+        modalidad: { type: string, enum: [FACE, FINGERPRINT] }
+        proveedor: { type: string, minLength: 2, maxLength: 100 }
+        referenciaExterna: { type: string, minLength: 8, maxLength: 255 }
+        versionConsentimiento: { type: string, minLength: 1, maxLength: 80 }
+        consentimientoRegistradoEn: { type: string, format: date-time }
+        metadata:
+          type: object
+          description: El JSON serializado no puede superar 4 KiB.
+          additionalProperties: true
+          default: {}
+    AccessRevokeCredentialRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        motivo:
+          type: string
+          nullable: true
+          minLength: 3
+          maxLength: 1000
+    AccessMockEventRequest:
+      type: object
+      additionalProperties: false
+      required: [dispositivoId, credencialId, direccion]
+      properties:
+        dispositivoId: { type: string, format: uuid }
+        credencialId: { type: string, format: uuid }
+        eventoOrigenId: { type: string, minLength: 8, maxLength: 200 }
+        direccion: { type: string, enum: [ENTRY, EXIT] }
+        ocurridoEn: { type: string, format: date-time }
+    AccessDevice:
+      type: object
+      required: [id, puntoAccesoId, adapterKey, dispositivoExternoId, nombre, estado]
+      additionalProperties: true
+      properties:
+        id: { type: string, format: uuid }
+        puntoAccesoId: { type: string, format: uuid }
+        adapterKey: { type: string }
+        dispositivoExternoId: { type: string }
+        nombre: { type: string }
+        estado: { $ref: "#/components/schemas/AccessDeviceStatus" }
+        vistoPorUltimaVezEn: { type: string, format: date-time, nullable: true }
+        metadata:
+          type: object
+          additionalProperties: true
+    AccessDecision:
+      type: object
+      required:
+        - id
+        - eventoDispositivoId
+        - usuarioId
+        - resultado
+        - razon
+        - decididoEn
+        - versionPolitica
+      additionalProperties: true
+      properties:
+        id: { type: string, format: uuid }
+        eventoDispositivoId: { type: string, format: uuid }
+        usuarioId: { type: string, format: uuid }
+        resultado: { $ref: "#/components/schemas/AccessDecisionOutcome" }
+        razon: { $ref: "#/components/schemas/AccessDecisionReason" }
+        membresiaId: { type: string, format: uuid, nullable: true }
+        perfilPersonalId: { type: string, format: uuid, nullable: true }
+        diasRestantes: { type: integer, nullable: true }
+        decididoEn: { type: string, format: date-time }
+        versionPolitica: { type: string }
+    AccessDeviceEvent:
+      type: object
+      required:
+        - id
+        - dispositivoId
+        - eventoOrigenId
+        - credencialId
+        - direccion
+        - ocurridoEn
+        - recibidoEn
+        - estadoCola
+      additionalProperties: true
+      properties:
+        id: { type: string, format: uuid }
+        dispositivoId: { type: string, format: uuid }
+        eventoOrigenId: { type: string }
+        credencialId: { type: string, format: uuid }
+        direccion: { type: string, enum: [ENTRY, EXIT] }
+        ocurridoEn: { type: string, format: date-time }
+        recibidoEn: { type: string, format: date-time }
+        estadoCola: { $ref: "#/components/schemas/AccessQueueItemStatus" }
+        decision:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/AccessDecision"
+    AccessCredential:
+      type: object
+      required:
+        - id
+        - usuarioId
+        - tipo
+        - proveedor
+        - estado
+        - referenciaExternaRegistrada
+        - registradoEn
+      additionalProperties: true
+      properties:
+        id: { type: string, format: uuid }
+        usuarioId: { type: string, format: uuid }
+        tipo: { $ref: "#/components/schemas/AccessCredentialType" }
+        proveedor: { type: string }
+        estado: { $ref: "#/components/schemas/AccessCredentialStatus" }
+        referenciaExternaRegistrada: { type: boolean }
+        versionConsentimiento: { type: string, nullable: true }
+        consentimientoRegistradoEn: { type: string, format: date-time, nullable: true }
+        registradoEn: { type: string, format: date-time }
+        verificadoPorUltimaVezEn: { type: string, format: date-time, nullable: true }
+        revocadoEn: { type: string, format: date-time, nullable: true }
+    AccessDeviceEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/AccessDevice" }
+    AccessDeviceListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/AccessDevice" }
+    AccessDeviceEventEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/AccessDeviceEvent" }
+    AccessCredentialEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/AccessCredential" }
+    AccessCredentialListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/AccessCredential" }
+    AccessHistoryPageEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items, page, pageSize, total, totalPages]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: "#/components/schemas/AccessDecision" }
+                page: { type: integer, minimum: 1 }
+                pageSize: { type: integer, minimum: 1, maximum: 100 }
+                total: { type: integer, minimum: 0 }
+                totalPages: { type: integer, minimum: 0 }
+    # ==== facilities ====
+    # Fragmentos de schemas OpenAPI 3.0.3 para el dominio FACILITIES.
+    # Insertar bajo components.schemas del documento principal (docs/endpoints/openapi.yaml).
+    # Reutiliza SuccessEnvelope y Problem ya definidos en ese documento.
+
+    # --- Enums ---
+    FacilityStatus:
+      type: string
+      enum: [ACTIVE, INACTIVE]
+    FacilityRoomType:
+      type: string
+      enum: [TRAINING, CARDIO, FUNCTIONAL, CLASSROOM, LOCKER, RECEPTION, STAFF, OTHER]
+    FacilityRoomStatus:
+      type: string
+      enum: [ACTIVE, MAINTENANCE, CLOSED, INACTIVE]
+    FacilityAccessDirection:
+      type: string
+      enum: [ENTRY, EXIT, BOTH]
+    FacilityMaintenanceType:
+      type: string
+      enum: [PREVENTIVE, CORRECTIVE, INSPECTION]
+    FacilityMaintenanceStatus:
+      type: string
+      enum: [SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED]
+
+    # --- Objetos de metadatos ---
+    FacilityMetadata:
+      type: object
+      description: Objeto libre. El JSON serializado no puede superar 16 KiB.
+      additionalProperties: true
+
+    # --- Request bodies ---
+    FacilityCreateBranchRequest:
+      type: object
+      required: [codigo, nombre]
+      additionalProperties: false
+      properties:
+        codigo:
+          type: string
+          minLength: 2
+          maxLength: 80
+          pattern: "^[A-Za-z0-9._-]+$"
+          description: Se normaliza a mayúsculas en el servidor.
+        nombre: { type: string, minLength: 2, maxLength: 180 }
+        descripcion: { type: string, nullable: true, maxLength: 2000 }
+        zonaHoraria:
+          type: string
+          minLength: 3
+          maxLength: 80
+          default: America/La_Paz
+        metadata:
+          allOf:
+            - $ref: "#/components/schemas/FacilityMetadata"
+          default: {}
+    FacilityUpdateBranchRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        nombre: { type: string, minLength: 2, maxLength: 180 }
+        descripcion: { type: string, nullable: true, maxLength: 2000 }
+        zonaHoraria: { type: string, minLength: 3, maxLength: 80 }
+        estado: { $ref: "#/components/schemas/FacilityStatus" }
+        metadata: { $ref: "#/components/schemas/FacilityMetadata" }
+    FacilityCreateRoomRequest:
+      type: object
+      required: [sedeId, codigo, nombre, tipoSala]
+      additionalProperties: false
+      properties:
+        sedeId: { type: string, format: uuid }
+        codigo:
+          type: string
+          minLength: 2
+          maxLength: 80
+          pattern: "^[A-Za-z0-9._-]+$"
+          description: Se normaliza a mayúsculas en el servidor.
+        nombre: { type: string, minLength: 2, maxLength: 180 }
+        tipoSala: { $ref: "#/components/schemas/FacilityRoomType" }
+        capacidad:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 100000
+        metadata:
+          allOf:
+            - $ref: "#/components/schemas/FacilityMetadata"
+          default: {}
+    FacilityUpdateRoomRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        nombre: { type: string, minLength: 2, maxLength: 180 }
+        tipoSala: { $ref: "#/components/schemas/FacilityRoomType" }
+        capacidad:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 100000
+        estado: { $ref: "#/components/schemas/FacilityRoomStatus" }
+        metadata: { $ref: "#/components/schemas/FacilityMetadata" }
+    FacilityCreateAccessPointRequest:
+      type: object
+      required: [sedeId, codigo, nombre]
+      additionalProperties: false
+      properties:
+        sedeId: { type: string, format: uuid }
+        salaId: { type: string, format: uuid, nullable: true }
+        codigo:
+          type: string
+          minLength: 2
+          maxLength: 80
+          pattern: "^[A-Za-z0-9._-]+$"
+          description: Se normaliza a mayúsculas en el servidor.
+        nombre: { type: string, minLength: 2, maxLength: 180 }
+        direccionPermitida:
+          allOf:
+            - $ref: "#/components/schemas/FacilityAccessDirection"
+          default: BOTH
+        metadata:
+          allOf:
+            - $ref: "#/components/schemas/FacilityMetadata"
+          default: {}
+    FacilityAssignEquipmentRequest:
+      type: object
+      required: [equipoId, salaId]
+      additionalProperties: false
+      properties:
+        equipoId: { type: string, format: uuid }
+        salaId: { type: string, format: uuid }
+        notas: { type: string, nullable: true, maxLength: 2000 }
+    FacilityScheduleMaintenanceRequest:
+      type: object
+      required: [equipoId, tipo, programadoPara, descripcion]
+      additionalProperties: false
+      properties:
+        equipoId: { type: string, format: uuid }
+        tipo: { $ref: "#/components/schemas/FacilityMaintenanceType" }
+        programadoPara: { type: string, format: date }
+        descripcion: { type: string, minLength: 3, maxLength: 4000 }
+        proveedor: { type: string, nullable: true, maxLength: 180 }
+        tecnico: { type: string, nullable: true, maxLength: 180 }
+        metadata:
+          allOf:
+            - $ref: "#/components/schemas/FacilityMetadata"
+          default: {}
+    FacilityCompleteMaintenanceRequest:
+      type: object
+      required: [resolucion]
+      additionalProperties: false
+      description: >-
+        costo y moneda deben enviarse juntos: ambos presentes o ambos ausentes.
+      properties:
+        hallazgos: { type: string, nullable: true, maxLength: 4000 }
+        resolucion: { type: string, minLength: 3, maxLength: 4000 }
+        costo:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 9999999999
+        moneda:
+          type: string
+          nullable: true
+          pattern: "^[A-Z]{3}$"
+
+    # --- Objetos de respuesta (forma de los mappers) ---
+    FacilityBranch:
+      type: object
+      required: [id, codigo, nombre, descripcion, zonaHoraria, estado, metadata]
+      properties:
+        id: { type: string, format: uuid }
+        codigo: { type: string }
+        nombre: { type: string }
+        descripcion: { type: string, nullable: true }
+        zonaHoraria: { type: string }
+        estado: { $ref: "#/components/schemas/FacilityStatus" }
+        metadata: { $ref: "#/components/schemas/FacilityMetadata" }
+    FacilityRoom:
+      type: object
+      required: [id, sedeId, codigo, nombre, tipoSala, capacidad, estado, metadata]
+      properties:
+        id: { type: string, format: uuid }
+        sedeId: { type: string, format: uuid }
+        codigo: { type: string }
+        nombre: { type: string }
+        tipoSala: { $ref: "#/components/schemas/FacilityRoomType" }
+        capacidad: { type: integer, nullable: true }
+        estado: { $ref: "#/components/schemas/FacilityRoomStatus" }
+        metadata: { $ref: "#/components/schemas/FacilityMetadata" }
+    FacilityAccessPoint:
+      type: object
+      required: [id, sedeId, salaId, codigo, nombre, direccionPermitida, estado, metadata]
+      properties:
+        id: { type: string, format: uuid }
+        sedeId: { type: string, format: uuid }
+        salaId: { type: string, format: uuid, nullable: true }
+        codigo: { type: string }
+        nombre: { type: string }
+        direccionPermitida: { $ref: "#/components/schemas/FacilityAccessDirection" }
+        estado: { $ref: "#/components/schemas/FacilityStatus" }
+        metadata: { $ref: "#/components/schemas/FacilityMetadata" }
+    FacilityEquipmentAssignment:
+      type: object
+      required: [id, equipoId, salaId, asignadoEn, finalizadoEn, notas, asignadoPorUsuarioId]
+      properties:
+        id: { type: string, format: uuid }
+        equipoId: { type: string, format: uuid }
+        salaId: { type: string, format: uuid }
+        asignadoEn: { type: string, format: date-time }
+        finalizadoEn: { type: string, format: date-time, nullable: true }
+        notas: { type: string, nullable: true }
+        asignadoPorUsuarioId: { type: string, format: uuid, nullable: true }
+    FacilityMaintenance:
+      type: object
+      required:
+        [
+          id,
+          equipoId,
+          tipo,
+          estado,
+          programadoPara,
+          iniciadoEn,
+          completadoEn,
+          proveedor,
+          tecnico,
+          descripcion,
+          hallazgos,
+          resolucion,
+          costo,
+          moneda,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        equipoId: { type: string, format: uuid }
+        tipo: { $ref: "#/components/schemas/FacilityMaintenanceType" }
+        estado: { $ref: "#/components/schemas/FacilityMaintenanceStatus" }
+        programadoPara: { type: string, format: date }
+        iniciadoEn: { type: string, format: date-time, nullable: true }
+        completadoEn: { type: string, format: date-time, nullable: true }
+        proveedor: { type: string, nullable: true }
+        tecnico: { type: string, nullable: true }
+        descripcion: { type: string }
+        hallazgos: { type: string, nullable: true }
+        resolucion: { type: string, nullable: true }
+        costo: { type: number, nullable: true }
+        moneda: { type: string, nullable: true }
+
+    # --- Envelopes de éxito ---
+    FacilityBranchEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/FacilityBranch" }
+    FacilityBranchPageEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items, page, pageSize, total, totalPages]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: "#/components/schemas/FacilityBranch" }
+                page: { type: integer, minimum: 1 }
+                pageSize: { type: integer, minimum: 1, maximum: 100 }
+                total: { type: integer, minimum: 0 }
+                totalPages: { type: integer, minimum: 0 }
+    FacilityRoomEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/FacilityRoom" }
+    FacilityRoomPageEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items, page, pageSize, total, totalPages]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: "#/components/schemas/FacilityRoom" }
+                page: { type: integer, minimum: 1 }
+                pageSize: { type: integer, minimum: 1, maximum: 100 }
+                total: { type: integer, minimum: 0 }
+                totalPages: { type: integer, minimum: 0 }
+    FacilityAccessPointEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/FacilityAccessPoint" }
+    FacilityAccessPointListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/FacilityAccessPoint" }
+    FacilityEquipmentAssignmentEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/FacilityEquipmentAssignment" }
+    FacilityMaintenanceEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/FacilityMaintenance" }
+    FacilityMaintenancePageEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items, page, pageSize, total, totalPages]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: "#/components/schemas/FacilityMaintenance" }
+                page: { type: integer, minimum: 1 }
+                pageSize: { type: integer, minimum: 1, maximum: 100 }
+                total: { type: integer, minimum: 0 }
+                totalPages: { type: integer, minimum: 0 }
+    # ==== training ====
+    RoutineVisibility:
+      type: string
+      enum: [PRIVATE, SHARED, TEMPLATE]
+    RoutineStatus:
+      type: string
+      enum: [ACTIVE, ARCHIVED]
+    RoutineAssignmentStatus:
+      type: string
+      enum: [ACTIVE, COMPLETED, CANCELLED]
+    RoutineGoal:
+      type: string
+      enum: [HIPERTROFIA, FUERZA, RESISTENCIA, PERDIDA_GRASA, SALUD_GENERAL, REHABILITACION]
+    RoutineExerciseCreateRequest:
+      type: object
+      required: [orden]
+      additionalProperties: false
+      description: >-
+        Ejercicio prescrito. Debe incluir "ejercicioId" o "ejercicioNombre" (al menos uno).
+        Si se envían "repsMin" y "repsMax", "repsMax" debe ser >= "repsMin".
+      properties:
+        ejercicioId: { type: string, format: uuid }
+        ejercicioNombre: { type: string, minLength: 1, maxLength: 160 }
+        orden: { type: integer, minimum: 1, maximum: 500 }
+        seriesObjetivo: { type: integer, minimum: 1, maximum: 100, default: 3 }
+        repsMin: { type: integer, nullable: true, minimum: 1, maximum: 1000 }
+        repsMax: { type: integer, nullable: true, minimum: 1, maximum: 1000 }
+        pesoObjetivoKg: { type: number, nullable: true, minimum: 0, maximum: 2000 }
+        rirObjetivo: { type: integer, nullable: true, minimum: 0, maximum: 10 }
+        descansoSeg: { type: integer, nullable: true, minimum: 0, maximum: 7200 }
+        nota: { type: string, nullable: true, maxLength: 1000 }
+    RoutineExerciseUpdateRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      description: >-
+        Debe enviar al menos un campo. Si se envían "repsMin" y "repsMax", "repsMax" debe ser >= "repsMin".
+      properties:
+        orden: { type: integer, minimum: 1, maximum: 500 }
+        seriesObjetivo: { type: integer, minimum: 1, maximum: 100 }
+        repsMin: { type: integer, nullable: true, minimum: 1, maximum: 1000 }
+        repsMax: { type: integer, nullable: true, minimum: 1, maximum: 1000 }
+        pesoObjetivoKg: { type: number, nullable: true, minimum: 0, maximum: 2000 }
+        rirObjetivo: { type: integer, nullable: true, minimum: 0, maximum: 10 }
+        descansoSeg: { type: integer, nullable: true, minimum: 0, maximum: 7200 }
+        nota: { type: string, nullable: true, maxLength: 1000 }
+    RoutineCreateRequest:
+      type: object
+      required: [nombre]
+      additionalProperties: false
+      properties:
+        nombre: { type: string, minLength: 2, maxLength: 160 }
+        descripcion: { type: string, nullable: true, maxLength: 4000 }
+        visibilidad:
+          allOf:
+            - $ref: "#/components/schemas/RoutineVisibility"
+          default: PRIVATE
+        objetivo:
+          oneOf:
+            - $ref: "#/components/schemas/RoutineGoal"
+          nullable: true
+    RoutineUpdateRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      description: Debe enviar al menos un campo para actualizar.
+      properties:
+        nombre: { type: string, minLength: 2, maxLength: 160 }
+        descripcion: { type: string, nullable: true, maxLength: 4000 }
+        visibilidad: { $ref: "#/components/schemas/RoutineVisibility" }
+        objetivo:
+          oneOf:
+            - $ref: "#/components/schemas/RoutineGoal"
+          nullable: true
+        estado: { $ref: "#/components/schemas/RoutineStatus" }
+    RoutineAssignRequest:
+      type: object
+      required: [clienteUsuarioId]
+      additionalProperties: false
+      properties:
+        clienteUsuarioId: { type: string, format: uuid }
+        fechaProgramada:
+          type: string
+          format: date
+          nullable: true
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        diasSemana:
+          type: array
+          maxItems: 7
+          default: []
+          items: { type: integer, minimum: 0, maximum: 6 }
+          description: Días de la semana (0=domingo .. 6=sábado). Se deduplican y ordenan.
+        nota: { type: string, nullable: true, maxLength: 1000 }
+    RoutineImportItem:
+      type: object
+      required: [nombre, ejercicios]
+      additionalProperties: false
+      properties:
+        nombre: { type: string, minLength: 2, maxLength: 160 }
+        descripcion: { type: string, nullable: true, maxLength: 4000 }
+        visibilidad:
+          allOf:
+            - $ref: "#/components/schemas/RoutineVisibility"
+          default: PRIVATE
+        objetivo:
+          oneOf:
+            - $ref: "#/components/schemas/RoutineGoal"
+          nullable: true
+        ejercicios:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/RoutineExerciseCreateRequest" }
+    RoutineImportRequest:
+      type: object
+      required: [rutinas]
+      additionalProperties: false
+      properties:
+        rutinas:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { $ref: "#/components/schemas/RoutineImportItem" }
+    RoutineExerciseResponse:
+      type: object
+      additionalProperties: true
+      required: [id, orden, seriesObjetivo, ejercicio]
+      properties:
+        id: { type: string, format: uuid }
+        orden: { type: integer }
+        seriesObjetivo: { type: integer }
+        repsMin: { type: integer, nullable: true }
+        repsMax: { type: integer, nullable: true }
+        pesoObjetivoKg: { type: number, nullable: true }
+        rirObjetivo: { type: integer, nullable: true }
+        descansoSeg: { type: integer, nullable: true }
+        nota: { type: string, nullable: true }
+        ejercicio:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Ejercicio de catálogo asociado (forma de Exercise) o null.
+    RoutineResponse:
+      type: object
+      additionalProperties: true
+      required:
+        [id, nombre, creadoPorUsuarioId, visibilidad, estado, ejercicios, fechaCreacion, fechaActualizacion]
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string }
+        descripcion: { type: string, nullable: true }
+        creadoPorUsuarioId: { type: string, format: uuid }
+        visibilidad: { $ref: "#/components/schemas/RoutineVisibility" }
+        objetivo:
+          oneOf:
+            - $ref: "#/components/schemas/RoutineGoal"
+          nullable: true
+        estado: { $ref: "#/components/schemas/RoutineStatus" }
+        ejercicios:
+          type: array
+          items: { $ref: "#/components/schemas/RoutineExerciseResponse" }
+        fechaCreacion: { type: string, format: date-time }
+        fechaActualizacion: { type: string, format: date-time }
+    RoutineAssignmentResponse:
+      type: object
+      additionalProperties: true
+      required:
+        [id, rutinaId, clienteUsuarioId, asignadoPorUsuarioId, estado, diasSemana, fechaCreacion]
+      properties:
+        id: { type: string, format: uuid }
+        rutinaId: { type: string, format: uuid }
+        clienteUsuarioId: { type: string, format: uuid }
+        asignadoPorUsuarioId: { type: string, format: uuid }
+        estado: { $ref: "#/components/schemas/RoutineAssignmentStatus" }
+        fechaProgramada: { type: string, format: date, nullable: true }
+        diasSemana:
+          type: array
+          items: { type: integer, minimum: 0, maximum: 6 }
+        nota: { type: string, nullable: true }
+        clienteNombre: { type: string, nullable: true }
+        clienteEmail: { type: string, format: email, nullable: true }
+        rutina:
+          oneOf:
+            - $ref: "#/components/schemas/RoutineResponse"
+          nullable: true
+        fechaCreacion: { type: string, format: date-time }
+    RoutineImportResultItem:
+      type: object
+      required: [index, nombre, creada, routineId, error]
+      properties:
+        index: { type: integer, minimum: 0 }
+        nombre: { type: string }
+        creada: { type: boolean }
+        routineId: { type: string, format: uuid, nullable: true }
+        error: { type: string, nullable: true }
+    RoutineEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/RoutineResponse" }
+    RoutinePageEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items, page, pageSize, total, totalPages]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: "#/components/schemas/RoutineResponse" }
+                page: { type: integer, minimum: 1 }
+                pageSize: { type: integer, minimum: 1, maximum: 100 }
+                total: { type: integer, minimum: 0 }
+                totalPages: { type: integer, minimum: 0 }
+    RoutineAssignmentEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/RoutineAssignmentResponse" }
+    RoutineAssignmentListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/RoutineAssignmentResponse" }
+    RoutineDeleteEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [deleted]
+              properties:
+                deleted: { type: boolean, enum: [true] }
+    RoutineImportEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [resultados, creadas]
+              properties:
+                resultados:
+                  type: array
+                  items: { $ref: "#/components/schemas/RoutineImportResultItem" }
+                creadas: { type: integer, minimum: 0 }
+    RoutineStartedSessionEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: true
+              required: [id, estado]
+              description: Sesión de entrenamiento creada (forma de Workout).
+              properties:
+                id: { type: string, format: uuid }
+                estado: { type: string, enum: [EN_PROGRESO, FINALIZADA, CANCELADA] }
+    # ==== notifications ====
+    NotificationChannel:
+      type: string
+      enum: [IN_APP, HTTP_GATEWAY, MOCK]
+    NotificationStatus:
+      type: string
+      enum: [PENDING, SENT, FAILED, DEAD_LETTER, READ]
+    Notification:
+      type: object
+      required: [id, canal, mensaje, estado, creadoEn]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        membresiaId: { type: string, format: uuid, nullable: true }
+        canal: { $ref: "#/components/schemas/NotificationChannel" }
+        asunto: { type: string, nullable: true }
+        mensaje: { type: string }
+        diasRestantes: { type: integer, nullable: true }
+        estado: { $ref: "#/components/schemas/NotificationStatus" }
+        leidoEn: { type: string, format: date-time, nullable: true }
+        enviadoEn: { type: string, format: date-time, nullable: true }
+        creadoEn: { type: string, format: date-time }
+    NotificationPreference:
+      type: object
+      required:
+        - recordatoriosVencimiento
+        - canalPreferido
+        - consentimientoExternoEn
+        - versionConsentimiento
+        - horaSilencioInicio
+        - horaSilencioFin
+      additionalProperties: false
+      properties:
+        recordatoriosVencimiento: { type: boolean }
+        canalPreferido:
+          type: string
+          enum: [IN_APP, HTTP_GATEWAY]
+        consentimientoExternoEn: { type: string, format: date-time, nullable: true }
+        versionConsentimiento: { type: string, nullable: true }
+        horaSilencioInicio:
+          type: string
+          nullable: true
+          pattern: "^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$"
+        horaSilencioFin:
+          type: string
+          nullable: true
+          pattern: "^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$"
+    UpdateNotificationPreferenceRequest:
+      type: object
+      required: [recordatoriosVencimiento, canalPreferido]
+      additionalProperties: false
+      properties:
+        recordatoriosVencimiento: { type: boolean }
+        canalPreferido:
+          type: string
+          enum: [IN_APP, HTTP_GATEWAY]
+        consentimientoExternoEn:
+          type: string
+          format: date-time
+          nullable: true
+        versionConsentimiento:
+          type: string
+          minLength: 1
+          maxLength: 80
+          nullable: true
+        horaSilencioInicio:
+          type: string
+          nullable: true
+          pattern: "^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$"
+        horaSilencioFin:
+          type: string
+          nullable: true
+          pattern: "^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$"
+        metadata:
+          type: object
+          additionalProperties: true
+          default: {}
+          description: El JSON serializado no puede superar 4 KiB.
+    NotificationEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/Notification" }
+    NotificationPreferenceEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/NotificationPreference" }
+    NotificationPageEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items, page, pageSize, total, totalPages]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: "#/components/schemas/Notification" }
+                page: { type: integer, minimum: 1 }
+                pageSize: { type: integer, minimum: 1, maximum: 100 }
+                total: { type: integer, minimum: 0 }
+                totalPages: { type: integer, minimum: 0 }
+                fechaNegocio:
+                  type: string
+                  format: date
+                  description: Fecha de negocio con la que se calcularon los días restantes.
+    # ==== membership-admin ====
+    MembershipAdminPlanType:
+      type: string
+      enum: [DAY_PASS, WEEKLY, MONTHLY, QUARTERLY, SEMIANNUAL, ANNUAL, CUSTOM]
+    MembershipAdminPlanStatus:
+      type: string
+      enum: [ACTIVE, INACTIVE]
+    MembershipAdminMembershipStatus:
+      type: string
+      enum: [ACTIVE, SUSPENDED, CANCELLED, EXPIRED]
+    MembershipAdminEntitlementSource:
+      type: string
+      enum: [MEMBERSHIP, PURCHASE, ADMIN_GRANT, PROMOTION, TRIAL]
+    MembershipAdminStaffPosition:
+      type: string
+      enum: [COACH, FRONT_DESK, ADMINISTRATION]
+    MembershipAdminEmploymentStatus:
+      type: string
+      enum: [ACTIVE, SUSPENDED, TERMINATED]
+    MembershipAdminScopeInput:
+      type: object
+      additionalProperties: false
+      required: [sedeId]
+      properties:
+        sedeId: { type: string, format: uuid }
+        salaId: { type: string, format: uuid, nullable: true }
+    MembershipAdminScope:
+      type: object
+      additionalProperties: true
+      required: [sedeId, salaId]
+      properties:
+        sedeId: { type: string, format: uuid }
+        salaId: { type: string, format: uuid, nullable: true }
+    MembershipAdminCreatePlanRequest:
+      type: object
+      additionalProperties: false
+      required: [codigo, nombre, tipo, duracionDias, alcances]
+      properties:
+        codigo:
+          type: string
+          minLength: 2
+          maxLength: 80
+          pattern: "^[A-Za-z0-9._-]+$"
+        nombre: { type: string, minLength: 2, maxLength: 180 }
+        descripcion: { type: string, nullable: true, maxLength: 2000 }
+        tipo: { $ref: "#/components/schemas/MembershipAdminPlanType" }
+        duracionDias: { type: integer, minimum: 1, maximum: 3650 }
+        diasRecordatorio:
+          type: array
+          maxItems: 30
+          default: [7, 3, 1, 0]
+          items: { type: integer, minimum: 0, maximum: 3650 }
+        alcances:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/MembershipAdminScopeInput" }
+        metadata:
+          type: object
+          description: El JSON serializado no puede superar 16 KiB.
+          additionalProperties: true
+          default: {}
+    MembershipAdminUpdatePlanRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        nombre: { type: string, minLength: 2, maxLength: 180 }
+        descripcion: { type: string, nullable: true, maxLength: 2000 }
+        tipo: { $ref: "#/components/schemas/MembershipAdminPlanType" }
+        duracionDias: { type: integer, minimum: 1, maximum: 3650 }
+        diasRecordatorio:
+          type: array
+          maxItems: 30
+          items: { type: integer, minimum: 0, maximum: 3650 }
+        estado: { $ref: "#/components/schemas/MembershipAdminPlanStatus" }
+        metadata:
+          type: object
+          additionalProperties: true
+    MembershipAdminReplaceScopesRequest:
+      type: object
+      additionalProperties: false
+      required: [alcances]
+      properties:
+        alcances:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/MembershipAdminScopeInput" }
+    MembershipAdminCreateCustomerRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password, pinAcceso, nombreCompleto, numeroCliente]
+      properties:
+        email: { type: string, format: email, maxLength: 180 }
+        password: { type: string, minLength: 10, maxLength: 128, format: password }
+        pinAcceso: { type: string, pattern: "^\\d{4,12}$" }
+        nombreCompleto: { type: string, minLength: 3, maxLength: 180 }
+        numeroCliente: { type: string, minLength: 2, maxLength: 80 }
+        telefono: { type: string, nullable: true, minLength: 5, maxLength: 40 }
+        referenciaExterna: { type: string, nullable: true, minLength: 1, maxLength: 180 }
+        notas: { type: string, nullable: true, maxLength: 2000 }
+        metadata:
+          type: object
+          additionalProperties: true
+          default: {}
+    MembershipAdminCreateMembershipRequest:
+      type: object
+      additionalProperties: false
+      required: [clienteUsuarioId, planId]
+      properties:
+        clienteUsuarioId: { type: string, format: uuid }
+        planId: { type: string, format: uuid }
+        iniciaEl: { type: string, format: date }
+        referenciaExterna: { type: string, nullable: true, minLength: 1, maxLength: 180 }
+        notas: { type: string, nullable: true, maxLength: 2000 }
+        metadata:
+          type: object
+          additionalProperties: true
+          default: {}
+    MembershipAdminMembershipStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [estado]
+      properties:
+        estado: { $ref: "#/components/schemas/MembershipAdminMembershipStatus" }
+        motivo: { type: string, nullable: true, maxLength: 2000 }
+    MembershipAdminCreateStaffRequest:
+      type: object
+      additionalProperties: false
+      required: [usuarioId, cargo, contratadoEl, sedes]
+      properties:
+        usuarioId: { type: string, format: uuid }
+        cargo: { $ref: "#/components/schemas/MembershipAdminStaffPosition" }
+        contratadoEl: { type: string, format: date }
+        accesoIlimitado: { type: boolean, default: true }
+        sedes:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { type: string, format: uuid }
+        metadata:
+          type: object
+          additionalProperties: true
+          default: {}
+    MembershipAdminUpdateStaffStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [estadoLaboral]
+      properties:
+        estadoLaboral: { $ref: "#/components/schemas/MembershipAdminEmploymentStatus" }
+        terminadoEl: { type: string, format: date, nullable: true }
+    MembershipAdminPlanImage:
+      type: object
+      additionalProperties: true
+      properties:
+        id: { type: string, format: uuid }
+        publicId: { type: string }
+        url: { type: string, nullable: true }
+        altText: { type: string, nullable: true }
+        width: { type: integer, nullable: true }
+        height: { type: integer, nullable: true }
+        licencia: { type: string, nullable: true }
+        atribucion: { type: string, nullable: true }
+    MembershipAdminPlan:
+      type: object
+      additionalProperties: true
+      required: [id, codigo, nombre, tipo, duracionDias, estado, alcances]
+      properties:
+        id: { type: string, format: uuid }
+        publicId: { type: string }
+        codigo: { type: string }
+        nombre: { type: string }
+        descripcion: { type: string, nullable: true }
+        tipo: { $ref: "#/components/schemas/MembershipAdminPlanType" }
+        duracionDias: { type: integer }
+        diasRecordatorio:
+          type: array
+          items: { type: integer }
+        estado: { $ref: "#/components/schemas/MembershipAdminPlanStatus" }
+        precio: { type: number, nullable: true }
+        moneda: { type: string, nullable: true }
+        beneficios:
+          type: array
+          items: { type: object, additionalProperties: true }
+        orden: { type: integer }
+        disponibleNuevo: { type: boolean }
+        disponibleRenovacion: { type: boolean }
+        disponibleExtension: { type: boolean }
+        imagen:
+          allOf:
+            - $ref: "#/components/schemas/MembershipAdminPlanImage"
+          nullable: true
+        alcances:
+          type: array
+          items: { $ref: "#/components/schemas/MembershipAdminScope" }
+        metadata:
+          type: object
+          additionalProperties: true
+    MembershipAdminMembership:
+      type: object
+      additionalProperties: true
+      required: [id, clienteUsuarioId, planId, iniciaEl, venceEl, estado, diasRestantes]
+      properties:
+        id: { type: string, format: uuid }
+        clienteUsuarioId: { type: string, format: uuid }
+        planId: { type: string, format: uuid }
+        plan: { $ref: "#/components/schemas/MembershipAdminPlan" }
+        iniciaEl: { type: string, format: date }
+        venceEl: { type: string, format: date }
+        estado: { $ref: "#/components/schemas/MembershipAdminMembershipStatus" }
+        diasRestantes: { type: integer, minimum: 0 }
+        venceHoy: { type: boolean }
+        vigenteHoy: { type: boolean }
+        referenciaExterna: { type: string, nullable: true }
+        notas: { type: string, nullable: true }
+    MembershipAdminCustomerUser:
+      type: object
+      additionalProperties: true
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        nombreCompleto: { type: string }
+        estado: { type: string }
+    MembershipAdminCustomer:
+      type: object
+      additionalProperties: true
+      required: [id, usuarioId, numeroCliente]
+      properties:
+        id: { type: string, format: uuid }
+        usuarioId: { type: string, format: uuid }
+        numeroCliente: { type: string }
+        telefono: { type: string, nullable: true }
+        registradoEl: { type: string, format: date }
+        referenciaExterna: { type: string, nullable: true }
+        notas: { type: string, nullable: true }
+        usuario: { $ref: "#/components/schemas/MembershipAdminCustomerUser" }
+    MembershipAdminStaff:
+      type: object
+      additionalProperties: true
+      required: [id, usuarioId, cargo, estadoLaboral, contratadoEl, accesoIlimitado, sedes]
+      properties:
+        id: { type: string, format: uuid }
+        usuarioId: { type: string, format: uuid }
+        cargo: { $ref: "#/components/schemas/MembershipAdminStaffPosition" }
+        estadoLaboral: { $ref: "#/components/schemas/MembershipAdminEmploymentStatus" }
+        contratadoEl: { type: string, format: date }
+        terminadoEl: { type: string, format: date, nullable: true }
+        accesoIlimitado: { type: boolean }
+        sedes:
+          type: array
+          items: { type: string, format: uuid }
+    MembershipAdminPlanEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/MembershipAdminPlan" }
+    MembershipAdminPlanListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/MembershipAdminPlan" }
+    MembershipAdminMembershipEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/MembershipAdminMembership" }
+    MembershipAdminMembershipPageEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items, page, pageSize, total, totalPages]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: "#/components/schemas/MembershipAdminMembership" }
+                page: { type: integer, minimum: 1 }
+                pageSize: { type: integer, minimum: 1, maximum: 100 }
+                total: { type: integer, minimum: 0 }
+                totalPages: { type: integer, minimum: 0 }
+    MembershipAdminCustomerEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/MembershipAdminCustomer" }
+    MembershipAdminCustomerPageEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items, page, pageSize, total, totalPages]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: "#/components/schemas/MembershipAdminCustomer" }
+                page: { type: integer, minimum: 1 }
+                pageSize: { type: integer, minimum: 1, maximum: 100 }
+                total: { type: integer, minimum: 0 }
+                totalPages: { type: integer, minimum: 0 }
+    MembershipAdminStaffEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/MembershipAdminStaff" }

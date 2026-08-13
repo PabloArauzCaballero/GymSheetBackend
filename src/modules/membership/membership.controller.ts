@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -16,18 +17,22 @@ import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { MembershipService } from "./membership.service";
 import {
   CreateCustomerInput,
+  CreateFeatureInput,
   CreateMembershipInput,
   CreatePlanInput,
   CreateStaffInput,
   MembershipListInput,
   MembershipStatusInput,
   ReplacePlanScopesInput,
+  UpdateFeatureInput,
   UpdatePlanInput,
   UpdateStaffStatusInput,
   createCustomerSchema,
+  createFeatureSchema,
   createMembershipSchema,
   createPlanSchema,
   createStaffSchema,
+  updateFeatureSchema,
   membershipListSchema,
   membershipStatusSchema,
   membershipIntentSchema,
@@ -109,6 +114,54 @@ export class AdminMembershipController {
     @Body(new ZodValidationPipe(updatePlanSchema)) input: UpdatePlanInput,
   ) {
     return this.service.updatePlan(id, input);
+  }
+
+  @Get("features")
+  listFeatures() {
+    return this.service.listFeatures();
+  }
+
+  @Post("features")
+  @Roles(UserRole.ADMIN)
+  createFeature(
+    @Body(new ZodValidationPipe(createFeatureSchema))
+    input: CreateFeatureInput,
+  ) {
+    return this.service.createFeature(input);
+  }
+
+  @Patch("features/:id")
+  @Roles(UserRole.ADMIN)
+  updateFeature(
+    @Param("id", UuidParamPipe) id: string,
+    @Body(new ZodValidationPipe(updateFeatureSchema))
+    input: UpdateFeatureInput,
+  ) {
+    return this.service.updateFeature(id, input);
+  }
+
+  @Delete("features/:id")
+  @Roles(UserRole.ADMIN)
+  deactivateFeature(@Param("id", UuidParamPipe) id: string) {
+    return this.service.deactivateFeature(id);
+  }
+
+  @Post("plans/:planId/features/:featureId")
+  @Roles(UserRole.ADMIN)
+  attachFeature(
+    @Param("planId", UuidParamPipe) planId: string,
+    @Param("featureId", UuidParamPipe) featureId: string,
+  ) {
+    return this.service.attachFeatureToPlan(planId, featureId);
+  }
+
+  @Delete("plans/:planId/features/:featureId")
+  @Roles(UserRole.ADMIN)
+  detachFeature(
+    @Param("planId", UuidParamPipe) planId: string,
+    @Param("featureId", UuidParamPipe) featureId: string,
+  ) {
+    return this.service.detachFeatureFromPlan(planId, featureId);
   }
 
   @Patch("plans/:id/scopes")

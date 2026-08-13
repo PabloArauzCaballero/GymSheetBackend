@@ -37,6 +37,38 @@ RUN yarn install --frozen-lockfile --production \
     && yarn cache clean
 
 ##
+## Development stage — full toolchain for hot reload. Never the default target:
+## it is placed before `runtime` so `docker build` (and the prod compose, which
+## sets no `target`) keeps resolving to the slim runtime image below. Selected
+## explicitly by docker-compose.dev.yml via `target: development`.
+##
+## Source is not baked in here; docker-compose.dev.yml bind-mounts ./src so nest
+## and ts-node recompile on change. node_modules stays inside the image to avoid
+## a host/container platform mismatch on the native bindings.
+##
+FROM node:22-alpine AS development
+
+RUN apk add --no-cache tini curl
+
+WORKDIR /app
+
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
+
+COPY tsconfig.json tsconfig.build.json nest-cli.json ./
+COPY src ./src
+
+ENV NODE_ENV=development \
+    PORT=3000 \
+    API_PREFIX=api/v1
+
+EXPOSE 3000
+
+ENTRYPOINT ["/sbin/tini", "--"]
+# Overridden per service in docker-compose.dev.yml (API vs each worker).
+CMD ["yarn", "start:dev"]
+
+##
 ## Runtime stage — no compiler, no dev dependencies, no source.
 ##
 FROM node:22-alpine AS runtime
@@ -57,6 +89,12 @@ COPY --from=dependencies --chown=root:root /app/node_modules ./node_modules
 COPY --from=builder --chown=root:root /app/dist ./dist
 COPY --chown=root:root docs/db/schema.sql ./docs/db/schema.sql
 COPY --chown=root:root package.json ./
+
+# The only writable path under the read-only root filesystem: the local media
+# storage adapter (MEDIA_STORAGE_PROVIDER=local) writes uploads here. Created
+# node-owned so a fresh named volume mounted at this path inherits that
+# ownership on first creation; remote providers (Cloudinary/S3) leave it unused.
+RUN mkdir -p /app/storage/media && chown -R node:node /app/storage
 
 USER node
 

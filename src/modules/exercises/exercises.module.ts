@@ -22,6 +22,18 @@ import { ExercisesDatasetController } from './import/exercises-dataset.controlle
 import { ExercisesDatasetRepository } from './import/exercises-dataset.repository';
 import { ExercisesDatasetService } from './import/exercises-dataset.service';
 import { UserExerciseModel } from './user-exercise.model';
+import { ExerciseMuscleModel } from './muscles/exercise-muscle.model';
+import { ExerciseRatingModel } from './muscles/exercise-rating.model';
+import { MuscleGroupModel } from './muscles/muscle-group.model';
+import { MuscleModel } from './muscles/muscle.model';
+import { UserExercisePreferenceModel } from './muscles/user-exercise-preference.model';
+import { MusclesService } from './muscles/muscles.service';
+import {
+  ExerciseMusclesController,
+  ExercisePreferencesController,
+  MuscleGroupsController,
+  MusclesCatalogController,
+} from './muscles/muscles.controller';
 
 @Module({
   imports: [
@@ -31,6 +43,11 @@ import { UserExerciseModel } from './user-exercise.model';
       ExerciseEquipmentModel,
       UserExerciseModel,
       ExerciseMediaModel,
+      MuscleGroupModel,
+      MuscleModel,
+      ExerciseMuscleModel,
+      ExerciseRatingModel,
+      UserExercisePreferenceModel,
     ]),
   ],
   controllers: [
@@ -40,6 +57,10 @@ import { UserExerciseModel } from './user-exercise.model';
     ExerciseMediaController,
     ExerciseMediaManagementController,
     ExercisesDatasetController,
+    MuscleGroupsController,
+    MusclesCatalogController,
+    ExerciseMusclesController,
+    ExercisePreferencesController,
   ],
   providers: [
     ExercisesRepository,
@@ -49,6 +70,7 @@ import { UserExerciseModel } from './user-exercise.model';
     ExercisesDatasetClient,
     ExercisesDatasetRepository,
     ExercisesDatasetService,
+    MusclesService,
   ],
   exports: [
     ExercisesService,

@@ -16,6 +16,17 @@ const metadataSchema = z.record(z.string(), z.unknown()).refine(
   'Los metadatos no pueden superar 16 KiB.',
 );
 
+export const updateAccessPointSchema = z
+  .object({
+    name: nameSchema.optional(),
+    status: z.nativeEnum(FacilityStatus).optional(),
+  })
+  .strict()
+  .refine(
+    (value) => value.name !== undefined || value.status !== undefined,
+    "Envía al menos un campo (name o status).",
+  );
+
 export const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
@@ -166,6 +177,7 @@ export const maintenanceFilterSchema = paginationSchema.extend({
 export type PaginationInput = z.infer<typeof paginationSchema>;
 export type CreateBranchInput = z.infer<typeof createBranchSchema>;
 export type UpdateBranchInput = z.infer<typeof updateBranchSchema>;
+export type UpdateAccessPointInput = z.infer<typeof updateAccessPointSchema>;
 export type CreateRoomInput = z.infer<typeof createRoomSchema>;
 export type UpdateRoomInput = z.infer<typeof updateRoomSchema>;
 export type CreateAccessPointInput = z.infer<typeof createAccessPointSchema>;

@@ -179,6 +179,19 @@ export const environmentSchema = z
       .max(3600000)
       .default(300000),
     WORKER_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
+    /**
+     * Retention window for the outbox prune command (`db:outbox:prune`). Only
+     * COMPLETED jobs whose `processed_at` is older than this are eligible for
+     * deletion; every other state is left untouched. The command is opt-in and
+     * dry-runs unless invoked with `--apply`.
+     */
+    OUTBOX_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+    OUTBOX_PRUNE_BATCH_SIZE: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100000)
+      .default(1000),
     REMINDER_SCAN_INTERVAL_MS: z.coerce
       .number()
       .int()
@@ -260,6 +273,14 @@ export const environmentSchema = z
       .default(
         "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/",
       ),
+    /**
+     * Fuente canónica del catálogo de ejercicios en el arranque (ADR-0006, opción b):
+     * `seeders` aplica un snapshot local si existe; `github` delega en el worker del
+     * dataset. Sin fallback silencioso: `github` exige EXERCISES_DATASET_ENABLED=true.
+     */
+    CANONICAL_EXERCISES_SOURCE: z
+      .enum(["seeders", "github"])
+      .default("seeders"),
     SEED_ADMIN_EMAIL: z.preprocess(
       (value) => (value === "" ? undefined : value),
       z.string().email().optional(),
@@ -277,6 +298,53 @@ export const environmentSchema = z
     SEED_MOCK_PASSWORD: z.preprocess(
       (value) => (value === "" ? undefined : value),
       z.string().min(12).max(128).optional(),
+    ),
+
+    /**
+     * Almacenamiento de media (arquitectura de puertos y adaptadores). `local`
+     * persiste en disco vía el adaptador Multer; `cloudinary`/`s3` requieren su
+     * adaptador implementado (hoy detienen el arranque, sin fallback silencioso).
+     */
+    MEDIA_STORAGE_PROVIDER: z
+      .enum(["local", "cloudinary", "s3"])
+      .default("local"),
+    MEDIA_STORAGE_LOCAL_ROOT: z.string().trim().min(1).default("storage/media"),
+    MEDIA_STORAGE_PUBLIC_BASE_URL: z
+      .string()
+      .url()
+      .default("http://localhost:3000/media"),
+    MEDIA_UPLOAD_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1024)
+      .max(52428800)
+      .default(5242880),
+    MEDIA_ALLOWED_MIME: commaSeparatedListSchema.default(
+      "image/jpeg,image/png,image/webp,image/gif",
+    ),
+    /** Allowlist SSRF de orígenes desde los que `db:media:mirror` puede descargar. */
+    MEDIA_MIRROR_ALLOWED_HOSTS: commaSeparatedListSchema.default(
+      "images.unsplash.com,raw.githubusercontent.com",
+    ),
+    MEDIA_MIRROR_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1000)
+      .max(60000)
+      .default(15000),
+    /** Credenciales opcionales para un futuro CloudinaryAdapter (no versionar valores). */
+    CLOUDINARY_CLOUD_NAME: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().trim().min(1).optional(),
+    ),
+    CLOUDINARY_API_KEY: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().trim().min(1).optional(),
+    ),
+    CLOUDINARY_API_SECRET: optionalSecretSchema,
+    CLOUDINARY_FOLDER: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().trim().min(1).optional(),
     ),
   })
   .superRefine((configuration, context) => {
@@ -351,6 +419,16 @@ export const environmentSchema = z
         code: z.ZodIssueCode.custom,
         path: ["REDIS_URL"],
         message: "REDIS_URL is required when REDIS_REQUIRED is enabled.",
+      });
+    if (
+      configuration.CANONICAL_EXERCISES_SOURCE === "github" &&
+      !configuration.EXERCISES_DATASET_ENABLED
+    )
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["EXERCISES_DATASET_ENABLED"],
+        message:
+          "CANONICAL_EXERCISES_SOURCE=github requires EXERCISES_DATASET_ENABLED=true (no silent fallback).",
       });
     try {
       new Intl.DateTimeFormat("en-CA", {

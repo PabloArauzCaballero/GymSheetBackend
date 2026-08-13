@@ -18,14 +18,16 @@ import { GymDomainEvent } from "../integration/domain-event.catalog";
 import { DomainEventPublisher } from "../integration/domain-event.publisher";
 import { UsersRepository } from "../users/users.repository";
 import { CustomerStaffService } from "./customer-staff.service";
-import { mapMembership, mapPlan } from "./membership.mapper";
+import { mapFeature, mapMembership, mapPlan } from "./membership.mapper";
 import { env } from "../../config/env";
 import { MembershipRepository } from "./membership.repository";
 import {
   CreateCustomerInput,
+  CreateFeatureInput,
   CreateMembershipInput,
   CreatePlanInput,
   CreateStaffInput,
+  UpdateFeatureInput,
   MembershipListInput,
   MembershipStatusInput,
   MembershipIntentInput,
@@ -83,6 +85,48 @@ export class MembershipService {
     const plan = await this.repository.findPlan(planId);
     if (!plan) throw new NotFoundException("Plan no encontrado.");
     return mapPlan(await this.repository.updatePlan(plan, input));
+  }
+
+  async listFeatures() {
+    return (await this.repository.listFeatures()).map(mapFeature);
+  }
+
+  async createFeature(input: CreateFeatureInput) {
+    const existing = await this.repository.findFeatureByCode(input.code);
+    if (existing)
+      throw new ConflictException("Ya existe un servicio con ese código.");
+    return mapFeature(await this.repository.createFeature(input));
+  }
+
+  async updateFeature(featureId: string, input: UpdateFeatureInput) {
+    const feature = await this.repository.findFeature(featureId);
+    if (!feature) throw new NotFoundException("Servicio no encontrado.");
+    return mapFeature(await this.repository.updateFeature(feature, input));
+  }
+
+  async deactivateFeature(featureId: string) {
+    const feature = await this.repository.findFeature(featureId);
+    if (!feature) throw new NotFoundException("Servicio no encontrado.");
+    return mapFeature(
+      await this.repository.updateFeature(feature, { status: "INACTIVE" }),
+    );
+  }
+
+  async attachFeatureToPlan(planId: string, featureId: string) {
+    const plan = await this.repository.findPlan(planId);
+    if (!plan) throw new NotFoundException("Plan no encontrado.");
+    const feature = await this.repository.findFeature(featureId);
+    if (!feature) throw new NotFoundException("Servicio no encontrado.");
+    await this.repository.attachFeatureToPlan(planId, featureId);
+    return { planId, featureId, asociado: true };
+  }
+
+  async detachFeatureFromPlan(planId: string, featureId: string) {
+    const removed = await this.repository.detachFeatureFromPlan(
+      planId,
+      featureId,
+    );
+    return { planId, featureId, desasociado: removed > 0 };
   }
 
   async replacePlanScopes(planId: string, input: ReplacePlanScopesInput) {

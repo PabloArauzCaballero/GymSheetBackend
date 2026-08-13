@@ -8,6 +8,8 @@ import { domainEventsAndMembershipHistoryMigration } from "./202607190006-domain
 import { exerciseDatasetSyncStateMigration } from "./202607220001-exercise-dataset-sync-state";
 import { customerExperienceMigration } from "./202607220002-customer-experience";
 import { trainingPlansRoutinesMigration } from "./202608010001-training-plans-routines";
+import { localExerciseMediaUrlMigration } from "./202608130001-local-exercise-media-url";
+import { exerciseMusclesAndRatingsMigration } from "./202608130002-exercise-muscles-and-ratings";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -22,4 +24,6 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   exerciseDatasetSyncStateMigration,
   customerExperienceMigration,
   trainingPlansRoutinesMigration,
+  localExerciseMediaUrlMigration,
+  exerciseMusclesAndRatingsMigration,
 ];

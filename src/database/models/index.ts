@@ -7,6 +7,11 @@ import { ExerciseEquipmentModel } from "../../modules/exercises/exercise-equipme
 import { ExerciseMediaModel } from "../../modules/exercises/exercise-media.model";
 import { ExerciseModel } from "../../modules/exercises/exercise.model";
 import { UserExerciseModel } from "../../modules/exercises/user-exercise.model";
+import { MuscleGroupModel } from "../../modules/exercises/muscles/muscle-group.model";
+import { MuscleModel } from "../../modules/exercises/muscles/muscle.model";
+import { ExerciseMuscleModel } from "../../modules/exercises/muscles/exercise-muscle.model";
+import { ExerciseRatingModel } from "../../modules/exercises/muscles/exercise-rating.model";
+import { UserExercisePreferenceModel } from "../../modules/exercises/muscles/user-exercise-preference.model";
 import { AccessPointModel } from "../../modules/facilities/access-point.model";
 import { BranchModel } from "../../modules/facilities/branch.model";
 import { EquipmentAssignmentModel } from "../../modules/facilities/equipment-assignment.model";
@@ -53,6 +58,11 @@ export const databaseModels = [
   ExerciseEquipmentModel,
   ExerciseMediaModel,
   UserExerciseModel,
+  MuscleGroupModel,
+  MuscleModel,
+  ExerciseMuscleModel,
+  ExerciseRatingModel,
+  UserExercisePreferenceModel,
   WorkoutSessionModel,
   WorkoutSessionExerciseModel,
   WorkoutSetModel,

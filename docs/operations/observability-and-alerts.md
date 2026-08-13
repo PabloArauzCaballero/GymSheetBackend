@@ -21,8 +21,20 @@ The endpoint is public at the NestJS routing layer so a platform probe can reach
 | `gym_sheet_http_requests_total`              | Completed requests by method, route template and status | Error-rate and traffic monitoring          |
 | `gym_sheet_http_request_duration_seconds`    | Request latency histogram                               | p50, p95 and p99 latency                   |
 | `gym_sheet_http_metric_series_dropped_total` | New series rejected by the cardinality guard            | Detect route-label drift or abuse          |
+| `gym_sheet_outbox_jobs`                      | Outbox jobs by `queue` and `status` (PENDING, PROCESSING, FAILED, DEAD_LETTER) | Backlog, retries and dead-letter monitoring |
+| `gym_sheet_outbox_backlog_age_seconds`       | Age of the oldest due (PENDING/FAILED) job per `queue`  | Detect stuck or under-provisioned workers  |
 
 The metrics registry is intentionally bounded to 250 HTTP series. It never stores request bodies, query parameters, tokens, email addresses or user identifiers.
+
+### Queue (outbox) metrics
+
+The queue gauges are read live from `integration.outbox_jobs` on each scrape. They deliberately cover only the actionable states; `COMPLETED` is append-only and unbounded (see ADR-0005), so it is not counted per scrape. Throughput of completed jobs is observed from the workers' structured logs (`event: "*.completed"` / `*.failed`), not from this table scan.
+
+- `gym_sheet_outbox_jobs{queue,status="PENDING"}` — waiting to be claimed.
+- `gym_sheet_outbox_jobs{queue,status="PROCESSING"}` — currently leased by a worker.
+- `gym_sheet_outbox_jobs{queue,status="FAILED"}` — failed, awaiting backoff retry (retries in flight).
+- `gym_sheet_outbox_jobs{queue,status="DEAD_LETTER"}` — retries exhausted; needs human triage.
+- `gym_sheet_outbox_backlog_age_seconds{queue}` — how long the oldest due job has waited.
 
 ## Initial alert proposals
 
@@ -39,6 +51,9 @@ These are safe starting points, not production facts. They must be adjusted afte
 | Cardinality guard active | dropped series increases                         |              5 minutes | warning  |
 | Connector failure        | `exercises_dataset.refresh_failed`               | 3 consecutive attempts | warning  |
 | Dataset cache stale      | last successful checkpoint older than 26 hours   |             15 minutes | high     |
+| Queue backlog growing    | `gym_sheet_outbox_backlog_age_seconds > 300`     |             10 minutes | high     |
+| Dead-letter present      | `gym_sheet_outbox_jobs{status="DEAD_LETTER"} > 0`|              5 minutes | high     |
+| Worker stalled           | `PROCESSING > 0` unchanged while backlog age rises |           10 minutes | high     |
 
 ## Dashboards
 

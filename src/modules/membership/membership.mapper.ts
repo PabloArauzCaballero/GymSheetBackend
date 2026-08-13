@@ -1,9 +1,20 @@
 import { MembershipStatus } from "../../common/enums/domain.enums";
 import { BusinessDateService } from "../../common/time/business-date.service";
 import { CustomerProfileModel } from "./customer-profile.model";
+import { MembershipFeatureModel } from "./membership-feature.model";
 import { MembershipPlanModel } from "./membership-plan.model";
 import { MembershipModel } from "./membership.model";
 import { StaffProfileModel } from "./staff-profile.model";
+
+export function mapFeature(feature: MembershipFeatureModel) {
+  return {
+    id: feature.id,
+    code: feature.code,
+    nombre: feature.name,
+    descripcion: feature.description,
+    estado: feature.status,
+  };
+}
 
 export function mapPlan(plan: MembershipPlanModel) {
   return {

@@ -223,6 +223,42 @@ export class MembershipRepository {
     });
   }
 
+  listFeatures() {
+    return this.features.findAll({ order: [["name", "ASC"]] });
+  }
+
+  findFeature(id: string) {
+    return this.features.findByPk(id);
+  }
+
+  findFeatureByCode(code: string) {
+    return this.features.findOne({ where: { code } });
+  }
+
+  createFeature(input: Record<string, unknown>) {
+    return this.features.create({ ...input, status: "ACTIVE" });
+  }
+
+  async updateFeature(
+    feature: MembershipFeatureModel,
+    input: Record<string, unknown>,
+  ) {
+    await feature.update(input);
+    return feature;
+  }
+
+  async attachFeatureToPlan(planId: string, featureId: string) {
+    const [link] = await this.planFeatures.findOrCreate({
+      where: { planId, featureId },
+      defaults: { planId, featureId },
+    });
+    return link;
+  }
+
+  detachFeatureFromPlan(planId: string, featureId: string) {
+    return this.planFeatures.destroy({ where: { planId, featureId } });
+  }
+
   async listUserEntitlements(userId: string, now: Date) {
     const grants = await this.entitlements.findAll({
       where: {
