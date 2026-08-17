@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Includeable, Op, Transaction, WhereOptions } from 'sequelize';
+import { Includeable, Op, Transaction, WhereOptions, col, fn } from 'sequelize';
 import {
   ExerciseMediaStatus,
   ExerciseStatus,
@@ -49,6 +49,40 @@ export class ExercisesRepository {
       offset,
       order: [['name', 'ASC']],
     });
+  }
+
+  /**
+   * Taxonomía del catálogo: partes del cuerpo y, dentro de cada una, músculos
+   * objetivo, con su conteo. Se resuelve con un GROUP BY en vez de traer los
+   * ejercicios y agrupar en memoria — el catálogo ronda los 1300 registros y el
+   * cliente sólo necesita las etiquetas para dibujar la navegación.
+   */
+  async listTaxonomy(): Promise<
+    Array<{ bodyPart: string; targetMuscle: string; total: number }>
+  > {
+    const rows = await this.exerciseModel.findAll({
+      attributes: [
+        "bodyPart",
+        "targetMuscle",
+        [fn("COUNT", col("id")), "total"],
+      ],
+      where: {
+        status: ExerciseStatus.ACTIVE,
+        bodyPart: { [Op.ne]: null },
+        targetMuscle: { [Op.ne]: null },
+      },
+      group: ["body_part", "target_muscle"],
+      order: [
+        ["bodyPart", "ASC"],
+        ["targetMuscle", "ASC"],
+      ],
+      raw: true,
+    });
+    return (rows as unknown as Array<Record<string, unknown>>).map((row) => ({
+      bodyPart: String(row["bodyPart"] ?? row["body_part"] ?? ""),
+      targetMuscle: String(row["targetMuscle"] ?? row["target_muscle"] ?? ""),
+      total: Number(row["total"] ?? 0),
+    }));
   }
 
   findVisibleById(exerciseId: string, userId: string): Promise<ExerciseModel | null> {

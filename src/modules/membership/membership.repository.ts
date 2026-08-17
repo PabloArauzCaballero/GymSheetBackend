@@ -50,7 +50,21 @@ export class MembershipRepository {
     private readonly intents: typeof MembershipIntentModel,
     @InjectModel(MembershipExtensionModel)
     private readonly extensions: typeof MembershipExtensionModel,
+    @InjectModel(MediaFileModel)
+    private readonly media: typeof MediaFileModel,
   ) {}
+
+  /**
+   * Un archivo de media por su código estable. El gimnasio administra piezas
+   * operativas (como el QR de cobro) subiéndolas con un código conocido, de
+   * modo que reemplazar la imagen no obliga a desplegar el cliente.
+   */
+  findMediaByCode(code: string) {
+    return this.media.findOne({
+      where: { code },
+      attributes: ["code", "storageUrl", "altText"],
+    });
+  }
 
   listPlans() {
     return this.plans.findAll({
@@ -75,7 +89,11 @@ export class MembershipRepository {
 
   findPlan(planId: string, transaction?: Transaction) {
     return this.plans.findByPk(planId, {
-      include: [PlanAccessScopeModel],
+      // Fuera de transacción se resuelve también la imagen del plan para que
+      // la respuesta administrativa incluya su QR sin una segunda consulta.
+      include: transaction
+        ? [PlanAccessScopeModel]
+        : [PlanAccessScopeModel, MediaFileModel],
       transaction,
       // Restringe FOR UPDATE a la fila del plan: bloquear el LEFT JOIN con
       // plan_access_scopes provoca "FOR UPDATE cannot be applied to the
@@ -101,7 +119,15 @@ export class MembershipRepository {
 
   async updatePlan(plan: MembershipPlanModel, input: UpdatePlanInput) {
     await plan.update(input);
-    return plan.reload({ include: [PlanAccessScopeModel] });
+    return plan.reload({ include: [PlanAccessScopeModel, MediaFileModel] });
+  }
+
+  /** Existencia de un archivo de media por id, para validar `imagenId`. */
+  findMediaById(mediaFileId: string, transaction?: Transaction) {
+    return this.media.findByPk(mediaFileId, {
+      attributes: ["id"],
+      transaction,
+    });
   }
 
   async replacePlanScopes(
@@ -344,7 +370,11 @@ export class MembershipRepository {
   findStaffByUserId(userId: string, transaction?: Transaction) {
     return this.staff.findOne({
       where: { userId },
-      include: [StaffBranchScopeModel],
+      // Fuera de transacción se adjunta la cuenta para que la respuesta de
+      // alta ya identifique a la persona sin una consulta adicional.
+      include: transaction
+        ? [StaffBranchScopeModel]
+        : [StaffBranchScopeModel, UserModel],
       transaction,
       // FOR UPDATE acotado al perfil de staff; el JOIN a scopes es nullable.
       lock: transaction
@@ -358,6 +388,31 @@ export class MembershipRepository {
     transaction: Transaction,
   ) {
     return this.staff.create(input, { transaction });
+  }
+
+  /**
+   * Listado paginado de perfiles laborales con su cuenta asociada. Cubre el
+   * hueco documentado en `backend-contract-gaps.md`: hasta ahora el personal
+   * sólo podía crearse o cambiar de estado conociendo el id de usuario.
+   */
+  listStaff(
+    page: number,
+    pageSize: number,
+    filters: { position?: string; employmentStatus?: string } = {},
+  ) {
+    return this.staff.findAndCountAll({
+      where: {
+        ...(filters.position ? { position: filters.position } : {}),
+        ...(filters.employmentStatus
+          ? { employmentStatus: filters.employmentStatus }
+          : {}),
+      },
+      include: [StaffBranchScopeModel, UserModel],
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+      order: [["hiredOn", "DESC"]],
+      distinct: true,
+    });
   }
 
   async replaceStaffScopes(

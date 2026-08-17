@@ -27,14 +27,19 @@ import {
   CreateMembershipInput,
   CreatePlanInput,
   CreateStaffInput,
+  CreateStaffUserInput,
   UpdateFeatureInput,
   MembershipListInput,
   MembershipStatusInput,
   MembershipIntentInput,
   ReplacePlanScopesInput,
+  StaffListInput,
   UpdatePlanInput,
   UpdateStaffStatusInput,
 } from "./membership.schemas";
+
+/** Código con el que el gimnasio sube su QR de cobro por `POST /admin/media`. */
+const PAYMENT_QR_MEDIA_CODE = "qr-pago-renovacion";
 
 export const MEMBERSHIP_RENEWAL_MESSAGE = "Hola, quisiera renovar mi membresía";
 
@@ -72,6 +77,7 @@ export class MembershipService {
 
   async createPlan(input: CreatePlanInput) {
     await this.validateScopes(input.scopes);
+    await this.validatePlanImage(input.imageFileId);
     const planId = await this.sequelize.transaction(async (transaction) => {
       const { scopes, ...attributes } = input;
       const created = await this.repository.createPlan(attributes, transaction);
@@ -84,7 +90,21 @@ export class MembershipService {
   async updatePlan(planId: string, input: UpdatePlanInput) {
     const plan = await this.repository.findPlan(planId);
     if (!plan) throw new NotFoundException("Plan no encontrado.");
+    await this.validatePlanImage(input.imageFileId);
     return mapPlan(await this.repository.updatePlan(plan, input));
+  }
+
+  /**
+   * La FK a `media.files` fallaría con un 500 opaco; se comprueba antes para
+   * devolver un 422 que la consola pueda mostrar junto al campo.
+   */
+  private async validatePlanImage(imageFileId: string | null | undefined) {
+    if (!imageFileId) return;
+    if (!(await this.repository.findMediaById(imageFileId))) {
+      throw new UnprocessableEntityException(
+        "La imagen indicada no existe en el repositorio de medios.",
+      );
+    }
   }
 
   async listFeatures() {
@@ -153,6 +173,14 @@ export class MembershipService {
 
   createStaff(input: CreateStaffInput, actorUserId: string) {
     return this.customerStaff.createStaff(input, actorUserId);
+  }
+
+  createStaffUser(input: CreateStaffUserInput, actorUserId: string) {
+    return this.customerStaff.createStaffUser(input, actorUserId);
+  }
+
+  listStaff(input: StaffListInput) {
+    return this.customerStaff.listStaff(input);
   }
 
   updateStaffStatus(
@@ -379,7 +407,26 @@ export class MembershipService {
         return plan.availableNew || plan.availableRenewal;
       return plan.availableExtension && membership?.planId === plan.id;
     });
-    return { membershipStatus: status, plans: plans.map(mapPlan) };
+    // El QR es auxiliar: si falla su resolución el usuario debe seguir viendo
+    // sus planes, así que nunca puede tumbar este endpoint.
+    let qr: Awaited<
+      ReturnType<MembershipRepository["findMediaByCode"]>
+    > | null = null;
+    try {
+      qr = await this.repository.findMediaByCode(PAYMENT_QR_MEDIA_CODE);
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo resolver el QR de pago: ${(error as Error).message}`,
+      );
+    }
+    return {
+      membershipStatus: status,
+      plans: plans.map(mapPlan),
+      paymentQr:
+        qr && qr.storageUrl
+          ? { url: qr.storageUrl, altText: qr.altText, code: qr.code }
+          : null,
+    };
   }
 
   createRenewalIntent(

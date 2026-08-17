@@ -39,6 +39,28 @@ export class ExercisesService {
     private readonly sequelize: Sequelize,
   ) {}
 
+  /**
+   * Agrupa la taxonomía plana del repositorio en el árbol que la navegación
+   * necesita: partes del cuerpo, y dentro de cada una sus músculos objetivo.
+   */
+  async listTaxonomy() {
+    const rows = await this.exercisesRepository.listTaxonomy();
+    type Muscle = { targetMuscle: string; total: number };
+    type Group = { bodyPart: string; total: number; muscles: Muscle[] };
+    const byBodyPart = new Map<string, Group>();
+    for (const row of rows) {
+      const entry = byBodyPart.get(row.bodyPart) ?? {
+        bodyPart: row.bodyPart,
+        total: 0,
+        muscles: [],
+      };
+      entry.total += row.total;
+      entry.muscles.push({ targetMuscle: row.targetMuscle, total: row.total });
+      byBodyPart.set(row.bodyPart, entry);
+    }
+    return [...byBodyPart.values()].sort((a, b) => b.total - a.total);
+  }
+
   async listVisibleForUser(
     userId: string,
     filters: ExerciseFilterInput,
