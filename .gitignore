@@ -36,3 +36,4 @@ graphify-out/
 # Claude Code local (personal) settings
 .claude/settings.local.json
 .claude/backups/
+storage/
