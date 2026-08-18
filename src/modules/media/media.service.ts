@@ -47,6 +47,11 @@ export class MediaService {
     private readonly repository: MediaRepository,
   ) {}
 
+  /** Catálogo de piezas administradas, para reutilizarlas sin volver a subirlas. */
+  async list(limit: number) {
+    return (await this.repository.listManaged(limit)).map(mapMediaFile);
+  }
+
   async upload(
     file: UploadedMultipartFile | undefined,
     metadata: MediaUploadMetadata,

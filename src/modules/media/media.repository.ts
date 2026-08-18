@@ -25,6 +25,19 @@ export class MediaRepository {
   ) {}
 
   /**
+   * Archivos administrados por el gimnasio, el más reciente primero. El filtro
+   * por `MANAGED` deja fuera el media importado de catálogos externos de
+   * ejercicios, que no es reutilizable como pieza operativa.
+   */
+  listManaged(limit: number): Promise<MediaFileModel[]> {
+    return this.mediaFileModel.findAll({
+      where: { sourceType: "MANAGED" },
+      order: [["updatedAt", "DESC"]],
+      limit,
+    });
+  }
+
+  /**
    * Inserta o reconcilia un archivo de media por su clave natural (`code`).
    * Idempotente: reejecutar con el mismo contenido deja el registro igual.
    */

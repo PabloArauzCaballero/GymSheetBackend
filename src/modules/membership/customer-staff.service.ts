@@ -21,6 +21,8 @@ import { MembershipRepository } from "./membership.repository";
 import {
   CreateCustomerInput,
   CreateStaffInput,
+  CreateStaffUserInput,
+  StaffListInput,
   UpdateStaffStatusInput,
 } from "./membership.schemas";
 
@@ -175,6 +177,111 @@ export class CustomerStaffService {
     const profile = await this.repository.findStaffByUserId(input.userId);
     if (!profile) throw new NotFoundException("Perfil laboral no encontrado.");
     return mapStaff(profile);
+  }
+
+  /**
+   * Alta completa de una persona del equipo: cuenta con rol laboral, perfil,
+   * alcance de sedes, preferencia de avisos y —si se indica— PIN de acceso.
+   * Existe porque `createStaff` exige un `usuarioId` que ninguna ruta
+   * administrativa podía emitir: registrar un entrenador obligaba a crear la
+   * cuenta fuera del producto.
+   */
+  async createStaffUser(input: CreateStaffUserInput, actorUserId: string) {
+    await this.validateBranchIds(input.branchIds);
+    const [passwordHash, pinHash] = await Promise.all([
+      bcrypt.hash(input.password, env.BCRYPT_SALT_ROUNDS),
+      input.accessPin
+        ? bcrypt.hash(input.accessPin, env.BCRYPT_SALT_ROUNDS)
+        : Promise.resolve(null),
+    ]);
+
+    try {
+      const userId = await this.sequelize.transaction(async (transaction) => {
+        if (await this.usersRepository.findByEmail(input.email, transaction)) {
+          throw new ConflictException("Ya existe una cuenta con este correo.");
+        }
+
+        const user = await this.usersRepository.createStaffUser(
+          {
+            email: input.email,
+            passwordHash,
+            fullName: input.fullName,
+            role: input.role,
+          },
+          transaction,
+        );
+        const profile = await this.repository.createStaff(
+          {
+            userId: user.id,
+            position: input.position,
+            hiredOn: input.hiredOn,
+            unlimitedAccess: input.unlimitedAccess,
+            metadata: input.metadata,
+          },
+          transaction,
+        );
+        await this.repository.replaceStaffScopes(
+          profile.id,
+          input.branchIds,
+          transaction,
+        );
+        if (pinHash) {
+          await this.credentialsRepository.createPin(
+            user.id,
+            "INTERNAL_PIN",
+            pinHash,
+            transaction,
+          );
+        }
+        await this.notificationsRepository.createDefaultPreference(
+          user.id,
+          transaction,
+        );
+        // Se emite el mismo evento v1 que el alta por `usuarioId`: los
+        // consumidores no distinguen cómo se creó la cuenta, y ampliar el
+        // payload rompería el contrato publicado.
+        await this.events.record(
+          {
+            eventName: GymDomainEvent.STAFF_PROFILE_CREATED,
+            aggregateType: "staff_profile",
+            aggregateId: profile.id,
+            deduplicationKey: `staff.profile-created:${profile.id}`,
+            actorUserId,
+            payload: {
+              userId: user.id,
+              staffProfileId: profile.id,
+              branchIds: input.branchIds,
+            },
+          },
+          transaction,
+        );
+
+        return user.id;
+      });
+
+      const profile = await this.repository.findStaffByUserId(userId);
+      if (!profile) throw new NotFoundException("Perfil laboral no encontrado.");
+      return mapStaff(profile);
+    } catch (error: unknown) {
+      if (error instanceof UniqueConstraintError) {
+        throw new ConflictException("El correo ya está registrado.");
+      }
+      throw error;
+    }
+  }
+
+  async listStaff(input: StaffListInput) {
+    const result = await this.repository.listStaff(input.page, input.pageSize, {
+      ...(input.cargo ? { position: input.cargo } : {}),
+      ...(input.estadoLaboral ? { employmentStatus: input.estadoLaboral } : {}),
+    });
+    return {
+      items: result.rows.map(mapStaff),
+      page: input.page,
+      pageSize: input.pageSize,
+      total: result.count,
+      totalPages: Math.ceil(result.count / input.pageSize),
+    };
   }
 
   async updateStaffStatus(

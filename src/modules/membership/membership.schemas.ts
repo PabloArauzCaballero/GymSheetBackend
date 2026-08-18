@@ -5,6 +5,7 @@ import {
   PlanStatus,
   PlanType,
   StaffPosition,
+  UserRole,
 } from "../../common/enums/domain.enums";
 
 const metadataSchema = z
@@ -29,6 +30,66 @@ export const membershipListSchema = paginationSchema.extend({
   estado: z.nativeEnum(MembershipStatus).optional(),
 });
 
+/**
+ * Atributos comerciales del plan. Se declaran una sola vez porque alta y
+ * edición los comparten: la tabla `membership.plans` ya persiste precio,
+ * moneda, beneficios, orden, disponibilidad e `image_file_id`, pero ningún
+ * contrato de escritura los exponía, de modo que sólo podían fijarse por
+ * semilla. `imagenId` referencia un archivo de `media.files` — es el punto de
+ * anclaje del QR de cobro propio de cada plan.
+ */
+const commercialPlanFields = {
+  precio: z.number().nonnegative().max(99_999_999).nullable().optional(),
+  moneda: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{3}$/)
+    .toUpperCase()
+    .nullable()
+    .optional(),
+  beneficios: z.array(z.string().trim().min(1).max(200)).max(30).optional(),
+  orden: z.number().int().min(0).max(9999).optional(),
+  disponibleNuevo: z.boolean().optional(),
+  disponibleRenovacion: z.boolean().optional(),
+  disponibleExtension: z.boolean().optional(),
+  imagenId: z.string().uuid().nullable().optional(),
+};
+
+type CommercialPlanInput = {
+  precio?: number | null;
+  moneda?: string | null;
+  beneficios?: string[];
+  orden?: number;
+  disponibleNuevo?: boolean;
+  disponibleRenovacion?: boolean;
+  disponibleExtension?: boolean;
+  imagenId?: string | null;
+};
+
+/** Sólo emite las columnas comerciales realmente presentes en la petición. */
+function mapCommercialPlanInput(input: CommercialPlanInput) {
+  return {
+    ...(input.precio !== undefined
+      ? { priceAmount: input.precio === null ? null : input.precio.toFixed(2) }
+      : {}),
+    ...(input.moneda !== undefined ? { currency: input.moneda } : {}),
+    ...(input.beneficios !== undefined
+      ? { benefits: [...new Set(input.beneficios)] }
+      : {}),
+    ...(input.orden !== undefined ? { displayOrder: input.orden } : {}),
+    ...(input.disponibleNuevo !== undefined
+      ? { availableNew: input.disponibleNuevo }
+      : {}),
+    ...(input.disponibleRenovacion !== undefined
+      ? { availableRenewal: input.disponibleRenovacion }
+      : {}),
+    ...(input.disponibleExtension !== undefined
+      ? { availableExtension: input.disponibleExtension }
+      : {}),
+    ...(input.imagenId !== undefined ? { imageFileId: input.imagenId } : {}),
+  };
+}
+
 export const createPlanSchema = z
   .object({
     codigo: z
@@ -47,6 +108,17 @@ export const createPlanSchema = z
       .default([7, 3, 1, 0]),
     alcances: z.array(scopeSchema).min(1).max(100),
     metadata: metadataSchema.default({}),
+    ...commercialPlanFields,
+  })
+  // Un importe sin moneda no es representable en el modelo de cobro.
+  .superRefine((input, context) => {
+    if (input.precio !== undefined && input.precio !== null && !input.moneda) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["moneda"],
+        message: "Un plan con precio requiere moneda.",
+      });
+    }
   })
   .transform((input) => ({
     code: input.codigo.toUpperCase(),
@@ -60,6 +132,7 @@ export const createPlanSchema = z
       roomId: scope.salaId ?? null,
     })),
     metadata: input.metadata,
+    ...mapCommercialPlanInput(input),
   }));
 
 export const updatePlanSchema = z
@@ -74,6 +147,7 @@ export const updatePlanSchema = z
       .optional(),
     estado: z.nativeEnum(PlanStatus).optional(),
     metadata: metadataSchema.optional(),
+    ...commercialPlanFields,
   })
   .refine((input) => Object.values(input).some((value) => value !== undefined))
   .transform((input) => ({
@@ -94,6 +168,7 @@ export const updatePlanSchema = z
       : {}),
     ...(input.estado !== undefined ? { status: input.estado } : {}),
     ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
+    ...mapCommercialPlanInput(input),
   }));
 
 export const replacePlanScopesSchema = z
@@ -187,6 +262,64 @@ export const createStaffSchema = z
     metadata: input.metadata,
   }));
 
+/**
+ * El cargo laboral determina el rol de autorización de la cuenta: no se acepta
+ * un rol suelto para evitar que un alta de personal pueda emitir permisos que
+ * no correspondan a su puesto.
+ */
+const staffRoleByPosition: Record<StaffPosition, UserRole> = {
+  [StaffPosition.COACH]: UserRole.COACH,
+  [StaffPosition.FRONT_DESK]: UserRole.FRONT_DESK,
+  [StaffPosition.ADMINISTRATION]: UserRole.ADMIN,
+};
+
+/**
+ * Alta completa de una persona del equipo: cuenta de acceso y perfil laboral
+ * en una sola operación. Antes sólo existía `createStaffSchema`, que exige un
+ * `usuarioId` previo sin ningún endpoint que permitiera crearlo, de modo que
+ * dar de alta un entrenador desde la consola era imposible.
+ */
+export const createStaffUserSchema = z
+  .object({
+    email: z
+      .string()
+      .trim()
+      .email()
+      .max(180)
+      .transform((value) => value.toLowerCase()),
+    password: z.string().min(10).max(128),
+    nombreCompleto: z.string().trim().min(3).max(180),
+    cargo: z.nativeEnum(StaffPosition),
+    contratadoEl: z.string().date(),
+    accesoIlimitado: z.boolean().default(true),
+    sedes: z.array(z.string().uuid()).min(1).max(100),
+    // Opcional: sin PIN la persona entra por credencial biométrica o tarjeta.
+    pinAcceso: z
+      .string()
+      .regex(/^\d{4,12}$/)
+      .nullable()
+      .optional(),
+    metadata: metadataSchema.default({}),
+  })
+  .strict()
+  .transform((input) => ({
+    email: input.email,
+    password: input.password,
+    fullName: input.nombreCompleto,
+    role: staffRoleByPosition[input.cargo],
+    position: input.cargo,
+    hiredOn: input.contratadoEl,
+    unlimitedAccess: input.accesoIlimitado,
+    branchIds: [...new Set(input.sedes)],
+    accessPin: input.pinAcceso ?? null,
+    metadata: input.metadata,
+  }));
+
+export const staffListSchema = paginationSchema.extend({
+  cargo: z.nativeEnum(StaffPosition).optional(),
+  estadoLaboral: z.nativeEnum(EmploymentStatus).optional(),
+});
+
 export const updateStaffStatusSchema = z
   .object({
     estadoLaboral: z.nativeEnum(EmploymentStatus),
@@ -236,4 +369,6 @@ export type CreateMembershipInput = z.infer<typeof createMembershipSchema>;
 export type MembershipStatusInput = z.infer<typeof membershipStatusSchema>;
 export type MembershipIntentInput = z.infer<typeof membershipIntentSchema>;
 export type CreateStaffInput = z.infer<typeof createStaffSchema>;
+export type CreateStaffUserInput = z.infer<typeof createStaffUserSchema>;
+export type StaffListInput = z.infer<typeof staffListSchema>;
 export type UpdateStaffStatusInput = z.infer<typeof updateStaffStatusSchema>;

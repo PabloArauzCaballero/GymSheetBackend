@@ -1,13 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Transaction } from 'sequelize';
-import { UserStatus } from '../../common/enums/domain.enums';
+import { UserRole, UserStatus } from '../../common/enums/domain.enums';
 import { UserModel } from './user.model';
 
 export type CreateClientUserInput = {
   email: string;
   passwordHash: string;
   fullName: string;
+};
+
+/**
+ * Alta de cuenta con rol laboral. El rol se exige explícito (no hay valor por
+ * defecto) porque, a diferencia del alta de cliente, aquí concede permisos.
+ */
+export type CreateStaffUserInput = CreateClientUserInput & {
+  role: UserRole;
 };
 
 @Injectable()
@@ -35,6 +43,15 @@ export class UsersRepository {
       email: input.email.toLowerCase(),
       passwordHash: input.passwordHash,
       fullName: input.fullName,
+    }, { transaction });
+  }
+
+  createStaffUser(input: CreateStaffUserInput, transaction?: Transaction): Promise<UserModel> {
+    return this.userModel.create({
+      email: input.email.toLowerCase(),
+      passwordHash: input.passwordHash,
+      fullName: input.fullName,
+      role: input.role,
     }, { transaction });
   }
 }

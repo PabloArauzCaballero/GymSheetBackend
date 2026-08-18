@@ -37,3 +37,10 @@ export const mediaUploadMetadataSchema = z
   });
 
 export type MediaUploadMetadata = z.infer<typeof mediaUploadMetadataSchema>;
+
+/** Listado del catálogo administrado; el tope evita respuestas ilimitadas. */
+export const mediaListQuerySchema = z
+  .object({ limit: z.coerce.number().int().min(1).max(200).default(50) })
+  .strict();
+
+export type MediaListQuery = z.infer<typeof mediaListQuerySchema>;

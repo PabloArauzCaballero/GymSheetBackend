@@ -21,9 +21,11 @@ import {
   CreateMembershipInput,
   CreatePlanInput,
   CreateStaffInput,
+  CreateStaffUserInput,
   MembershipListInput,
   MembershipStatusInput,
   ReplacePlanScopesInput,
+  StaffListInput,
   UpdateFeatureInput,
   UpdatePlanInput,
   UpdateStaffStatusInput,
@@ -32,12 +34,14 @@ import {
   createMembershipSchema,
   createPlanSchema,
   createStaffSchema,
+  createStaffUserSchema,
   updateFeatureSchema,
   membershipListSchema,
   membershipStatusSchema,
   membershipIntentSchema,
   MembershipIntentInput,
   replacePlanScopesSchema,
+  staffListSchema,
   updatePlanSchema,
   updateStaffStatusSchema,
 } from "./membership.schemas";
@@ -225,6 +229,25 @@ export class AdminMembershipController {
     @Body(new ZodValidationPipe(createStaffSchema)) input: CreateStaffInput,
   ) {
     return this.service.createStaff(input, actor.id);
+  }
+
+  /** Alta de cuenta y perfil laboral en un solo paso (entrenadores, recepción). */
+  @Post("staff-users")
+  @Roles(UserRole.ADMIN)
+  createStaffUser(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Body(new ZodValidationPipe(createStaffUserSchema))
+    input: CreateStaffUserInput,
+  ) {
+    return this.service.createStaffUser(input, actor.id);
+  }
+
+  @Get("staff")
+  @Roles(UserRole.ADMIN)
+  listStaff(
+    @Query(new ZodValidationPipe(staffListSchema)) query: StaffListInput,
+  ) {
+    return this.service.listStaff(query);
   }
 
   @Patch("staff/:userId/status")

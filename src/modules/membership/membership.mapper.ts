@@ -108,5 +108,16 @@ export function mapStaff(profile: StaffProfileModel) {
     terminadoEl: profile.terminatedOn,
     accesoIlimitado: profile.unlimitedAccess,
     sedes: (profile.branchScopes ?? []).map((scope) => scope.branchId),
+    // Sólo se proyecta si la consulta incluyó la cuenta; el alta por
+    // `usuarioId` no la carga y la clave queda ausente, no nula.
+    usuario: profile.user
+      ? {
+          id: profile.user.id,
+          email: profile.user.email,
+          nombreCompleto: profile.user.fullName,
+          rol: profile.user.role,
+          estado: profile.user.status,
+        }
+      : undefined,
   };
 }
