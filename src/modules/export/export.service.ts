@@ -38,6 +38,115 @@ export class ExportService {
     };
   }
 
+
+  /**
+   * Informe de avance en PDF.
+   *
+   * El CSV sirve para analizar; este documento sirve para enseñar — a un
+   * entrenador, a un fisio, a quien pida constancia del trabajo hecho. Por eso
+   * lidera con el resumen agregado y no con las filas: nadie lee 200 series
+   * para saber si alguien entrena.
+   *
+   * Se compone con PDFKit en memoria y sin navegador headless: el documento es
+   * texto y reglas, y arrastrar Chromium a la imagen del servidor para dibujar
+   * una tabla no se paga.
+   */
+  async buildWorkoutHistoryPdf(userId: string): Promise<Buffer> {
+    const data = await this.buildWorkoutHistoryExport(userId);
+
+    const finished = data.sesiones.filter(
+      (session) => session.estado === 'FINALIZADA',
+    );
+    let totalSets = 0;
+    let totalVolume = 0;
+    for (const session of data.sesiones) {
+      for (const sessionExercise of session.ejercicios) {
+        for (const set of sessionExercise.series) {
+          totalSets += 1;
+          totalVolume += set.pesoKg * set.repeticiones;
+        }
+      }
+    }
+
+    // `PDFDocument` se importa aquí y no arriba: sólo esta ruta lo necesita y
+    // mantenerlo fuera del arranque evita cargarlo en cada boot del proceso.
+    const { default: PDFDocument } = await import('pdfkit');
+    const doc = new PDFDocument({ size: 'A4', margin: 48 });
+
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    const finished$ = new Promise<Buffer>((resolve) => {
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+
+    doc.fontSize(22).text('Informe de avance', { align: 'left' });
+    doc.moveDown(0.2);
+    doc
+      .fontSize(10)
+      .fillColor('#555555')
+      .text(`${data.usuario.nombreCompleto} · ${data.usuario.email}`);
+    doc.text(`Generado el ${new Date(data.generadoEn).toLocaleString('es-BO')}`);
+    doc.moveDown();
+
+    doc.fillColor('#000000').fontSize(13).text('Resumen');
+    doc.moveDown(0.3);
+    doc.fontSize(10);
+    doc.text(`Sesiones registradas: ${data.sesiones.length}`);
+    doc.text(`Sesiones finalizadas: ${finished.length}`);
+    doc.text(`Series registradas: ${totalSets}`);
+    doc.text(`Volumen total: ${Math.round(totalVolume)} kg`);
+    if (data.perfil) {
+      doc.text(
+        `Perfil: ${data.perfil.pesoKg} kg · ${data.perfil.estaturaCm} cm · ${data.perfil.objetivo}`,
+      );
+    }
+    doc.moveDown();
+
+    doc.fontSize(13).text('Sesiones');
+    doc.moveDown(0.3);
+    doc.fontSize(9).fillColor('#555555');
+
+    // Sólo las más recientes: un PDF de cientos de páginas no lo abre nadie, y
+    // el CSV sigue siendo la vía para el histórico completo.
+    for (const session of data.sesiones.slice(0, 40)) {
+      const started = new Date(session.fechaInicio);
+      const sets = session.ejercicios.reduce(
+        (sum, item) => sum + item.series.length,
+        0,
+      );
+      const volume = session.ejercicios.reduce(
+        (sum, item) =>
+          sum +
+          item.series.reduce(
+            (acc, set) => acc + set.pesoKg * set.repeticiones,
+            0,
+          ),
+        0,
+      );
+      doc
+        .fillColor('#000000')
+        .text(
+          `${started.toLocaleDateString('es-BO')} ${started
+            .toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' })}` +
+            `  ·  ${session.estado}  ·  ${session.ejercicios.length} ejercicios` +
+            `  ·  ${sets} series  ·  ${Math.round(volume)} kg`,
+        );
+    }
+
+    if (data.sesiones.length > 40) {
+      doc.moveDown(0.5);
+      doc
+        .fillColor('#555555')
+        .text(
+          `Se muestran las 40 sesiones más recientes de ${data.sesiones.length}. ` +
+            'El histórico completo está en la exportación CSV.',
+        );
+    }
+
+    doc.end();
+    return finished$;
+  }
+
   async buildWorkoutHistoryCsv(userId: string): Promise<string> {
     const exportData = await this.buildWorkoutHistoryExport(userId);
     const rows = [

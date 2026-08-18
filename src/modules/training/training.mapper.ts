@@ -43,6 +43,8 @@ export type RoutineAssignmentResponse = {
   estado: RoutineAssignmentStatus;
   fechaProgramada: string | null;
   diasSemana: number[];
+  repiteDesde: string | null;
+  repiteHasta: string | null;
   nota: string | null;
   clienteNombre: string | null;
   clienteEmail: string | null;
@@ -104,6 +106,8 @@ export function mapAssignmentToResponse(
     estado: assignment.status,
     fechaProgramada: assignment.scheduledFor,
     diasSemana: assignment.weekdays ?? [],
+    repiteDesde: assignment.repeatsFrom,
+    repiteHasta: assignment.repeatsUntil,
     nota: assignment.note,
     clienteNombre: assignment.client?.fullName ?? null,
     clienteEmail: assignment.client?.email ?? null,

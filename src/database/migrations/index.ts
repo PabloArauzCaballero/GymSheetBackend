@@ -10,6 +10,7 @@ import { customerExperienceMigration } from "./202607220002-customer-experience"
 import { trainingPlansRoutinesMigration } from "./202608010001-training-plans-routines";
 import { localExerciseMediaUrlMigration } from "./202608130001-local-exercise-media-url";
 import { exerciseMusclesAndRatingsMigration } from "./202608130002-exercise-muscles-and-ratings";
+import { routineRecurrenceWindowMigration } from "./202608170001-routine-recurrence-window";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -26,4 +27,5 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   trainingPlansRoutinesMigration,
   localExerciseMediaUrlMigration,
   exerciseMusclesAndRatingsMigration,
+  routineRecurrenceWindowMigration,
 ];

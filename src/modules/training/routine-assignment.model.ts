@@ -59,6 +59,13 @@ export class RoutineAssignmentModel extends Model {
   @Column({ type: DataType.JSONB, allowNull: false, field: 'dias_semana' })
   declare weekdays: number[];
 
+  /** Ventana de repeticion. Ambas nulas = asignacion indefinida. */
+  @Column({ type: DataType.DATEONLY, allowNull: true, field: 'repite_desde' })
+  declare repeatsFrom: string | null;
+
+  @Column({ type: DataType.DATEONLY, allowNull: true, field: 'repite_hasta' })
+  declare repeatsUntil: string | null;
+
   @Column({ type: DataType.TEXT, allowNull: true, field: 'nota' })
   declare note: string | null;
 

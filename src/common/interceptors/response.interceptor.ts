@@ -1,4 +1,10 @@
-import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
+import {
+  CallHandler,
+  ExecutionContext,
+  Injectable,
+  NestInterceptor,
+  StreamableFile,
+} from '@nestjs/common';
 import { Response } from 'express';
 import { Observable, map } from 'rxjs';
 
@@ -16,10 +22,15 @@ export class ResponseInterceptor implements NestInterceptor {
     }
 
     return next.handle().pipe(
-      map((data: unknown) => ({
-        ok: true,
-        data,
-      })),
+      map((data: unknown) => {
+        // A file is the response, never its payload. Wrapping a StreamableFile
+        // in `{ ok, data }` produced a JSON body served under a binary
+        // Content-Type — the client downloaded a "PDF" that was actually an
+        // envelope. Checked structurally rather than by adding another MIME
+        // string, so any future binary route is covered without a change here.
+        if (data instanceof StreamableFile) return data;
+        return { ok: true, data };
+      }),
     );
   }
 }
