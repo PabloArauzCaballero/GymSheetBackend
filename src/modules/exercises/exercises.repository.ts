@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Includeable, Op, Transaction, WhereOptions } from 'sequelize';
+import { Includeable, Op, Transaction, WhereOptions, col, fn } from 'sequelize';
 import {
   ExerciseMediaStatus,
   ExerciseStatus,
@@ -49,6 +49,72 @@ export class ExercisesRepository {
       offset,
       order: [['name', 'ASC']],
     });
+  }
+
+  /**
+   * Taxonomía del catálogo: partes del cuerpo y, dentro de cada una, músculos
+   * objetivo, con su conteo. Se resuelve con un GROUP BY en vez de traer los
+   * ejercicios y agrupar en memoria — el catálogo ronda los 1300 registros y el
+   * cliente sólo necesita las etiquetas para dibujar la navegación.
+   */
+  /**
+   * Una imagen representativa por músculo.
+   *
+   * Las láminas del catálogo resaltan en rojo el músculo trabajado, así que
+   * sirven como icono anatómico sin dibujar nada nuevo: es más reconocible que
+   * un glifo genérico. `DISTINCT ON` deja que Postgres elija la primera fila
+   * por grupo en una sola pasada, en vez de traer 1300 ejercicios y filtrarlos
+   * en memoria.
+   */
+  async listTaxonomyImages(): Promise<
+    Array<{ bodyPart: string; targetMuscle: string; imageUrl: string | null }>
+  > {
+    const [rows] = await this.exerciseModel.sequelize!.query(
+      `SELECT DISTINCT ON (e.body_part, e.target_muscle)
+         e.body_part   AS "bodyPart",
+         e.target_muscle AS "targetMuscle",
+         m.url         AS "imageUrl"
+       FROM public.ejercicios e
+       JOIN training.exercise_media m ON m.ejercicio_id = e.id
+       WHERE e.estado = 'ACTIVO'
+         AND e.body_part IS NOT NULL
+         AND e.target_muscle IS NOT NULL
+         AND m.status = 'ACTIVE'
+       ORDER BY e.body_part, e.target_muscle, m.is_primary DESC, m.sort_order ASC`,
+    );
+    return rows as Array<{
+      bodyPart: string;
+      targetMuscle: string;
+      imageUrl: string | null;
+    }>;
+  }
+
+  async listTaxonomy(): Promise<
+    Array<{ bodyPart: string; targetMuscle: string; total: number }>
+  > {
+    const rows = await this.exerciseModel.findAll({
+      attributes: [
+        "bodyPart",
+        "targetMuscle",
+        [fn("COUNT", col("id")), "total"],
+      ],
+      where: {
+        status: ExerciseStatus.ACTIVE,
+        bodyPart: { [Op.ne]: null },
+        targetMuscle: { [Op.ne]: null },
+      },
+      group: ["body_part", "target_muscle"],
+      order: [
+        ["bodyPart", "ASC"],
+        ["targetMuscle", "ASC"],
+      ],
+      raw: true,
+    });
+    return (rows as unknown as Array<Record<string, unknown>>).map((row) => ({
+      bodyPart: String(row["bodyPart"] ?? row["body_part"] ?? ""),
+      targetMuscle: String(row["targetMuscle"] ?? row["target_muscle"] ?? ""),
+      total: Number(row["total"] ?? 0),
+    }));
   }
 
   findVisibleById(exerciseId: string, userId: string): Promise<ExerciseModel | null> {

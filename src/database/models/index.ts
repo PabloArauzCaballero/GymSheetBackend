@@ -1,54 +1,86 @@
-import { AccessCredentialModel } from '../../modules/access-control/access-credential.model';
-import { AccessDecisionModel } from '../../modules/access-control/access-decision.model';
-import { AccessDeviceEventModel } from '../../modules/access-control/access-device-event.model';
-import { AccessDeviceModel } from '../../modules/access-control/access-device.model';
-import { EquipmentModel } from '../../modules/equipment/equipment.model';
-import { ExerciseEquipmentModel } from '../../modules/exercises/exercise-equipment.model';
-import { ExerciseMediaModel } from '../../modules/exercises/exercise-media.model';
-import { ExerciseModel } from '../../modules/exercises/exercise.model';
-import { UserExerciseModel } from '../../modules/exercises/user-exercise.model';
-import { AccessPointModel } from '../../modules/facilities/access-point.model';
-import { BranchModel } from '../../modules/facilities/branch.model';
-import { EquipmentAssignmentModel } from '../../modules/facilities/equipment-assignment.model';
-import { MaintenanceEventModel } from '../../modules/facilities/maintenance-event.model';
-import { RoomModel } from '../../modules/facilities/room.model';
-import { DomainEventModel } from '../../modules/integration/domain-event.model';
-import { LegacyImportBatchModel } from '../../modules/integration/legacy-import-batch.model';
-import { LegacyImportRecordModel } from '../../modules/integration/legacy-import-record.model';
-import { OutboxJobModel } from '../../modules/integration/outbox-job.model';
-import { CustomerProfileModel } from '../../modules/membership/customer-profile.model';
-import { MembershipPlanModel } from '../../modules/membership/membership-plan.model';
-import { MembershipStatusHistoryModel } from '../../modules/membership/membership-status-history.model';
-import { MembershipModel } from '../../modules/membership/membership.model';
-import { PlanAccessScopeModel } from '../../modules/membership/plan-access-scope.model';
-import { StaffBranchScopeModel } from '../../modules/membership/staff-branch-scope.model';
-import { StaffProfileModel } from '../../modules/membership/staff-profile.model';
-import { DeliveryAttemptModel } from '../../modules/notifications/delivery-attempt.model';
-import { NotificationPreferenceModel } from '../../modules/notifications/notification-preference.model';
-import { NotificationModel } from '../../modules/notifications/notification.model';
-import { AnthropometricProfileModel } from '../../modules/profiles/anthropometric-profile.model';
-import { UserModel } from '../../modules/users/user.model';
-import { WorkoutSessionExerciseModel } from '../../modules/workouts/workout-session-exercise.model';
-import { WorkoutSessionModel } from '../../modules/workouts/workout-session.model';
-import { WorkoutSetModel } from '../../modules/workouts/workout-set.model';
+import { AccessCredentialModel } from "../../modules/access-control/access-credential.model";
+import { AccessDecisionModel } from "../../modules/access-control/access-decision.model";
+import { AccessDeviceEventModel } from "../../modules/access-control/access-device-event.model";
+import { AccessDeviceModel } from "../../modules/access-control/access-device.model";
+import { EquipmentModel } from "../../modules/equipment/equipment.model";
+import { ExerciseEquipmentModel } from "../../modules/exercises/exercise-equipment.model";
+import { ExerciseMediaModel } from "../../modules/exercises/exercise-media.model";
+import { ExerciseModel } from "../../modules/exercises/exercise.model";
+import { UserExerciseModel } from "../../modules/exercises/user-exercise.model";
+import { MuscleGroupModel } from "../../modules/exercises/muscles/muscle-group.model";
+import { MuscleModel } from "../../modules/exercises/muscles/muscle.model";
+import { ExerciseMuscleModel } from "../../modules/exercises/muscles/exercise-muscle.model";
+import { ExerciseRatingModel } from "../../modules/exercises/muscles/exercise-rating.model";
+import { UserExercisePreferenceModel } from "../../modules/exercises/muscles/user-exercise-preference.model";
+import { AccessPointModel } from "../../modules/facilities/access-point.model";
+import { BranchModel } from "../../modules/facilities/branch.model";
+import { EquipmentAssignmentModel } from "../../modules/facilities/equipment-assignment.model";
+import { MaintenanceEventModel } from "../../modules/facilities/maintenance-event.model";
+import { RoomModel } from "../../modules/facilities/room.model";
+import { DomainEventModel } from "../../modules/integration/domain-event.model";
+import { LegacyImportBatchModel } from "../../modules/integration/legacy-import-batch.model";
+import { LegacyImportRecordModel } from "../../modules/integration/legacy-import-record.model";
+import { OutboxJobModel } from "../../modules/integration/outbox-job.model";
+import { CustomerProfileModel } from "../../modules/membership/customer-profile.model";
+import { MembershipPlanModel } from "../../modules/membership/membership-plan.model";
+import { MembershipStatusHistoryModel } from "../../modules/membership/membership-status-history.model";
+import { MembershipModel } from "../../modules/membership/membership.model";
+import { PlanAccessScopeModel } from "../../modules/membership/plan-access-scope.model";
+import { StaffBranchScopeModel } from "../../modules/membership/staff-branch-scope.model";
+import { StaffProfileModel } from "../../modules/membership/staff-profile.model";
+import { DeliveryAttemptModel } from "../../modules/notifications/delivery-attempt.model";
+import { NotificationPreferenceModel } from "../../modules/notifications/notification-preference.model";
+import { NotificationModel } from "../../modules/notifications/notification.model";
+import { AnthropometricProfileModel } from "../../modules/profiles/anthropometric-profile.model";
+import { BodyMeasurementModel } from "../../modules/profiles/body-measurement.model";
+import { OnboardingModel } from "../../modules/profiles/onboarding.model";
+import { RoutineModel } from "../../modules/training/routine.model";
+import { RoutineExerciseModel } from "../../modules/training/routine-exercise.model";
+import { RoutineAssignmentModel } from "../../modules/training/routine-assignment.model";
+import { EntitlementModel } from "../../modules/membership/entitlement.model";
+import { MediaFileModel } from "../../modules/membership/media-file.model";
+import { MembershipExtensionModel } from "../../modules/membership/membership-extension.model";
+import { MembershipFeatureModel } from "../../modules/membership/membership-feature.model";
+import { MembershipIntentModel } from "../../modules/membership/membership-intent.model";
+import { PlanFeatureModel } from "../../modules/membership/plan-feature.model";
+import { UserModel } from "../../modules/users/user.model";
+import { WorkoutSessionExerciseModel } from "../../modules/workouts/workout-session-exercise.model";
+import { WorkoutSessionModel } from "../../modules/workouts/workout-session.model";
+import { WorkoutSetModel } from "../../modules/workouts/workout-set.model";
 
 export const databaseModels = [
   UserModel,
   AnthropometricProfileModel,
+  OnboardingModel,
+  BodyMeasurementModel,
   EquipmentModel,
   ExerciseModel,
   ExerciseEquipmentModel,
   ExerciseMediaModel,
   UserExerciseModel,
+  MuscleGroupModel,
+  MuscleModel,
+  ExerciseMuscleModel,
+  ExerciseRatingModel,
+  UserExercisePreferenceModel,
   WorkoutSessionModel,
   WorkoutSessionExerciseModel,
   WorkoutSetModel,
+  RoutineModel,
+  RoutineExerciseModel,
+  RoutineAssignmentModel,
   BranchModel,
   RoomModel,
   AccessPointModel,
   EquipmentAssignmentModel,
   MaintenanceEventModel,
   MembershipPlanModel,
+  MediaFileModel,
+  MembershipFeatureModel,
+  PlanFeatureModel,
+  EntitlementModel,
+  MembershipIntentModel,
+  MembershipExtensionModel,
   PlanAccessScopeModel,
   MembershipModel,
   MembershipStatusHistoryModel,

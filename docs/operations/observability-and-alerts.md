@@ -12,32 +12,48 @@ The endpoint is public at the NestJS routing layer so a platform probe can reach
 
 ## Available signals
 
-| Metric | Meaning | Operational use |
-|---|---|---|
-| `gym_sheet_process_uptime_seconds` | Process lifetime | Detect restart loops |
-| `gym_sheet_process_resident_memory_bytes` | Resident memory | Detect growth and container pressure |
-| `gym_sheet_node_heap_used_bytes` | Used V8 heap | Distinguish heap growth from native memory |
-| `gym_sheet_database_pool_connections` | Pool state by `size`, `available`, `using`, `waiting` | Detect saturation and queueing |
-| `gym_sheet_http_requests_total` | Completed requests by method, route template and status | Error-rate and traffic monitoring |
-| `gym_sheet_http_request_duration_seconds` | Request latency histogram | p50, p95 and p99 latency |
-| `gym_sheet_http_metric_series_dropped_total` | New series rejected by the cardinality guard | Detect route-label drift or abuse |
+| Metric                                       | Meaning                                                 | Operational use                            |
+| -------------------------------------------- | ------------------------------------------------------- | ------------------------------------------ |
+| `gym_sheet_process_uptime_seconds`           | Process lifetime                                        | Detect restart loops                       |
+| `gym_sheet_process_resident_memory_bytes`    | Resident memory                                         | Detect growth and container pressure       |
+| `gym_sheet_node_heap_used_bytes`             | Used V8 heap                                            | Distinguish heap growth from native memory |
+| `gym_sheet_database_pool_connections`        | Pool state by `size`, `available`, `using`, `waiting`   | Detect saturation and queueing             |
+| `gym_sheet_http_requests_total`              | Completed requests by method, route template and status | Error-rate and traffic monitoring          |
+| `gym_sheet_http_request_duration_seconds`    | Request latency histogram                               | p50, p95 and p99 latency                   |
+| `gym_sheet_http_metric_series_dropped_total` | New series rejected by the cardinality guard            | Detect route-label drift or abuse          |
+| `gym_sheet_outbox_jobs`                      | Outbox jobs by `queue` and `status` (PENDING, PROCESSING, FAILED, DEAD_LETTER) | Backlog, retries and dead-letter monitoring |
+| `gym_sheet_outbox_backlog_age_seconds`       | Age of the oldest due (PENDING/FAILED) job per `queue`  | Detect stuck or under-provisioned workers  |
 
 The metrics registry is intentionally bounded to 250 HTTP series. It never stores request bodies, query parameters, tokens, email addresses or user identifiers.
+
+### Queue (outbox) metrics
+
+The queue gauges are read live from `integration.outbox_jobs` on each scrape. They deliberately cover only the actionable states; `COMPLETED` is append-only and unbounded (see ADR-0005), so it is not counted per scrape. Throughput of completed jobs is observed from the workers' structured logs (`event: "*.completed"` / `*.failed`), not from this table scan.
+
+- `gym_sheet_outbox_jobs{queue,status="PENDING"}` — waiting to be claimed.
+- `gym_sheet_outbox_jobs{queue,status="PROCESSING"}` — currently leased by a worker.
+- `gym_sheet_outbox_jobs{queue,status="FAILED"}` — failed, awaiting backoff retry (retries in flight).
+- `gym_sheet_outbox_jobs{queue,status="DEAD_LETTER"}` — retries exhausted; needs human triage.
+- `gym_sheet_outbox_backlog_age_seconds{queue}` — how long the oldest due job has waited.
 
 ## Initial alert proposals
 
 These are safe starting points, not production facts. They must be adjusted after observing real traffic and infrastructure limits.
 
-| Alert | Initial condition | Window | Severity |
-|---|---|---:|---|
-| API unavailable | readiness fails | 2 minutes | critical |
-| Elevated 5xx rate | 5xx / all requests > 2% and at least 20 requests | 5 minutes | high |
-| Read latency | p95 > 800 ms for read routes | 10 minutes | warning |
-| Write latency | p95 > 1.4 s for workout writes | 10 minutes | warning |
-| Pool saturation | `waiting > 0` or `using / size > 0.9` | 5 minutes | high |
-| Memory pressure | RSS > 80% of container limit | 10 minutes | high |
-| Cardinality guard active | dropped series increases | 5 minutes | warning |
-| Connector failure | dataset import returns 5xx | 3 consecutive attempts | warning |
+| Alert                    | Initial condition                                |                 Window | Severity |
+| ------------------------ | ------------------------------------------------ | ---------------------: | -------- |
+| API unavailable          | readiness fails                                  |              2 minutes | critical |
+| Elevated 5xx rate        | 5xx / all requests > 2% and at least 20 requests |              5 minutes | high     |
+| Read latency             | p95 > 800 ms for read routes                     |             10 minutes | warning  |
+| Write latency            | p95 > 1.4 s for workout writes                   |             10 minutes | warning  |
+| Pool saturation          | `waiting > 0` or `using / size > 0.9`            |              5 minutes | high     |
+| Memory pressure          | RSS > 80% of container limit                     |             10 minutes | high     |
+| Cardinality guard active | dropped series increases                         |              5 minutes | warning  |
+| Connector failure        | `exercises_dataset.refresh_failed`               | 3 consecutive attempts | warning  |
+| Dataset cache stale      | last successful checkpoint older than 26 hours   |             15 minutes | high     |
+| Queue backlog growing    | `gym_sheet_outbox_backlog_age_seconds > 300`     |             10 minutes | high     |
+| Dead-letter present      | `gym_sheet_outbox_jobs{status="DEAD_LETTER"} > 0`|              5 minutes | high     |
+| Worker stalled           | `PROCESSING > 0` unchanged while backlog age rises |           10 minutes | high     |
 
 ## Dashboards
 
@@ -48,7 +64,7 @@ At minimum, create panels for:
 3. RSS and heap over time;
 4. PostgreSQL pool size, in-use, available and waiting;
 5. readiness failures and process restarts;
-6. dataset import failures and duration from structured logs.
+6. dataset refresh age, record count, duration, failures and retry schedule from structured logs and the administrator status endpoint.
 
 ## Log policy
 

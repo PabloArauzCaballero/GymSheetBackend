@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
-import { AnthropometricProfileModel } from './anthropometric-profile.model';
-import { UpsertProfileInput } from './profiles.schemas';
+import { Injectable } from "@nestjs/common";
+import { InjectModel } from "@nestjs/sequelize";
+import { AnthropometricProfileModel } from "./anthropometric-profile.model";
+import { UpsertProfileInput } from "./profiles.schemas";
 
 @Injectable()
 export class ProfilesRepository {

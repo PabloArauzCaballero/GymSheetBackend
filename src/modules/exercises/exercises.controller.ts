@@ -29,6 +29,12 @@ export class ExercisesController {
     return this.exercisesService.listVisibleForUser(authenticatedUser.id, filters);
   }
 
+  /** Debe declararse antes de `:id`, o el parámetro capturaría "taxonomy". */
+  @Get('taxonomy')
+  listTaxonomy() {
+    return this.exercisesService.listTaxonomy();
+  }
+
   @Get(':id')
   getExercise(
     @CurrentUser() authenticatedUser: AuthenticatedUser,

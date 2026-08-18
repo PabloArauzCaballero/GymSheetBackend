@@ -1,10 +1,10 @@
-import { TrainingGoal } from '../../common/enums/domain.enums';
-import { AnthropometricProfileModel } from './anthropometric-profile.model';
+import { TrainingGoal } from "../../common/enums/domain.enums";
+import { AnthropometricProfileModel } from "./anthropometric-profile.model";
 
 export type AnthropometricProfileResponse = {
   id: string;
   usuarioId: string;
-  edad: number;
+  edad: number | null;
   pesoKg: number;
   estaturaCm: number;
   objetivo: TrainingGoal;

@@ -1,11 +1,13 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { createHash } from 'node:crypto';
-import { ZodError } from 'zod';
-import { env } from '../../../config/env';
+import { Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { createHash } from "node:crypto";
+import { ZodError } from "zod";
+import { env } from "../../../config/env";
 import {
   ExternalExercise,
   externalExerciseDatasetSchema,
-} from './exercises-dataset.schemas';
+  OpenExerciseMediaRecord,
+  openExerciseMediaCatalogSchema,
+} from "./exercises-dataset.schemas";
 
 export type ExercisesDatasetSnapshot = {
   records: ExternalExercise[];
@@ -14,6 +16,15 @@ export type ExercisesDatasetSnapshot = {
   contentSha256: string;
   fetchedAt: Date;
 };
+
+export function isSupportedDatasetContentType(contentType: string): boolean {
+  const normalized = contentType.toLowerCase();
+  return (
+    normalized.includes("application/json") ||
+    normalized.includes("text/plain") ||
+    normalized.includes("application/octet-stream")
+  );
+}
 
 @Injectable()
 export class ExercisesDatasetClient {
@@ -32,12 +43,12 @@ export class ExercisesDatasetClient {
 
     try {
       const response = await fetch(sourceUrl, {
-        method: 'GET',
+        method: "GET",
         headers: {
-          Accept: 'application/json',
-          'User-Agent': 'GymSheetBackend/1.0 exercises-dataset-connector',
+          Accept: "application/json",
+          "User-Agent": "GymSheetBackend/1.0 exercises-dataset-connector",
         },
-        redirect: 'error',
+        redirect: "error",
         signal: abortController.signal,
       });
 
@@ -49,10 +60,13 @@ export class ExercisesDatasetClient {
 
       this.assertJsonResponse(response);
       const responseText = await this.readBoundedResponse(response);
-      const contentSha256 = createHash('sha256').update(responseText).digest('hex');
+      const contentSha256 = createHash("sha256")
+        .update(responseText)
+        .digest("hex");
       const records = this.parseDataset(responseText);
       const sourceVersion =
-        this.normalizeVersionHeader(response.headers.get('etag')) ?? contentSha256;
+        this.normalizeVersionHeader(response.headers.get("etag")) ??
+        contentSha256;
 
       return {
         records,
@@ -66,14 +80,51 @@ export class ExercisesDatasetClient {
         throw error;
       }
 
-      if (error instanceof DOMException && error.name === 'AbortError') {
+      if (error instanceof DOMException && error.name === "AbortError") {
         throw new ServiceUnavailableException(
-          'Exercises dataset request exceeded the configured timeout.',
+          "Exercises dataset request exceeded the configured timeout.",
         );
       }
 
       throw new ServiceUnavailableException(
-        'Exercises dataset could not be downloaded or validated.',
+        "Exercises dataset could not be downloaded or validated.",
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /** Downloads the optional public-domain image catalog used for exact-name enrichment. */
+  async fetchOpenMediaCatalog(): Promise<OpenExerciseMediaRecord[]> {
+    if (!env.EXERCISES_OPEN_MEDIA_ENABLED) return [];
+    const sourceUrl = this.validateSourceUrl(env.EXERCISES_OPEN_MEDIA_JSON_URL);
+    const abortController = new AbortController();
+    const timeout = setTimeout(
+      () => abortController.abort(),
+      env.EXERCISES_DATASET_TIMEOUT_MS,
+    );
+
+    try {
+      const response = await fetch(sourceUrl, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "GymSheetBackend/1.0 open-exercise-media-connector",
+        },
+        redirect: "error",
+        signal: abortController.signal,
+      });
+      if (!response.ok) {
+        throw new ServiceUnavailableException(
+          `Open exercise media catalog returned HTTP ${response.status}.`,
+        );
+      }
+      this.assertJsonResponse(response);
+      const text = await this.readBoundedResponse(response);
+      return openExerciseMediaCatalogSchema.parse(JSON.parse(text) as unknown);
+    } catch (error: unknown) {
+      if (error instanceof ServiceUnavailableException) throw error;
+      throw new ServiceUnavailableException(
+        "Open exercise media catalog could not be downloaded or validated.",
       );
     } finally {
       clearTimeout(timeout);
@@ -83,9 +134,9 @@ export class ExercisesDatasetClient {
   private validateSourceUrl(rawUrl: string): URL {
     const sourceUrl = new URL(rawUrl);
 
-    if (sourceUrl.protocol !== 'https:') {
+    if (sourceUrl.protocol !== "https:") {
       throw new ServiceUnavailableException(
-        'Exercises dataset source must use HTTPS.',
+        "Exercises dataset source must use HTTPS.",
       );
     }
 
@@ -95,13 +146,13 @@ export class ExercisesDatasetClient {
 
     if (!allowedHosts.has(sourceUrl.hostname.toLowerCase())) {
       throw new ServiceUnavailableException(
-        'Exercises dataset source host is not allowlisted.',
+        "Exercises dataset source host is not allowlisted.",
       );
     }
 
     if (sourceUrl.username || sourceUrl.password || sourceUrl.port) {
       throw new ServiceUnavailableException(
-        'Exercises dataset source URL cannot include credentials or a custom port.',
+        "Exercises dataset source URL cannot include credentials or a custom port.",
       );
     }
 
@@ -109,35 +160,38 @@ export class ExercisesDatasetClient {
   }
 
   private assertJsonResponse(response: Response): void {
-    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+    const contentType =
+      response.headers.get("content-type")?.toLowerCase() ?? "";
 
-    if (!contentType.includes('application/json') && !contentType.includes('text/plain')) {
+    if (!isSupportedDatasetContentType(contentType)) {
       throw new ServiceUnavailableException(
-        'Exercises dataset response has an unexpected content type.',
+        "Exercises dataset response has an unexpected content type.",
       );
     }
 
-    const declaredLength = Number(response.headers.get('content-length'));
+    const declaredLength = Number(response.headers.get("content-length"));
 
     if (
       Number.isFinite(declaredLength) &&
       declaredLength > env.EXERCISES_DATASET_MAX_RESPONSE_BYTES
     ) {
       throw new ServiceUnavailableException(
-        'Exercises dataset response exceeds the configured byte limit.',
+        "Exercises dataset response exceeds the configured byte limit.",
       );
     }
   }
 
   private async readBoundedResponse(response: Response): Promise<string> {
     if (!response.body) {
-      throw new ServiceUnavailableException('Exercises dataset response has no body.');
+      throw new ServiceUnavailableException(
+        "Exercises dataset response has no body.",
+      );
     }
 
     const reader = response.body.getReader();
-    const decoder = new TextDecoder('utf-8', { fatal: true });
+    const decoder = new TextDecoder("utf-8", { fatal: true });
     let bytesRead = 0;
-    let responseText = '';
+    let responseText = "";
 
     while (true) {
       const { done, value } = await reader.read();
@@ -149,9 +203,9 @@ export class ExercisesDatasetClient {
       bytesRead += value.byteLength;
 
       if (bytesRead > env.EXERCISES_DATASET_MAX_RESPONSE_BYTES) {
-        await reader.cancel('response too large');
+        await reader.cancel("response too large");
         throw new ServiceUnavailableException(
-          'Exercises dataset response exceeds the configured byte limit.',
+          "Exercises dataset response exceeds the configured byte limit.",
         );
       }
 
@@ -169,7 +223,7 @@ export class ExercisesDatasetClient {
       parsedJson = JSON.parse(responseText) as unknown;
     } catch {
       throw new ServiceUnavailableException(
-        'Exercises dataset response is not valid JSON.',
+        "Exercises dataset response is not valid JSON.",
       );
     }
 
@@ -178,7 +232,7 @@ export class ExercisesDatasetClient {
     } catch (error: unknown) {
       if (error instanceof ZodError) {
         throw new ServiceUnavailableException({
-          message: 'Exercises dataset does not match the expected contract.',
+          message: "Exercises dataset does not match the expected contract.",
           issueCount: error.issues.length,
         });
       }
@@ -191,6 +245,6 @@ export class ExercisesDatasetClient {
       return null;
     }
 
-    return value.replace(/^W\//, '').replace(/^"|"$/g, '').slice(0, 80) || null;
+    return value.replace(/^W\//, "").replace(/^"|"$/g, "").slice(0, 80) || null;
   }
 }

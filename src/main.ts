@@ -1,20 +1,25 @@
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { Express, json, urlencoded } from 'express';
+import { Express, json, static as expressStatic, urlencoded } from 'express';
 import helmet from 'helmet';
+import { resolve } from 'path';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { requestIdMiddleware } from './common/middleware/request-id.middleware';
 import { env } from './config/env';
+import { bootstrapDatabase } from './database/database-bootstrap';
 
 async function bootstrap(): Promise<void> {
+  await bootstrapDatabase();
   const application = await NestFactory.create(AppModule, {
     bufferLogs: true,
     bodyParser: false,
   });
   // Nest types `getInstance()` as `any`; the adapter is Express in this build.
-  const expressApplication = application.getHttpAdapter().getInstance() as Express;
+  const expressApplication = application
+    .getHttpAdapter()
+    .getInstance() as Express;
 
   expressApplication.disable('x-powered-by');
 
@@ -23,9 +28,23 @@ async function bootstrap(): Promise<void> {
   }
 
   application.setGlobalPrefix(env.API_PREFIX);
+
+  // Local media adapter: serve the on-disk root under its public base path.
+  // Only the `local` provider is served in-process; remote providers serve
+  // their own assets. Mounted before the global prefix (static, not a route).
+  if (env.MEDIA_STORAGE_PROVIDER === 'local') {
+    const mediaMountPath = new URL(env.MEDIA_STORAGE_PUBLIC_BASE_URL).pathname;
+    expressApplication.use(
+      mediaMountPath,
+      expressStatic(resolve(env.MEDIA_STORAGE_LOCAL_ROOT)),
+    );
+  }
+
   application.use(requestIdMiddleware);
   application.use(json({ limit: env.REQUEST_BODY_LIMIT, strict: true }));
-  application.use(urlencoded({ limit: env.REQUEST_BODY_LIMIT, extended: false }));
+  application.use(
+    urlencoded({ limit: env.REQUEST_BODY_LIMIT, extended: false }),
+  );
   application.use(
     helmet({
       crossOriginResourcePolicy: { policy: 'same-site' },

@@ -12,9 +12,6 @@
 ##
 
 x-app-image: &app-image
-  build:
-    context: .
-    dockerfile: Dockerfile
   image: gym-sheet-backend:local
 
 x-app-environment: &app-environment
@@ -23,10 +20,48 @@ x-app-environment: &app-environment
   LOG_LEVEL: ${LOG_LEVEL:-info}
   BUSINESS_TIME_ZONE: ${BUSINESS_TIME_ZONE:-America/La_Paz}
   ACCESS_POLICY_VERSION: ${ACCESS_POLICY_VERSION:-2026-07-19}
+  WHATSAPP_MEMBERSHIP_PHONE: ${WHATSAPP_MEMBERSHIP_PHONE:?WHATSAPP_MEMBERSHIP_PHONE is required}
   SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
   SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
   SEED_ADMIN_FULL_NAME: ${SEED_ADMIN_FULL_NAME:-GymSheet Administrator}
   SEED_MOCK_PASSWORD: ${SEED_MOCK_PASSWORD:-}
+  # Forzado a false en runtime Docker: las imágenes de ejercicios ya están
+  # espejadas en almacenamiento local (yarn db:media:mirror). Reactivar el
+  # refresco volvería a apuntar exercise_media.url a raw.githubusercontent. Para
+  # reimportar el catálogo desde cero, ponlo temporalmente en "true".
+  EXERCISES_DATASET_ENABLED: "false"
+  EXERCISES_DATASET_JSON_URL: ${EXERCISES_DATASET_JSON_URL:-https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json}
+  EXERCISES_DATASET_ALLOWED_HOSTS: ${EXERCISES_DATASET_ALLOWED_HOSTS:-raw.githubusercontent.com}
+  EXERCISES_DATASET_TIMEOUT_MS: ${EXERCISES_DATASET_TIMEOUT_MS:-15000}
+  EXERCISES_DATASET_MAX_RESPONSE_BYTES: ${EXERCISES_DATASET_MAX_RESPONSE_BYTES:-25000000}
+  EXERCISES_DATASET_BATCH_SIZE: ${EXERCISES_DATASET_BATCH_SIZE:-100}
+  EXERCISES_DATASET_MIN_RECORDS: ${EXERCISES_DATASET_MIN_RECORDS:-1000}
+  EXERCISES_DATASET_REFRESH_INTERVAL_MS: ${EXERCISES_DATASET_REFRESH_INTERVAL_MS:-86400000}
+  EXERCISES_DATASET_REFRESH_RETRY_MS: ${EXERCISES_DATASET_REFRESH_RETRY_MS:-3600000}
+  EXERCISES_DATASET_IMPORT_MEDIA: ${EXERCISES_DATASET_IMPORT_MEDIA:-false}
+  EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED: ${EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED:-false}
+  EXERCISES_OPEN_MEDIA_ENABLED: ${EXERCISES_OPEN_MEDIA_ENABLED:-true}
+  EXERCISES_OPEN_MEDIA_JSON_URL: ${EXERCISES_OPEN_MEDIA_JSON_URL:-https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json}
+  EXERCISES_OPEN_MEDIA_BASE_URL: ${EXERCISES_OPEN_MEDIA_BASE_URL:-https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/}
+  # Canonical exercises source at boot (ADR-0006, option b). `github` requires
+  # EXERCISES_DATASET_ENABLED=true; the app fails fast otherwise (no silent fallback).
+  CANONICAL_EXERCISES_SOURCE: ${CANONICAL_EXERCISES_SOURCE:-seeders}
+
+  # Media storage (ports & adapters). `local` writes to the media-data volume the
+  # api service mounts at /app/storage/media and serves under the public base URL.
+  # Switch to cloudinary/s3 by implementing the adapter and setting the provider.
+  MEDIA_STORAGE_PROVIDER: ${MEDIA_STORAGE_PROVIDER:-local}
+  MEDIA_STORAGE_LOCAL_ROOT: ${MEDIA_STORAGE_LOCAL_ROOT:-/app/storage/media}
+  MEDIA_STORAGE_PUBLIC_BASE_URL: ${MEDIA_STORAGE_PUBLIC_BASE_URL:-http://localhost:3001/media}
+  MEDIA_UPLOAD_MAX_BYTES: ${MEDIA_UPLOAD_MAX_BYTES:-5242880}
+  MEDIA_ALLOWED_MIME: ${MEDIA_ALLOWED_MIME:-image/jpeg,image/png,image/webp,image/gif}
+  # `db:media:mirror` copies external media into local storage (forces JPEG/PNG).
+  MEDIA_MIRROR_ALLOWED_HOSTS: ${MEDIA_MIRROR_ALLOWED_HOSTS:-images.unsplash.com,raw.githubusercontent.com}
+  MEDIA_MIRROR_TIMEOUT_MS: ${MEDIA_MIRROR_TIMEOUT_MS:-15000}
+  CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+  CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+  CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+  CLOUDINARY_FOLDER: ${CLOUDINARY_FOLDER:-gymsheet}
 
   DB_HOST: postgres
   DB_PORT: 5432
@@ -96,12 +131,27 @@ services:
       resources:
         limits:
           memory: 1g
+          cpus: "1.0"
+        reservations:
+          memory: 256m
+          cpus: "0.25"
 
   redis:
     image: redis:7-alpine
     # Persistence is deliberately off: this instance holds only rate-limit
     # counters, which are safe to lose and cheap to rebuild.
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    command:
+      [
+        "redis-server",
+        "--save",
+        "",
+        "--appendonly",
+        "no",
+        "--maxmemory",
+        "256mb",
+        "--maxmemory-policy",
+        "allkeys-lru",
+      ]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -114,6 +164,9 @@ services:
       resources:
         limits:
           memory: 320m
+          cpus: "0.5"
+        reservations:
+          memory: 64m
 
   migrate:
     <<: *app-image
@@ -134,15 +187,25 @@ services:
 
   api:
     <<: [*app-image, *app-security]
+    build:
+      context: .
+      dockerfile: Dockerfile
     environment:
       <<: *app-environment
       PORT: 3000
+    # Writable media root for the local storage adapter, mounted over the
+    # read-only root filesystem. On a single host this volume can be shared by
+    # multiple api replicas; across hosts, use a remote provider (Cloudinary/S3)
+    # instead of local storage.
+    volumes:
+      - media-data:/app/storage/media
     # A fixed host port can only be bound by one replica, so `--scale api=N`
     # fails while this mapping is present. To run several replicas, remove it
     # and front the service with a reverse proxy on the compose network; the
     # shared Redis already makes rate limiting correct across replicas.
     ports:
-      - "${API_PORT:-3000}:3000"
+      # Keep local Node development on :3000; Docker publishes the API on :3001.
+      - "${API_PORT:-3001}:3000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -155,6 +218,9 @@ services:
         limits:
           memory: 512m
           cpus: "1.0"
+        reservations:
+          memory: 256m
+          cpus: "0.25"
     # SIGTERM is forwarded by tini and handled by enableShutdownHooks(); allow
     # in-flight requests to drain before the container is killed.
     stop_grace_period: 30s
@@ -193,6 +259,9 @@ services:
       resources:
         limits:
           memory: 384m
+          cpus: "0.5"
+        reservations:
+          memory: 128m
     stop_grace_period: 45s
 
   worker-notifications:
@@ -209,7 +278,31 @@ services:
       resources:
         limits:
           memory: 384m
+          cpus: "0.5"
+        reservations:
+          memory: 128m
+    stop_grace_period: 45s
+
+  worker-exercises-dataset:
+    <<: [*app-image, *app-security, *worker-runtime]
+    command: ["node", "dist/workers/exercises-dataset-refresh.worker.js"]
+    environment:
+      <<: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
+        reservations:
+          memory: 192m
     stop_grace_period: 45s
 
 volumes:
   postgres-data:
+  # Uploaded media for MEDIA_STORAGE_PROVIDER=local; persists across restarts.
+  media-data:

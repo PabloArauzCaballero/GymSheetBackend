@@ -227,8 +227,17 @@ export class WorkoutsService {
   ): Promise<WorkoutSetResponse> {
     const set = await this.getSetOwnedByUserOrFail(userId, setId);
     this.assertSessionInProgress(set.sessionExercise?.session?.status);
-    const updatedSet = await this.workoutsRepository.updateSet(set, input);
-    return mapWorkoutSetToResponse(updatedSet);
+    try {
+      const updatedSet = await this.workoutsRepository.updateSet(set, input);
+      return mapWorkoutSetToResponse(updatedSet);
+    } catch (error: unknown) {
+      if (error instanceof UniqueConstraintError) {
+        throw new ConflictException(
+          'Ya existe una serie con ese número para este ejercicio de la sesión.',
+        );
+      }
+      throw error;
+    }
   }
 
   async deleteSet(userId: string, setId: string): Promise<{ deleted: true }> {

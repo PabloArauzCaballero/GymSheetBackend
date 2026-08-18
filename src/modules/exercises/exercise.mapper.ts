@@ -17,6 +17,7 @@ import { UserExerciseModel } from './user-exercise.model';
 
 export type ExerciseMediaResponse = {
   id: string;
+  exerciseId: string;
   mediaType: ExerciseMediaType;
   provider: ExerciseMediaProvider;
   externalId: string | null;
@@ -79,6 +80,7 @@ export type FavoriteExerciseResponse = {
 export function mapExerciseMediaToResponse(media: ExerciseMediaModel): ExerciseMediaResponse {
   return {
     id: media.id,
+    exerciseId: media.exerciseId,
     mediaType: media.mediaType,
     provider: media.provider,
     externalId: media.externalId,

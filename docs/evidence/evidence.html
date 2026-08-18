@@ -1,0 +1,1136 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><style>
+    :root{--bg:#0b1020;--card:#141b2e;--line:#26314c;--txt:#e6ebf5;--muted:#93a0bd;--ok:#16a34a;--bad:#dc2626}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+    header{padding:28px 40px;border-bottom:1px solid var(--line);background:linear-gradient(90deg,#101830,#0b1020)}
+    header h1{margin:0 0 6px;font-size:24px} header .sub{color:var(--muted)}
+    section{padding:24px 40px} section h2{font-size:16px;letter-spacing:.12em;color:#a9b6d6;border-left:4px solid #3b82f6;padding-left:12px;margin:0 0 16px}
+    .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+    .chead{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
+    .badge{font-weight:700;padding:2px 8px;border-radius:6px;color:#fff} .badge.ok{background:var(--ok)} .badge.bad{background:var(--bad)}
+    .method{font-weight:700;font-size:12px;color:#c7d2fe} .path{color:#93c5fd;font-size:12px}
+    .title{padding:8px 14px 0;color:var(--muted)} pre{margin:8px 14px 14px;padding:12px;background:#0d1424;border-radius:8px;overflow:auto;max-height:340px;font:12px/1.45 ui-monospace,Consolas,monospace;color:#cbd5e1}
+    footer{padding:20px 40px;color:var(--muted);border-top:1px solid var(--line)}
+  </style></head><body>
+    <header><h1>GymSheet — Evidencia de capacidades (API en vivo)</h1>
+    <div class="sub">Respuestas reales capturadas con Playwright contra el stack Docker · 2026-08-13T00:00:00Z · 21 llamadas</div></header>
+    <section id="group-CLIENTE"><h2>CLIENTE</h2><div class="grid"><div class="card">
+            <div class="chead">
+              <span class="badge ok">200</span>
+              <span class="method GET">GET</span>
+              <code class="path">/muscle-groups</code>
+            </div>
+            <div class="title">Catálogo de grupos musculares (etiquetas)</div>
+            <pre>{
+  "ok": true,
+  "data": [
+    {
+      "code": "ARMS",
+      "nombre": "Brazos",
+      "region": "UPPER",
+      "descripcion": "Bíceps, tríceps y antebrazos: flexión/extensión de codo y muñeca.",
+      "musculos": [
+        {
+          "code": "BRACHIALIS",
+          "nombre": "Braquial anterior",
+          "nombreLatin": "Brachialis"
+        },
+        {
+          "code": "BRACHIORADIALIS",
+          "nombre": "Braquiorradial",
+          "nombreLatin": "Brachioradialis"
+        },
+        {
+          "code": "BICEPS_BRACHII",
+          "nombre": "Bíceps braquial",
+          "nombreLatin": "Biceps brachii"
+        },
+        "…(6 en total)"
+      ]
+    },
+    {
+      "code": "CORE",
+      "nombre": "Core / Abdomen",
+      "region": "CORE",
+      "descripcion": "Recto abdominal, oblicuos, transverso y flexores de cadera: estabilización del tronco.",
+      "musculos": [
+        {
+          "code": "HIP_FLEXORS",
+          "nombre": "Flexores de cadera",
+          "nombreLatin": "Iliopsoas"
+        },
+        {
+          "code": "OBLIQUES",
+          "nombre": "Oblicuos",
+          "nombreLatin": "Obliquus externus et internus"
+        },
+        {
+          "code": "RECTUS_ABDOMINIS",
+          "nombre": "Recto abdominal",
+          "nombreLatin": "Rectus abdominis"
+        },
+        "…(4 en total)"
+      ]
+    },
+    {
+      "code": "NECK",
+      "nombre": "Cuello",
+      "region": "UPPER",
+      "descripcion": "Musculatura cervical.",
+      "musculos": [
+        {
+          "code": "STERNOCLEIDOMASTOID",
+          "nombre": "Esternocleidomastoideo",
+          "nombreLatin": "Sternocleidomastoideus"
+        }
+      ]
+    },
+    "…(10 en total)"
+  ]
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">200</span>
+              <span class="method GET">GET</span>
+              <code class="path">/muscles</code>
+            </div>
+            <div class="title">Catálogo de músculos específicos</div>
+            <pre>{
+  "ok": true,
+  "data": [
+    {
+      "code": "ABDUCTORS",
+      "nombre": "Abductores de cadera",
+      "nombreLatin": "Gluteus medius et minimus",
+      "descripcion": "Abducción y estabilización de cadera.",
+      "grupo": {
+        "code": "LEGS",
+        "nombre": "Piernas"
+      }
+    },
+    {
+      "code": "ADDUCTORS",
+      "nombre": "Aductores",
+      "nombreLatin": "Musculi adductores",
+      "descripcion": "Aducción de cadera.",
+      "grupo": {
+        "code": "LEGS",
+        "nombre": "Piernas"
+      }
+    },
+    {
+      "code": "BRACHIALIS",
+      "nombre": "Braquial anterior",
+      "nombreLatin": "Brachialis",
+      "descripcion": "Flexor puro del codo.",
+      "grupo": {
+        "code": "ARMS",
+        "nombre": "Brazos"
+      }
+    },
+    "…(36 en total)"
+  ]
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">200</span>
+              <span class="method GET">GET</span>
+              <code class="path">/muscle-groups/CHEST/exercises?limit=5</code>
+            </div>
+            <div class="title">Buscar ejercicios por GRUPO muscular (pecho)</div>
+            <pre>{
+  "ok": true,
+  "data": {
+    "grupo": {
+      "code": "CHEST",
+      "nombre": "Pecho"
+    },
+    "total": 5,
+    "ejercicios": [
+      {
+        "id": "ab3091bc-73ba-41f1-a30e-64da8cdc9139",
+        "nombre": "archer push up",
+        "recomendado": 5,
+        "diversion": 4
+      },
+      {
+        "id": "afffef4d-7fab-42a0-a0fc-7322e9658c80",
+        "nombre": "burpee",
+        "recomendado": 5,
+        "diversion": 5
+      },
+      {
+        "id": "85e8be8b-0dc9-4b14-8e9b-3affd61a7e95",
+        "nombre": "clock push-up",
+        "recomendado": 5,
+        "diversion": 4
+      },
+      "…(5 en total)"
+    ]
+  }
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">200</span>
+              <span class="method GET">GET</span>
+              <code class="path">/muscles/BICEPS_BRACHII/exercises?limit=5</code>
+            </div>
+            <div class="title">Buscar ejercicios por MÚSCULO (bíceps)</div>
+            <pre>{
+  "ok": true,
+  "data": {
+    "musculo": {
+      "code": "BICEPS_BRACHII",
+      "nombre": "Bíceps braquial"
+    },
+    "total": 5,
+    "ejercicios": [
+      {
+        "id": "1b7f4f04-8b34-4461-846e-0c5afd6d3ac4",
+        "nombre": "back lever",
+        "rol": "PRIMARY",
+        "recomendado": 5,
+        "diversion": 4
+      },
+      {
+        "id": "819c3ae8-f5be-4fbd-9cf1-b5fe69b941de",
+        "nombre": "dumbbell step up single leg balance with bicep curl",
+        "rol": "PRIMARY",
+        "recomendado": 5,
+        "diversion": 4
+      },
+      {
+        "id": "ebb1e3eb-550d-4e6e-8618-74a459934c7d",
+        "nombre": "kipping muscle up",
+        "rol": "PRIMARY",
+        "recomendado": 5,
+        "diversion": 4
+      },
+      "…(5 en total)"
+    ]
+  }
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">200</span>
+              <span class="method GET">GET</span>
+              <code class="path">/exercises/ab3091bc-73ba-41f1-a30e-64da8cdc9139/muscles</code>
+            </div>
+            <div class="title">Etiquetas de músculo+grupo de un ejercicio</div>
+            <pre>{
+  "ok": true,
+  "data": {
+    "ejercicioId": "ab3091bc-73ba-41f1-a30e-64da8cdc9139",
+    "primarios": [
+      {
+        "code": "PECTORALIS_MAJOR",
+        "nombre": "Pectoral mayor",
+        "nombreLatin": "Pectoralis major",
+        "descripcion": "Principal motor del empuje horizontal y la aducción del húmero.",
+        "grupo": {
+          "code": "CHEST",
+          "nombre": "Pecho"
+        }
+      },
+      {
+        "code": "TRICEPS_BRACHII",
+        "nombre": "Tríceps braquial",
+        "nombreLatin": "Triceps brachii",
+        "descripcion": "Extensión del codo.",
+        "grupo": {
+          "code": "ARMS",
+          "nombre": "Brazos"
+        }
+      }
+    ],
+    "secundarios": [
+      {
+        "code": "DELTOID",
+        "nombre": "Deltoides",
+        "nombreLatin": "Deltoideus",
+        "descripcion": "Abducción y flexión del hombro (tres fascículos).",
+        "grupo": {
+          "code": "SHOULDERS",
+          "nombre": "Hombros"
+        }
+      },
+      {
+        "code": "RECTUS_ABDOMINIS",
+        "nombre": "Recto abdominal",
+        "nombreLatin": "Rectus abdominis",
+        "descripcion": "Flexión del tronco; estabilización.",
+        "grupo": {
+          "code": "CORE",
+          "nombre": "Core / Abdomen"
+        }
+      }
+    ],
+    "estabilizadores": [],
+    "rating": {
+      "recomendado": 5,
+      "diversion": 4,
+      "factores": {
+        "funRaw": 0.815,
+        "compound": 1,
+        "dynamism": 0.75,
+        "totalMuscles": 4,
+        "accessibility": 1,
+        "categoryValue": 0.7,
+        "recommendedRaw": 0.91
+      }
+    }
+  }
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">200</span>
+              <span class="method GET">GET</span>
+              <code class="path">/exercises/ab3091bc-73ba-41f1-a30e-64da8cdc9139/similar?limit=5</code>
+            </div>
+            <div class="title">Recomendaciones: ejercicios similares</div>
+            <pre>{
+  "ok": true,
+  "data": {
+    "ejercicioId": "ab3091bc-73ba-41f1-a30e-64da8cdc9139",
+    "total": 5,
+    "similares": [
+      {
+        "id": "d966956e-287a-4ad0-a049-7cc4d132ecc2",
+        "nombre": "plyo push up",
+        "musculosCompartidos": 4,
+        "primariosCompartidos": 2,
+        "recomendado": 5,
+        "diversion": 4
+      },
+      {
+        "id": "b2018909-bb29-47bd-9a38-61d05304cbd4",
+        "nombre": "kettlebell plyo push-up",
+        "musculosCompartidos": 4,
+        "primariosCompartidos": 2,
+        "recomendado": 5,
+        "diversion": 4
+      },
+      {
+        "id": "bdc39e52-4e0d-4553-a84e-ce78efbe7e87",
+        "nombre": "single arm push-up",
+        "musculosCompartidos": 4,
+        "primariosCompartidos": 2,
+        "recomendado": 5,
+        "diversion": 4
+      },
+      "…(5 en total)"
+    ]
+  }
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">200</span>
+              <span class="method PUT">PUT</span>
+              <code class="path">/me/exercises/ab3091bc-73ba-41f1-a30e-64da8cdc9139/preference</code>
+            </div>
+            <div class="title">Ratear un ejercicio (favorito + estrellas)</div>
+            <pre>{
+  "ok": true,
+  "data": {
+    "ejercicioId": "ab3091bc-73ba-41f1-a30e-64da8cdc9139",
+    "favorito": true,
+    "valoracionPersonal": 5,
+    "notas": null
+  }
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">200</span>
+              <span class="method GET">GET</span>
+              <code class="path">/me/exercises/preferences</code>
+            </div>
+            <div class="title">Mis preferencias / favoritos</div>
+            <pre>{
+  "ok": true,
+  "data": [
+    {
+      "ejercicioId": "ab3091bc-73ba-41f1-a30e-64da8cdc9139",
+      "favorito": true,
+      "valoracionPersonal": 5,
+      "notas": null
+    }
+  ]
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">201</span>
+              <span class="method POST">POST</span>
+              <code class="path">/exercises/personal</code>
+            </div>
+            <div class="title">Crear ejercicio personalizado propio</div>
+            <pre>{
+  "ok": true,
+  "data": {
+    "id": "3572d0f4-ff6c-4e23-bd2f-8cddbd631710",
+    "nombre": "Press demo directorio",
+    "grupoMuscular": "chest",
+    "descripcion": "Ejercicio personalizado creado por el cliente.",
+    "tipoEjercicio": "PERSONAL",
+    "createdByUsuarioId": "5652f0ce-f8d1-44a2-8fa4-55d2fa5d0a20",
+    "estado": "ACTIVO",
+    "dataSource": "CUSTOM",
+    "externalId": null,
+    "externalVersion": null,
+    "sourceUrl": null,
+    "sourceLicense": null,
+    "sourceAttribution": null,
+    "category": null,
+    "bodyPart": null,
+    "requiredEquipment": null,
+    "targetMuscle": "pectorals",
+    "synergistMuscleGroup": null,
+    "secondaryMuscles": [
+      "triceps",
+      "shoulders"
+    ],
+    "instructions": {},
+    "instructionSteps": {},
+    "metadata": {},
+    "equipment": [],
+    "media": []
+  }
+}</pre>
+          </div></div></section><section id="group-INSTRUCTOR"><h2>INSTRUCTOR</h2><div class="grid"><div class="card">
+            <div class="chead">
+              <span class="badge ok">201</span>
+              <span class="method POST">POST</span>
+              <code class="path">/routines</code>
+            </div>
+            <div class="title">Crear rutina para un entrenado</div>
+            <pre>{
+  "ok": true,
+  "data": {
+    "id": "2555fd11-50ff-47dc-8bfe-cb57f6920d27",
+    "nombre": "Rutina Demo Directorio",
+    "descripcion": null,
+    "creadoPorUsuarioId": "c7756af2-7c90-46df-a8e9-8fa122e67ed6",
+    "visibilidad": "PRIVATE",
+    "objetivo": null,
+    "estado": "ACTIVE",
+    "ejercicios": [],
+    "fechaCreacion": "2026-08-13T13:35:41.108Z",
+    "fechaActualizacion": "2026-08-13T13:35:41.108Z"
+  }
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">201</span>
+              <span class="method POST">POST</span>
+              <code class="path">/routines/2555fd11-50ff-47dc-8bfe-cb57f6920d27/exercises</code>
+            </div>
+            <div class="title">Agregar ejercicio a la rutina</div>
+            <pre>{
+  "ok": true,
+  "data": {
+    "id": "2555fd11-50ff-47dc-8bfe-cb57f6920d27",
+    "nombre": "Rutina Demo Directorio",
+    "descripcion": null,
+    "creadoPorUsuarioId": "c7756af2-7c90-46df-a8e9-8fa122e67ed6",
+    "visibilidad": "PRIVATE",
+    "objetivo": null,
+    "estado": "ACTIVE",
+    "ejercicios": [
+      {
+        "id": "720a5c66-5c77-4184-8a40-7fcc709e11e0",
+        "orden": 1,
+        "seriesObjetivo": 4,
+        "repsMin": 8,
+        "repsMax": 12,
+        "pesoObjetivoKg": null,
+        "rirObjetivo": null,
+        "descansoSeg": null,
+        "nota": null,
+        "ejercicio": {
+          "id": "ab3091bc-73ba-41f1-a30e-64da8cdc9139",
+          "nombre": "archer push up",
+          "grupoMuscular": "triceps",
+          "descripcion": "Comienza en posición de flexión de brazos con las manos un poco más separadas que el ancho de los hombros. Extiende un brazo hacia el lado, paralelo al suelo…",
+          "tipoEjercicio": "GLOBAL",
+          "createdByUsuarioId": null,
+          "estado": "ACTIVO",
+          "dataSource": "EXERCISES_DATASET",
+          "externalId": "3294",
+          "externalVersion": "f22e5285f9c4441f2282e3c18aaaa647ade8922512386929cead6bc2dc1469b0",
+          "sourceUrl": "https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json",
+          "sourceLicense": "MIT data; media governed by separate Gym Visual terms",
+          "sourceAttribution": "© Gym visual — https://gymvisual.com/",
+          "category": "chest",
+          "bodyPart": "chest",
+          "requiredEquipment": "body weight",
+          "targetMuscle": "pectorals",
+          "synergistMuscleGroup": "triceps",
+          "secondaryMuscles": [
+            "triceps",
+            "shoulders",
+            "core"
+          ],
+          "instructions": {
+            "en": "Start in a push-up position with your hands slightly wider than shoulder-width apart. Extend one arm straight out to the side, parallel to the ground. Lower …",
+            "es": "Comienza en posición de flexión de brazos con las manos un poco más separadas que el ancho de los hombros. Extiende un brazo hacia el lado, paralelo al suelo…",
+            "fr": "Commence en position de pompe, les mains un peu plus écartées que la largeur des épaules. Étends un bras droit sur le côté, parallèle au sol. Abaisse ton cor…",
+            "hi": "अपने हाथों को कंधे की चौड़ाई से थोड़ा चौड़ा रखते हुए पुश-अप स्थिति से शुरुआत करें। एक हाथ को ज़मीन के समानांतर बगल की ओर सीधा फैलाएँ। अपनी कोहनियों को मोड़कर…",
+            "it": "Inizia in una posizione push-up con le mani leggermente più larghe della larghezza delle spalle. Estendi un braccio di lato, parallelo al suolo. Abbassa il c…",
+            "ko": "팔굽혀펴기 자세로 시작하되 손이 어깨 넓이보다 약간 넓게 벌어집니다. 한쪽 팔을 곧게 펴 바닥과 평행하게 옆으로 뻗습니다. 팔꿈치를 구부려 몸을 내리되 등을 곧게 펴고 복근을 긴장시킵니다. 시작 자세로 밀어 올립니다. 반대쪽 팔을 옆으로 펴 같은 동작을 반복합니다. 원하는 반복 횟…",
+            "pl": "Ustaw się w pozycji pompki z dłońmi nieco szerzej niż na szerokość barków. Wyciągnij jedną rękę prosto w bok, równolegle do podłogi. Opuść ciało, uginając ło…",
+            "ru": "Начните с позиции отжимания, поставив руки чуть шире ширины плеч. Вытяните одну руку прямо в сторону, параллельно земле. Опустите тело, согнув локти, сохраня…",
+            "tr": "Elleriniz omuz genişliğinden biraz daha geniş olacak şekilde şınav pozisyonuna başlayın. Bir kolunuzu yere paralel olarak yana doğru uzatın. Dirseklerinizi b…",
+            "zh": "从俯卧撑位置开始，双手分开略宽于肩宽。 将一只手臂伸直至一侧，与地面平行。 弯曲肘部降低身体，保持背部挺直，核心参与。 推回到起始位置。 在另一侧重复上述步骤，将另一只手臂伸出到一侧。 继续交替进行所需的重复次数。"
+          },
+          "instructionSteps": {
+            "en": [
+              "Start in a push-up position with your hands slightly wider than shoulder-width apart.",
+              "Extend one arm straight out to the side, parallel to the ground.",
+              "Lower your body by bending your elbows, keeping your back straight and core engaged.",
+              "…(6 en total)"
+            ],
+            "es": [
+              "Comienza en posición de flexión de brazos con las manos un poco más separadas que el ancho de los hombros.",
+              "Extiende un brazo hacia el lado, paralelo al suelo.",
+              "Baja el cuerpo flexionando los codos, manteniendo la espalda recta y el core activado.",
+              "…(6 en total)"
+            ],
+            "fr": [
+              "Commence en position de pompe, les mains un peu plus écartées que la largeur des épaules.",
+              "Étends un bras droit sur le côté, parallèle au sol.",
+              "Abaisse ton corps en fléchissant tes coudes, en gardant ton dos droit et ta sangle abdominale gainée.",
+              "…(6 en total)"
+            ],
+            "hi": [
+              "अपने हाथों को कंधे की चौड़ाई से थोड़ा चौड़ा रखते हुए पुश-अप स्थिति से शुरुआत करें।",
+              "एक हाथ को ज़मीन के समानांतर बगल की ओर सीधा फैलाएँ।",
+              "अपनी कोहनियों को मोड़कर, अपनी पीठ को सीधा और कोर को व्यस्त रखते हुए अपने शरीर को नीचे लाएँ।",
+              "…(6 en total)"
+            ],
+            "it": [
+              "Inizia in una posizione push-up con le mani leggermente più larghe della larghezza delle spalle.",
+              "Estendi un braccio di lato, parallelo al suolo.",
+              "Abbassa il corpo piegando i gomiti, mantenendo la schiena dritta e il core impegnato.",
+              "…(6 en total)"
+            ],
+            "ko": [
+              "팔굽혀펴기 자세로 시작하되 손이 어깨 넓이보다 약간 넓게 벌어집니다.",
+              "한쪽 팔을 곧게 펴 바닥과 평행하게 옆으로 뻗습니다.",
+              "팔꿈치를 구부려 몸을 내리되 등을 곧게 펴고 복근을 긴장시킵니다.",
+              "…(6 en total)"
+            ],
+            "pl": [
+              "Ustaw się w pozycji pompki z dłońmi nieco szerzej niż na szerokość barków.",
+              "Wyciągnij jedną rękę prosto w bok, równolegle do podłogi.",
+              "Opuść ciało, uginając łokcie, utrzymując proste plecy i napięty brzuch.",
+              "…(6 en total)"
+            ],
+            "ru": [
+              "Начните с позиции отжимания, поставив руки чуть шире ширины плеч.",
+              "Вытяните одну руку прямо в сторону, параллельно земле.",
+              "Опустите тело, согнув локти, сохраняя спину прямой и напряженным корпусом.",
+              "…(6 en total)"
+            ],
+            "tr": [
+              "Elleriniz omuz genişliğinden biraz daha geniş olacak şekilde şınav pozisyonuna başlayın.",
+              "Bir kolunuzu yere paralel olarak yana doğru uzatın.",
+              "Dirseklerinizi bükerek, sırtınızı düz ve göbek bölgenizi meşgul tutarak vücudunuzu indirin.",
+              "…(6 en total)"
+            ],
+            "zh": [
+              "从俯卧撑位置开始，双手分开略宽于肩宽。",
+              "将一只手臂伸直至一侧，与地面平行。",
+              "弯曲肘部降低身体，保持背部挺直，核心参与。",
+              "…(6 en total)"
+            ]
+          },
+          "metadata": {
+            "mediaId": "A9qxk2F",
+            "contentSha256": "656634224b8977b99a6d765470ee123260d4979715eaa4e7c0b7c8bb0d79f93d",
+            "datasetCreatedAt": "2026-03-18T12:31:32.855098+00:00"
+          },
+          "equipment": [],
+          "media": []
+        }
+      }
+    ],
+    "fechaCreacion": "2026-08-13T13:35:41.108Z",
+    "fechaActualizacion": "2026-08-13T13:35:41.108Z"
+  }
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">201</span>
+              <span class="method POST">POST</span>
+              <code class="path">/routines/2555fd11-50ff-47dc-8bfe-cb57f6920d27/assign</code>
+            </div>
+            <div class="title">Asignar la rutina al entrenado</div>
+            <pre>{
+  "ok": true,
+  "data": {
+    "id": "869c9bac-fd27-4c54-aaf9-d00a59e1208a",
+    "rutinaId": "2555fd11-50ff-47dc-8bfe-cb57f6920d27",
+    "clienteUsuarioId": "5652f0ce-f8d1-44a2-8fa4-55d2fa5d0a20",
+    "asignadoPorUsuarioId": "c7756af2-7c90-46df-a8e9-8fa122e67ed6",
+    "estado": "ACTIVE",
+    "fechaProgramada": null,
+    "diasSemana": [],
+    "nota": null,
+    "clienteNombre": "Athlete Mock",
+    "clienteEmail": "athlete.mock@gymsheet.local",
+    "rutina": {
+      "id": "2555fd11-50ff-47dc-8bfe-cb57f6920d27",
+      "nombre": "Rutina Demo Directorio",
+      "descripcion": null,
+      "creadoPorUsuarioId": "c7756af2-7c90-46df-a8e9-8fa122e67ed6",
+      "visibilidad": "SHARED",
+      "objetivo": null,
+      "estado": "ACTIVE",
+      "ejercicios": [
+        {
+          "id": "720a5c66-5c77-4184-8a40-7fcc709e11e0",
+          "orden": 1,
+          "seriesObjetivo": 4,
+          "repsMin": 8,
+          "repsMax": 12,
+          "pesoObjetivoKg": null,
+          "rirObjetivo": null,
+          "descansoSeg": null,
+          "nota": null,
+          "ejercicio": {
+            "id": "ab3091bc-73ba-41f1-a30e-64da8cdc9139",
+            "nombre": "archer push up",
+            "grupoMuscular": "triceps",
+            "descripcion": "Comienza en posición de flexión de brazos con las manos un poco más separadas que el ancho de los hombros. Extiende un brazo hacia el lado, paralelo al suelo…",
+            "tipoEjercicio": "GLOBAL",
+            "createdByUsuarioId": null,
+            "estado": "ACTIVO",
+            "dataSource": "EXERCISES_DATASET",
+            "externalId": "3294",
+            "externalVersion": "f22e5285f9c4441f2282e3c18aaaa647ade8922512386929cead6bc2dc1469b0",
+            "sourceUrl": "https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json",
+            "sourceLicense": "MIT data; media governed by separate Gym Visual terms",
+            "sourceAttribution": "© Gym visual — https://gymvisual.com/",
+            "category": "chest",
+            "bodyPart": "chest",
+            "requiredEquipment": "body weight",
+            "targetMuscle": "pectorals",
+            "synergistMuscleGroup": "triceps",
+            "secondaryMuscles": [
+              "triceps",
+              "shoulders",
+              "core"
+            ],
+            "instructions": {
+              "en": "Start in a push-up position with your hands slightly wider than shoulder-width apart. Extend one arm straight out to the side, parallel to the ground. Lower …",
+              "es": "Comienza en posición de flexión de brazos con las manos un poco más separadas que el ancho de los hombros. Extiende un brazo hacia el lado, paralelo al suelo…",
+              "fr": "Commence en position de pompe, les mains un peu plus écartées que la largeur des épaules. Étends un bras droit sur le côté, parallèle au sol. Abaisse ton cor…",
+              "hi": "अपने हाथों को कंधे की चौड़ाई से थोड़ा चौड़ा रखते हुए पुश-अप स्थिति से शुरुआत करें। एक हाथ को ज़मीन के समानांतर बगल की ओर सीधा फैलाएँ। अपनी कोहनियों को मोड़कर…",
+              "it": "Inizia in una posizione push-up con le mani leggermente più larghe della larghezza delle spalle. Estendi un braccio di lato, parallelo al suolo. Abbassa il c…",
+              "ko": "팔굽혀펴기 자세로 시작하되 손이 어깨 넓이보다 약간 넓게 벌어집니다. 한쪽 팔을 곧게 펴 바닥과 평행하게 옆으로 뻗습니다. 팔꿈치를 구부려 몸을 내리되 등을 곧게 펴고 복근을 긴장시킵니다. 시작 자세로 밀어 올립니다. 반대쪽 팔을 옆으로 펴 같은 동작을 반복합니다. 원하는 반복 횟…",
+              "pl": "Ustaw się w pozycji pompki z dłońmi nieco szerzej niż na szerokość barków. Wyciągnij jedną rękę prosto w bok, równolegle do podłogi. Opuść ciało, uginając ło…",
+              "ru": "Начните с позиции отжимания, поставив руки чуть шире ширины плеч. Вытяните одну руку прямо в сторону, параллельно земле. Опустите тело, согнув локти, сохраня…",
+              "tr": "Elleriniz omuz genişliğinden biraz daha geniş olacak şekilde şınav pozisyonuna başlayın. Bir kolunuzu yere paralel olarak yana doğru uzatın. Dirseklerinizi b…",
+              "zh": "从俯卧撑位置开始，双手分开略宽于肩宽。 将一只手臂伸直至一侧，与地面平行。 弯曲肘部降低身体，保持背部挺直，核心参与。 推回到起始位置。 在另一侧重复上述步骤，将另一只手臂伸出到一侧。 继续交替进行所需的重复次数。"
+            },
+            "instructionSteps": {
+              "en": [
+                "Start in a push-up position with your hands slightly wider than shoulder-width apart.",
+                "Extend one arm straight out to the side, parallel to the ground.",
+                "Lower your body by bending your elbows, keeping your back straight and core engaged.",
+                "…(6 en total)"
+              ],
+              "es": [
+                "Comienza en posición de flexión de brazos con las manos un poco más separadas que el ancho de los hombros.",
+                "Extiende un brazo hacia el lado, paralelo al suelo.",
+                "Baja el cuerpo flexionando los codos, manteniendo la espalda recta y el core activado.",
+                "…(6 en total)"
+              ],
+              "fr": [
+                "Commence en position de pompe, les mains un peu plus écartées que la largeur des épaules.",
+                "Étends un bras droit sur le côté, parallèle au sol.",
+                "Abaisse ton corps en fléchissant tes coudes, en gardant ton dos droit et ta sangle abdominale gainée.",
+                "…(6 en total)"
+              ],
+              "hi": [
+                "अपने हाथों को कंधे की चौड़ाई से थोड़ा चौड़ा रखते हुए पुश-अप स्थिति से शुरुआत करें।",
+                "एक हाथ को ज़मीन के समानांतर बगल की ओर सीधा फैलाएँ।",
+                "अपनी कोहनियों को मोड़कर, अपनी पीठ को सीधा और कोर को व्यस्त रखते हुए अपने शरीर को नीचे लाएँ।",
+                "…(6 en total)"
+              ],
+              "it": [
+                "Inizia in una posizione push-up con le mani leggermente più larghe della larghezza delle spalle.",
+                "Estendi un braccio di lato, parallelo al suolo.",
+                "Abbassa il corpo piegando i gomiti, mantenendo la schiena dritta e il core impegnato.",
+                "…(6 en total)"
+              ],
+              "ko": [
+                "팔굽혀펴기 자세로 시작하되 손이 어깨 넓이보다 약간 넓게 벌어집니다.",
+                "한쪽 팔을 곧게 펴 바닥과 평행하게 옆으로 뻗습니다.",
+                "팔꿈치를 구부려 몸을 내리되 등을 곧게 펴고 복근을 긴장시킵니다.",
+                "…(6 en total)"
+              ],
+              "pl": [
+                "Ustaw się w pozycji pompki z dłońmi nieco szerzej niż na szerokość barków.",
+                "Wyciągnij jedną rękę prosto w bok, równolegle do podłogi.",
+                "Opuść ciało, uginając łokcie, utrzymując proste plecy i napięty brzuch.",
+                "…(6 en total)"
+              ],
+              "ru": [
+                "Начните с позиции отжимания, поставив руки чуть шире ширины плеч.",
+                "Вытяните одну руку прямо в сторону, параллельно земле.",
+                "Опустите тело, согнув локти, сохраняя спину прямой и напряженным корпусом.",
+                "…(6 en total)"
+              ],
+              "tr": [
+                "Elleriniz omuz genişliğinden biraz daha geniş olacak şekilde şınav pozisyonuna başlayın.",
+                "Bir kolunuzu yere paralel olarak yana doğru uzatın.",
+                "Dirseklerinizi bükerek, sırtınızı düz ve göbek bölgenizi meşgul tutarak vücudunuzu indirin.",
+                "…(6 en total)"
+              ],
+              "zh": [
+                "从俯卧撑位置开始，双手分开略宽于肩宽。",
+                "将一只手臂伸直至一侧，与地面平行。",
+                "弯曲肘部降低身体，保持背部挺直，核心参与。",
+                "…(6 en total)"
+              ]
+            },
+            "metadata": {
+              "mediaId": "A9qxk2F",
+              "contentSha256": "656634224b8977b99a6d765470ee123260d4979715eaa4e7c0b7c8bb0d79f93d",
+              "datasetCreatedAt": "2026-03-18T12:31:32.855098+00:00"
+            },
+            "equipment": [],
+            "media": []
+          }
+        }
+      ],
+      "fechaCreacion": "2026-08-13T13:35:41.108Z",
+      "fechaActualizacion": "2026-08-13T13:35:41.419Z"
+    },
+    "fechaCreacion": "2026-08-13T13:35:41.451Z"
+  }
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">200</span>
+              <span class="method GET">GET</span>
+              <code class="path">/routines/assignments/me</code>
+            </div>
+            <div class="title">Vista del ENTRENADO: sus rutinas asignadas (le aparece)</div>
+            <pre>{
+  "ok": true,
+  "data": [
+    {
+      "id": "869c9bac-fd27-4c54-aaf9-d00a59e1208a",
+      "rutinaId": "2555fd11-50ff-47dc-8bfe-cb57f6920d27",
+      "clienteUsuarioId": "5652f0ce-f8d1-44a2-8fa4-55d2fa5d0a20",
+      "asignadoPorUsuarioId": "c7756af2-7c90-46df-a8e9-8fa122e67ed6",
+      "estado": "ACTIVE",
+      "fechaProgramada": null,
+      "diasSemana": [],
+      "nota": null,
+      "clienteNombre": "Athlete Mock",
+      "clienteEmail": "athlete.mock@gymsheet.local",
+      "rutina": {
+        "id": "2555fd11-50ff-47dc-8bfe-cb57f6920d27",
+        "nombre": "Rutina Demo Directorio",
+        "descripcion": null,
+        "creadoPorUsuarioId": "c7756af2-7c90-46df-a8e9-8fa122e67ed6",
+        "visibilidad": "SHARED",
+        "objetivo": null,
+        "estado": "ACTIVE",
+        "ejercicios": [
+          {
+            "id": "720a5c66-5c77-4184-8a40-7fcc709e11e0",
+            "orden": 1,
+            "seriesObjetivo": 4,
+            "repsMin": 8,
+            "repsMax": 12,
+            "pesoObjetivoKg": null,
+            "rirObjetivo": null,
+            "descansoSeg": null,
+            "nota": null,
+            "ejercicio": {
+              "id": "ab3091bc-73ba-41f1-a30e-64da8cdc9139",
+              "nombre": "archer push up",
+              "grupoMuscular": "triceps",
+              "descripcion": "Comienza en posición de flexión de brazos con las manos un poco más separadas que el ancho de los hombros. Extiende un brazo hacia el lado, paralelo al suelo…",
+              "tipoEjercicio": "GLOBAL",
+              "createdByUsuarioId": null,
+              "estado": "ACTIVO",
+              "dataSource": "EXERCISES_DATASET",
+              "externalId": "3294",
+              "externalVersion": "f22e5285f9c4441f2282e3c18aaaa647ade8922512386929cead6bc2dc1469b0",
+              "sourceUrl": "https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json",
+              "sourceLicense": "MIT data; media governed by separate Gym Visual terms",
+              "sourceAttribution": "© Gym visual — https://gymvisual.com/",
+              "category": "chest",
+              "bodyPart": "chest",
+              "requiredEquipment": "body weight",
+              "targetMuscle": "pectorals",
+              "synergistMuscleGroup": "triceps",
+              "secondaryMuscles": [
+                "triceps",
+                "shoulders",
+                "core"
+              ],
+              "instructions": {
+                "en": "Start in a push-up position with your hands slightly wider than shoulder-width apart. Extend one arm straight out to the side, parallel to the ground. Lower …",
+                "es": "Comienza en posición de flexión de brazos con las manos un poco más separadas que el ancho de los hombros. Extiende un brazo hacia el lado, paralelo al suelo…",
+                "fr": "Commence en position de pompe, les mains un peu plus écartées que la largeur des épaules. Étends un bras droit sur le côté, parallèle au sol. Abaisse ton cor…",
+                "hi": "अपने हाथों को कंधे की चौड़ाई से थोड़ा चौड़ा रखते हुए पुश-अप स्थिति से शुरुआत करें। एक हाथ को ज़मीन के समानांतर बगल की ओर सीधा फैलाएँ। अपनी कोहनियों को मोड़कर…",
+                "it": "Inizia in una posizione push-up con le mani leggermente più larghe della larghezza delle spalle. Estendi un braccio di lato, parallelo al suolo. Abbassa il c…",
+                "ko": "팔굽혀펴기 자세로 시작하되 손이 어깨 넓이보다 약간 넓게 벌어집니다. 한쪽 팔을 곧게 펴 바닥과 평행하게 옆으로 뻗습니다. 팔꿈치를 구부려 몸을 내리되 등을 곧게 펴고 복근을 긴장시킵니다. 시작 자세로 밀어 올립니다. 반대쪽 팔을 옆으로 펴 같은 동작을 반복합니다. 원하는 반복 횟…",
+                "pl": "Ustaw się w pozycji pompki z dłońmi nieco szerzej niż na szerokość barków. Wyciągnij jedną rękę prosto w bok, równolegle do podłogi. Opuść ciało, uginając ło…",
+                "ru": "Начните с позиции отжимания, поставив руки чуть шире ширины плеч. Вытяните одну руку прямо в сторону, параллельно земле. Опустите тело, согнув локти, сохраня…",
+                "tr": "Elleriniz omuz genişliğinden biraz daha geniş olacak şekilde şınav pozisyonuna başlayın. Bir kolunuzu yere paralel olarak yana doğru uzatın. Dirseklerinizi b…",
+                "zh": "从俯卧撑位置开始，双手分开略宽于肩宽。 将一只手臂伸直至一侧，与地面平行。 弯曲肘部降低身体，保持背部挺直，核心参与。 推回到起始位置。 在另一侧重复上述步骤，将另一只手臂伸出到一侧。 继续交替进行所需的重复次数。"
+              },
+              "instructionSteps": {
+                "en": [
+                  "Start in a push-up position with your hands slightly wider than shoulder-width apart.",
+                  "Extend one arm straight out to the side, parallel to the ground.",
+                  "Lower your body by bending your elbows, keeping your back straight and core engaged.",
+                  "…(6 en total)"
+                ],
+                "es": [
+                  "Comienza en posición de flexión de brazos con las manos un poco más separadas que el ancho de los hombros.",
+                  "Extiende un brazo hacia el lado, paralelo al suelo.",
+                  "Baja el cuerpo flexionando los codos, manteniendo la espalda recta y el core activado.",
+                  "…(6 en total)"
+                ],
+                "fr": [
+                  "Commence en position de pompe, les mains un peu plus écartées que la largeur des épaules.",
+                  "Étends un bras droit sur le côté, parallèle au sol.",
+                  "Abaisse ton corps en fléchissant tes coudes, en gardant ton dos droit et ta sangle abdominale gainée.",
+                  "…(6 en total)"
+                ],
+                "hi": [
+                  "अपने हाथों को कंधे की चौड़ाई से थोड़ा चौड़ा रखते हुए पुश-अप स्थिति से शुरुआत करें।",
+                  "एक हाथ को ज़मीन के समानांतर बगल की ओर सीधा फैलाएँ।",
+                  "अपनी कोहनियों को मोड़कर, अपनी पीठ को सीधा और कोर को व्यस्त रखते हुए अपने शरीर को नीचे लाएँ।",
+                  "…(6 en total)"
+                ],
+                "it": [
+                  "Inizia in una posizione push-up con le mani leggermente più larghe della larghezza delle spalle.",
+                  "Estendi un braccio di lato, parallelo al suolo.",
+                  "Abbassa il corpo piegando i gomiti, mantenendo la schiena dritta e il core impegnato.",
+                  "…(6 en total)"
+                ],
+                "ko": [
+                  "팔굽혀펴기 자세로 시작하되 손이 어깨 넓이보다 약간 넓게 벌어집니다.",
+                  "한쪽 팔을 곧게 펴 바닥과 평행하게 옆으로 뻗습니다.",
+                  "팔꿈치를 구부려 몸을 내리되 등을 곧게 펴고 복근을 긴장시킵니다.",
+                  "…(6 en total)"
+                ],
+                "pl": [
+                  "Ustaw się w pozycji pompki z dłońmi nieco szerzej niż na szerokość barków.",
+                  "Wyciągnij jedną rękę prosto w bok, równolegle do podłogi.",
+                  "Opuść ciało, uginając łokcie, utrzymując proste plecy i napięty brzuch.",
+                  "…(6 en total)"
+                ],
+                "ru": [
+                  "Начните с позиции отжимания, поставив руки чуть шире ширины плеч.",
+                  "Вытяните одну руку прямо в сторону, параллельно земле.",
+                  "Опустите тело, согнув локти, сохраняя спину прямой и напряженным корпусом.",
+                  "…(6 en total)"
+                ],
+                "tr": [
+                  "Elleriniz omuz genişliğinden biraz daha geniş olacak şekilde şınav pozisyonuna başlayın.",
+                  "Bir kolunuzu yere paralel olarak yana doğru uzatın.",
+                  "Dirseklerinizi bükerek, sırtınızı düz ve göbek bölgenizi meşgul tutarak vücudunuzu indirin.",
+                  "…(6 en total)"
+                ],
+                "zh": [
+                  "从俯卧撑位置开始，双手分开略宽于肩宽。",
+                  "将一只手臂伸直至一侧，与地面平行。",
+                  "弯曲肘部降低身体，保持背部挺直，核心参与。",
+                  "…(6 en total)"
+                ]
+              },
+              "metadata": {
+                "mediaId": "A9qxk2F",
+                "contentSha256": "656634224b8977b99a6d765470ee123260d4979715eaa4e7c0b7c8bb0d79f93d",
+                "datasetCreatedAt": "2026-03-18T12:31:32.855098+00:00"
+              },
+              "equipment": [],
+              "media": []
+            }
+          }
+        ],
+        "fechaCreacion": "2026-08-13T13:35:41.108Z",
+        "fechaActualizacion": "2026-08-13T13:35:41.419Z"
+      },
+      "fechaCreacion": "2026-08-13T13:35:41.451Z"
+    }
+  ]
+}</pre>
+          </div></div></section><section id="group-ADMINISTRADOR"><h2>ADMINISTRADOR</h2><div class="grid"><div class="card">
+            <div class="chead">
+              <span class="badge ok">201</span>
+              <span class="method POST">POST</span>
+              <code class="path">/admin/notifications/broadcast</code>
+            </div>
+            <div class="title">Publicidad in-app: lanzar campaña (broadcast)</div>
+            <pre>{
+  "ok": true,
+  "data": {
+    "campaignId": "1d00be64-9487-447e-9b27-fd32eb624fa9",
+    "segment": "ACTIVE_CLIENTS",
+    "recipients": 9,
+    "created": 9,
+    "duplicates": 0
+  }
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">200</span>
+              <span class="method GET">GET</span>
+              <code class="path">/admin/facilities/branches</code>
+            </div>
+            <div class="title">Sucursales: listar</div>
+            <pre>{
+  "ok": true,
+  "data": {
+    "items": [],
+    "page": 1,
+    "pageSize": 25,
+    "total": 0,
+    "totalPages": 0
+  }
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">201</span>
+              <span class="method POST">POST</span>
+              <code class="path">/admin/facilities/branches</code>
+            </div>
+            <div class="title">Sucursales: crear (CRUD)</div>
+            <pre>{
+  "ok": true,
+  "data": {
+    "id": "b35b62ce-5584-43c6-a363-3df95ea0e209",
+    "codigo": "DEMO-DIR",
+    "nombre": "Sucursal Demo Directorio",
+    "descripcion": null,
+    "zonaHoraria": "America/La_Paz",
+    "estado": "ACTIVE",
+    "metadata": {}
+  }
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">200</span>
+              <span class="method DELETE">DELETE</span>
+              <code class="path">/admin/facilities/branches/b35b62ce-5584-43c6-a363-3df95ea0e209</code>
+            </div>
+            <div class="title">Sucursales: baja (CRUD delete)</div>
+            <pre>{
+  "ok": true,
+  "data": {
+    "id": "b35b62ce-5584-43c6-a363-3df95ea0e209",
+    "codigo": "DEMO-DIR",
+    "nombre": "Sucursal Demo Directorio",
+    "descripcion": null,
+    "zonaHoraria": "America/La_Paz",
+    "estado": "INACTIVE",
+    "metadata": {}
+  }
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">200</span>
+              <span class="method GET">GET</span>
+              <code class="path">/equipment</code>
+            </div>
+            <div class="title">Maquinaria/equipamiento: catálogo</div>
+            <pre>{
+  "ok": true,
+  "data": []
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">200</span>
+              <span class="method GET">GET</span>
+              <code class="path">/admin/membership/features</code>
+            </div>
+            <div class="title">Catálogo de servicios: listar</div>
+            <pre>{
+  "ok": true,
+  "data": [
+    {
+      "id": "285630f5-5722-434c-82a1-f684fb637f17",
+      "code": "GYM_ACCESS",
+      "nombre": "Acceso al gimnasio",
+      "descripcion": "Ingreso a instalaciones según alcance del plan.",
+      "estado": "ACTIVE"
+    },
+    {
+      "id": "3f7928c7-58a1-4438-a982-8b2b2fc76549",
+      "code": "EXERCISE_LIBRARY",
+      "nombre": "Biblioteca de ejercicios",
+      "descripcion": "Acceso al catálogo completo de ejercicios.",
+      "estado": "ACTIVE"
+    },
+    {
+      "id": "1d38f6dc-422d-4dff-b5a2-27d0f6f1796e",
+      "code": "WORKOUT_TRACKING",
+      "nombre": "Seguimiento de entrenamientos",
+      "descripcion": "Registro e historial de sesiones.",
+      "estado": "ACTIVE"
+    }
+  ]
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">201</span>
+              <span class="method POST">POST</span>
+              <code class="path">/admin/membership/features</code>
+            </div>
+            <div class="title">Catálogo de servicios: crear (CRUD)</div>
+            <pre>{
+  "ok": true,
+  "data": {
+    "id": "635e693d-fecb-4b66-aaed-ef35dd8f8757",
+    "code": "DEMO_SERVICE",
+    "nombre": "Servicio demo directorio",
+    "descripcion": null,
+    "estado": "ACTIVE"
+  }
+}</pre>
+          </div><div class="card">
+            <div class="chead">
+              <span class="badge ok">200</span>
+              <span class="method GET">GET</span>
+              <code class="path">/admin/membership/plans</code>
+            </div>
+            <div class="title">Planes (servicios vendibles)</div>
+            <pre>{
+  "ok": true,
+  "data": [
+    {
+      "id": "b74e65eb-c8c4-4236-824f-9d640d2dfe0b",
+      "publicId": "7e6e2d13-ed59-459b-8d55-e29355c9b657",
+      "codigo": "DEV-MONTHLY",
+      "nombre": "Plan mensual · Desarrollo",
+      "descripcion": "Precio y contenido exclusivos para pruebas beta.",
+      "tipo": "MONTHLY",
+      "duracionDias": 30,
+      "diasRecordatorio": [
+        7,
+        3,
+        1,
+        "…(4 en total)"
+      ],
+      "estado": "ACTIVE",
+      "precio": 120,
+      "moneda": "BOB",
+      "beneficios": [
+        "Acceso al gimnasio",
+        "Biblioteca de ejercicios",
+        "Seguimiento de entrenamientos"
+      ],
+      "orden": 1,
+      "disponibleNuevo": true,
+      "disponibleRenovacion": true,
+      "disponibleExtension": true,
+      "imagen": {
+        "id": "84fa28f2-e92c-4b49-b5a7-8b9a24c24559",
+        "publicId": "51400d57-cc51-4b79-9fca-2f93f8a455f8",
+        "url": "http://localhost:3001/media/6857ba265bdd5bdd1639f555ffceccf896e7e17128ce42bb7302b4bef718d7e0.jpg",
+        "altText": "Zona de entrenamiento con máquinas y pesas",
+        "width": 1200,
+        "height": 800,
+        "licencia": "Unsplash License",
+        "atribucion": "Photo from Unsplash; source retained in source_url."
+      },
+      "alcances": [],
+      "metadata": {
+        "developmentOnly": true
+      }
+    },
+    {
+      "id": "d2bee5c0-44fa-4b56-9be8-7753e3cf0739",
+      "publicId": "37c9c9a1-41d1-4c28-abed-6e5da052913f",
+      "codigo": "DEV-QUARTERLY",
+      "nombre": "Plan trimestral · Desarrollo",
+      "descripcion": "Precio y contenido exclusivos para pruebas beta.",
+      "tipo": "QUARTERLY",
+      "duracionDias": 90,
+      "diasRecordatorio": [
+        7,
+        3,
+        1,
+        "…(4 en total)"
+      ],
+      "estado": "ACTIVE",
+      "precio": 320,
+      "moneda": "BOB",
+      "beneficios": [
+        "Todo el plan mensual",
+        "Vigencia trimestral"
+      ],
+      "orden": 2,
+      "disponibleNuevo": true,
+      "disponibleRenovacion": true,
+      "disponibleExtension": true,
+      "imagen": {
+        "id": "4cfc3d25-c95b-40df-b281-d5897d59f950",
+        "publicId": "e3870d8b-55b5-4023-9ef7-2cd2719c6faf",
+        "url": "http://localhost:3001/media/a4e6872b7a93668e6ec4290e454cc544b9e93ecbf09078e989292c55424bddc2.jpg",
+        "altText": "Área amplia de gimnasio para entrenamiento",
+        "width": 1200,
+        "height": 800,
+        "licencia": "Unsplash License",
+        "atribucion": "Photo from Unsplash; source retained in source_url."
+      },
+      "alcances": [],
+      "metadata": {
+        "developmentOnly": true
+      }
+    },
+    {
+      "id": "69e2c094-bf68-4037-9c49-d9d921114c87",
+      "publicId": "315e2088-214f-49e0-abb1-93bbf698a65e",
+      "codigo": "DEV-ANNUAL",
+      "nombre": "Plan anual · Desarrollo",
+      "descripcion": "Precio y contenido exclusivos para pruebas beta.",
+      "tipo": "ANNUAL",
+      "duracionDias": 365,
+      "diasRecordatorio": [
+        7,
+        3,
+        1,
+        "…(4 en total)"
+      ],
+      "estado": "ACTIVE",
+      "precio": 1100,
+      "moneda": "BOB",
+      "beneficios": [
+        "Todo el plan trimestral",
+        "Vigencia anual"
+      ],
+      "orden": 3,
+      "disponibleNuevo": true,
+      "disponibleRenovacion": true,
+      "disponibleExtension": true,
+      "imagen": {
+        "id": "85658822-74d7-46e9-89ad-fe6c12c29cf6",
+        "publicId": "ce18a9f2-ef8e-4a23-bf5a-f38c6c48ea5a",
+        "url": "http://localhost:3001/media/c7a4ab0d402f718474dd333b520420deda66d6255b04ed09acab34864f0a81ed.jpg",
+        "altText": "Persona entrenando con equipo de gimnasio",
+        "width": 1200,
+        "height": 800,
+        "licencia": "Unsplash License",
+        "atribucion": "Photo from Unsplash; source retained in source_url."
+      },
+      "alcances": [],
+      "metadata": {
+        "developmentOnly": true
+      }
+    }
+  ]
+}</pre>
+          </div></div></section>
+    <footer>Cada tarjeta es una petición HTTP autenticada real (rol + método + ruta + código + JSON de respuesta). Generado automáticamente.</footer>
+  </body></html>

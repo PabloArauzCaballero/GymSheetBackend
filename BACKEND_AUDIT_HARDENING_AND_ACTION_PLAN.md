@@ -552,6 +552,22 @@ POST /auth/register         → 201
 GET /workouts sin token     → 401
 ```
 
+**Actualización 2026-08-02 (dockerización integral).** Sobre la base anterior (hoy con **cuatro**
+workers, incluido `exercises-dataset`) se añadió, con evidencia ejecutada:
+
+- **Mensajería formalizada** en [ADR-0005](docs/decisions/ADR-0005-messaging-transactional-outbox.md):
+  se consolida el outbox transaccional sobre PostgreSQL en vez de introducir un broker externo.
+- **Observabilidad de cola** en `/health/metrics`: `gym_sheet_outbox_jobs{queue,status}` y
+  `gym_sheet_outbox_backlog_age_seconds` (solo estados accionables).
+- **Entorno de desarrollo separado**: stage `development` en `Dockerfile` (nunca el target por
+  defecto) + `docker-compose.dev.yml` con hot-reload de API (`nest --watch`) y workers (`node --watch`).
+- **Recursos**: límites de CPU y `reservations` en todos los servicios.
+- **Retención del outbox**: comando opt-in `db:outbox:prune` (dry-run por defecto, solo COMPLETED).
+
+Detalle, decisiones y evidencia:
+[docs/claude/dockerization-and-messaging-report.md](docs/claude/dockerization-and-messaging-report.md)
+y [docs/operations/docker-and-messaging.md](docs/operations/docker-and-messaging.md).
+
 ---
 
 ### F-015 · Los workers descartaban silenciosamente todos sus logs

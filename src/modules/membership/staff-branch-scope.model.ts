@@ -1,8 +1,24 @@
-import { BelongsTo, Column, CreatedAt, DataType, Default, ForeignKey, Model, PrimaryKey, Table, UpdatedAt } from 'sequelize-typescript';
-import { BranchModel } from '../facilities/branch.model';
-import { StaffProfileModel } from './staff-profile.model';
+import {
+  BelongsTo,
+  Column,
+  CreatedAt,
+  DataType,
+  Default,
+  ForeignKey,
+  Model,
+  PrimaryKey,
+  Table,
+  UpdatedAt,
+} from "sequelize-typescript";
+import { BranchModel } from "../facilities/branch.model";
+import { StaffProfileModel } from "./staff-profile.model";
 
-@Table({ tableName: 'staff_branch_scopes', schema: 'membership', underscored: true, timestamps: true })
+@Table({
+  tableName: "staff_branch_scopes",
+  schema: "membership",
+  underscored: true,
+  timestamps: true,
+})
 export class StaffBranchScopeModel extends Model {
   @PrimaryKey
   @Default(DataType.UUIDV4)
@@ -10,11 +26,11 @@ export class StaffBranchScopeModel extends Model {
   declare id: string;
 
   @ForeignKey(() => StaffProfileModel)
-  @Column({ type: DataType.UUID, allowNull: false, field: 'staff_profile_id' })
+  @Column({ type: DataType.UUID, allowNull: false, field: "staff_profile_id" })
   declare staffProfileId: string;
 
   @ForeignKey(() => BranchModel)
-  @Column({ type: DataType.UUID, allowNull: false, field: 'branch_id' })
+  @Column({ type: DataType.UUID, allowNull: false, field: "branch_id" })
   declare branchId: string;
 
   @BelongsTo(() => StaffProfileModel)
@@ -24,10 +40,10 @@ export class StaffBranchScopeModel extends Model {
   declare branch?: BranchModel;
 
   @CreatedAt
-  @Column({ field: 'created_at' })
+  @Column({ field: "created_at" })
   declare createdAt: Date;
 
   @UpdatedAt
-  @Column({ field: 'updated_at' })
+  @Column({ field: "updated_at" })
   declare updatedAt: Date;
 }

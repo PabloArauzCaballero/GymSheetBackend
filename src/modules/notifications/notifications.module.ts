@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { BusinessDateService } from '../../common/time/business-date.service';
 import { IntegrationModule } from '../integration/integration.module';
+import { UserModel } from '../users/user.model';
+import { AdminBroadcastController } from './broadcast.controller';
+import { BroadcastService } from './broadcast.service';
 import { HttpGatewayNotificationAdapter } from './delivery/http-gateway-notification.adapter';
 import { InAppNotificationAdapter } from './delivery/in-app-notification.adapter';
 import { MockNotificationAdapter } from './delivery/mock-notification.adapter';
@@ -23,13 +26,15 @@ import { NotificationModel } from './notification.model';
       NotificationModel,
       NotificationPreferenceModel,
       DeliveryAttemptModel,
+      UserModel,
     ]),
   ],
-  controllers: [NotificationController],
+  controllers: [NotificationController, AdminBroadcastController],
   providers: [
     BusinessDateService,
     NotificationRepository,
     NotificationService,
+    BroadcastService,
     MembershipReminderService,
     NotificationScheduleService,
     NotificationDeliveryService,

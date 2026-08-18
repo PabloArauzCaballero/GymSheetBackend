@@ -39,6 +39,60 @@ export class ExercisesService {
     private readonly sequelize: Sequelize,
   ) {}
 
+  /**
+   * Agrupa la taxonomía plana del repositorio en el árbol que la navegación
+   * necesita: partes del cuerpo, y dentro de cada una sus músculos objetivo.
+   */
+  async listTaxonomy() {
+    const [rows, images] = await Promise.all([
+      this.exercisesRepository.listTaxonomy(),
+      this.exercisesRepository.listTaxonomyImages(),
+    ]);
+    const imageByMuscle = new Map(
+      images.map((row) => [`${row.bodyPart}|${row.targetMuscle}`, row.imageUrl]),
+    );
+
+    type Muscle = {
+      targetMuscle: string;
+      total: number;
+      imageUrl: string | null;
+    };
+    type Group = {
+      bodyPart: string;
+      total: number;
+      imageUrl: string | null;
+      muscles: Muscle[];
+    };
+    const byBodyPart = new Map<string, Group>();
+    for (const row of rows) {
+      const entry = byBodyPart.get(row.bodyPart) ?? {
+        bodyPart: row.bodyPart,
+        total: 0,
+        imageUrl: null,
+        muscles: [],
+      };
+      const imageUrl =
+        imageByMuscle.get(`${row.bodyPart}|${row.targetMuscle}`) ?? null;
+      entry.total += row.total;
+      entry.muscles.push({
+        targetMuscle: row.targetMuscle,
+        total: row.total,
+        imageUrl,
+      });
+      // La zona hereda la lámina de su músculo más numeroso: es la que mejor
+      // representa lo que el usuario encontrará dentro.
+      if (!entry.imageUrl && imageUrl) entry.imageUrl = imageUrl;
+      byBodyPart.set(row.bodyPart, entry);
+    }
+
+    for (const group of byBodyPart.values()) {
+      group.muscles.sort((a, b) => b.total - a.total);
+      const richest = group.muscles.find((muscle) => muscle.imageUrl);
+      if (richest) group.imageUrl = richest.imageUrl;
+    }
+    return [...byBodyPart.values()].sort((a, b) => b.total - a.total);
+  }
+
   async listVisibleForUser(
     userId: string,
     filters: ExerciseFilterInput,

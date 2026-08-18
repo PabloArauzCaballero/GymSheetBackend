@@ -1,0 +1,90 @@
+##
+## Development override. Apply on top of the production compose:
+##
+##   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+##
+## What it changes versus production:
+##   - builds the `development` image target (full toolchain, dev dependencies);
+##   - bind-mounts ./src so the API hot-reloads (nest --watch) and workers
+##     hot-reload too (node --watch + ts-node/register);
+##   - relaxes the read-only root filesystem, because `nest start --watch`
+##     recompiles into dist/ at runtime;
+##   - single-instance friendly: Redis is optional (per-process rate limiting is
+##     acceptable locally) and Postgres is published for local tooling;
+##   - verbose logging.
+##
+## Nothing here weakens the production stack: production is the default target
+## and this file is never loaded unless passed explicitly.
+##
+
+x-dev-image: &dev-image
+  image: gym-sheet-backend:dev
+
+x-dev-environment: &dev-environment
+  NODE_ENV: development
+  LOG_LEVEL: ${LOG_LEVEL:-debug}
+  # Local single instance: shared counters are unnecessary, so do not fail fast
+  # when Redis is absent. Redis still runs and is used when reachable.
+  REDIS_REQUIRED: "false"
+
+x-dev-source: &dev-source
+  # Source only. node_modules stays in the image to avoid a host/container
+  # native-binding mismatch; config files are mounted so tsconfig/nest changes
+  # are picked up too.
+  volumes:
+    - ./src:/app/src:ro
+    - ./tsconfig.json:/app/tsconfig.json:ro
+    - ./tsconfig.build.json:/app/tsconfig.build.json:ro
+    - ./nest-cli.json:/app/nest-cli.json:ro
+  # nest --watch and ts-node recompile at runtime, so the root filesystem cannot
+  # be read-only here.
+  read_only: false
+
+services:
+  postgres:
+    # Published for local psql / GUI tooling. The e2e suite uses its own
+    # instance on 5433, so this default does not collide with it.
+    ports:
+      - "${DB_HOST_PORT:-5432}:5432"
+
+  migrate:
+    # Reuses the :dev image produced by the api build stage (built before any
+    # container starts), so no second build is triggered here.
+    <<: *dev-image
+    command: ["yarn", "migration:up"]
+    environment:
+      <<: *dev-environment
+
+  api:
+    <<: [*dev-image, *dev-source]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    command: ["yarn", "start:dev"]
+    environment:
+      <<: *dev-environment
+
+  worker-access:
+    <<: [*dev-image, *dev-source]
+    command: ["yarn", "worker:access:dev"]
+    environment:
+      <<: *dev-environment
+
+  worker-reminders:
+    <<: [*dev-image, *dev-source]
+    command: ["yarn", "worker:reminders:dev"]
+    environment:
+      <<: *dev-environment
+
+  worker-notifications:
+    <<: [*dev-image, *dev-source]
+    command: ["yarn", "worker:notifications:dev"]
+    environment:
+      <<: *dev-environment
+
+  worker-exercises-dataset:
+    <<: [*dev-image, *dev-source]
+    command: ["yarn", "worker:exercises-dataset:dev"]
+    environment:
+      <<: *dev-environment

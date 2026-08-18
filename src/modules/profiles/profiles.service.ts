@@ -1,7 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { AnthropometricProfileResponse, mapProfileToResponse } from './profile.mapper';
-import { ProfilesRepository } from './profiles.repository';
-import { UpsertProfileInput } from './profiles.schemas';
+import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  AnthropometricProfileResponse,
+  mapProfileToResponse,
+} from "./profile.mapper";
+import { ProfilesRepository } from "./profiles.repository";
+import { UpsertProfileInput } from "./profiles.schemas";
 
 @Injectable()
 export class ProfilesService {
@@ -11,7 +14,9 @@ export class ProfilesService {
     const profile = await this.profilesRepository.findByUserId(userId);
 
     if (!profile) {
-      throw new NotFoundException('El perfil antropométrico todavía no fue registrado.');
+      throw new NotFoundException(
+        "El perfil antropométrico todavía no fue registrado.",
+      );
     }
 
     return mapProfileToResponse(profile);

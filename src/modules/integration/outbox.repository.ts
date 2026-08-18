@@ -23,6 +23,24 @@ export type FailedOutboxUpdate = {
   updated: boolean;
 };
 
+/** Count of jobs in a single actionable state for one queue. */
+export type QueueDepthRow = {
+  queueName: string;
+  status: QueueItemStatus;
+  count: number;
+};
+
+/** Age of the oldest job that is due to run but has not been completed. */
+export type QueueBacklogAgeRow = {
+  queueName: string;
+  ageSeconds: number;
+};
+
+export type QueueMetricsSnapshot = {
+  depth: QueueDepthRow[];
+  backlogAge: QueueBacklogAgeRow[];
+};
+
 @Injectable()
 export class OutboxRepository {
   constructor(
@@ -157,5 +175,72 @@ export class OutboxRepository {
 
   findByDeduplicationKey(key: string) {
     return this.jobs.findOne({ where: { deduplicationKey: key } });
+  }
+
+  /**
+   * Aggregates queue depth for observability. Deliberately restricted to the
+   * actionable states (PENDING/PROCESSING/FAILED/DEAD_LETTER): those rows are
+   * bounded by throughput and the `ix_outbox_claim` index covers them by its
+   * `(queue_name, status, ...)` prefix. COMPLETED is excluded on purpose — it is
+   * append-only and grows without bound (see ADR-0005), so counting it on every
+   * scrape would turn the metrics endpoint into a full-table scan.
+   */
+  async aggregateQueueMetrics(): Promise<QueueMetricsSnapshot> {
+    const [depth, backlogAge] = await Promise.all([
+      this.sequelize.query<QueueDepthRow>(
+        `SELECT queue_name AS "queueName", status, count(*)::int AS count
+           FROM integration.outbox_jobs
+          WHERE status IN ('PENDING','PROCESSING','FAILED','DEAD_LETTER')
+          GROUP BY queue_name, status`,
+        { type: QueryTypes.SELECT },
+      ),
+      this.sequelize.query<QueueBacklogAgeRow>(
+        `SELECT queue_name AS "queueName",
+                EXTRACT(EPOCH FROM (now() - min(available_at)))::float8 AS "ageSeconds"
+           FROM integration.outbox_jobs
+          WHERE status IN ('PENDING','FAILED')
+            AND available_at <= now()
+          GROUP BY queue_name`,
+        { type: QueryTypes.SELECT },
+      ),
+    ]);
+
+    return { depth, backlogAge };
+  }
+
+  /** Counts COMPLETED jobs whose processing finished before the cutoff. */
+  async countCompletedBefore(cutoff: Date): Promise<number> {
+    const rows = await this.sequelize.query<{ count: number }>(
+      `SELECT count(*)::int AS count
+         FROM integration.outbox_jobs
+        WHERE status = 'COMPLETED' AND processed_at < :cutoff`,
+      { replacements: { cutoff }, type: QueryTypes.SELECT },
+    );
+    return rows[0]?.count ?? 0;
+  }
+
+  /**
+   * Deletes one bounded batch of COMPLETED jobs older than the cutoff and
+   * returns how many rows were removed. Restricted to COMPLETED on purpose:
+   * PENDING/PROCESSING/FAILED are live work and DEAD_LETTER needs human triage,
+   * so none of them are ever eligible for pruning. `SKIP LOCKED` keeps the sweep
+   * from contending with the workers' claim query.
+   */
+  async deleteCompletedBefore(cutoff: Date, batchSize: number): Promise<number> {
+    const rows = await this.sequelize.query<{ id: string }>(
+      `WITH victims AS (
+         SELECT id
+           FROM integration.outbox_jobs
+          WHERE status = 'COMPLETED' AND processed_at < :cutoff
+          LIMIT :batchSize
+          FOR UPDATE SKIP LOCKED
+       )
+       DELETE FROM integration.outbox_jobs job
+       USING victims
+       WHERE job.id = victims.id
+       RETURNING job.id`,
+      { replacements: { cutoff, batchSize }, type: QueryTypes.SELECT },
+    );
+    return rows.length;
   }
 }

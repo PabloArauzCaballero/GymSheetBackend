@@ -19,9 +19,11 @@ import { ExercisesModule } from './modules/exercises/exercises.module';
 import { ExportModule } from './modules/export/export.module';
 import { FacilitiesModule } from './modules/facilities/facilities.module';
 import { HealthModule } from './modules/health/health.module';
+import { MediaModule } from './modules/media/media.module';
 import { MembershipModule } from './modules/membership/membership.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
+import { TrainingModule } from './modules/training/training.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 
@@ -88,7 +90,9 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
     NotificationsModule,
     ExercisesModule,
     WorkoutsModule,
+    TrainingModule,
     ExportModule,
+    MediaModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
