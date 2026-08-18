@@ -158,6 +158,46 @@ export type RoutineExerciseInput = z.infer<typeof routineExerciseInput>;
 export type CreateRoutineInput = z.infer<typeof createRoutineSchema>;
 export type UpdateRoutineInput = z.infer<typeof updateRoutineSchema>;
 export type UpdateRoutineExerciseInput = z.infer<typeof updateRoutineExerciseSchema>;
+
+/**
+ * Auto-programación de una rutina por el propio cliente.
+ *
+ * A diferencia de `assignRoutineSchema`, aquí no hay `clienteUsuarioId`: el
+ * destinatario es siempre quien llama, y aceptarlo por cuerpo permitiría que un
+ * cliente programase rutinas en la agenda de otro.
+ *
+ * La ventana es lo que convierte "esta rutina me interesa" en un mesociclo:
+ * sin `repiteHasta` el plan es indefinido, que sigue siendo válido.
+ */
+export const selfScheduleRoutineSchema = z
+  .object({
+    diasSemana: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+    repiteDesde: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/u, 'Fecha inválida (YYYY-MM-DD).')
+      .nullable()
+      .optional(),
+    repiteHasta: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/u, 'Fecha inválida (YYYY-MM-DD).')
+      .nullable()
+      .optional(),
+  })
+  .refine(
+    (value) =>
+      !value.repiteDesde ||
+      !value.repiteHasta ||
+      value.repiteHasta >= value.repiteDesde,
+    { message: 'La fecha final no puede ser anterior a la inicial.', path: ['repiteHasta'] },
+  )
+  .transform((value) => ({
+    weekdays: value.diasSemana,
+    repeatsFrom: value.repiteDesde ?? null,
+    repeatsUntil: value.repiteHasta ?? null,
+  }));
+
+export type SelfScheduleRoutineInput = z.infer<typeof selfScheduleRoutineSchema>;
+
 export type AssignRoutineInput = z.infer<typeof assignRoutineSchema>;
 export type ImportRoutinesInput = z.infer<typeof importRoutinesSchema>;
 export type ListRoutinesInput = z.infer<typeof listRoutinesSchema>;

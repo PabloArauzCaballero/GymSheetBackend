@@ -169,6 +169,45 @@ export class TrainingRepository {
     });
   }
 
+  /**
+   * Programación propia del cliente: una sola asignación viva por rutina, así
+   * que reprogramar actualiza la existente en vez de acumular duplicados que
+   * competirían por el mismo día de la semana.
+   */
+  async upsertSelfAssignment(
+    routineId: string,
+    userId: string,
+    values: {
+      weekdays: number[];
+      repeatsFrom: string | null;
+      repeatsUntil: string | null;
+    },
+  ) {
+    const existing = await this.assignmentModel.findOne({
+      where: { routineId, clientUserId: userId },
+    });
+    if (existing) {
+      return existing.update({
+        weekdays: values.weekdays,
+        repeatsFrom: values.repeatsFrom,
+        repeatsUntil: values.repeatsUntil,
+        status: RoutineAssignmentStatus.ACTIVE,
+      });
+    }
+    return this.assignmentModel.create({
+      routineId,
+      clientUserId: userId,
+      // Nadie se la asignó: el propio usuario es el origen.
+      assignedByUserId: userId,
+      status: RoutineAssignmentStatus.ACTIVE,
+      weekdays: values.weekdays,
+      repeatsFrom: values.repeatsFrom,
+      repeatsUntil: values.repeatsUntil,
+      scheduledFor: null,
+      note: null,
+    });
+  }
+
   createAssignment(
     routineId: string,
     assignedById: string,

@@ -5,6 +5,13 @@ import { UsersService } from '../users/users.service';
 import { WorkoutSessionResponse } from '../workouts/workout.mapper';
 import { WorkoutsService } from '../workouts/workouts.service';
 
+/** El PDF lo lee una persona, no un sistema: los enums se traducen. */
+const STATUS_LABEL: Record<string, string> = {
+  EN_PROGRESO: 'En progreso',
+  FINALIZADA: 'Finalizada',
+  CANCELADA: 'Cancelada',
+};
+
 const EXPORT_PAGE_SIZE = 100;
 const MAX_EXPORTED_SESSIONS = 1000;
 
@@ -47,6 +54,11 @@ export class ExportService {
    * lidera con el resumen agregado y no con las filas: nadie lee 200 series
    * para saber si alguien entrena.
    *
+   * Lleva la identidad de la app en vez de ser texto suelto: banda oscura con
+   * el acento volt, cifras grandes como en las tarjetas de la pantalla de
+   * inicio y una tabla con filas alternas. Un informe que el usuario reenvía a
+   * su entrenador es la cara del producto fuera del producto.
+   *
    * Se compone con PDFKit en memoria y sin navegador headless: el documento es
    * texto y reglas, y arrastrar Chromium a la imagen del servidor para dibujar
    * una tabla no se paga.
@@ -54,7 +66,7 @@ export class ExportService {
   async buildWorkoutHistoryPdf(userId: string): Promise<Buffer> {
     const data = await this.buildWorkoutHistoryExport(userId);
 
-    const finished = data.sesiones.filter(
+    const finishedSessions = data.sesiones.filter(
       (session) => session.estado === 'FINALIZADA',
     );
     let totalSets = 0;
@@ -71,44 +83,165 @@ export class ExportService {
     // `PDFDocument` se importa aquí y no arriba: sólo esta ruta lo necesita y
     // mantenerlo fuera del arranque evita cargarlo en cada boot del proceso.
     const { default: PDFDocument } = await import('pdfkit');
-    const doc = new PDFDocument({ size: 'A4', margin: 48 });
+
+    const INK = '#14160e';
+    const MUTED = '#6b7280';
+    const HAIRLINE = '#e5e7eb';
+    const BAND = '#101010';
+    const VOLT = '#c3f400';
+
+    const MARGIN = 44;
+    // `bufferPages` es obligatorio para volver atrás y numerar el pie: sin él,
+    // `switchToPage` lanza porque las páginas ya se habrían vaciado al stream.
+    const doc = new PDFDocument({ size: 'A4', margin: MARGIN, bufferPages: true });
+    const pageWidth = doc.page.width;
+    const contentWidth = pageWidth - MARGIN * 2;
 
     const chunks: Buffer[] = [];
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-    const finished$ = new Promise<Buffer>((resolve) => {
+    const rendered = new Promise<Buffer>((resolve) => {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
     });
 
-    doc.fontSize(22).text('Informe de avance', { align: 'left' });
-    doc.moveDown(0.2);
+    // --- Cabecera: banda oscura a sangre, como el fondo de la app ---
+    const HEADER_HEIGHT = 132;
+    doc.rect(0, 0, pageWidth, HEADER_HEIGHT).fill(BAND);
+    // Filete volt inferior: el único trazo saturado del documento.
+    doc.rect(0, HEADER_HEIGHT - 4, pageWidth, 4).fill(VOLT);
+
     doc
+      .fillColor('#ffffff')
+      .font('Helvetica-Bold')
+      .fontSize(26)
+      .text('Informe de avance', MARGIN, 38, { width: contentWidth });
+    doc
+      .fillColor('#9ca3af')
+      .font('Helvetica')
       .fontSize(10)
-      .fillColor('#555555')
-      .text(`${data.usuario.nombreCompleto} · ${data.usuario.email}`);
-    doc.text(`Generado el ${new Date(data.generadoEn).toLocaleString('es-BO')}`);
-    doc.moveDown();
-
-    doc.fillColor('#000000').fontSize(13).text('Resumen');
-    doc.moveDown(0.3);
-    doc.fontSize(10);
-    doc.text(`Sesiones registradas: ${data.sesiones.length}`);
-    doc.text(`Sesiones finalizadas: ${finished.length}`);
-    doc.text(`Series registradas: ${totalSets}`);
-    doc.text(`Volumen total: ${Math.round(totalVolume)} kg`);
-    if (data.perfil) {
-      doc.text(
-        `Perfil: ${data.perfil.pesoKg} kg · ${data.perfil.estaturaCm} cm · ${data.perfil.objetivo}`,
+      .text(data.usuario.nombreCompleto, MARGIN, 74)
+      .text(data.usuario.email, MARGIN, 88);
+    doc
+      .fillColor('#6b7280')
+      .fontSize(9)
+      .text(
+        `Generado el ${new Date(data.generadoEn).toLocaleDateString('es-BO', {
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+        })}`,
+        MARGIN,
+        88,
+        { width: contentWidth, align: 'right' },
       );
+
+    // --- Tarjetas de cifras: el mismo lenguaje que la pantalla de inicio ---
+    const cards: ReadonlyArray<{ value: string; label: string }> = [
+      { value: String(data.sesiones.length), label: 'Sesiones' },
+      { value: String(finishedSessions.length), label: 'Finalizadas' },
+      { value: String(totalSets), label: 'Series' },
+      { value: `${Math.round(totalVolume)} kg`, label: 'Volumen total' },
+    ];
+    const gap = 10;
+    const cardWidth = (contentWidth - gap * (cards.length - 1)) / cards.length;
+    const cardTop = HEADER_HEIGHT + 26;
+    const cardHeight = 62;
+
+    cards.forEach((card, index) => {
+      const x = MARGIN + index * (cardWidth + gap);
+      doc
+        .roundedRect(x, cardTop, cardWidth, cardHeight, 8)
+        .lineWidth(1)
+        .strokeColor(HAIRLINE)
+        .stroke();
+      doc
+        .fillColor(INK)
+        .font('Helvetica-Bold')
+        .fontSize(18)
+        .text(card.value, x, cardTop + 14, { width: cardWidth, align: 'center' });
+      doc
+        .fillColor(MUTED)
+        .font('Helvetica')
+        .fontSize(8)
+        .text(card.label.toUpperCase(), x, cardTop + 40, {
+          width: cardWidth,
+          align: 'center',
+          characterSpacing: 0.6,
+        });
+    });
+
+    if (data.perfil) {
+      doc
+        .fillColor(MUTED)
+        .font('Helvetica')
+        .fontSize(9)
+        .text(
+          `Perfil · ${data.perfil.pesoKg} kg · ${data.perfil.estaturaCm} cm · ${data.perfil.objetivo}`,
+          MARGIN,
+          cardTop + cardHeight + 14,
+          { width: contentWidth },
+        );
     }
-    doc.moveDown();
 
-    doc.fontSize(13).text('Sesiones');
-    doc.moveDown(0.3);
-    doc.fontSize(9).fillColor('#555555');
+    // --- Tabla de sesiones ---
+    let y = cardTop + cardHeight + (data.perfil ? 42 : 28);
 
-    // Sólo las más recientes: un PDF de cientos de páginas no lo abre nadie, y
-    // el CSV sigue siendo la vía para el histórico completo.
-    for (const session of data.sesiones.slice(0, 40)) {
+    doc
+      .fillColor(INK)
+      .font('Helvetica-Bold')
+      .fontSize(12)
+      .text('Sesiones', MARGIN, y);
+    y += 22;
+
+    const columns = [
+      { key: 'fecha', label: 'Fecha', width: 96, align: 'left' as const },
+      { key: 'estado', label: 'Estado', width: 92, align: 'left' as const },
+      { key: 'ejercicios', label: 'Ejercicios', width: 80, align: 'right' as const },
+      { key: 'series', label: 'Series', width: 70, align: 'right' as const },
+      { key: 'volumen', label: 'Volumen', width: 0, align: 'right' as const },
+    ];
+    const fixed = columns.reduce((sum, column) => sum + column.width, 0);
+    columns[columns.length - 1]!.width = contentWidth - fixed;
+
+    const drawHeaderRow = () => {
+      doc.fillColor(MUTED).font('Helvetica-Bold').fontSize(8);
+      let x = MARGIN;
+      for (const column of columns) {
+        doc.text(column.label.toUpperCase(), x, y, {
+          width: column.width,
+          align: column.align,
+          characterSpacing: 0.5,
+        });
+        x += column.width;
+      }
+      y += 14;
+      doc
+        .moveTo(MARGIN, y)
+        .lineTo(MARGIN + contentWidth, y)
+        .lineWidth(1)
+        .strokeColor(HAIRLINE)
+        .stroke();
+      y += 6;
+    };
+    drawHeaderRow();
+
+    const ROW_HEIGHT = 18;
+    const visible = data.sesiones.slice(0, 60);
+
+    visible.forEach((session, index) => {
+      // Salto de página manteniendo la cabecera de la tabla: una tabla que
+      // continúa sin encabezados obliga a volver atrás para saber qué se lee.
+      if (y + ROW_HEIGHT > doc.page.height - MARGIN - 30) {
+        doc.addPage();
+        y = MARGIN;
+        drawHeaderRow();
+      }
+
+      if (index % 2 === 1) {
+        doc
+          .rect(MARGIN - 4, y - 4, contentWidth + 8, ROW_HEIGHT)
+          .fill('#fafafa');
+      }
+
       const started = new Date(session.fechaInicio);
       const sets = session.ejercicios.reduce(
         (sum, item) => sum + item.series.length,
@@ -123,28 +256,65 @@ export class ExportService {
           ),
         0,
       );
+      const values = [
+        `${started.toLocaleDateString('es-BO')} ${started.toLocaleTimeString('es-BO', {
+          hour: '2-digit',
+          minute: '2-digit',
+        })}`,
+        STATUS_LABEL[session.estado] ?? session.estado,
+        String(session.ejercicios.length),
+        String(sets),
+        `${Math.round(volume)} kg`,
+      ];
+
+      doc.font('Helvetica').fontSize(9).fillColor(INK);
+      let x = MARGIN;
+      values.forEach((value, columnIndex) => {
+        const column = columns[columnIndex]!;
+        doc.text(value, x, y, { width: column.width, align: column.align });
+        x += column.width;
+      });
+      y += ROW_HEIGHT;
+    });
+
+    if (data.sesiones.length > visible.length) {
+      y += 8;
       doc
-        .fillColor('#000000')
+        .fillColor(MUTED)
+        .fontSize(8)
         .text(
-          `${started.toLocaleDateString('es-BO')} ${started
-            .toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' })}` +
-            `  ·  ${session.estado}  ·  ${session.ejercicios.length} ejercicios` +
-            `  ·  ${sets} series  ·  ${Math.round(volume)} kg`,
+          `Se muestran las ${visible.length} sesiones más recientes de ${data.sesiones.length}. ` +
+            'El histórico completo está en la exportación CSV.',
+          MARGIN,
+          y,
+          { width: contentWidth },
         );
     }
 
-    if (data.sesiones.length > 40) {
-      doc.moveDown(0.5);
+    // --- Pie en todas las páginas ---
+    const range = doc.bufferedPageRange();
+    for (let page = range.start; page < range.start + range.count; page += 1) {
+      doc.switchToPage(page);
       doc
-        .fillColor('#555555')
+        .fillColor('#9ca3af')
+        .font('Helvetica')
+        .fontSize(8)
         .text(
-          `Se muestran las 40 sesiones más recientes de ${data.sesiones.length}. ` +
-            'El histórico completo está en la exportación CSV.',
+          `GymSheet · ${data.usuario.email}`,
+          MARGIN,
+          doc.page.height - MARGIN + 6,
+          { width: contentWidth },
+        )
+        .text(
+          `${page - range.start + 1} / ${range.count}`,
+          MARGIN,
+          doc.page.height - MARGIN + 6,
+          { width: contentWidth, align: 'right' },
         );
     }
 
     doc.end();
-    return finished$;
+    return rendered;
   }
 
   async buildWorkoutHistoryCsv(userId: string): Promise<string> {

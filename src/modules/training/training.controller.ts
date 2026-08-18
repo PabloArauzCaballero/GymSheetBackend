@@ -18,6 +18,7 @@ import { TrainingService } from './training.service';
 import {
   RoutineExerciseInput,
   AssignRoutineInput,
+  SelfScheduleRoutineInput,
   CreateRoutineInput,
   ImportRoutinesInput,
   ListRoutinesInput,
@@ -25,6 +26,7 @@ import {
   UpdateRoutineInput,
   addRoutineExerciseSchema,
   assignRoutineSchema,
+  selfScheduleRoutineSchema,
   createRoutineSchema,
   importRoutinesSchema,
   listRoutinesSchema,
@@ -131,6 +133,20 @@ export class TrainingController {
     @Body(new ZodValidationPipe(assignRoutineSchema)) input: AssignRoutineInput,
   ) {
     return this.trainingService.assignRoutine(user, routineId, input);
+  }
+
+  /**
+   * Programación propia. Vive fuera del bloque COACH/ADMIN a propósito: la
+   * agenda que se toca es la de quien llama, no la de un tercero.
+   */
+  @Post(':id/schedule')
+  selfSchedule(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', UuidParamPipe) routineId: string,
+    @Body(new ZodValidationPipe(selfScheduleRoutineSchema))
+    input: SelfScheduleRoutineInput,
+  ) {
+    return this.trainingService.selfScheduleRoutine(user.id, routineId, input);
   }
 
   @Post(':id/start')

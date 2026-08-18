@@ -26,6 +26,7 @@ import {
 import { routineWhereForScope, TrainingRepository } from './training.repository';
 import {
   AssignRoutineInput,
+  SelfScheduleRoutineInput,
   CreateRoutineInput,
   ImportRoutinesInput,
   ListRoutinesInput,
@@ -150,6 +151,33 @@ export class TrainingService {
     this.assertCanEditRoutine(user, routine);
     await this.repository.deleteRoutineExercise(routineExerciseId);
     return this.getRoutineOrFail(routine.id);
+  }
+
+  /**
+   * El cliente programa una rutina en su propia semana. Sólo exige que la
+   * rutina le sea visible: no puede convertir en suya una rutina privada de
+   * otro, pero sí planificar cualquiera del catálogo compartido.
+   */
+  async selfScheduleRoutine(
+    userId: string,
+    routineId: string,
+    input: SelfScheduleRoutineInput,
+  ): Promise<RoutineAssignmentResponse> {
+    const routine = await this.getRoutineModelOrFail(routineId);
+    if (
+      routine.visibility === RoutineVisibility.PRIVATE &&
+      routine.createdByUserId !== userId
+    ) {
+      throw new NotFoundException('Rutina no encontrada.');
+    }
+
+    const assignment = await this.repository.upsertSelfAssignment(
+      routineId,
+      userId,
+      input,
+    );
+    const hydrated = await this.repository.findAssignmentById(assignment.id);
+    return mapAssignmentToResponse(hydrated ?? assignment);
   }
 
   async assignRoutine(
