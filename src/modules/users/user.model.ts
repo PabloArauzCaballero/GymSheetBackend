@@ -32,6 +32,13 @@ export class UserModel extends Model {
   @Column({ type: DataType.ENUM(...Object.values(UserStatus)), allowNull: false, field: 'estado' })
   declare status: UserStatus;
 
+  /**
+   * Gimnasio al que pertenece la cuenta. Nulo en una instalación de un solo
+   * gimnasio, donde el cliente usa la identidad de referencia.
+   */
+  @Column({ type: DataType.STRING(60), allowNull: true, field: 'tenant_id' })
+  declare tenantId: string | null;
+
   @Default(DataType.NOW)
   @Column({ type: DataType.DATE, allowNull: false, field: 'fecha_registro' })
   declare registeredAt: Date;

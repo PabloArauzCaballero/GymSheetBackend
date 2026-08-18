@@ -34,6 +34,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       id: activeUser.id,
       email: activeUser.email,
       role: activeUser.role,
+      // Se lee de la cuenta y no del token: así un cambio de gimnasio surte
+      // efecto en la siguiente petición, sin esperar a que caduque la sesión.
+      tenantId: activeUser.tenantId,
     };
   }
 }

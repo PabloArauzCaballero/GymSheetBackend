@@ -26,6 +26,8 @@ export type AuthResponse = {
     email: string;
     nombreCompleto: string;
     rol: UserRole;
+    /** Gimnasio de la cuenta; el cliente móvil pinta su marca a partir de esto. */
+    tenantId: string | null;
   };
 };
 
@@ -57,6 +59,7 @@ export class AuthService {
         createdUser.email,
         createdUser.role,
         createdUser.fullName,
+        createdUser.tenantId,
       );
     } catch (error: unknown) {
       if (error instanceof UniqueConstraintError) {
@@ -88,6 +91,7 @@ export class AuthService {
       activeUser.email,
       activeUser.role,
       activeUser.fullName,
+      activeUser.tenantId,
     );
   }
 
@@ -96,6 +100,7 @@ export class AuthService {
     emailAddress: string,
     role: JwtPayload['role'],
     fullName: string,
+    tenantId: string | null = null,
   ): AuthResponse {
     const payload: JwtPayload = {
       sub: userId,
@@ -118,6 +123,7 @@ export class AuthService {
         email: emailAddress,
         nombreCompleto: fullName,
         rol: role,
+        tenantId,
       },
     };
   }
