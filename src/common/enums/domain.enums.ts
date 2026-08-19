@@ -244,6 +244,7 @@ export enum AccessDecisionReason {
 
 export enum NotificationChannel {
   IN_APP = "IN_APP",
+  EMAIL = "EMAIL",
   HTTP_GATEWAY = "HTTP_GATEWAY",
   MOCK = "MOCK",
 }

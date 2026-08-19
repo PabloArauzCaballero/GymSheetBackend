@@ -211,6 +211,38 @@ export const environmentSchema = z
       .max(60000)
       .default(10000),
 
+    /**
+     * Cómo salen los correos. `LOG` los escribe en el registro con el cuerpo
+     * completo —imprescindible para recorrer el flujo de recuperación en local
+     * sin un buzón—, y por eso mismo está prohibido en producción: un PIN en
+     * los registros es una credencial en los registros.
+     */
+    MAIL_TRANSPORT: z.enum(["LOG", "SMTP"]).default("LOG"),
+    MAIL_FROM: z.string().trim().email().optional(),
+    MAIL_SMTP_HOST: z.string().trim().min(1).optional(),
+    MAIL_SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+    MAIL_SMTP_USER: z.string().trim().min(1).optional(),
+    MAIL_SMTP_PASSWORD: z.string().trim().min(1).optional(),
+    MAIL_SMTP_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1000)
+      .max(60000)
+      .default(10000),
+
+    /**
+     * Vida del PIN de recuperación. Corta a propósito: es el único intervalo en
+     * el que una credencial de seis cifras vale para entrar en una cuenta.
+     */
+    PASSWORD_RESET_PIN_TTL_MINUTES: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(60)
+      .default(10),
+    /** Intentos fallidos antes de quemar el PIN. Seis cifras se prueban solas. */
+    PASSWORD_RESET_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
+
     EXERCISES_DATASET_ENABLED: environmentBooleanSchema.default(false),
     EXERCISES_DATASET_JSON_URL: z
       .string()
@@ -378,6 +410,24 @@ export const environmentSchema = z
         path: ["NOTIFICATION_DELIVERY_PROVIDER"],
         message: "MOCK notification delivery is forbidden in production.",
       });
+    if (
+      configuration.NODE_ENV === "production" &&
+      configuration.MAIL_TRANSPORT === "LOG"
+    )
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["MAIL_TRANSPORT"],
+        message:
+          "The LOG mail transport prints message bodies, including reset PINs. It is forbidden in production.",
+      });
+    if (configuration.MAIL_TRANSPORT === "SMTP") {
+      if (!configuration.MAIL_SMTP_HOST || !configuration.MAIL_FROM)
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["MAIL_SMTP_HOST"],
+          message: "SMTP mail delivery requires a host and a sender address.",
+        });
+    }
     if (configuration.NOTIFICATION_DELIVERY_PROVIDER === "HTTP_GATEWAY") {
       if (
         !configuration.NOTIFICATION_GATEWAY_URL ||

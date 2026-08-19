@@ -43,6 +43,7 @@ import { MembershipExtensionModel } from "../../modules/membership/membership-ex
 import { MembershipFeatureModel } from "../../modules/membership/membership-feature.model";
 import { MembershipIntentModel } from "../../modules/membership/membership-intent.model";
 import { PlanFeatureModel } from "../../modules/membership/plan-feature.model";
+import { PasswordResetTokenModel } from '../../modules/auth/password-reset-token.model';
 import { UserModel } from "../../modules/users/user.model";
 import { WorkoutSessionExerciseModel } from "../../modules/workouts/workout-session-exercise.model";
 import { WorkoutSessionModel } from "../../modules/workouts/workout-session.model";
@@ -50,6 +51,7 @@ import { WorkoutSetModel } from "../../modules/workouts/workout-set.model";
 
 export const databaseModels = [
   UserModel,
+  PasswordResetTokenModel,
   AnthropometricProfileModel,
   OnboardingModel,
   BodyMeasurementModel,

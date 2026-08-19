@@ -38,6 +38,22 @@ export class UsersRepository {
     return this.userModel.findOne({ where: { email: emailAddress.toLowerCase(), status: UserStatus.ACTIVE } });
   }
 
+  /**
+   * Reemplaza el hash de contraseña de una cuenta.
+   *
+   * Escribe sólo esa columna a propósito: un `save()` del modelo entero
+   * arrastraría cualquier campo que el llamante hubiera tocado por el camino,
+   * y una operación de seguridad no debe poder cambiar el rol o el estado de
+   * la cuenta como efecto secundario.
+   */
+  async updatePasswordHash(
+    userId: string,
+    passwordHash: string,
+    transaction?: Transaction,
+  ): Promise<void> {
+    await this.userModel.update({ passwordHash }, { where: { id: userId }, transaction });
+  }
+
   createClient(input: CreateClientUserInput, transaction?: Transaction): Promise<UserModel> {
     return this.userModel.create({
       email: input.email.toLowerCase(),
