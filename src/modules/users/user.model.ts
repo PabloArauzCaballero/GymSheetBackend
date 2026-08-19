@@ -18,6 +18,13 @@ export class UserModel extends Model {
   @Column({ type: DataType.STRING(180), allowNull: false, unique: true })
   declare email: string;
 
+  /**
+   * Gimnasio al que pertenece la cuenta. Nulo es la identidad de referencia:
+   * no es un dato que falte, es uno que no aplica.
+   */
+  @Column({ type: DataType.STRING(40), allowNull: true, field: 'tenant_id' })
+  declare tenantId: string | null;
+
   @Column({ type: DataType.STRING(255), allowNull: false, field: 'password_hash' })
   declare passwordHash: string;
 

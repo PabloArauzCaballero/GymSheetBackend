@@ -26,6 +26,7 @@ export type AuthResponse = {
     email: string;
     nombreCompleto: string;
     rol: UserRole;
+    tenantId: string | null;
   };
 };
 
@@ -57,6 +58,7 @@ export class AuthService {
         createdUser.email,
         createdUser.role,
         createdUser.fullName,
+        createdUser.tenantId,
       );
     } catch (error: unknown) {
       if (error instanceof UniqueConstraintError) {
@@ -88,6 +90,7 @@ export class AuthService {
       activeUser.email,
       activeUser.role,
       activeUser.fullName,
+      activeUser.tenantId,
     );
   }
 
@@ -96,6 +99,7 @@ export class AuthService {
     emailAddress: string,
     role: JwtPayload['role'],
     fullName: string,
+    tenantId: string | null,
   ): AuthResponse {
     const payload: JwtPayload = {
       sub: userId,
@@ -118,6 +122,10 @@ export class AuthService {
         email: emailAddress,
         nombreCompleto: fullName,
         rol: role,
+        // La app móvil adopta la marca del gimnasio con este dato: se instala
+        // una sola aplicación y no hay URL de la que deducirlo, así que la
+        // cuenta es lo único que puede decirlo.
+        tenantId,
       },
     };
   }
