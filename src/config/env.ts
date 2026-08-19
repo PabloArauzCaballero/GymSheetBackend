@@ -217,7 +217,7 @@ export const environmentSchema = z
      * sin un buzón—, y por eso mismo está prohibido en producción: un PIN en
      * los registros es una credencial en los registros.
      */
-    MAIL_TRANSPORT: z.enum(["LOG", "SMTP"]).default("LOG"),
+    MAIL_TRANSPORT: z.enum(["LOG", "SMTP", "GMAIL"]).default("LOG"),
     MAIL_FROM: z.string().trim().email().optional(),
     MAIL_SMTP_HOST: z.string().trim().min(1).optional(),
     MAIL_SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
@@ -229,6 +229,17 @@ export const environmentSchema = z
       .min(1000)
       .max(60000)
       .default(10000),
+
+    /**
+     * Gmail por OAuth2. Se usa el refresh token en vez de una contraseña de
+     * aplicación porque Google la revoca en cuanto la cuenta cambia de
+     * política, y porque un token acotado a enviar correo no da acceso al
+     * buzón.
+     */
+    GMAIL_CLIENT_ID: z.string().trim().min(1).optional(),
+    GMAIL_CLIENT_SECRET: z.string().trim().min(1).optional(),
+    GMAIL_REFRESH_TOKEN: z.string().trim().min(1).optional(),
+    GMAIL_FROM_EMAIL: z.string().trim().email().optional(),
 
     /**
      * Vida del PIN de recuperación. Corta a propósito: es el único intervalo en
@@ -420,6 +431,20 @@ export const environmentSchema = z
         message:
           "The LOG mail transport prints message bodies, including reset PINs. It is forbidden in production.",
       });
+    if (configuration.MAIL_TRANSPORT === "GMAIL") {
+      if (
+        !configuration.GMAIL_CLIENT_ID ||
+        !configuration.GMAIL_CLIENT_SECRET ||
+        !configuration.GMAIL_REFRESH_TOKEN ||
+        !configuration.GMAIL_FROM_EMAIL
+      )
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["GMAIL_CLIENT_ID"],
+          message:
+            "Gmail delivery requires client id, client secret, refresh token and sender address.",
+        });
+    }
     if (configuration.MAIL_TRANSPORT === "SMTP") {
       if (!configuration.MAIL_SMTP_HOST || !configuration.MAIL_FROM)
         context.addIssue({

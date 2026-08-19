@@ -8,6 +8,7 @@ import { AdminBroadcastController } from './broadcast.controller';
 import { BroadcastService } from './broadcast.service';
 import { EmailNotificationAdapter } from './delivery/email-notification.adapter';
 import { HttpGatewayNotificationAdapter } from './delivery/http-gateway-notification.adapter';
+import { GmailMailTransport } from './delivery/gmail-mail.transport';
 import { LogMailTransport } from './delivery/log-mail.transport';
 import { MAIL_TRANSPORT } from './delivery/mail.transport';
 import { SmtpMailTransport } from './delivery/smtp-mail.transport';
@@ -48,15 +49,23 @@ import { NotificationModel } from './notification.model';
     HttpGatewayNotificationAdapter,
     LogMailTransport,
     SmtpMailTransport,
+    GmailMailTransport,
     {
       // El transporte se elige una vez, al arrancar, y no en cada envío: qué
       // buzón usa este despliegue es configuración, no una decisión que deba
       // repetirse por correo. Ambas implementaciones se registran para que la
       // elección sea un cambio de variable de entorno y no de código.
       provide: MAIL_TRANSPORT,
-      inject: [LogMailTransport, SmtpMailTransport],
-      useFactory: (log: LogMailTransport, smtp: SmtpMailTransport) =>
-        env.MAIL_TRANSPORT === 'SMTP' ? smtp : log,
+      inject: [LogMailTransport, SmtpMailTransport, GmailMailTransport],
+      useFactory: (
+        log: LogMailTransport,
+        smtp: SmtpMailTransport,
+        gmail: GmailMailTransport,
+      ) => {
+        if (env.MAIL_TRANSPORT === 'SMTP') return smtp;
+        if (env.MAIL_TRANSPORT === 'GMAIL') return gmail;
+        return log;
+      },
     },
     MockNotificationAdapter,
     NotificationAdapterFactory,
