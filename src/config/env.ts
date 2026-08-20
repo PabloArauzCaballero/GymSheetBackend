@@ -242,6 +242,16 @@ export const environmentSchema = z
     GMAIL_FROM_EMAIL: z.string().trim().email().optional(),
 
     /**
+     * Dónde vive el portal web, para componer enlaces que se envían fuera de la
+     * aplicación. Un enlace de activación viaja por WhatsApp y tiene que abrir
+     * el portal del gimnasio, no la API.
+     */
+    PORTAL_PUBLIC_URL: z.string().trim().url().default("http://localhost:3000"),
+
+    /** Vida del enlace de activación por pago en efectivo. */
+    ACTIVATION_LINK_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(48),
+
+    /**
      * Vida del PIN de recuperación. Corta a propósito: es el único intervalo en
      * el que una credencial de seis cifras vale para entrar en una cuenta.
      */

@@ -17,6 +17,9 @@ import { MembershipPlanModel } from "./membership-plan.model";
 import { MembershipStatusHistoryModel } from "./membership-status-history.model";
 import { MembershipModel } from "./membership.model";
 import { MembershipRepository } from "./membership.repository";
+import { MembershipActivationRequestModel } from "./membership-activation-request.model";
+import { GymInsightsService } from "./gym-insights.service";
+import { MembershipActivationService } from "./membership-activation.service";
 import { MembershipService } from "./membership.service";
 import { PlanAccessScopeModel } from "./plan-access-scope.model";
 import { StaffBranchScopeModel } from "./staff-branch-scope.model";
@@ -42,6 +45,7 @@ import { PlanFeatureModel } from "./plan-feature.model";
       PlanFeatureModel,
       EntitlementModel,
       MembershipIntentModel,
+      MembershipActivationRequestModel,
       MembershipExtensionModel,
       PlanAccessScopeModel,
       MembershipModel,
@@ -59,6 +63,8 @@ import { PlanFeatureModel } from "./plan-feature.model";
   providers: [
     MembershipRepository,
     MembershipService,
+    MembershipActivationService,
+    GymInsightsService,
     CustomerStaffService,
     BusinessDateService,
   ],
