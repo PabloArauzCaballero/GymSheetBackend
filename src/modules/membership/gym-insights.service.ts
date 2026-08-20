@@ -21,7 +21,7 @@ export class GymInsightsService {
   /**
    * Uso por máquina, con reserva.
    *
-   * Un ejercicio puede apuntar a un equipo del catálogo, y la mayoría no lo
+   * Un ejercicio puede declarar el equipo que necesita, y la mayoría no lo
    * hace: el peso libre no tiene máquina, y el gimnasio quizá no ha registrado
    * las suyas todavía. Por eso el informe agrupa por máquina cuando la hay y
    * por ejercicio cuando no, en lugar de devolver una tabla vacía el primer
@@ -47,7 +47,11 @@ export class GymInsightsService {
          JOIN sesiones_ejercicios se ON se.id = s.sesion_ejercicio_id
          JOIN sesiones_entrenamiento ses ON ses.id = se.sesion_id
          JOIN ejercicios ej ON ej.id = se.ejercicio_id
-         LEFT JOIN equipos_gym eq ON eq.id = ej.equipo_id
+         -- La relación es de varios a varios: un ejercicio puede necesitar una
+         -- prensa y su barra. Una serie cuenta para cada equipo implicado, que
+         -- es lo correcto para decidir compras: los dos se usaron.
+         LEFT JOIN ejercicios_equipos ee ON ee.ejercicio_id = ej.id
+         LEFT JOIN equipos_gym eq ON eq.id = ee.equipo_gym_id
         WHERE ses.fecha_inicio >= NOW() - (:days * INTERVAL '1 day')
         GROUP BY eq.id, eq.nombre, eq.tipo, ej.nombre
         ORDER BY "series" DESC
@@ -108,6 +112,68 @@ export class GymInsightsService {
           LEFT JOIN puerta ON puerta.dia = dias.dia
          ORDER BY dias.dia`,
       { type: QueryTypes.SELECT, replacements: { days } },
+    );
+  }
+
+  /**
+   * Todas las cuentas, con lo que hace falta para reconocerlas de un vistazo.
+   *
+   * Una lista de usuarios que sólo trae nombre y correo obliga a abrir cada
+   * ficha para saber lo único que suele preguntarse: si esta persona puede
+   * entrar hoy. Por eso viene con su membresía resuelta y su última actividad,
+   * que es la diferencia entre una tabla que se consulta y una que se ignora.
+   *
+   * `filtro` busca por nombre o correo sin distinguir mayúsculas ni acentos
+   * escritos a medias, porque quien busca en recepción teclea «gonzalez» con el
+   * cliente delante.
+   */
+  async listUsers(limit: number, filtro: string | null) {
+    return this.sequelize.query<{
+      id: string;
+      nombreCompleto: string;
+      email: string;
+      rol: string;
+      estado: string;
+      tenantId: string | null;
+      telefono: string | null;
+      plan: string | null;
+      venceEl: string | null;
+      vigente: boolean;
+      ultimaSesion: string | null;
+    }>(
+      `WITH ultima AS (
+          SELECT DISTINCT ON (m.user_id)
+                 m.user_id, m.ends_on, p.name AS plan
+            FROM membership.memberships m
+            LEFT JOIN membership.plans p ON p.id = m.plan_id
+           ORDER BY m.user_id, m.ends_on DESC
+        ),
+        actividad AS (
+          SELECT usuario_id, MAX(fecha_inicio) AS ultima
+            FROM sesiones_entrenamiento
+           GROUP BY usuario_id
+        )
+        SELECT u.id                                        AS "id",
+               u.nombre_completo                           AS "nombreCompleto",
+               u.email                                     AS "email",
+               u.rol                                       AS "rol",
+               u.estado                                    AS "estado",
+               u.tenant_id                                 AS "tenantId",
+               c.phone_number                              AS "telefono",
+               ultima.plan                                 AS "plan",
+               to_char(ultima.ends_on, 'YYYY-MM-DD')       AS "venceEl",
+               COALESCE(ultima.ends_on >= CURRENT_DATE, false) AS "vigente",
+               to_char(actividad.ultima, 'YYYY-MM-DD')     AS "ultimaSesion"
+          FROM usuarios u
+          LEFT JOIN ultima ON ultima.user_id = u.id
+          LEFT JOIN membership.customer_profiles c ON c.user_id = u.id
+          LEFT JOIN actividad ON actividad.usuario_id = u.id
+         WHERE (:filtro IS NULL
+                OR u.email ILIKE '%' || :filtro || '%'
+                OR u.nombre_completo ILIKE '%' || :filtro || '%')
+         ORDER BY u.nombre_completo
+         LIMIT :limit`,
+      { type: QueryTypes.SELECT, replacements: { limit, filtro } },
     );
   }
 

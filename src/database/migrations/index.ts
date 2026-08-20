@@ -14,6 +14,7 @@ import { routineRecurrenceWindowMigration } from "./202608170001-routine-recurre
 import { passwordResetAndEmailChannelMigration } from "./202608190001-password-reset-and-email-channel";
 import { userTenantMigration } from "./202608190002-user-tenant";
 import { equipmentUsageAndCashActivationMigration } from "./202608190003-equipment-usage-and-cash-activation";
+import { dropRedundantExerciseEquipmentMigration } from "./202608190004-drop-redundant-exercise-equipment";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -34,4 +35,5 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   passwordResetAndEmailChannelMigration,
   userTenantMigration,
   equipmentUsageAndCashActivationMigration,
+  dropRedundantExerciseEquipmentMigration,
 ];

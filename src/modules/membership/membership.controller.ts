@@ -190,6 +190,16 @@ export class AdminMembershipController {
     return this.insights.peopleFlow(readWindow(days));
   }
 
+  /** Todas las cuentas, con su membresía y su última actividad resueltas. */
+  @Get("users")
+  @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+  listUsers(@Query("q") q?: string, @Query("limit") limit?: string) {
+    const parsed = Number(limit);
+    const bounded = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 500) : 200;
+    const filtro = q?.trim() ? q.trim() : null;
+    return this.insights.listUsers(bounded, filtro);
+  }
+
   /** Personas cuya membresía venció o que nunca tuvieron una. */
   @Get("insights/lapsed")
   @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
