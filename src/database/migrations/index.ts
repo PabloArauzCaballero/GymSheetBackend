@@ -16,6 +16,7 @@ import { userTenantMigration } from "./202608190002-user-tenant";
 import { equipmentUsageAndCashActivationMigration } from "./202608190003-equipment-usage-and-cash-activation";
 import { dropRedundantExerciseEquipmentMigration } from "./202608190004-drop-redundant-exercise-equipment";
 import { uniqueGlobalExerciseNameMigration } from "./202608200001-unique-global-exercise-name";
+import { scopeUniqueExerciseNameToCustomMigration } from "./202608200002-scope-unique-exercise-name-to-custom";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -38,4 +39,5 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   equipmentUsageAndCashActivationMigration,
   dropRedundantExerciseEquipmentMigration,
   uniqueGlobalExerciseNameMigration,
+  scopeUniqueExerciseNameToCustomMigration,
 ];

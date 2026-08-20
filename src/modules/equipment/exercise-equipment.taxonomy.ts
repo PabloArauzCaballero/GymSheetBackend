@@ -43,6 +43,7 @@ export function normalizeForMatch(value: string): string {
 const equipmentByDeclaredValue: ReadonlyMap<string, readonly string[]> = new Map(
   [
     ["barbell", ["barra-olimpica"]],
+    ["olympic barbell", ["barra-olimpica"]],
     ["ez barbell", ["barra-z"]],
     ["ez bar", ["barra-z"]],
     ["dumbbell", ["mancuernas"]],
