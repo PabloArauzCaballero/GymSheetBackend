@@ -118,15 +118,27 @@ export class ExercisesService {
 
   async createGlobalExercise(input: CreateGlobalExerciseInput): Promise<ExerciseResponse> {
     const equipmentIds = await this.validateEquipmentIds(input.equipmentIds);
-    const exerciseId = await this.sequelize.transaction(async (transaction) => {
-      const exercise = await this.exercisesRepository.createGlobal(input, transaction);
-      await this.exercisesRepository.replaceExerciseEquipment(
-        exercise.id,
-        equipmentIds,
-        transaction,
-      );
-      return exercise.id;
-    });
+    let exerciseId: string;
+    try {
+      exerciseId = await this.sequelize.transaction(async (transaction) => {
+        const exercise = await this.exercisesRepository.createGlobal(input, transaction);
+        await this.exercisesRepository.replaceExerciseEquipment(
+          exercise.id,
+          equipmentIds,
+          transaction,
+        );
+        return exercise.id;
+      });
+    } catch (error) {
+      // El catálogo compartido no admite dos ejercicios con el mismo nombre: la
+      // unicidad la impone un índice parcial, así que dos altas simultáneas
+      // llegan aquí en vez de colarse. Sin esta traducción el alta repetida
+      // respondía 500, y cualquier siembra reejecutada duplicaba el catálogo.
+      if (error instanceof UniqueConstraintError) {
+        throw new ConflictException('Ya existe un ejercicio con ese nombre en el catálogo.');
+      }
+      throw error;
+    }
 
     const exercise = await this.exercisesRepository.findGlobalById(exerciseId);
     return mapExerciseToResponse(this.requireExercise(exercise));

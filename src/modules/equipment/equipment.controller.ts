@@ -8,6 +8,8 @@ import {
   CreateEquipmentInput,
   UpdateEquipmentInput,
   createEquipmentSchema,
+  seedEquipmentFromCatalogSchema,
+  type SeedEquipmentFromCatalogInput,
   updateEquipmentSchema,
 } from './equipment.schemas';
 
@@ -25,6 +27,27 @@ export class EquipmentController {
 @Controller('admin/equipment')
 export class AdminEquipmentController {
   constructor(private readonly equipmentService: EquipmentService) {}
+
+  /**
+   * El catálogo sugerido, agrupado por zona.
+   *
+   * Se sirve desde el código y no desde la base: es una lista curada que
+   * cambia con la aplicación, no un dato que cada gimnasio edite. Lo que sí
+   * edita es su propio equipamiento, una vez copiado.
+   */
+  @Get("catalog")
+  listCatalog() {
+    return this.equipmentService.listCatalog();
+  }
+
+  /** Copia al gimnasio las máquinas que eligió del catálogo. */
+  @Post("catalog")
+  seedFromCatalog(
+    @Body(new ZodValidationPipe(seedEquipmentFromCatalogSchema))
+    input: SeedEquipmentFromCatalogInput,
+  ) {
+    return this.equipmentService.seedFromCatalog(input.claves);
+  }
 
   @Post()
   createEquipment(@Body(new ZodValidationPipe(createEquipmentSchema)) input: CreateEquipmentInput) {

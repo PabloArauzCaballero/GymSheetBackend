@@ -111,8 +111,8 @@ export class ExercisesRepository {
       raw: true,
     });
     return (rows as unknown as Array<Record<string, unknown>>).map((row) => ({
-      bodyPart: String(row["bodyPart"] ?? row["body_part"] ?? ""),
-      targetMuscle: String(row["targetMuscle"] ?? row["target_muscle"] ?? ""),
+      bodyPart: readText(row, "bodyPart", "body_part"),
+      targetMuscle: readText(row, "targetMuscle", "target_muscle"),
       total: Number(row["total"] ?? 0),
     }));
   }
@@ -298,4 +298,23 @@ export class ExercisesRepository {
     const { equipmentIds: _equipmentIds, ...attributes } = input;
     return attributes;
   }
+}
+
+/**
+ * Lee una columna de texto de una fila cruda.
+ *
+ * Sequelize devuelve las agregaciones sin pasar por el modelo, así que la clave
+ * llega en camelCase o en snake_case según el dialecto y el valor es `unknown`.
+ * Se acepta sólo texto: convertir a ciegas con `String()` produciría
+ * «[object Object]» como nombre de grupo muscular si alguna vez llegase otra
+ * cosa, y ese valor terminaría en un filtro de la interfaz sin que nadie
+ * entendiera de dónde salió.
+ */
+function readText(
+  row: Record<string, unknown>,
+  camelKey: string,
+  snakeKey: string,
+): string {
+  const value = row[camelKey] ?? row[snakeKey];
+  return typeof value === "string" ? value : "";
 }

@@ -1,4 +1,5 @@
 import { Sequelize } from "sequelize-typescript";
+import { env } from "../../../config/env";
 import { ExercisesDatasetClient } from "./exercises-dataset.client";
 import { ExercisesDatasetRepository } from "./exercises-dataset.repository";
 import { ExercisesDatasetService } from "./exercises-dataset.service";
@@ -29,6 +30,23 @@ describe("ExercisesDatasetService refresh status", () => {
         replacements: { sourceKey: "hasaneyldrm/exercises-dataset" },
       }),
     );
+  });
+
+  /**
+   * El conector se apaga por configuración, y hasta ahora esta prueba heredaba
+   * el `.env` de quien la ejecutara: con el conector desactivado en local
+   * fallaba con un 503 que no tenía nada que ver con lo que se está probando.
+   * La prueba declara la configuración que ejercita y la restaura después, para
+   * que su resultado no dependa de la máquina.
+   */
+  const datasetEnabled = env.EXERCISES_DATASET_ENABLED;
+  beforeEach(() => {
+    (env as { EXERCISES_DATASET_ENABLED: boolean }).EXERCISES_DATASET_ENABLED =
+      true;
+  });
+  afterEach(() => {
+    (env as { EXERCISES_DATASET_ENABLED: boolean }).EXERCISES_DATASET_ENABLED =
+      datasetEnabled;
   });
 
   it("treats a previously imported identical snapshot as a catalog no-op", async () => {

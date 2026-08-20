@@ -80,3 +80,22 @@ export const updateEquipmentSchema = z
 
 export type CreateEquipmentInput = z.infer<typeof createEquipmentSchema>;
 export type UpdateEquipmentInput = z.infer<typeof updateEquipmentSchema>;
+
+/**
+ * Alta desde el catálogo sugerido.
+ *
+ * Llegan claves, no fichas completas: el nombre y el tipo los pone el catálogo,
+ * y dejar que el cliente los mande abriría la puerta a que dos gimnasios
+ * registren `prensa-piernas` con nombres distintos, que es justo lo que el
+ * catálogo existe para evitar.
+ *
+ * El tope de 200 no es una cifra de negocio: es lo que impide que una petición
+ * cualquiera intente crear diez mil filas en una transacción.
+ */
+export const seedEquipmentFromCatalogSchema = z.object({
+  claves: z.array(z.string().trim().min(1).max(60)).min(1).max(200),
+});
+
+export type SeedEquipmentFromCatalogInput = z.infer<
+  typeof seedEquipmentFromCatalogSchema
+>;

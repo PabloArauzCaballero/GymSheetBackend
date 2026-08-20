@@ -23,6 +23,7 @@ const clientUser: AuthenticatedUser = {
   id: '00000000-0000-4000-8000-000000000001',
   email: 'client@example.test',
   role: UserRole.CLIENT,
+  tenantId: null,
 };
 
 describe('RolesGuard', () => {
