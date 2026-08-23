@@ -9,10 +9,12 @@ import { ExercisesService } from './exercises.service';
 import {
   CreateGlobalExerciseInput,
   CreatePersonalExerciseInput,
+  EquipmentSuggestionQuery,
   ExerciseFilterInput,
   UpdateExerciseInput,
   createGlobalExerciseSchema,
   createPersonalExerciseSchema,
+  equipmentSuggestionQuerySchema,
   exerciseFilterSchema,
   updateExerciseSchema,
 } from './exercises.schemas';
@@ -33,6 +35,21 @@ export class ExercisesController {
   @Get('taxonomy')
   listTaxonomy() {
     return this.exercisesService.listTaxonomy();
+  }
+
+  /**
+   * Máquina que corresponde a un músculo, deducida del catálogo.
+   *
+   * Alimenta el formulario de ejercicio propio: se elige el músculo y la
+   * pantalla ya puede mostrar con qué se entrena antes de guardar nada. Va
+   * antes de `:id` por el mismo motivo que `taxonomy`.
+   */
+  @Get('equipment-suggestion')
+  suggestEquipment(
+    @Query(new ZodValidationPipe(equipmentSuggestionQuerySchema))
+    query: EquipmentSuggestionQuery,
+  ) {
+    return this.exercisesService.getEquipmentSuggestion(query.muscle);
   }
 
   @Get(':id')

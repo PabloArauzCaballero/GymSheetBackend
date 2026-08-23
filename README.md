@@ -49,6 +49,7 @@ yarn worker:exercises-dataset
 ## Documentación
 
 ```txt
+docs/progression/la-senda.md
 docs/architecture/architecture.md
 docs/architecture/flows.md
 docs/endpoints/endpoints.md

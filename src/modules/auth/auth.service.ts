@@ -52,6 +52,11 @@ export class AuthService {
         email: input.email,
         passwordHash,
         fullName: input.fullName,
+        // El cliente manda cuando sabe por dónde entró la persona; si no, la
+        // instalación decide. Lo que ya no ocurre es quedarse sin gimnasio: eso
+        // dejaba a la cuenta sin marca y a la aplicación pintando la genérica.
+        tenantId: input.tenantId ?? env.DEFAULT_TENANT_ID ?? null,
+        gender: input.gender,
       });
 
       return this.buildAuthResponse(
@@ -123,7 +128,11 @@ export class AuthService {
         email: emailAddress,
         nombreCompleto: fullName,
         rol: role,
-        tenantId,
+        // Las cuentas creadas antes de existir el campo no tienen gimnasio
+        // guardado. Se resuelven aquí contra la instalación en vez de
+        // reescribirlas en masa: una migración que asignara marca a treinta
+        // cuentas existentes sería una decisión de negocio disfrazada de esquema.
+        tenantId: tenantId ?? env.DEFAULT_TENANT_ID ?? null,
       },
     };
   }

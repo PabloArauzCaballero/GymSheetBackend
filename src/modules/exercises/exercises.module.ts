@@ -8,6 +8,7 @@ import {
 import { ExerciseMediaModel } from './exercise-media.model';
 import { ExerciseMediaRepository } from './exercise-media.repository';
 import { ExerciseMediaService } from './exercise-media.service';
+import { EquipmentInferenceService } from './equipment-inference.service';
 import { ExerciseEquipmentModel } from './exercise-equipment.model';
 import { ExerciseModel } from './exercise.model';
 import {
@@ -65,6 +66,7 @@ import {
   providers: [
     ExercisesRepository,
     ExercisesService,
+    EquipmentInferenceService,
     ExerciseMediaRepository,
     ExerciseMediaService,
     ExercisesDatasetClient,

@@ -37,6 +37,20 @@ export enum OnboardingStatus {
   REQUIRES_UPDATE = "REQUIRES_UPDATE",
 }
 
+/**
+ * Género declarado por la persona.
+ *
+ * `UNSPECIFIED` no es lo mismo que ausencia: significa «me lo preguntaste y
+ * elijo no decirlo». La columna nula es «todavía no se ha preguntado». Ambos
+ * casos caen en la rama neutra del catálogo, pero solo el segundo justifica
+ * volver a preguntar.
+ */
+export enum UserGender {
+  MALE = "MALE",
+  FEMALE = "FEMALE",
+  UNSPECIFIED = "UNSPECIFIED",
+}
+
 export enum EquipmentType {
   MACHINE = "MAQUINA",
   DUMBBELL = "MANCUERNA",

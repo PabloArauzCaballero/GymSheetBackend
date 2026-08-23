@@ -7,6 +7,7 @@ import { env } from "../../config/env";
 import { UserModel } from "../../modules/users/user.model";
 import { databaseModels } from "../models";
 import { seedCustomerExperience } from "./customer-experience.seed";
+import { seedProgression } from "./progression.seed";
 
 export type SeedMode = "base" | "mock" | "all";
 
@@ -167,6 +168,12 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
   try {
     await sequelize.authenticate();
     const counters = { created: 0, updated: 0, unchanged: 0 };
+    let progression = {
+      levelsCreated: 0,
+      levelsUpdated: 0,
+      badgesCreated: 0,
+      badgesUpdated: 0,
+    };
     await sequelize.transaction(async (transaction) => {
       await sequelize.query(
         "SELECT pg_advisory_xact_lock(hashtext(:lockName))",
@@ -179,8 +186,11 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
         counters[await upsertUser(user, transaction)] += 1;
       }
       await seedCustomerExperience(mode, transaction);
+      // El catálogo de la senda es producto, no datos de prueba: se siembra en
+      // todos los modos para que ningún despliegue arranque con la pantalla vacía.
+      progression = await seedProgression(transaction);
     });
-    logger.log({ event: "database.seed.completed", mode, ...counters });
+    logger.log({ event: "database.seed.completed", mode, ...counters, ...progression });
   } finally {
     await sequelize.close();
   }

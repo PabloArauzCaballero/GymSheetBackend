@@ -62,7 +62,76 @@ export const createGlobalExerciseSchema = exerciseRequestSchema.transform(
   }),
 );
 
-export const createPersonalExerciseSchema = createGlobalExerciseSchema;
+/**
+ * Alta de un ejercicio propio.
+ *
+ * Aquí la persona configura el **músculo** y el equipamiento se deduce solo, así
+ * que `grupoMuscular` deja de ser obligatorio: si llega `muscleCode`, el
+ * servidor rellena grupo, músculo objetivo y equipamiento desde el catálogo.
+ *
+ * Sigue aceptándose la forma antigua —grupo muscular escrito a mano— porque el
+ * portal web ya la usa y romperla dejaría sin crear ejercicios a quien no haya
+ * actualizado. Lo que no se acepta es no enviar ninguna de las dos: sin músculo
+ * ni grupo, el ejercicio no se puede clasificar ni recomendar.
+ */
+export const createPersonalExerciseSchema = z
+  .object({
+    nombre: exerciseNameSchema,
+    grupoMuscular: muscleNameSchema.optional(),
+    /** Código canónico de la taxonomía (`PECTORALIS_MAJOR`). */
+    muscleCode: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z][A-Z0-9_]*$/)
+      .max(60)
+      .optional(),
+    descripcion: nullableDescriptionSchema.optional(),
+    equipoIds: equipmentIdsSchema.optional(),
+    /**
+     * Etiqueta de equipamiento elegida por la persona entre las que propone el
+     * servidor. Ausente = se acepta la que el catálogo considere más habitual.
+     */
+    equipmentLabel: z.string().trim().min(2).max(160).optional(),
+    bodyPart: z.string().trim().min(2).max(100).optional().nullable(),
+    targetMuscle: muscleNameSchema.optional().nullable(),
+    synergistMuscleGroup: muscleNameSchema.optional().nullable(),
+    secondaryMuscles: z.array(muscleNameSchema).max(30).optional(),
+    instructions: localizedInstructionsSchema.optional(),
+    instructionSteps: localizedInstructionStepsSchema.optional(),
+    metadata: metadataSchema.optional(),
+  })
+  .refine((input) => Boolean(input.muscleCode ?? input.grupoMuscular), {
+    message: 'Indica el músculo entrenado o el grupo muscular.',
+    path: ['muscleCode'],
+  })
+  .transform(({ nombre, grupoMuscular, descripcion, equipoIds, ...extendedData }) => ({
+    name: nombre,
+    // Se deja vacío cuando solo llega `muscleCode`: lo rellena el servicio con
+    // el grupo real del músculo, que es más fiable que lo que se teclee aquí.
+    muscleGroup: grupoMuscular ?? null,
+    muscleCode: extendedData.muscleCode ?? null,
+    equipmentLabel: extendedData.equipmentLabel ?? null,
+    description: descripcion ?? null,
+    equipmentIds: equipoIds ?? [],
+    bodyPart: extendedData.bodyPart ?? null,
+    targetMuscle: extendedData.targetMuscle ?? null,
+    synergistMuscleGroup: extendedData.synergistMuscleGroup ?? null,
+    secondaryMuscles: extendedData.secondaryMuscles ?? [],
+    instructions: extendedData.instructions ?? {},
+    instructionSteps: extendedData.instructionSteps ?? {},
+    metadata: extendedData.metadata ?? {},
+  }));
+
+/** Consulta de la máquina que corresponde a un músculo. */
+export const equipmentSuggestionQuerySchema = z.object({
+  muscle: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z][A-Z0-9_]*$/)
+    .max(60),
+});
 
 export const updateExerciseSchema = exerciseRequestSchema
   .partial()
@@ -161,3 +230,4 @@ export type CreatePersonalExerciseInput = z.infer<typeof createPersonalExerciseS
 export type UpdateExerciseInput = z.infer<typeof updateExerciseSchema>;
 export type ExerciseFilterInput = z.infer<typeof exerciseFilterSchema>;
 export type CreateExerciseMediaInput = z.infer<typeof createExerciseMediaSchema>;
+export type EquipmentSuggestionQuery = z.infer<typeof equipmentSuggestionQuerySchema>;

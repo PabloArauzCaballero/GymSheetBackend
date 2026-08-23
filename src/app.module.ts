@@ -24,6 +24,7 @@ import { MembershipModule } from './modules/membership/membership.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
 import { TrainingModule } from './modules/training/training.module';
+import { ProgressionModule } from './modules/progression/progression.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 
@@ -91,6 +92,7 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
     ExercisesModule,
     WorkoutsModule,
     TrainingModule,
+    ProgressionModule,
     ExportModule,
     MediaModule,
   ],

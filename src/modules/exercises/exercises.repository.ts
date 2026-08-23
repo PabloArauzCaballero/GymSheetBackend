@@ -12,7 +12,6 @@ import { ExerciseMediaModel } from './exercise-media.model';
 import { ExerciseModel } from './exercise.model';
 import {
   CreateGlobalExerciseInput,
-  CreatePersonalExerciseInput,
   ExerciseFilterInput,
   UpdateExerciseInput,
 } from './exercises.schemas';
@@ -156,9 +155,14 @@ export class ExercisesRepository {
     );
   }
 
+  /**
+   * Recibe la forma ya resuelta, no la del formulario: cuando el alta llega con
+   * un músculo en vez de un grupo, el servicio ya ha consultado la taxonomía y
+   * ha rellenado grupo, músculo objetivo y equipamiento antes de llegar aquí.
+   */
   createPersonal(
     userId: string,
-    input: CreatePersonalExerciseInput,
+    input: CreateGlobalExerciseInput & { requiredEquipment?: string | null },
     transaction?: Transaction,
   ): Promise<ExerciseModel> {
     return this.exerciseModel.create(
@@ -292,9 +296,9 @@ export class ExercisesRepository {
     ];
   }
 
-  private toExerciseAttributes(
-    input: CreateGlobalExerciseInput,
-  ): Omit<CreateGlobalExerciseInput, 'equipmentIds'> {
+  private toExerciseAttributes<T extends CreateGlobalExerciseInput>(
+    input: T,
+  ): Omit<T, 'equipmentIds'> {
     const { equipmentIds: _equipmentIds, ...attributes } = input;
     return attributes;
   }

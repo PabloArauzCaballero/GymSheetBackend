@@ -61,6 +61,8 @@ Invócalas por nombre para procedimientos especializados:
 ## Documentación
 
 - Auditoría y estado de producción: `BACKEND_AUDIT_HARDENING_AND_ACTION_PLAN.md`.
+- Progresión gamificada (narrativa, puntos, filtrado por género, multi-inquilino y
+  API de administración): `docs/progression/la-senda.md`.
 - Organización de Claude Code y reportes: `docs/claude/`.
 - Reglas modulares: `.claude/rules/`.
 

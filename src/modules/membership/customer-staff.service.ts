@@ -188,6 +188,12 @@ export class CustomerStaffService {
    */
   async createStaffUser(input: CreateStaffUserInput, actorUserId: string) {
     await this.validateBranchIds(input.branchIds);
+    // El gimnasio se hereda de quien da el alta y no se pide en el formulario:
+    // un administrador solo puede contratar para su propio gimnasio, así que
+    // preguntárselo sería ofrecerle equivocarse. Sin esto, el personal quedaba
+    // sin gimnasio mientras los socios sí lo guardaban, y esa asimetría se
+    // notaba en cuanto alguien listaba las cuentas de una marca.
+    const actor = await this.usersRepository.findById(actorUserId);
     const [passwordHash, pinHash] = await Promise.all([
       bcrypt.hash(input.password, env.BCRYPT_SALT_ROUNDS),
       input.accessPin
@@ -207,6 +213,7 @@ export class CustomerStaffService {
             passwordHash,
             fullName: input.fullName,
             role: input.role,
+            tenantId: actor?.tenantId ?? env.DEFAULT_TENANT_ID ?? null,
           },
           transaction,
         );

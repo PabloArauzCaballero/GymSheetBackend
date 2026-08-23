@@ -4,6 +4,7 @@ import { ExerciseType } from '../../common/enums/domain.enums';
 import { EquipmentRepository } from '../equipment/equipment.repository';
 import { ExerciseModel } from './exercise.model';
 import { ExercisesRepository } from './exercises.repository';
+import { EquipmentInferenceService } from './equipment-inference.service';
 import { ExercisesService } from './exercises.service';
 
 const ownerId = '00000000-0000-4000-8000-000000000001';
@@ -13,9 +14,17 @@ const exerciseId = '00000000-0000-4000-8000-000000000003';
 function createService(repositoryOverrides: Partial<ExercisesRepository>): ExercisesService {
   const exercisesRepository = repositoryOverrides as ExercisesRepository;
   const equipmentRepository = {} as EquipmentRepository;
+  // Las pruebas de propiedad no crean ejercicios, así que la deducción de
+  // equipamiento nunca llega a invocarse; basta con satisfacer al constructor.
+  const equipmentInference = {} as EquipmentInferenceService;
   const sequelize = {} as Sequelize;
 
-  return new ExercisesService(exercisesRepository, equipmentRepository, sequelize);
+  return new ExercisesService(
+    exercisesRepository,
+    equipmentRepository,
+    equipmentInference,
+    sequelize,
+  );
 }
 
 describe('ExercisesService ownership', () => {

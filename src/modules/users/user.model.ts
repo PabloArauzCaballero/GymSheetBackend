@@ -1,5 +1,5 @@
 import { Column, CreatedAt, DataType, Default, HasOne, Model, PrimaryKey, Table, UpdatedAt } from 'sequelize-typescript';
-import { UserRole, UserStatus } from '../../common/enums/domain.enums';
+import { UserGender, UserRole, UserStatus } from '../../common/enums/domain.enums';
 import { AnthropometricProfileModel } from '../profiles/anthropometric-profile.model';
 
 /**
@@ -38,6 +38,13 @@ export class UserModel extends Model {
    */
   @Column({ type: DataType.STRING(60), allowNull: true, field: 'tenant_id' })
   declare tenantId: string | null;
+
+  /**
+   * Género declarado por la persona. Nulo es un estado legítimo y permanente:
+   * la progresión tiene una rama neutra para quien no quiera declararlo.
+   */
+  @Column({ type: DataType.STRING(12), allowNull: true, field: 'genero' })
+  declare gender: UserGender | null;
 
   @Default(DataType.NOW)
   @Column({ type: DataType.DATE, allowNull: false, field: 'fecha_registro' })

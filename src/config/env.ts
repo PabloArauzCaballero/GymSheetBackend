@@ -59,6 +59,23 @@ export const environmentSchema = z
       .min(3)
       .max(80)
       .default("America/La_Paz"),
+    /**
+     * Gimnasio al que se adscriben las cuentas nuevas cuando el cliente no
+     * declara uno.
+     *
+     * Sin esto, registrarse dejaba `tenant_id` nulo y toda instalación —también
+     * la de un gimnasio con marca propia— pintaba la identidad de referencia.
+     * También sirve de red para las cuentas creadas antes de existir el campo:
+     * se resuelven contra este valor en lugar de quedarse sin marca para
+     * siempre. Vacío = instalación de una sola marca, comportamiento anterior.
+     */
+    DEFAULT_TENANT_ID: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .regex(/^[a-z0-9][a-z0-9-]*$/)
+      .max(60)
+      .optional(),
     ACCESS_POLICY_VERSION: z
       .string()
       .trim()

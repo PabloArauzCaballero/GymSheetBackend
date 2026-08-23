@@ -10,6 +10,10 @@ import { Sequelize } from 'sequelize-typescript';
 import { ExerciseType } from '../../common/enums/domain.enums';
 import { EquipmentRepository } from '../equipment/equipment.repository';
 import {
+  EquipmentInferenceService,
+  MuscleEquipmentInference,
+} from './equipment-inference.service';
+import {
   ExercisePageResponse,
   ExerciseResponse,
   FavoriteExerciseResponse,
@@ -25,6 +29,16 @@ import {
   UpdateExerciseInput,
 } from './exercises.schemas';
 
+/**
+ * Alta ya resuelta contra la taxonomía, lista para persistir.
+ *
+ * `requiredEquipment` no está en el contrato de entrada porque no lo escribe
+ * nadie: lo pone el servidor a partir del músculo.
+ */
+type ResolvedExerciseInput = CreateGlobalExerciseInput & {
+  requiredEquipment?: string | null;
+};
+
 export type FavoriteMutationResponse = {
   id: string;
   ejercicioId: string;
@@ -36,8 +50,14 @@ export class ExercisesService {
   constructor(
     private readonly exercisesRepository: ExercisesRepository,
     private readonly equipmentRepository: EquipmentRepository,
+    private readonly equipmentInference: EquipmentInferenceService,
     private readonly sequelize: Sequelize,
   ) {}
+
+  /** Qué máquina corresponde a un músculo, según el catálogo. */
+  getEquipmentSuggestion(muscleCode: string): Promise<MuscleEquipmentInference> {
+    return this.equipmentInference.inferForMuscle(muscleCode);
+  }
 
   /**
    * Agrupa la taxonomía plana del repositorio en el árbol que la navegación
@@ -132,15 +152,24 @@ export class ExercisesService {
     return mapExerciseToResponse(this.requireExercise(exercise));
   }
 
+  /**
+   * Crea un ejercicio propio.
+   *
+   * Si el alta llega con un músculo, la máquina se deduce del catálogo y el
+   * grupo muscular se toma de la taxonomía: la persona solo elige qué quiere
+   * entrenar. Si llega con el grupo escrito a mano —la forma anterior— se
+   * respeta tal cual y no se deduce nada.
+   */
   async createPersonalExercise(
     userId: string,
     input: CreatePersonalExerciseInput,
   ): Promise<ExerciseResponse> {
-    const equipmentIds = await this.validateEquipmentIds(input.equipmentIds);
+    const resolved = await this.resolveMuscleDrivenInput(input);
+    const equipmentIds = await this.validateEquipmentIds(resolved.equipmentIds);
     const exerciseId = await this.sequelize.transaction(async (transaction) => {
       const exercise = await this.exercisesRepository.createPersonal(
         userId,
-        input,
+        resolved,
         transaction,
       );
       await this.exercisesRepository.replaceExerciseEquipment(
@@ -291,6 +320,56 @@ export class ExercisesService {
     }
 
     return exercise;
+  }
+
+  /**
+   * Convierte el alta guiada por músculo en la forma que espera el modelo.
+   *
+   * Lo que la persona no declara se toma del catálogo, no de un valor por
+   * defecto inventado: el grupo muscular sale de la taxonomía y el equipamiento
+   * de lo que de verdad se usa para ese músculo en los ejercicios existentes.
+   * Lo que la persona sí declara nunca se pisa.
+   */
+  private async resolveMuscleDrivenInput(
+    input: CreatePersonalExerciseInput,
+  ): Promise<ResolvedExerciseInput> {
+    const { muscleCode, equipmentLabel, muscleGroup, ...rest } = input;
+
+    if (!muscleCode) {
+      if (!muscleGroup) {
+        throw new BadRequestException(
+          'Indica el músculo entrenado o el grupo muscular.',
+        );
+      }
+      return { ...rest, muscleGroup };
+    }
+
+    const inference = await this.equipmentInference.inferForMuscle(muscleCode);
+    const chosen =
+      (equipmentLabel
+        ? [inference.primary, ...inference.alternatives].find(
+            (option) => option?.label === equipmentLabel.toLowerCase(),
+          )
+        : inference.primary) ?? inference.primary;
+
+    return {
+      ...rest,
+      muscleGroup: muscleGroup ?? inference.muscleGroupName,
+      targetMuscle: rest.targetMuscle ?? inference.muscleName,
+      bodyPart: rest.bodyPart ?? inference.muscleGroupName,
+      // Columna real del catálogo: así el ejercicio propio se filtra y se
+      // compara con los globales por el mismo campo, en vez de quedar aparte.
+      requiredEquipment: chosen?.label ?? null,
+      metadata: {
+        ...rest.metadata,
+        // Procedencia: permite revisar por qué salió esa máquina y recalcularla
+        // si el catálogo cambia, sin tener que adivinarlo desde la etiqueta.
+        muscleCode: inference.muscleCode,
+        equipmentName: chosen?.name ?? null,
+        equipmentType: chosen?.type ?? null,
+        equipmentInferredFromCatalogue: equipmentLabel === null,
+      },
+    };
   }
 
   private async validateEquipmentIds(equipmentIds: string[]): Promise<string[]> {

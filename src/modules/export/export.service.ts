@@ -200,7 +200,7 @@ export class ExportService {
       { key: 'volumen', label: 'Volumen', width: 0, align: 'right' as const },
     ];
     const fixed = columns.reduce((sum, column) => sum + column.width, 0);
-    columns[columns.length - 1]!.width = contentWidth - fixed;
+    columns[columns.length - 1].width = contentWidth - fixed;
 
     const drawHeaderRow = () => {
       doc.fillColor(MUTED).font('Helvetica-Bold').fontSize(8);
@@ -270,7 +270,7 @@ export class ExportService {
       doc.font('Helvetica').fontSize(9).fillColor(INK);
       let x = MARGIN;
       values.forEach((value, columnIndex) => {
-        const column = columns[columnIndex]!;
+        const column = columns[columnIndex];
         doc.text(value, x, y, { width: column.width, align: column.align });
         x += column.width;
       });

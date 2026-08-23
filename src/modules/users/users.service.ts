@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { UsersRepository } from './users.repository';
+import { UpdateMyAccountInput } from './users.schemas';
 import { UserModel } from './user.model';
 
 @Injectable()
@@ -13,6 +14,17 @@ export class UsersService {
       throw new NotFoundException('Usuario no encontrado o inactivo.');
     }
 
+    return user;
+  }
+
+  async updateMyAccount(
+    userId: string,
+    input: UpdateMyAccountInput,
+  ): Promise<UserModel> {
+    const user = await this.getActiveUserOrFail(userId);
+    if (input.genero !== undefined) {
+      await user.update({ gender: input.genero });
+    }
     return user;
   }
 }

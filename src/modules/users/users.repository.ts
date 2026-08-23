@@ -1,13 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Transaction } from 'sequelize';
-import { UserRole, UserStatus } from '../../common/enums/domain.enums';
+import { UserGender, UserRole, UserStatus } from '../../common/enums/domain.enums';
 import { UserModel } from './user.model';
 
 export type CreateClientUserInput = {
   email: string;
   passwordHash: string;
   fullName: string;
+  /** Gimnasio de la cuenta. Nulo solo en una instalación de una sola marca. */
+  tenantId?: string | null;
+  gender?: UserGender | null;
 };
 
 /**
@@ -43,6 +46,8 @@ export class UsersRepository {
       email: input.email.toLowerCase(),
       passwordHash: input.passwordHash,
       fullName: input.fullName,
+      tenantId: input.tenantId ?? null,
+      gender: input.gender ?? null,
     }, { transaction });
   }
 
@@ -52,6 +57,7 @@ export class UsersRepository {
       passwordHash: input.passwordHash,
       fullName: input.fullName,
       role: input.role,
+      tenantId: input.tenantId ?? null,
     }, { transaction });
   }
 }

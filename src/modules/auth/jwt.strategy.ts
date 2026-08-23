@@ -36,7 +36,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       role: activeUser.role,
       // Se lee de la cuenta y no del token: así un cambio de gimnasio surte
       // efecto en la siguiente petición, sin esperar a que caduque la sesión.
-      tenantId: activeUser.tenantId,
+      // El respaldo cubre a las cuentas anteriores al campo, que si no seguirían
+      // viendo la marca genérica en una instalación con marca propia.
+      tenantId: activeUser.tenantId ?? env.DEFAULT_TENANT_ID ?? null,
     };
   }
 }
