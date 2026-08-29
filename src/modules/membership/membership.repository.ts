@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
-import { Op, Transaction } from "sequelize";
-import { MembershipStatus, PlanStatus } from "../../common/enums/domain.enums";
+import { Op, Transaction, UniqueConstraintError } from "sequelize";
+import { EntitlementSource, MembershipStatus, PlanStatus } from "../../common/enums/domain.enums";
 import { UserModel } from "../users/user.model";
 import { CustomerProfileModel } from "./customer-profile.model";
 import { MembershipPlanModel } from "./membership-plan.model";
@@ -11,6 +11,7 @@ import { PlanAccessScopeModel } from "./plan-access-scope.model";
 import { StaffBranchScopeModel } from "./staff-branch-scope.model";
 import { StaffProfileModel } from "./staff-profile.model";
 import { EntitlementModel } from "./entitlement.model";
+import { tenantScopeWhere } from "../../common/tenancy/tenant-scope";
 import { MediaFileModel } from "./media-file.model";
 import { MembershipExtensionModel } from "./membership-extension.model";
 import { MembershipFeatureModel } from "./membership-feature.model";
@@ -150,9 +151,13 @@ export class MembershipRepository {
     return this.customers.findOne({ where: { userId }, include: [UserModel] });
   }
 
-  listCustomers(page: number, pageSize: number) {
+  listCustomers(page: number, pageSize: number, tenantScope: string | null) {
     return this.customers.findAndCountAll({
-      include: [UserModel],
+      // `required: true` es lo que convierte el include en filtro: sin él, un
+      // socio de otro gimnasio saldria igual con su usuario a null.
+      include: [
+        { model: UserModel, required: true, where: tenantScopeWhere(tenantScope) },
+      ],
       limit: pageSize,
       offset: (page - 1) * pageSize,
       order: [["customerNumber", "ASC"]],
@@ -310,6 +315,53 @@ export class MembershipRepository {
     });
   }
 
+  /** Códigos de feature de las recompensas de racha ya otorgadas a este usuario. */
+  async listGrantedStreakRewardCodes(userId: string): Promise<Set<string>> {
+    const grants = await this.entitlements.findAll({
+      where: { userId, sourceType: EntitlementSource.STREAK_REWARD },
+      attributes: ["featureId"],
+    });
+    if (grants.length === 0) return new Set();
+
+    const features = await this.features.findAll({
+      where: { id: { [Op.in]: grants.map((grant) => grant.featureId) } },
+      attributes: ["code"],
+    });
+    return new Set(features.map((feature) => feature.code));
+  }
+
+  /**
+   * Otorga un beneficio si todavía no existe uno igual, sin lanzar si ya
+   * estaba concedido. `uq_entitlement_source (user_id, feature_id, source_type,
+   * source_id)` es quien de verdad garantiza que no se duplique — esto solo
+   * evita que una carrera entre dos lecturas concurrentes de la senda se vea
+   * como un error en vez de como "ya lo tenía".
+   */
+  async grantEntitlementIfMissing(input: {
+    userId: string;
+    featureId: string;
+    sourceType: EntitlementSource;
+    sourceId: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<boolean> {
+    try {
+      await this.entitlements.create({
+        userId: input.userId,
+        featureId: input.featureId,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+        status: "ACTIVE",
+        startsAt: new Date(),
+        endsAt: null,
+        metadata: input.metadata ?? {},
+      });
+      return true;
+    } catch (error: unknown) {
+      if (error instanceof UniqueConstraintError) return false;
+      throw error;
+    }
+  }
+
   findIntentByKey(
     userId: string,
     idempotencyKey: string,
@@ -344,14 +396,19 @@ export class MembershipRepository {
     return this.extensions.create(input, { transaction });
   }
 
-  listMemberships(filters: MembershipListInput) {
+  listMemberships(filters: MembershipListInput, tenantScope: string | null) {
     const where = {
       ...(filters.userId ? { userId: filters.userId } : {}),
       ...(filters.estado ? { status: filters.estado } : {}),
     };
     return this.memberships.findAndCountAll({
       where,
-      include: [MembershipPlanModel],
+      include: [
+        MembershipPlanModel,
+        // El gimnasio de una membresia es el de su titular: la membresia no lo
+        // guarda, asi que el filtro entra por el usuario.
+        { model: UserModel, required: true, where: tenantScopeWhere(tenantScope) },
+      ],
       limit: filters.pageSize,
       offset: (filters.page - 1) * filters.pageSize,
       order: [["endsOn", "DESC"]],
@@ -398,6 +455,7 @@ export class MembershipRepository {
   listStaff(
     page: number,
     pageSize: number,
+    tenantScope: string | null,
     filters: { position?: string; employmentStatus?: string } = {},
   ) {
     return this.staff.findAndCountAll({
@@ -407,7 +465,10 @@ export class MembershipRepository {
           ? { employmentStatus: filters.employmentStatus }
           : {}),
       },
-      include: [StaffBranchScopeModel, UserModel],
+      include: [
+        StaffBranchScopeModel,
+        { model: UserModel, required: true, where: tenantScopeWhere(tenantScope) },
+      ],
       limit: pageSize,
       offset: (page - 1) * pageSize,
       order: [["hiredOn", "DESC"]],

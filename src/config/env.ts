@@ -61,21 +61,25 @@ export const environmentSchema = z
       .default("America/La_Paz"),
     /**
      * Gimnasio al que se adscriben las cuentas nuevas cuando el cliente no
-     * declara uno.
+     * declara uno, y bajo el que se agrupan las cuentas sin `tenant_id` propio
+     * al resolver aislamiento entre gimnasios (directorio, conexiones, chat).
      *
-     * Sin esto, registrarse dejaba `tenant_id` nulo y toda instalación —también
-     * la de un gimnasio con marca propia— pintaba la identidad de referencia.
-     * También sirve de red para las cuentas creadas antes de existir el campo:
-     * se resuelven contra este valor en lugar de quedarse sin marca para
-     * siempre. Vacío = instalación de una sola marca, comportamiento anterior.
+     * Instalación multi-tenant: siempre resuelve a un valor (por defecto
+     * `"default"`), así ninguna cuenta sin tenant explícito queda "sin filtro"
+     * y visible a cualquier otro gimnasio — ese fue el hueco de seguridad que
+     * esto cierra. Cambiarlo solo tiene sentido si además se migran los
+     * `tenant_id` existentes; no lo uses como toggle de "una sola marca".
      */
-    DEFAULT_TENANT_ID: z
-      .string()
-      .trim()
-      .toLowerCase()
-      .regex(/^[a-z0-9][a-z0-9-]*$/)
-      .max(60)
-      .optional(),
+    DEFAULT_TENANT_ID: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z
+        .string()
+        .trim()
+        .toLowerCase()
+        .regex(/^[a-z0-9][a-z0-9-]*$/)
+        .max(60)
+        .default("default"),
+    ),
     ACCESS_POLICY_VERSION: z
       .string()
       .trim()
@@ -131,10 +135,32 @@ export const environmentSchema = z
 
     JWT_ACCESS_SECRET: z.string().min(64),
     JWT_ACCESS_EXPIRES_IN: jwtDurationSchema.default("15m"),
+    /**
+     * Vida del token de suplantación (`POST /auth/impersonate-tenant`). Corta a
+     * propósito: una suplantación es un estado excepcional y no debe
+     * convertirse en un modo pegajoso que alguien olvide que tiene puesto. El
+     * refresh tampoco la hereda.
+     */
+    JWT_IMPERSONATION_EXPIRES_IN: jwtDurationSchema.default("15m"),
     JWT_REFRESH_SECRET: z.string().min(64),
     JWT_REFRESH_EXPIRES_IN: jwtDurationSchema.default("7d"),
     JWT_ISSUER: z.string().trim().min(3).default("gym-sheet-api"),
     JWT_AUDIENCE: z.string().trim().min(3).default("gym-sheet-web"),
+
+    /** How long a password-reset PIN stays usable before it expires. Short:
+     * unlike an unguessable link token, a 6-digit PIN's safety window
+     * depends on the reset flow not staying open for long. */
+    PASSWORD_RESET_TOKEN_TTL: jwtDurationSchema.default("10m"),
+    /** Wrong guesses a single issued PIN tolerates before it is burned. This,
+     * not the PIN's length, is what makes a 1,000,000-value space safe. */
+    PASSWORD_RESET_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
+    /**
+     * Prints the raw reset PIN to the server log instead of emailing it.
+     * This project has no email provider wired in (see
+     * `password-reset-notifier.ts`), so this is the only way to exercise the
+     * reset flow locally. Refused outright in production below.
+     */
+    PASSWORD_RESET_DEV_LOG_ENABLED: environmentBooleanSchema.default(false),
 
     BCRYPT_SALT_ROUNDS: z.coerce.number().int().min(10).max(14).default(12),
     RATE_LIMIT_TTL_SECONDS: z.coerce
@@ -150,6 +176,17 @@ export const environmentSchema = z
       .positive()
       .max(100)
       .default(10),
+    /**
+     * Tráfico anónimo (directorio público de gimnasios): el límite general
+     * está pensado para cuentas ya autenticadas, y una landing pensada para
+     * indexarse necesita un techo más alto que el de login/registro.
+     */
+    PUBLIC_RATE_LIMIT_MAX: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(1000)
+      .default(60),
     GATEWAY_ENABLED: environmentBooleanSchema.default(true),
     /**
      * Optional Redis connection for shared rate-limit counters. When unset the
@@ -316,6 +353,26 @@ export const environmentSchema = z
       (value) => (value === "" ? undefined : value),
       z.string().min(12).max(128).optional(),
     ),
+    /**
+     * Cuenta de sistema global usada como chat fijo "GYM SHEET Corporativo"
+     * en la lista de conversaciones de cada usuario. Opcional a propósito:
+     * sin ella, ese chat simplemente no se crea (no hay fallback silencioso
+     * a una cuenta que nadie sembró).
+     */
+    SEED_SYSTEM_CORPORATE_EMAIL: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().email().optional(),
+    ),
+    SEED_SYSTEM_CORPORATE_PASSWORD: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().min(12).max(128).optional(),
+    ),
+    SEED_SYSTEM_CORPORATE_FULL_NAME: z
+      .string()
+      .trim()
+      .min(2)
+      .max(180)
+      .default("GYM SHEET Corporativo"),
 
     /**
      * Almacenamiento de media (arquitectura de puertos y adaptadores). `local`
@@ -338,6 +395,20 @@ export const environmentSchema = z
       .default(5242880),
     MEDIA_ALLOWED_MIME: commaSeparatedListSchema.default(
       "image/jpeg,image/png,image/webp,image/gif",
+    ),
+    /**
+     * Adjuntos de chat (fotos/video, incluida la vista única): límite propio
+     * porque un video pesa mucho más que una foto de perfil, y un tipo MIME
+     * propio porque acá sí se admite video, a diferencia de `MEDIA_ALLOWED_MIME`.
+     */
+    CHAT_MEDIA_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1024)
+      .max(104857600)
+      .default(26214400),
+    CHAT_MEDIA_ALLOWED_MIME: commaSeparatedListSchema.default(
+      "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime",
     ),
     /** Allowlist SSRF de orígenes desde los que `db:media:mirror` puede descargar. */
     MEDIA_MIRROR_ALLOWED_HOSTS: commaSeparatedListSchema.default(
@@ -385,6 +456,16 @@ export const environmentSchema = z
         code: z.ZodIssueCode.custom,
         path: ["ACCESS_MOCK_ENABLED"],
         message: "Access mock endpoints are forbidden in production.",
+      });
+    if (
+      configuration.NODE_ENV === "production" &&
+      configuration.PASSWORD_RESET_DEV_LOG_ENABLED
+    )
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["PASSWORD_RESET_DEV_LOG_ENABLED"],
+        message:
+          "Logging password-reset tokens is forbidden in production; wire a real email adapter instead.",
       });
     if (
       configuration.NODE_ENV === "production" &&

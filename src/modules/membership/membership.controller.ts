@@ -189,10 +189,11 @@ export class AdminMembershipController {
 
   @Get("customers")
   listCustomers(
+    @CurrentUser() actor: AuthenticatedUser,
     @Query(new ZodValidationPipe(membershipListSchema))
     query: MembershipListInput,
   ) {
-    return this.service.listCustomers(query.page, query.pageSize);
+    return this.service.listCustomers(query.page, query.pageSize, actor.tenantScope);
   }
 
   @Post("memberships")
@@ -206,10 +207,11 @@ export class AdminMembershipController {
 
   @Get("memberships")
   listMemberships(
+    @CurrentUser() actor: AuthenticatedUser,
     @Query(new ZodValidationPipe(membershipListSchema))
     query: MembershipListInput,
   ) {
-    return this.service.listMemberships(query);
+    return this.service.listMemberships(query, actor.tenantScope);
   }
 
   @Patch("memberships/:id/status")
@@ -245,9 +247,10 @@ export class AdminMembershipController {
   @Get("staff")
   @Roles(UserRole.ADMIN)
   listStaff(
+    @CurrentUser() actor: AuthenticatedUser,
     @Query(new ZodValidationPipe(staffListSchema)) query: StaffListInput,
   ) {
-    return this.service.listStaff(query);
+    return this.service.listStaff(query, actor.tenantScope);
   }
 
   @Patch("staff/:userId/status")

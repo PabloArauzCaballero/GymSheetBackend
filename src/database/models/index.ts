@@ -1,7 +1,12 @@
+import { AdminPermissionModel } from "../../modules/admin-access/admin-permission.model";
+import { TenantModel } from "../../modules/tenants/tenant.model";
+import { AdminUserPermissionModel } from "../../modules/admin-access/admin-user-permission.model";
 import { AccessCredentialModel } from "../../modules/access-control/access-credential.model";
 import { AccessDecisionModel } from "../../modules/access-control/access-decision.model";
 import { AccessDeviceEventModel } from "../../modules/access-control/access-device-event.model";
 import { AccessDeviceModel } from "../../modules/access-control/access-device.model";
+import { PasswordResetTokenModel } from "../../modules/auth/password-reset-token.model";
+import { RefreshTokenModel } from "../../modules/auth/refresh-token.model";
 import { EquipmentModel } from "../../modules/equipment/equipment.model";
 import { ExerciseEquipmentModel } from "../../modules/exercises/exercise-equipment.model";
 import { ExerciseMediaModel } from "../../modules/exercises/exercise-media.model";
@@ -34,6 +39,15 @@ import { NotificationModel } from "../../modules/notifications/notification.mode
 import { AnthropometricProfileModel } from "../../modules/profiles/anthropometric-profile.model";
 import { BodyMeasurementModel } from "../../modules/profiles/body-measurement.model";
 import { OnboardingModel } from "../../modules/profiles/onboarding.model";
+import { ProfilePhotoModel } from "../../modules/profiles/profile-photo.model";
+import { ConnectionModel } from "../../modules/social/connection.model";
+import { ProfileSocialSettingsModel } from "../../modules/social/profile-social-settings.model";
+import { ConversationModel } from "../../modules/chat/conversation.model";
+import { ConversationParticipantModel } from "../../modules/chat/conversation-participant.model";
+import { MessageModel } from "../../modules/chat/message.model";
+import { StoryModel } from "../../modules/stories/story.model";
+import { StoryViewModel } from "../../modules/stories/story-view.model";
+import { ProfileViewModel } from "../../modules/profile-views/profile-view.model";
 import { RoutineModel } from "../../modules/training/routine.model";
 import { RoutineExerciseModel } from "../../modules/training/routine-exercise.model";
 import { RoutineAssignmentModel } from "../../modules/training/routine-assignment.model";
@@ -47,6 +61,7 @@ import { ProgressionLevelModel } from "../../modules/progression/progression-lev
 import { ProgressionBadgeModel } from "../../modules/progression/progression-badge.model";
 import { UserBadgeModel } from "../../modules/progression/user-badge.model";
 import { UserProgressModel } from "../../modules/progression/user-progress.model";
+import { RestDayPreferenceModel } from "../../modules/progression/rest-day-preference.model";
 import { UserModel } from "../../modules/users/user.model";
 import { WorkoutSessionExerciseModel } from "../../modules/workouts/workout-session-exercise.model";
 import { WorkoutSessionModel } from "../../modules/workouts/workout-session.model";
@@ -54,9 +69,20 @@ import { WorkoutSetModel } from "../../modules/workouts/workout-set.model";
 
 export const databaseModels = [
   UserModel,
+  RefreshTokenModel,
+  PasswordResetTokenModel,
   AnthropometricProfileModel,
   OnboardingModel,
   BodyMeasurementModel,
+  ProfilePhotoModel,
+  ConnectionModel,
+  ProfileSocialSettingsModel,
+  ConversationModel,
+  ConversationParticipantModel,
+  MessageModel,
+  StoryModel,
+  StoryViewModel,
+  ProfileViewModel,
   EquipmentModel,
   ExerciseModel,
   ExerciseEquipmentModel,
@@ -106,4 +132,8 @@ export const databaseModels = [
   ProgressionBadgeModel,
   UserBadgeModel,
   UserProgressModel,
+  RestDayPreferenceModel,
+  AdminPermissionModel,
+  AdminUserPermissionModel,
+  TenantModel,
 ];

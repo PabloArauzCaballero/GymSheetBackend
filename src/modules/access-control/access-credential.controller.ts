@@ -21,7 +21,9 @@ export class AccessCredentialSelfController {
 
   @Get('me')
   listMine(@CurrentUser() user: AuthenticatedUser) {
-    return this.service.listByUser(user.id);
+    // Consulta sus propias credenciales: el alcance es su propio gimnasio, de
+    // modo que la comprobación de pertenencia se satisface por construcción.
+    return this.service.listByUser(user.id, user.tenantId);
   }
 }
 
@@ -32,31 +34,37 @@ export class AccessCredentialAdminController {
 
   @Post('pin')
   createPin(
+    @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(createPinCredentialSchema))
     input: CreatePinCredentialInput,
   ) {
-    return this.service.createPin(input);
+    return this.service.createPin(input, actor.tenantScope);
   }
 
   @Post('external-reference')
   createExternalReference(
+    @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(createExternalCredentialSchema))
     input: CreateExternalCredentialInput,
   ) {
-    return this.service.createExternalReference(input);
+    return this.service.createExternalReference(input, actor.tenantScope);
   }
 
   @Get('user/:userId')
-  listForUser(@Param('userId', UuidParamPipe) userId: string) {
-    return this.service.listByUser(userId);
+  listForUser(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('userId', UuidParamPipe) userId: string,
+  ) {
+    return this.service.listByUser(userId, actor.tenantScope);
   }
 
   @Patch(':id/revoke')
   revoke(
+    @CurrentUser() actor: AuthenticatedUser,
     @Param('id', UuidParamPipe) id: string,
     @Body(new ZodValidationPipe(revokeCredentialSchema))
     input: RevokeCredentialInput,
   ) {
-    return this.service.revoke(id, input);
+    return this.service.revoke(id, input, actor.tenantScope);
   }
 }

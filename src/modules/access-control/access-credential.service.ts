@@ -30,8 +30,8 @@ export class AccessCredentialService {
     private readonly sequelize: Sequelize,
   ) {}
 
-  async createPin(input: CreatePinCredentialInput) {
-    await this.requireActiveUser(input.userId);
+  async createPin(input: CreatePinCredentialInput, tenantScope: string | null) {
+    await this.requireActiveUserInScope(input.userId, tenantScope);
     const pinHash = await bcrypt.hash(input.pin, env.BCRYPT_SALT_ROUNDS);
     const credential = await this.sequelize.transaction(async (transaction) => {
       const current = await this.repository.findActivePin(
@@ -51,8 +51,11 @@ export class AccessCredentialService {
     return mapAccessCredential(credential);
   }
 
-  async createExternalReference(input: CreateExternalCredentialInput) {
-    await this.requireActiveUser(input.userId);
+  async createExternalReference(
+    input: CreateExternalCredentialInput,
+    tenantScope: string | null,
+  ) {
+    await this.requireActiveUserInScope(input.userId, tenantScope);
     try {
       const credential = await this.sequelize.transaction((transaction) =>
         this.repository.createExternal(input, transaction),
@@ -66,10 +69,12 @@ export class AccessCredentialService {
     }
   }
 
-  async revoke(id: string, input: RevokeCredentialInput) {
+  async revoke(id: string, input: RevokeCredentialInput, tenantScope: string | null) {
     const credential = await this.sequelize.transaction(async (transaction) => {
       const current = await this.repository.findById(id, transaction);
       if (!current) throw new NotFoundException('Credencial no encontrada.');
+      // La credencial no guarda el gimnasio: se resuelve por su titular.
+      await this.requireActiveUserInScope(current.userId, tenantScope);
       if (current.status === CredentialStatus.REVOKED) return current;
       return this.repository.revoke(
         current,
@@ -80,7 +85,8 @@ export class AccessCredentialService {
     return mapAccessCredential(credential);
   }
 
-  async listByUser(userId: string) {
+  async listByUser(userId: string, tenantScope: string | null) {
+    await this.requireActiveUserInScope(userId, tenantScope);
     return (await this.repository.listByUser(userId)).map(mapAccessCredential);
   }
 
@@ -106,12 +112,29 @@ export class AccessCredentialService {
     return credential;
   }
 
-  private async requireActiveUser(userId: string): Promise<void> {
+  /**
+   * Punto único por el que pasan todas las operaciones sobre credenciales.
+   *
+   * Comprueba existencia, actividad y **gimnasio**: una credencial de acceso
+   * abre una puerta física, y hasta este cambio un administrador o recepción
+   * de un gimnasio podía emitir, listar y revocar las de un socio de otro
+   * (H-02). Fuera de alcance responde 404 y no 403: confirmar que la cuenta
+   * existe ya sería decir de más.
+   */
+  private async requireActiveUserInScope(
+    userId: string,
+    tenantScope: string | null,
+  ): Promise<void> {
     const user = await this.usersRepository.findById(userId);
     if (!user || user.status !== UserStatus.ACTIVE) {
       throw new UnprocessableEntityException(
         'El usuario no existe o está inactivo.',
       );
+    }
+
+    const userTenantId = user.tenantId ?? env.DEFAULT_TENANT_ID;
+    if (tenantScope !== null && userTenantId !== tenantScope) {
+      throw new NotFoundException('Usuario no encontrado.');
     }
   }
 }

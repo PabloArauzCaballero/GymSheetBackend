@@ -167,8 +167,8 @@ export class MembershipService {
     return this.customerStaff.createCustomer(input, actorUserId);
   }
 
-  listCustomers(page: number, pageSize: number) {
-    return this.customerStaff.listCustomers(page, pageSize);
+  listCustomers(page: number, pageSize: number, tenantScope: string | null) {
+    return this.customerStaff.listCustomers(page, pageSize, tenantScope);
   }
 
   createStaff(input: CreateStaffInput, actorUserId: string) {
@@ -179,8 +179,8 @@ export class MembershipService {
     return this.customerStaff.createStaffUser(input, actorUserId);
   }
 
-  listStaff(input: StaffListInput) {
-    return this.customerStaff.listStaff(input);
+  listStaff(input: StaffListInput, tenantScope: string | null) {
+    return this.customerStaff.listStaff(input, tenantScope);
   }
 
   updateStaffStatus(
@@ -637,8 +637,8 @@ export class MembershipService {
       : [];
   }
 
-  async listMemberships(filters: MembershipListInput) {
-    const result = await this.repository.listMemberships(filters);
+  async listMemberships(filters: MembershipListInput, tenantScope: string | null) {
+    const result = await this.repository.listMemberships(filters, tenantScope);
     return {
       items: result.rows.map((item) => mapMembership(item, this.dates)),
       page: filters.page,

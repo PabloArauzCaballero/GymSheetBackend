@@ -9,10 +9,13 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { HttpMetricsInterceptor } from './common/metrics/http-metrics.interceptor';
 import { OptionalRedisClient, REDIS_CLIENT, RedisModule } from './common/redis/redis.module';
+import { RealtimeModule } from './common/realtime/realtime.module';
 import { env } from './config/env';
 import { DatabaseModule } from './database/database.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { AccessControlModule } from './modules/access-control/access-control.module';
+import { AdminAccessModule } from './modules/admin-access/admin-access.module';
+import { PermissionGuard } from './modules/admin-access/permission.guard';
 import { AuthModule } from './modules/auth/auth.module';
 import { EquipmentModule } from './modules/equipment/equipment.module';
 import { ExercisesModule } from './modules/exercises/exercises.module';
@@ -23,14 +26,20 @@ import { MediaModule } from './modules/media/media.module';
 import { MembershipModule } from './modules/membership/membership.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
+import { ProfileViewsModule } from './modules/profile-views/profile-views.module';
+import { SocialModule } from './modules/social/social.module';
+import { ChatModule } from './modules/chat/chat.module';
+import { StoriesModule } from './modules/stories/stories.module';
 import { TrainingModule } from './modules/training/training.module';
 import { ProgressionModule } from './modules/progression/progression.module';
+import { TenantsModule } from './modules/tenants/tenants.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 
 @Module({
   imports: [
     RedisModule,
+    RealtimeModule,
     /**
      * Rate-limit counters live in Redis when it is configured, so the limit is
      * enforced across every instance. Without Redis each process keeps its own
@@ -95,11 +104,19 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
     ProgressionModule,
     ExportModule,
     MediaModule,
+    SocialModule,
+    ChatModule,
+    StoriesModule,
+    ProfileViewsModule,
+    AdminAccessModule,
+    TenantsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    // Runs after RolesGuard: only tightens routes that opt in via @RequirePermission().
+    { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: HttpMetricsInterceptor },
   ],
 })

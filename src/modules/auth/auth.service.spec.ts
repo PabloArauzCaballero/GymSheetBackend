@@ -1,8 +1,13 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { Sequelize } from 'sequelize-typescript';
 import { UsersRepository } from '../users/users.repository';
+import { TenantsService } from '../tenants/tenants.service';
 import { AuthService } from './auth.service';
+import { PasswordResetNotifier } from './password-reset-notifier';
+import { PasswordResetTokenRepository } from './password-reset-token.repository';
+import { RefreshTokenRepository } from './refresh-token.repository';
 
 const registeredEmail = 'registered@example.test';
 const unregisteredEmail = 'unregistered@example.test';
@@ -22,7 +27,20 @@ jest.mock('bcryptjs', () => ({
 }));
 
 function createService(usersRepositoryOverrides: Partial<UsersRepository>): AuthService {
-  return new AuthService(usersRepositoryOverrides as UsersRepository, {} as JwtService);
+  // Neither test below reaches refresh-token issuance or password reset:
+  // both `login` calls throw UnauthorizedException before AuthService would
+  // touch these. They only need to satisfy the constructor's shape.
+  return new AuthService(
+    usersRepositoryOverrides as UsersRepository,
+    // El registro valida el gimnasio contra el catálogo; estas pruebas sólo
+    // ejercitan `login`, que no lo consulta.
+    { assertActiveTenant: jest.fn() } as unknown as TenantsService,
+    {} as RefreshTokenRepository,
+    {} as PasswordResetTokenRepository,
+    {} as JwtService,
+    {} as Sequelize,
+    {} as PasswordResetNotifier,
+  );
 }
 
 describe('AuthService login account enumeration resistance', () => {

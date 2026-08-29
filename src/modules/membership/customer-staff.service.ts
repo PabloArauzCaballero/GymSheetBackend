@@ -115,8 +115,8 @@ export class CustomerStaffService {
     }
   }
 
-  async listCustomers(page: number, pageSize: number) {
-    const result = await this.repository.listCustomers(page, pageSize);
+  async listCustomers(page: number, pageSize: number, tenantScope: string | null) {
+    const result = await this.repository.listCustomers(page, pageSize, tenantScope);
     return {
       items: result.rows.map(mapCustomer),
       page,
@@ -277,8 +277,8 @@ export class CustomerStaffService {
     }
   }
 
-  async listStaff(input: StaffListInput) {
-    const result = await this.repository.listStaff(input.page, input.pageSize, {
+  async listStaff(input: StaffListInput, tenantScope: string | null) {
+    const result = await this.repository.listStaff(input.page, input.pageSize, tenantScope, {
       ...(input.cargo ? { position: input.cargo } : {}),
       ...(input.estadoLaboral ? { employmentStatus: input.estadoLaboral } : {}),
     });
