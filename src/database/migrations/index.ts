@@ -14,6 +14,28 @@ import { routineRecurrenceWindowMigration } from "./202608170001-routine-recurre
 import { userTenantMigration } from "./202608180001-user-tenant";
 import { progressionMigration } from "./202608230001-progression";
 import { userGenderMigration } from "./202608230002-user-gender";
+import { authTokensMigration } from "./202608230003-auth-tokens";
+import { userTermsConsentMigration } from "./202608250001-user-terms-consent";
+import { progressionRestDaysMigration } from "./202608250002-progression-rest-days";
+import { streakGeoVerificationMigration } from "./202608250003-streak-geo-verification";
+import { userWeightIncrementMigration } from "./202608250004-user-weight-increment";
+import { streakRewardFeaturesMigration } from "./202608250005-streak-reward-features";
+import { profilePhotosMigration } from "./202608250006-profile-photos";
+import { socialConnectionsMigration } from "./202608250007-social-connections";
+import { chatMigration } from "./202608250008-chat";
+import { userBranchMigration } from "./202608270001-user-branch";
+import { userLastSeenMigration } from "./202608270002-user-last-seen";
+import { branchCoverImageMigration } from "./202608270003-branch-cover-image";
+import { branchAmenitiesGalleryMigration } from "./202608270004-branch-amenities-gallery";
+import { branchBrandNameMigration } from "./202608270005-branch-brand-name";
+import { chatSystemConversationsMigration } from "./202608270006-chat-system-conversations";
+import { chatParticipantNicknameMigration } from "./202608270007-chat-participant-nickname";
+import { chatReceiptsMigration } from "./202608270008-chat-receipts";
+import { chatMessageMediaMigration } from "./202608270009-chat-message-media";
+import { profileStoriesMigration } from "./202608280001-profile-stories";
+import { profileViewsMigration } from "./202608280002-profile-views";
+import { tenantsAndSystemAdminMigration } from "./202608290001-tenants-and-system-admin";
+import { adminPermissionsMigration } from "./202609010001-admin-permissions";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -34,4 +56,26 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   userTenantMigration,
   progressionMigration,
   userGenderMigration,
+  authTokensMigration,
+  userTermsConsentMigration,
+  progressionRestDaysMigration,
+  streakGeoVerificationMigration,
+  userWeightIncrementMigration,
+  streakRewardFeaturesMigration,
+  profilePhotosMigration,
+  socialConnectionsMigration,
+  chatMigration,
+  userBranchMigration,
+  userLastSeenMigration,
+  branchCoverImageMigration,
+  branchAmenitiesGalleryMigration,
+  branchBrandNameMigration,
+  chatSystemConversationsMigration,
+  chatParticipantNicknameMigration,
+  chatReceiptsMigration,
+  chatMessageMediaMigration,
+  profileStoriesMigration,
+  profileViewsMigration,
+  adminPermissionsMigration,
+  tenantsAndSystemAdminMigration,
 ];

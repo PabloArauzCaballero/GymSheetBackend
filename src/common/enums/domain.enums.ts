@@ -1,4 +1,14 @@
 export enum UserRole {
+  /**
+   * Administrador de plataforma: opera POR ENCIMA de los gimnasios.
+   *
+   * `ADMIN` es el administrador de UN gimnasio y nunca ve otro. Este rol existe
+   * porque hasta ahora `ADMIN` era supra-inquilino de facto —ninguna ruta
+   * `admin/*` comprobaba el gimnasio— sin que nadie lo hubiera decidido. Separar
+   * los dos permite cerrar ese agujero sin quitarle a una consola de sistema una
+   * capacidad que sí necesita.
+   */
+  SYSTEM_ADMIN = "SYSTEM_ADMIN",
   ADMIN = "ADMIN",
   CLIENT = "CLIENTE",
   EXTERNAL_TRAINER = "ENTRENADOR_EXTERNO",
@@ -182,6 +192,8 @@ export enum EntitlementSource {
   ADMIN_GRANT = "ADMIN_GRANT",
   PROMOTION = "PROMOTION",
   TRIAL = "TRIAL",
+  /** Otorgado automáticamente al cruzar un umbral de racha. */
+  STREAK_REWARD = "STREAK_REWARD",
 }
 
 export enum EmploymentStatus {
@@ -285,4 +297,40 @@ export enum LegacyImportRecordStatus {
   IMPORTED = "IMPORTED",
   SKIPPED = "SKIPPED",
   FAILED = "FAILED",
+}
+
+/**
+ * Why a refresh token stopped being usable. Kept even though the row could
+ * simply be deleted, because a `REUSE_DETECTED` revocation is a security
+ * signal worth being able to audit later.
+ */
+export enum RefreshTokenRevokedReason {
+  /** Superseded by the next token in its rotation chain. */
+  ROTATED = "ROTATED",
+  /** The holder explicitly signed out. */
+  LOGOUT = "LOGOUT",
+  /** An already-rotated token was presented again: likely theft. */
+  REUSE_DETECTED = "REUSE_DETECTED",
+  /** The account's password was reset, which ends every existing session. */
+  PASSWORD_RESET = "PASSWORD_RESET",
+}
+
+/**
+ * Estado de una solicitud de conexión entre dos socios.
+ *
+ * `PENDING` es siempre desde la perspectiva de quien la envió; quien la
+ * recibe la ve como "por responder". No hay estado `CANCELLED` distinto de
+ * borrar la fila: una solicitud retirada antes de responderse no deja rastro.
+ */
+export enum ConnectionStatus {
+  PENDING = "PENDING",
+  ACCEPTED = "ACCEPTED",
+  REJECTED = "REJECTED",
+}
+
+/** Lo que alguien decide mostrar de su vida social, y a quién. */
+export enum SocialStatus {
+  OPEN_TO_MEET = "OPEN_TO_MEET",
+  IN_RELATIONSHIP = "IN_RELATIONSHIP",
+  SINGLE = "SINGLE",
 }

@@ -32,6 +32,10 @@ describe('JwtStrategy', () => {
       email: payload.email,
       role: UserRole.ADMIN,
       tenantId: 'topfitness',
+      // Un ADMIN queda atado a su propio gimnasio: su alcance administrativo
+      // es exactamente ese, nunca «todos».
+      tenantScope: 'topfitness',
+      impersonating: false,
     });
   });
 
@@ -50,10 +54,10 @@ describe('JwtStrategy', () => {
 
   /**
    * Las cuentas creadas antes de existir el campo no tienen gimnasio guardado.
-   * Sin este respaldo seguirían viendo la marca genérica en una instalación que
-   * sí tiene marca propia, que es exactamente el fallo que se estaba corrigiendo.
+   * Sin este respaldo seguirían sin filtro de tenant (visibles a cualquier
+   * gimnasio), que es exactamente el hueco de aislamiento que se corrigió.
    */
-  it('falls back to the installation gym when the account has none', async () => {
+  it('falls back to the default tenant when the account has none', async () => {
     const strategy = strategyFor({
       id: payload.sub,
       email: payload.email,
@@ -62,7 +66,7 @@ describe('JwtStrategy', () => {
     });
 
     await expect(strategy.validate(payload)).resolves.toMatchObject({
-      tenantId: env.DEFAULT_TENANT_ID ?? null,
+      tenantId: env.DEFAULT_TENANT_ID,
     });
   });
 
@@ -70,5 +74,64 @@ describe('JwtStrategy', () => {
     const strategy = strategyFor(null);
 
     await expect(strategy.validate(payload)).rejects.toThrow(UnauthorizedException);
+  });
+
+  describe('alcance entre gimnasios', () => {
+    it('deja sin filtro a un SYSTEM_ADMIN que no suplanta', async () => {
+      const strategy = strategyFor({
+        id: payload.sub,
+        email: payload.email,
+        role: UserRole.SYSTEM_ADMIN,
+        tenantId: 'topfitness',
+      });
+
+      await expect(strategy.validate(payload)).resolves.toMatchObject({
+        // `null` = todos los gimnasios. Es el único principal que lo alcanza.
+        tenantScope: null,
+        impersonating: false,
+      });
+    });
+
+    it('acota a un SYSTEM_ADMIN al gimnasio que suplanta', async () => {
+      const strategy = strategyFor({
+        id: payload.sub,
+        email: payload.email,
+        role: UserRole.SYSTEM_ADMIN,
+        tenantId: 'topfitness',
+      });
+
+      await expect(
+        strategy.validate({ ...payload, tenantId: 'gimnasio-vecino' }),
+      ).resolves.toMatchObject({
+        // El dominio de socio ve el gimnasio mirado sin enterarse de nada más.
+        tenantId: 'gimnasio-vecino',
+        tenantScope: 'gimnasio-vecino',
+        impersonating: true,
+      });
+    });
+
+    /**
+     * El invariante que sostiene todo el diseño: el claim ACOTA un privilegio,
+     * nunca lo concede. El rol se comprueba contra la base de datos, así que un
+     * token con claim de suplantación no le sirve de nada a una cuenta que no
+     * sea SYSTEM_ADMIN — ni filtrado, ni si la cuenta fue degradada después de
+     * emitirse el token.
+     */
+    it('ignora el claim de suplantacion si la cuenta no es SYSTEM_ADMIN', async () => {
+      const strategy = strategyFor({
+        id: payload.sub,
+        email: payload.email,
+        role: UserRole.ADMIN,
+        tenantId: 'topfitness',
+      });
+
+      await expect(
+        strategy.validate({ ...payload, tenantId: 'gimnasio-vecino' }),
+      ).resolves.toMatchObject({
+        tenantId: 'topfitness',
+        tenantScope: 'topfitness',
+        impersonating: false,
+      });
+    });
   });
 });
