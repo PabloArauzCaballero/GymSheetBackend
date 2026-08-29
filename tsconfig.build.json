@@ -1,10 +1,29 @@
 {
   "extends": "./tsconfig.json",
+  // `rootDir` fija la raíz de emisión en lugar de dejar que TypeScript la
+  // infiera del conjunto de ficheros compilados. Sin esto, cualquier `.ts`
+  // fuera de `src/` que entre en la compilación desplaza la raíz común al
+  // directorio del repositorio y la salida pasa de `dist/main.js` a
+  // `dist/src/main.js`, rompiendo `start:prod`, los workers de producción,
+  // el `docker-compose` y los asserts del Dockerfile. Ha ocurrido dos veces
+  // (F-012 con `test/`, C-01 con `scripts/`); ahora el compilador falla en
+  // vez de mover la salida en silencio.
+  "compilerOptions": {
+    "rootDir": "src",
+    // Fijar `rootDir` mueve el `.tsbuildinfo` por defecto a la raíz del
+    // repositorio, donde `rm -rf dist` ya no lo alcanza: el siguiente build
+    // se cree incremental y emite sólo una parte del árbol (falta
+    // `database/migrate.js` y los workers, y los asserts del Dockerfile
+    // fallan sin motivo aparente). Anclarlo dentro de `dist` devuelve a
+    // `rm -rf dist` su significado de "empezar de cero".
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
+  },
   "exclude": [
     "node_modules",
     "dist",
     "coverage",
     "test",
+    "scripts",
     "**/*.spec.ts",
     "**/*.e2e-spec.ts",
     "**/*.mjs"
