@@ -56,20 +56,63 @@ describe("LocalStorageAdapter", () => {
     expect(second.reused).toBe(true);
   });
 
-  it("derives the extension from MIME, falling back to the original name", async () => {
+  it("derives the extension from the declared MIME type only", async () => {
     const png = await adapter.upload(
       makeInput({ mimeType: "image/png", buffer: Buffer.from("png-bytes") }),
     );
     expect(png.key.endsWith(".png")).toBe(true);
 
-    const unknown = await adapter.upload(
+    const quicktime = await adapter.upload(
       makeInput({
-        mimeType: "application/octet-stream",
-        originalName: "notes.bin",
-        buffer: Buffer.from("bin"),
+        mimeType: "video/quicktime",
+        originalName: "clip.mov",
+        buffer: Buffer.from("mov-bytes"),
       }),
     );
-    expect(unknown.key.endsWith(".bin")).toBe(true);
+    expect(quicktime.key.endsWith(".mov")).toBe(true);
+  });
+
+  /**
+   * Regresión de H-01 (XSS almacenado).
+   *
+   * `video/quicktime` está permitido por defecto en `CHAT_MEDIA_ALLOWED_MIME`
+   * pero no estaba en el mapa de extensiones, así que el adaptador caía al
+   * nombre que enviaba el cliente: un adjunto llamado `payload.html` se
+   * escribía como `<sha>.html` y `express.static` lo servía como `text/html`
+   * desde el propio origen de la API. La extensión ahora sale SÓLO del MIME.
+   */
+  it("never takes the extension from the client-supplied file name", async () => {
+    for (const originalName of [
+      "payload.html",
+      "payload.svg",
+      "payload.js",
+      "payload.xhtml",
+    ]) {
+      const stored = await adapter.upload(
+        makeInput({
+          mimeType: "video/quicktime",
+          originalName,
+          buffer: Buffer.from(`bytes-for-${originalName}`),
+        }),
+      );
+
+      expect(stored.key.endsWith(".mov")).toBe(true);
+      expect(stored.url.endsWith(".mov")).toBe(true);
+    }
+  });
+
+  it("refuses a MIME type it has no extension for, instead of guessing", async () => {
+    // Un tipo permitido en la allowlist pero no mapeado aquí es un fallo de
+    // configuración: debe fallar de forma visible, no resolverse con el nombre.
+    await expect(
+      adapter.upload(
+        makeInput({
+          mimeType: "application/octet-stream",
+          originalName: "notes.bin",
+          buffer: Buffer.from("bin"),
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 415 });
   });
 
   it("removes a stored asset by key", async () => {
