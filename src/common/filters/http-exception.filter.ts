@@ -12,6 +12,8 @@ import { env } from '../../config/env';
 type PublicErrorPayload = {
   message: string | string[];
   issues?: unknown;
+  /** URI que identifica la CLASE de error, cuando distinguirla importa al cliente. */
+  type?: string;
 };
 
 type ErrorWithHttpStatus = {
@@ -38,7 +40,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
       .type('application/problem+json')
       .status(statusCode)
       .json({
-        type: 'about:blank',
+        // `about:blank` salvo que la excepción declare una clase concreta: hay
+        // errores que el cliente necesita separar del resto y no puede hacerlo
+        // por el código de estado (una suplantación caducada y una sesión
+        // caducada son las dos un 401, y confundirlas expulsa al usuario del
+        // portal en vez de devolverlo a su gimnasio).
+        type: publicError.type ?? 'about:blank',
         title: this.getStatusTitle(statusCode),
         status: statusCode,
         detail: Array.isArray(publicError.message)
@@ -101,8 +108,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const responseRecord = exceptionResponse as Record<string, unknown>;
     const message = this.readPublicMessage(responseRecord.message, exception.message);
     const issues = responseRecord.issues;
+    const type = typeof responseRecord.type === 'string' ? responseRecord.type : undefined;
 
-    return issues === undefined ? { message } : { message, issues };
+    return {
+      message,
+      ...(issues === undefined ? {} : { issues }),
+      ...(type === undefined ? {} : { type }),
+    };
   }
 
   private readPublicMessage(value: unknown, fallbackMessage: string): string | string[] {

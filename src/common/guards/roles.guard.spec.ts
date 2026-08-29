@@ -61,3 +61,42 @@ describe('RolesGuard', () => {
     expect(guard.canActivate(createContext(clientUser))).toBe(true);
   });
 });
+
+describe('RolesGuard — administrador de plataforma', () => {
+  const systemAdmin: AuthenticatedUser = {
+    id: '00000000-0000-4000-8000-000000000002',
+    email: 'platform@example.test',
+    role: UserRole.SYSTEM_ADMIN,
+    tenantId: 'default',
+    tenantScope: null,
+    impersonating: false,
+  };
+
+  function contextFor(user: AuthenticatedUser): ExecutionContext {
+    return {
+      switchToHttp: () => ({ getRequest: () => ({ user }) }),
+      getHandler: () => undefined,
+      getClass: () => undefined,
+    } as unknown as ExecutionContext;
+  }
+
+  it('entra en una ruta abierta a administradores de gimnasio', () => {
+    const guard = createGuard([UserRole.ADMIN, UserRole.FRONT_DESK]);
+
+    expect(guard.canActivate(contextFor(systemAdmin))).toBe(true);
+  });
+
+  /**
+   * No es un atajo universal: las rutas de socio o de entrenador asumen datos
+   * propios (rutinas asignadas, progresión) que un administrador de plataforma
+   * no tiene, y dejarle entrar produciría respuestas sin sentido en vez de un
+   * permiso denegado claro.
+   */
+  it('no entra en una ruta que no admite administradores', () => {
+    const guard = createGuard([UserRole.COACH]);
+
+    expect(() => guard.canActivate(contextFor(systemAdmin))).toThrow(
+      ForbiddenException,
+    );
+  });
+});

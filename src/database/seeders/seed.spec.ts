@@ -7,6 +7,9 @@ describe('database seeds', () => {
     SEED_ADMIN_PASSWORD: undefined,
     SEED_ADMIN_FULL_NAME: 'Test Admin',
     SEED_MOCK_PASSWORD: undefined,
+    SEED_SYSTEM_CORPORATE_EMAIL: undefined,
+    SEED_SYSTEM_CORPORATE_PASSWORD: undefined,
+    SEED_SYSTEM_CORPORATE_FULL_NAME: 'GYM SHEET Corporativo',
   };
 
   it('requires runtime credentials for the production-safe base seed', () => {

@@ -343,6 +343,28 @@ export const environmentSchema = z
       (value) => (value === "" ? undefined : value),
       z.string().min(12).max(128).optional(),
     ),
+    /**
+     * Cuenta de plataforma (`SYSTEM_ADMIN`) para la consola de sistema.
+     *
+     * Opcional a propósito y sin valor por defecto: es un credencial
+     * supra-gimnasio, y una instalación que no lo pida explícitamente no debe
+     * acabar con una cuenta capaz de operar sobre todos los gimnasios porque
+     * un seeder la creó sola.
+     */
+    SEED_SYSTEM_ADMIN_EMAIL: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().email().optional(),
+    ),
+    SEED_SYSTEM_ADMIN_PASSWORD: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().min(12).max(128).optional(),
+    ),
+    SEED_SYSTEM_ADMIN_FULL_NAME: z
+      .string()
+      .trim()
+      .min(2)
+      .max(180)
+      .default("GymSheet Platform Administrator"),
     SEED_ADMIN_FULL_NAME: z
       .string()
       .trim()
