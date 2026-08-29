@@ -1,4 +1,5 @@
 import { Injectable, PayloadTooLargeException } from '@nestjs/common';
+import { WorkoutSessionStatus } from '../../common/enums/domain.enums';
 import { EquipmentService } from '../equipment/equipment.service';
 import { ProfilesService } from '../profiles/profiles.service';
 import { UsersService } from '../users/users.service';
@@ -67,7 +68,7 @@ export class ExportService {
     const data = await this.buildWorkoutHistoryExport(userId);
 
     const finishedSessions = data.sesiones.filter(
-      (session) => session.estado === 'FINALIZADA',
+      (session) => session.estado === WorkoutSessionStatus.COMPLETED,
     );
     let totalSets = 0;
     let totalVolume = 0;

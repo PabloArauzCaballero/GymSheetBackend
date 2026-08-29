@@ -22,6 +22,15 @@ export type ExercisePageResult = {
   count: number;
 };
 
+/** Fila cruda de `listTaxonomy`; ver la nota en ese método sobre los dos nombres. */
+type TaxonomyAggregateRow = {
+  bodyPart?: string | null;
+  body_part?: string | null;
+  targetMuscle?: string | null;
+  target_muscle?: string | null;
+  total?: string | number | null;
+};
+
 @Injectable()
 export class ExercisesRepository {
   constructor(
@@ -109,10 +118,16 @@ export class ExercisesRepository {
       ],
       raw: true,
     });
-    return (rows as unknown as Array<Record<string, unknown>>).map((row) => ({
-      bodyPart: String(row["bodyPart"] ?? row["body_part"] ?? ""),
-      targetMuscle: String(row["targetMuscle"] ?? row["target_muscle"] ?? ""),
-      total: Number(row["total"] ?? 0),
+    // `raw: true` devuelve las columnas sin tipar, y el nombre depende de si
+    // gana el alias del atributo (camelCase) o la columna física del GROUP BY
+    // (snake_case); de ahí que se consulten ambas formas. Se declara la forma
+    // en vez de tratarlas como `unknown`: `String(unknown)` habría rendido
+    // "[object Object]" en silencio ante una fila inesperada, en lugar de
+    // fallar donde se pueda ver.
+    return (rows as unknown as Array<TaxonomyAggregateRow>).map((row) => ({
+      bodyPart: row.bodyPart ?? row.body_part ?? "",
+      targetMuscle: row.targetMuscle ?? row.target_muscle ?? "",
+      total: Number(row.total ?? 0),
     }));
   }
 
