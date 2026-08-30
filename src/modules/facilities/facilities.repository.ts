@@ -49,6 +49,18 @@ export class FacilitiesRepository {
     return this.branches.findByPk(branchId, { transaction });
   }
 
+  /** Sedes activas con coordenadas configuradas, para la verificación de racha por geolocalización. */
+  findActiveBranchesWithCoordinates(): Promise<BranchModel[]> {
+    return this.branches.findAll({
+      where: {
+        status: FacilityStatus.ACTIVE,
+        latitude: { [Op.not]: null },
+        longitude: { [Op.not]: null },
+        geofenceRadiusM: { [Op.not]: null },
+      },
+    });
+  }
+
   createBranch(input: CreateBranchInput) {
     return this.branches.create(input);
   }

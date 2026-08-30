@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import { TrainingGoal } from "../../common/enums/domain.enums";
+import { OnboardingRepository } from "./onboarding.repository";
 import { ProfilesRepository } from "./profiles.repository";
 import { ProfilesService } from "./profiles.service";
 
@@ -22,8 +23,13 @@ const storedProfile = {
 
 function createService(
   overrides: Partial<ProfilesRepository>,
+  onboardingOverrides: Partial<OnboardingRepository> = {},
 ): ProfilesService {
-  return new ProfilesService(overrides as ProfilesRepository);
+  return new ProfilesService(overrides as ProfilesRepository, {
+    findMeasurementByKey: jest.fn().mockResolvedValue(null),
+    createMeasurement: jest.fn().mockResolvedValue(undefined),
+    ...onboardingOverrides,
+  } as unknown as OnboardingRepository);
 }
 
 describe("ProfilesService", () => {
@@ -76,5 +82,39 @@ describe("ProfilesService", () => {
     await expect(
       service.upsertMyProfile(userId, profileInput),
     ).resolves.toMatchObject({ id: storedProfile.id });
+  });
+
+  it("records a body-measurement history entry when the weight has not been logged yet today", async () => {
+    const createMeasurement = jest.fn().mockResolvedValue(undefined);
+    const service = createService(
+      { upsertByUserId: jest.fn().mockResolvedValue(storedProfile) },
+      { findMeasurementByKey: jest.fn().mockResolvedValue(null), createMeasurement },
+    );
+
+    await service.upsertMyProfile(userId, profileInput);
+
+    expect(createMeasurement).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId,
+        weight: profileInput.weightKg,
+        unit: "KG",
+        source: "PROFILE",
+      }),
+    );
+  });
+
+  it("does not duplicate the history entry for the same day and weight", async () => {
+    const createMeasurement = jest.fn();
+    const service = createService(
+      { upsertByUserId: jest.fn().mockResolvedValue(storedProfile) },
+      {
+        findMeasurementByKey: jest.fn().mockResolvedValue({ id: "existing" }),
+        createMeasurement,
+      },
+    );
+
+    await service.upsertMyProfile(userId, profileInput);
+
+    expect(createMeasurement).not.toHaveBeenCalled();
   });
 });

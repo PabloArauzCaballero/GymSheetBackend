@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { UserGender } from "../../common/enums/domain.enums";
+import { EntitlementSource, UserGender } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
+import { MembershipRepository } from "../membership/membership.repository";
 import { UsersRepository } from "../users/users.repository";
 import { ProgressionBadgeModel } from "./progression-badge.model";
 import { ProgressionLevelModel } from "./progression-level.model";
@@ -92,11 +93,27 @@ export interface ProgressionView {
   unlockedNow: BadgeView[];
 }
 
+/**
+ * Umbrales de la racha más larga que otorgan una recompensa material.
+ *
+ * Se pagan sobre `longestStreakDays`, no sobre la vigente: mismo criterio que
+ * los puntos, para que una recompensa ya ganada no se pueda perder por
+ * descansar. Cada código debe existir en el catálogo de features (sembrado en
+ * `202608250005-streak-reward-features`); si una instalación no lo tiene, esa
+ * recompensa en particular simplemente no se otorga, sin romper nada más.
+ */
+const STREAK_REWARD_THRESHOLDS = [
+  { days: 7, featureCode: "STREAK_REWARD_7" },
+  { days: 30, featureCode: "STREAK_REWARD_30" },
+  { days: 90, featureCode: "STREAK_REWARD_90" },
+] as const;
+
 @Injectable()
 export class ProgressionService {
   constructor(
     private readonly progressionRepository: ProgressionRepository,
     private readonly usersRepository: UsersRepository,
+    private readonly membershipRepository: MembershipRepository,
   ) {}
 
   /**
@@ -139,6 +156,8 @@ export class ProgressionService {
         })),
       );
     }
+
+    await this.grantStreakRewards(userId, metrics.longestStreakDays);
 
     const points = computePoints(metrics, satisfied);
     const path = buildPath(levels, points);
@@ -191,21 +210,58 @@ export class ProgressionService {
     };
   }
 
+  /**
+   * Otorga las recompensas de racha cuyo umbral ya se cruzó y que todavía no
+   * se habían concedido. Ya sembrado el catálogo, esto es aditivo puro: no
+   * cambia nada de lo que la senda calculaba antes.
+   */
+  private async grantStreakRewards(userId: string, longestStreakDays: number): Promise<void> {
+    const eligible = STREAK_REWARD_THRESHOLDS.filter((t) => longestStreakDays >= t.days);
+    if (eligible.length === 0) return;
+
+    const granted = await this.membershipRepository.listGrantedStreakRewardCodes(userId);
+    const pending = eligible.filter((t) => !granted.has(t.featureCode));
+    if (pending.length === 0) return;
+
+    for (const threshold of pending) {
+      const feature = await this.membershipRepository.findFeatureByCode(threshold.featureCode);
+      if (!feature) continue;
+      await this.membershipRepository.grantEntitlementIfMissing({
+        userId,
+        featureId: feature.id,
+        sourceType: EntitlementSource.STREAK_REWARD,
+        sourceId: userId,
+        metadata: { thresholdDays: threshold.days },
+      });
+    }
+  }
+
   /** Marca como vistas las novedades, para que dejen de celebrarse. */
   async acknowledge(userId: string): Promise<{ acknowledged: true }> {
     await this.progressionRepository.markBadgesSeen(userId);
     return { acknowledged: true };
   }
 
-  async getLeaderboard(userId: string, limit: number) {
+  async getRestDays(userId: string): Promise<{ weekdays: number[] }> {
+    const weekdays = await this.progressionRepository.getRestWeekdays(userId);
+    return { weekdays: [...weekdays].sort((a, b) => a - b) };
+  }
+
+  async setRestDays(userId: string, weekdays: readonly number[]): Promise<{ weekdays: number[] }> {
+    await this.progressionRepository.setRestWeekdays(userId, weekdays);
+    return this.getRestDays(userId);
+  }
+
+  async getLeaderboard(userId: string, limit: number, sortBy: "points" | "streak" = "points") {
     const user = await this.usersRepository.findById(userId);
     if (!user) throw new NotFoundException("Usuario no encontrado.");
     const tenantId = user.tenantId ?? env.DEFAULT_TENANT_ID ?? null;
-    const rows = await this.progressionRepository.leaderboard(tenantId, limit);
+    const rows = await this.progressionRepository.leaderboard(tenantId, limit, sortBy);
     return rows.map((row, index) => ({
       position: index + 1,
       points: Number(row.points),
       levelCode: row.levelCode,
+      streakDays: Number(row.currentStreakDays),
       // Solo el nombre de pila y la inicial: una tabla pública con el nombre
       // completo de cada socio es una lista de clientes del gimnasio.
       displayName: shortenName(row.fullName),

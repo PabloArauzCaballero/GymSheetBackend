@@ -47,7 +47,7 @@ describe('Authentication and authorization (e2e)', () => {
     it('registers a new client account', async () => {
       const response = await request(httpServer)
         .post(url('/auth/register'))
-        .send({ email: uniqueEmail, password, nombreCompleto: 'E2E Test User' })
+        .send({ email: uniqueEmail, password, nombreCompleto: 'E2E Test User', acceptedTerms: true })
         .expect(201);
 
       expect(response.body.data.accessToken).toEqual(expect.any(String));
@@ -63,6 +63,7 @@ describe('Authentication and authorization (e2e)', () => {
           password,
           nombreCompleto: 'Escalation Attempt',
           rol: 'ADMIN',
+          acceptedTerms: true,
         })
         .expect(201);
 
@@ -149,6 +150,19 @@ describe('Authentication and authorization (e2e)', () => {
 
       expect(response.body.detail).toBe('Datos de entrada inválidos.');
       expect(response.body.issues.fieldErrors).toHaveProperty('email');
+    });
+
+    it('rejects registration without accepting the terms and privacy policy', async () => {
+      const response = await request(httpServer)
+        .post(url('/auth/register'))
+        .send({
+          email: `no-terms-${Date.now()}@example.test`,
+          password,
+          nombreCompleto: 'No Acepta Términos',
+        })
+        .expect(400);
+
+      expect(response.body.issues.fieldErrors).toHaveProperty('acceptedTerms');
     });
 
     it('rejects a non-UUID path parameter without reaching the database', async () => {

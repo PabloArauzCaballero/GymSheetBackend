@@ -30,6 +30,7 @@ export type WorkoutSessionResponse = {
   fechaFin: Date | null;
   estado: WorkoutSessionStatus;
   observacion: string | null;
+  geoVerificada: boolean;
   ejercicios: WorkoutSessionExerciseResponse[];
 };
 
@@ -78,6 +79,7 @@ export function mapWorkoutSessionToResponse(
     fechaFin: session.finishedAt,
     estado: session.status,
     observacion: session.observation,
+    geoVerificada: session.geoVerified,
     ejercicios: (session.sessionExercises ?? []).map(mapSessionExerciseToResponse),
   };
 }

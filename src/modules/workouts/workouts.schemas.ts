@@ -8,6 +8,20 @@ export const createWorkoutSessionSchema = z
   })
   .transform(({ observacion }) => ({ observation: observacion ?? null }));
 
+/**
+ * Ubicación opcional al finalizar una sesión, para la verificación de racha
+ * por geolocalización (solo móvil; ver `202608250003-streak-geo-verification`).
+ * Ausente = el cliente no la pidió o el usuario no dio permiso; la sesión se
+ * finaliza igual, sin verificar.
+ */
+export const finishSessionSchema = z
+  .object({
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+  })
+  .optional()
+  .default({});
+
 export const workoutSessionListSchema = z
   .object({
     page: z.coerce.number().int().min(1).default(1),
@@ -80,6 +94,7 @@ export const updateWorkoutSetSchema = z
       : {}),
   }));
 
+export type FinishSessionInput = z.infer<typeof finishSessionSchema>;
 export type CreateWorkoutSessionInput = z.infer<typeof createWorkoutSessionSchema>;
 export type WorkoutSessionListInput = z.infer<typeof workoutSessionListSchema>;
 export type AddSessionExerciseInput = z.infer<typeof addSessionExerciseSchema>;

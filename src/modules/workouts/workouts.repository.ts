@@ -105,10 +105,12 @@ export class WorkoutsRepository {
   async changeSessionStatus(
     session: WorkoutSessionModel,
     status: WorkoutSessionStatus,
+    extra?: { geoVerified?: boolean; verifiedBranchId?: string | null },
   ): Promise<WorkoutSessionModel> {
     await session.update({
       status,
       finishedAt: new Date(),
+      ...extra,
     });
     return session;
   }

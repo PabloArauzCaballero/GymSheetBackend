@@ -13,6 +13,8 @@ export type UserResponse = {
   tenantId: string | null;
   /** Nulo = no se ha preguntado todavía. La progresión cae en su rama neutra. */
   genero: UserGender | null;
+  /** Cuánto suma cada chip rápido al registrar una serie. */
+  pesoIncrementoKg: number;
 };
 
 /**
@@ -31,5 +33,6 @@ export function mapUserToResponse(user: UserModel): UserResponse {
     // no debe verse sin marca en una instalación que sí tiene una.
     tenantId: user.tenantId ?? env.DEFAULT_TENANT_ID ?? null,
     genero: user.gender,
+    pesoIncrementoKg: Number(user.weightIncrementKg),
   };
 }

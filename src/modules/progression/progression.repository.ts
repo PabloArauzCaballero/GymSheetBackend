@@ -5,6 +5,7 @@ import { Sequelize } from "sequelize-typescript";
 import { env } from "../../config/env";
 import { ProgressionBadgeModel } from "./progression-badge.model";
 import { ProgressionLevelModel } from "./progression-level.model";
+import { RestDayPreferenceModel } from "./rest-day-preference.model";
 import { UserBadgeModel } from "./user-badge.model";
 import { UserProgressModel } from "./user-progress.model";
 import type { ProgressionAudience } from "./progression-catalog";
@@ -93,7 +94,23 @@ export class ProgressionRepository {
     private readonly userBadgeModel: typeof UserBadgeModel,
     @InjectModel(UserProgressModel)
     private readonly userProgressModel: typeof UserProgressModel,
+    @InjectModel(RestDayPreferenceModel)
+    private readonly restDayPreferenceModel: typeof RestDayPreferenceModel,
   ) {}
+
+  // ────────────────────────────────────────────────────────── días de descanso
+
+  async getRestWeekdays(userId: string): Promise<ReadonlySet<number>> {
+    const row = await this.restDayPreferenceModel.findByPk(userId);
+    return new Set(row?.weekdays ?? []);
+  }
+
+  async setRestWeekdays(userId: string, weekdays: readonly number[]): Promise<void> {
+    await this.restDayPreferenceModel.upsert({
+      userId,
+      weekdays: [...new Set(weekdays)].sort((a, b) => a - b),
+    });
+  }
 
   // ───────────────────────────────────────────────────────────────── catálogo
 
@@ -361,7 +378,8 @@ export class ProgressionRepository {
     );
 
     const trainingDays = days.map((row) => row.day);
-    const streaks = computeStreaks(trainingDays, businessToday(timeZone));
+    const restWeekdays = await this.getRestWeekdays(userId);
+    const streaks = computeStreaks(trainingDays, businessToday(timeZone), restWeekdays);
 
     return {
       totalSessions: Number(aggregate.total_sessions),
@@ -383,22 +401,41 @@ export class ProgressionRepository {
     };
   }
 
-  /** Clasificación del gimnasio, para la pantalla de la senda. */
+  /**
+   * Clasificación del gimnasio, para la pantalla de la senda.
+   *
+   * El orden por racha desempata por puntos: dos personas con la misma racha
+   * vigente no deberían parecer iguales si una lleva mucho más entrenado.
+   */
   leaderboard(
     tenantId: string | null,
     limit: number,
-  ): Promise<Array<{ userId: string; fullName: string; points: number; levelCode: string | null }>> {
+    sortBy: "points" | "streak" = "points",
+  ): Promise<
+    Array<{
+      userId: string;
+      fullName: string;
+      points: number;
+      levelCode: string | null;
+      currentStreakDays: number;
+    }>
+  > {
+    const orderBy =
+      sortBy === "streak"
+        ? "p.current_streak_days DESC, p.points DESC"
+        : "p.points DESC, p.current_streak_days DESC";
     return this.sequelize.query(
       `SELECT p.usuario_id AS "userId",
               u.nombre_completo AS "fullName",
               p.points,
-              p.level_code AS "levelCode"
+              p.level_code AS "levelCode",
+              p.current_streak_days AS "currentStreakDays"
          FROM progression.user_progress p
          JOIN public.usuarios u ON u.id = p.usuario_id
         WHERE u.estado = 'ACTIVO'
           AND (:tenantId::text IS NULL OR u.tenant_id IS NOT DISTINCT FROM :tenantId)
           AND p.points > 0
-        ORDER BY p.points DESC
+        ORDER BY ${orderBy}
         LIMIT :limit`,
       { type: QueryTypes.SELECT, replacements: { tenantId, limit } },
     );
@@ -460,33 +497,63 @@ function businessToday(timeZone: string): string {
  * La racha actual admite que hoy todavía no se haya entrenado: si el último día
  * fue ayer sigue viva. Cortarla a medianoche castigaría a quien entrena por la
  * tarde cada vez que abre la aplicación por la mañana.
+ *
+ * `restWeekdays` son los días de la semana (ISO: 1 lunes ... 7 domingo) que el
+ * usuario declaró como descanso planificado: un hueco entre dos entrenamientos
+ * no rompe la racha si todos los días saltados caen en esos días. Vacío por
+ * defecto, que reproduce exactamente la tolerancia genérica anterior (un hueco
+ * de un día siempre puentea; de dos o más, nunca).
  */
 export function computeStreaks(
   trainingDays: readonly string[],
   today: string,
+  restWeekdays: ReadonlySet<number> = new Set(),
 ): { current: number; longest: number; weeks: number } {
   if (trainingDays.length === 0) return { current: 0, longest: 0, weeks: 0 };
 
   let longest = 1;
   let run = 1;
   for (let index = 1; index < trainingDays.length; index += 1) {
-    const gap = dayDistance(trainingDays[index - 1], trainingDays[index]);
-    run = gap === 1 ? run + 1 : 1;
+    const bridged = bridgedByRestDays(trainingDays[index - 1], trainingDays[index], restWeekdays);
+    run = bridged ? run + 1 : 1;
     if (run > longest) longest = run;
   }
 
   const last = trainingDays.at(-1)!;
-  const sinceLast = dayDistance(last, today);
   let current = 0;
-  if (sinceLast <= 1) {
+  if (bridgedByRestDays(last, today, restWeekdays)) {
     current = 1;
     for (let index = trainingDays.length - 1; index > 0; index -= 1) {
-      if (dayDistance(trainingDays[index - 1], trainingDays[index]) !== 1) break;
+      if (!bridgedByRestDays(trainingDays[index - 1], trainingDays[index], restWeekdays)) break;
       current += 1;
     }
   }
 
   return { current, longest, weeks: consecutiveWeeks(trainingDays, today) };
+}
+
+/**
+ * Si el hueco entre dos días es de uno o cero, siempre son consecutivos — es
+ * la tolerancia base que ya existía. Si es mayor, solo lo son cuando cada día
+ * saltado en el medio es un día de descanso declarado.
+ */
+function bridgedByRestDays(
+  fromDay: string,
+  toDay: string,
+  restWeekdays: ReadonlySet<number>,
+): boolean {
+  const gap = dayDistance(fromDay, toDay);
+  if (gap <= 1) return true;
+  for (let offset = 1; offset < gap; offset += 1) {
+    if (!restWeekdays.has(isoWeekday(shiftDays(fromDay, offset)))) return false;
+  }
+  return true;
+}
+
+/** 1 = lunes ... 7 = domingo, igual que `EXTRACT(ISODOW ...)` en SQL. */
+function isoWeekday(dateOnly: string): number {
+  const jsDay = toUtcDate(dateOnly).getUTCDay();
+  return jsDay === 0 ? 7 : jsDay;
 }
 
 /**

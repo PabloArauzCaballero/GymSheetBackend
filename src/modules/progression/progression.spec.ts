@@ -2,6 +2,7 @@ import { UserGender } from "../../common/enums/domain.enums";
 import { computeStreaks } from "./progression.repository";
 import type { TrainingMetrics } from "./progression.repository";
 import { badgeSeeds, levelSeeds } from "./progression-catalog";
+import { restDaysSchema } from "./progression.schemas";
 import { computePoints, measure, toAudience } from "./progression.service";
 
 const NO_TRAINING: TrainingMetrics = {
@@ -92,6 +93,66 @@ describe("computeStreaks", () => {
   it("breaks the weekly streak on a skipped week", () => {
     const days = ["2026-08-04", "2026-08-18"];
     expect(computeStreaks(days, "2026-08-19").weeks).toBe(1);
+  });
+
+  /**
+   * 2026-08-03 es lunes, 2026-08-04 es martes (ver el comentario del test de
+   * semanas más arriba) y 2026-08-05 es miércoles.
+   */
+  describe("with declared rest weekdays", () => {
+    it("bridges a gap when every skipped day is a declared rest day", () => {
+      const streaks = computeStreaks(
+        ["2026-08-03", "2026-08-05"], // lunes, miércoles: falta el martes
+        "2026-08-05",
+        new Set([2]), // martes
+      );
+      expect(streaks.current).toBe(2);
+      expect(streaks.longest).toBe(2);
+    });
+
+    it("still breaks the streak when the skipped day is not a rest day", () => {
+      const streaks = computeStreaks(
+        ["2026-08-03", "2026-08-05"],
+        "2026-08-05",
+        new Set([3]), // miércoles: no es el día que falta
+      );
+      expect(streaks.current).toBe(1);
+      expect(streaks.longest).toBe(1);
+    });
+
+    it("keeps the current streak alive across a rest day up to today", () => {
+      // Último entrenamiento el lunes; hoy es miércoles y el martes es descanso.
+      const streaks = computeStreaks(["2026-08-03"], "2026-08-05", new Set([2]));
+      expect(streaks.current).toBe(1);
+    });
+
+    it("does not bridge a gap longer than the declared rest days", () => {
+      // Falta el martes Y el jueves; solo el martes está declarado como descanso.
+      const streaks = computeStreaks(["2026-08-03", "2026-08-06"], "2026-08-06", new Set([2]));
+      expect(streaks.current).toBe(1);
+      expect(streaks.longest).toBe(1);
+    });
+  });
+});
+
+describe("restDaysSchema", () => {
+  it("accepts up to six distinct weekdays", () => {
+    expect(restDaysSchema.safeParse({ weekdays: [1, 3, 5, 6, 7] }).success).toBe(true);
+  });
+
+  it("rejects marking all seven days as rest", () => {
+    const result = restDaysSchema.safeParse({ weekdays: [1, 2, 3, 4, 5, 6, 7] });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a repeated weekday", () => {
+    const result = restDaysSchema.safeParse({ weekdays: [1, 1] });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a weekday outside 1-7", () => {
+    expect(restDaysSchema.safeParse({ weekdays: [0] }).success).toBe(false);
+    expect(restDaysSchema.safeParse({ weekdays: [8] }).success).toBe(false);
   });
 });
 

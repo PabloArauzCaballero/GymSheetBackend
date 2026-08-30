@@ -106,6 +106,7 @@ const registration = await requestData('/auth/register', {
     email: `load-${uniqueSuffix}@example.test`,
     password,
     nombreCompleto: 'Load Test User',
+    acceptedTerms: true,
   }),
 });
 const authorizationHeaders = {

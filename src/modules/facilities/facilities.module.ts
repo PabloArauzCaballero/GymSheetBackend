@@ -9,6 +9,9 @@ import { FacilitiesController } from './facilities.controller';
 import { FacilitiesRepository } from './facilities.repository';
 import { FacilitiesService } from './facilities.service';
 import { MaintenanceEventModel } from './maintenance-event.model';
+import { PublicFacilitiesController } from './public-facilities.controller';
+import { PublicFacilitiesRepository } from './public-facilities.repository';
+import { PublicFacilitiesService } from './public-facilities.service';
 import { RoomModel } from './room.model';
 
 @Module({
@@ -23,8 +26,13 @@ import { RoomModel } from './room.model';
       MaintenanceEventModel,
     ]),
   ],
-  controllers: [FacilitiesController],
-  providers: [FacilitiesRepository, FacilitiesService],
+  controllers: [FacilitiesController, PublicFacilitiesController],
+  providers: [
+    FacilitiesRepository,
+    FacilitiesService,
+    PublicFacilitiesRepository,
+    PublicFacilitiesService,
+  ],
   exports: [FacilitiesRepository, FacilitiesService],
 })
 export class FacilitiesModule {}

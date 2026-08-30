@@ -32,6 +32,7 @@ describe('Workout session ownership isolation (e2e)', () => {
         email: `${label}-${suffix}@example.test`,
         password,
         nombreCompleto: `E2E ${label}`,
+        acceptedTerms: true,
       })
       .expect(201);
     return response.body.data.accessToken as string;

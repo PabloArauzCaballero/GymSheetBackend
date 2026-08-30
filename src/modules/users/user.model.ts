@@ -50,6 +50,33 @@ export class UserModel extends Model {
   @Column({ type: DataType.DATE, allowNull: false, field: 'fecha_registro' })
   declare registeredAt: Date;
 
+  /**
+   * Cuándo aceptó los términos y la política de privacidad vigentes. Nulo solo
+   * en cuentas anteriores a que este campo existiera.
+   */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'accepted_terms_at' })
+  declare acceptedTermsAt: Date | null;
+
+  /** Versión de los términos que aceptó, no la vigente hoy. */
+  @Column({ type: DataType.STRING(20), allowNull: true, field: 'terms_version' })
+  declare termsVersion: string | null;
+
+  /** Cuánto suma cada toque de un chip rápido al registrar una serie. */
+  @Default('2.5')
+  @Column({ type: DataType.DECIMAL(5, 2), allowNull: false, field: 'weight_increment_kg' })
+  declare weightIncrementKg: string;
+
+  /** Sucursal habitual. Nula si la cuenta no tiene una sede asignada. */
+  @Column({ type: DataType.UUID, allowNull: true, field: 'sede_id' })
+  declare branchId: string | null;
+
+  /**
+   * Cuándo se cerró el último socket de chat activo. Nula mientras haya uno
+   * abierto (la persona está en línea) o si nunca abrió el chat.
+   */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'last_seen_at' })
+  declare lastSeenAt: Date | null;
+
   @HasOne(() => AnthropometricProfileModel)
   declare anthropometricProfile?: AnthropometricProfileModel;
 

@@ -30,6 +30,35 @@ export class BranchModel extends Model {
   @Column({ type: DataType.JSONB, allowNull: false })
   declare metadata: Record<string, unknown>;
 
+  /**
+   * Coordenadas para la verificación de racha por geolocalización. Nulas
+   * hasta que el gimnasio las configure — sin ellas, esta sede simplemente no
+   * participa de la verificación, no bloquea nada.
+   */
+  @Column({ type: DataType.DECIMAL(9, 6), allowNull: true })
+  declare latitude: string | null;
+
+  @Column({ type: DataType.DECIMAL(9, 6), allowNull: true })
+  declare longitude: string | null;
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'geofence_radius_m' })
+  declare geofenceRadiusM: number | null;
+
+  @Column({ type: DataType.TEXT, allowNull: true, field: 'cover_image_url' })
+  declare coverImageUrl: string | null;
+
+  /** Cadena a la que pertenece esta sede (p. ej. "Megatlon"); nula si es independiente. */
+  @Column({ type: DataType.STRING(180), allowNull: true, field: 'brand_name' })
+  declare brandName: string | null;
+
+  @Default([])
+  @Column({ type: DataType.ARRAY(DataType.TEXT), allowNull: false })
+  declare amenities: string[];
+
+  @Default([])
+  @Column({ type: DataType.ARRAY(DataType.TEXT), allowNull: false, field: 'gallery_image_urls' })
+  declare galleryImageUrls: string[];
+
   @HasMany(() => RoomModel)
   declare rooms?: RoomModel[];
 

@@ -8,12 +8,14 @@ import {
   AddSessionExerciseInput,
   CreateWorkoutSessionInput,
   CreateWorkoutSetInput,
+  FinishSessionInput,
   UpdateSessionExerciseInput,
   UpdateWorkoutSetInput,
   WorkoutSessionListInput,
   addSessionExerciseSchema,
   createWorkoutSessionSchema,
   createWorkoutSetSchema,
+  finishSessionSchema,
   updateSessionExerciseSchema,
   updateWorkoutSetSchema,
   workoutSessionListSchema,
@@ -53,8 +55,9 @@ export class WorkoutsController {
   finishSession(
     @CurrentUser() authenticatedUser: AuthenticatedUser,
     @Param('id', UuidParamPipe) sessionId: string,
+    @Body(new ZodValidationPipe(finishSessionSchema)) input: FinishSessionInput,
   ) {
-    return this.workoutsService.finishSession(authenticatedUser.id, sessionId);
+    return this.workoutsService.finishSession(authenticatedUser.id, sessionId, input);
   }
 
   @Patch(':id/cancel')

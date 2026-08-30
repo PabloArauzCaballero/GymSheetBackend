@@ -44,6 +44,18 @@ export class WorkoutSessionModel extends Model {
   @Column({ type: DataType.TEXT, allowNull: true, field: 'observacion' })
   declare observation: string | null;
 
+  /**
+   * Si al finalizar la sesión el cliente mandó su ubicación y caía dentro del
+   * radio de alguna sede. Es informativo, no una condición: una sesión sin
+   * verificar cuenta igual para la racha.
+   */
+  @Default(false)
+  @Column({ type: DataType.BOOLEAN, allowNull: false, field: 'geo_verified' })
+  declare geoVerified: boolean;
+
+  @Column({ type: DataType.UUID, allowNull: true, field: 'verified_branch_id' })
+  declare verifiedBranchId: string | null;
+
   @BelongsTo(() => UserModel)
   declare user?: UserModel;
 

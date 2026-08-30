@@ -11,6 +11,12 @@ import { UserGender } from '../../common/enums/domain.enums';
 export const updateMyAccountSchema = z
   .object({
     genero: z.nativeEnum(UserGender),
+    /**
+     * Cuánto suma cada chip rápido («+2,5 kg») al registrar una serie. No
+     * todos los gimnasios ni todos los discos son iguales; 2.5 era un valor
+     * fijo del código, no una elección de nadie.
+     */
+    pesoIncrementoKg: z.number().positive().max(50),
   })
   .partial()
   .refine((input) => Object.values(input).some((value) => value !== undefined), {

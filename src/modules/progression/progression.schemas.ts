@@ -98,8 +98,24 @@ export const updateBadgeSchema = createBadgeSchema
     message: "Debe enviar al menos un campo para actualizar.",
   });
 
+/**
+ * Días de la semana (ISO: 1 lunes ... 7 domingo) que el usuario declara como
+ * descanso planificado. Como máximo seis: si los siete fueran descanso la
+ * racha nunca podría romperse, y dejaría de significar nada.
+ */
+export const restDaysSchema = z.object({
+  weekdays: z
+    .array(z.number().int().min(1).max(7))
+    .max(6, "No puedes marcar los siete días como descanso.")
+    .refine((values) => new Set(values).size === values.length, {
+      message: "Cada día solo puede aparecer una vez.",
+    }),
+});
+
 export const leaderboardQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(10),
+  /** Orden de la clasificación: por puntos totales o por racha vigente. */
+  sortBy: z.enum(["points", "streak"]).default("points"),
 });
 
 export type CreateLevelInput = z.infer<typeof createLevelSchema>;
@@ -107,3 +123,4 @@ export type UpdateLevelInput = z.infer<typeof updateLevelSchema>;
 export type CreateBadgeInput = z.infer<typeof createBadgeSchema>;
 export type UpdateBadgeInput = z.infer<typeof updateBadgeSchema>;
 export type LeaderboardQuery = z.infer<typeof leaderboardQuerySchema>;
+export type RestDaysInput = z.infer<typeof restDaysSchema>;

@@ -11,11 +11,13 @@ import {
   CreateBadgeInput,
   CreateLevelInput,
   LeaderboardQuery,
+  RestDaysInput,
   UpdateBadgeInput,
   UpdateLevelInput,
   createBadgeSchema,
   createLevelSchema,
   leaderboardQuerySchema,
+  restDaysSchema,
   updateBadgeSchema,
   updateLevelSchema,
 } from "./progression.schemas";
@@ -41,7 +43,20 @@ export class ProgressionController {
     @CurrentUser() user: AuthenticatedUser,
     @Query(new ZodValidationPipe(leaderboardQuerySchema)) query: LeaderboardQuery,
   ) {
-    return this.progressionService.getLeaderboard(user.id, query.limit);
+    return this.progressionService.getLeaderboard(user.id, query.limit, query.sortBy);
+  }
+
+  @Get("rest-days")
+  getRestDays(@CurrentUser() user: AuthenticatedUser) {
+    return this.progressionService.getRestDays(user.id);
+  }
+
+  @Patch("rest-days")
+  setRestDays(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(restDaysSchema)) input: RestDaysInput,
+  ) {
+    return this.progressionService.setRestDays(user.id, input.weekdays);
   }
 }
 

@@ -8,6 +8,8 @@ import { UniqueConstraintError } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { WorkoutSessionStatus } from '../../common/enums/domain.enums';
 import { ExercisesService } from '../exercises/exercises.service';
+import { FacilitiesRepository } from '../facilities/facilities.repository';
+import { resolveVerifiedBranch } from './geo-verification.util';
 import {
   mapSessionExerciseToResponse,
   mapWorkoutSessionToResponse,
@@ -25,6 +27,7 @@ import {
   AddSessionExerciseInput,
   CreateWorkoutSessionInput,
   CreateWorkoutSetInput,
+  FinishSessionInput,
   UpdateSessionExerciseInput,
   UpdateWorkoutSetInput,
   WorkoutSessionListInput,
@@ -35,6 +38,7 @@ export class WorkoutsService {
   constructor(
     private readonly workoutsRepository: WorkoutsRepository,
     private readonly exercisesService: ExercisesService,
+    private readonly facilitiesRepository: FacilitiesRepository,
     private readonly sequelize: Sequelize,
   ) {}
 
@@ -91,14 +95,41 @@ export class WorkoutsService {
   async finishSession(
     userId: string,
     sessionId: string,
+    location: FinishSessionInput = {},
   ): Promise<WorkoutSessionResponse> {
     const session = await this.getSessionModelOrFail(userId, sessionId);
     this.assertSessionInProgress(session.status);
+    const verifiedBranch = await this.resolveGeoVerification(location);
     const completedSession = await this.workoutsRepository.changeSessionStatus(
       session,
       WorkoutSessionStatus.COMPLETED,
+      { geoVerified: verifiedBranch !== null, verifiedBranchId: verifiedBranch?.id ?? null },
     );
     return mapWorkoutSessionToResponse(completedSession);
+  }
+
+  /**
+   * Transparente para quien entrena: sin coordenadas, o sin ninguna sede
+   * configurada con radio, la sesión se finaliza igual y sin verificar. No es
+   * una condición para que cuente, es un dato adicional cuando está disponible.
+   */
+  private async resolveGeoVerification(location: FinishSessionInput) {
+    if (location.latitude === undefined || location.longitude === undefined) return null;
+
+    const branches = await this.facilitiesRepository.findActiveBranchesWithCoordinates();
+    const candidates = branches
+      .filter((branch) => branch.latitude !== null && branch.longitude !== null && branch.geofenceRadiusM !== null)
+      .map((branch) => ({
+        id: branch.id,
+        latitude: Number(branch.latitude),
+        longitude: Number(branch.longitude),
+        geofenceRadiusM: branch.geofenceRadiusM as number,
+      }));
+
+    return resolveVerifiedBranch(candidates, {
+      latitude: location.latitude,
+      longitude: location.longitude,
+    });
   }
 
   async cancelSession(

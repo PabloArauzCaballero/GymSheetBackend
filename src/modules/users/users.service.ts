@@ -25,6 +25,9 @@ export class UsersService {
     if (input.genero !== undefined) {
       await user.update({ gender: input.genero });
     }
+    if (input.pesoIncrementoKg !== undefined) {
+      await user.update({ weightIncrementKg: String(input.pesoIncrementoKg) });
+    }
     return user;
   }
 }
