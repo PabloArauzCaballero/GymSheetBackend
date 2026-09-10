@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { UniqueConstraintError } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { EmploymentStatus, UserRole } from "../../common/enums/domain.enums";
+import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { env } from "../../config/env";
 import { AccessCredentialRepository } from "../access-control/access-credential.repository";
 import { FacilitiesRepository } from "../facilities/facilities.repository";
@@ -126,8 +127,9 @@ export class CustomerStaffService {
     };
   }
 
-  async createStaff(input: CreateStaffInput, actorUserId: string) {
-    await this.validateBranchIds(input.branchIds);
+  async createStaff(actor: AuthenticatedUser, input: CreateStaffInput) {
+    const actorUserId = actor.id;
+    await this.validateBranchIds(input.branchIds, actor.tenantScope);
     await this.sequelize.transaction(async (transaction) => {
       const user = await this.usersRepository.findById(
         input.userId,
@@ -186,14 +188,9 @@ export class CustomerStaffService {
    * administrativa podía emitir: registrar un entrenador obligaba a crear la
    * cuenta fuera del producto.
    */
-  async createStaffUser(input: CreateStaffUserInput, actorUserId: string) {
-    await this.validateBranchIds(input.branchIds);
-    // El gimnasio se hereda de quien da el alta y no se pide en el formulario:
-    // un administrador solo puede contratar para su propio gimnasio, así que
-    // preguntárselo sería ofrecerle equivocarse. Sin esto, el personal quedaba
-    // sin gimnasio mientras los socios sí lo guardaban, y esa asimetría se
-    // notaba en cuanto alguien listaba las cuentas de una marca.
-    const actor = await this.usersRepository.findById(actorUserId);
+  async createStaffUser(actor: AuthenticatedUser, input: CreateStaffUserInput) {
+    const actorUserId = actor.id;
+    await this.validateBranchIds(input.branchIds, actor.tenantScope);
     const [passwordHash, pinHash] = await Promise.all([
       bcrypt.hash(input.password, env.BCRYPT_SALT_ROUNDS),
       input.accessPin
@@ -213,7 +210,13 @@ export class CustomerStaffService {
             passwordHash,
             fullName: input.fullName,
             role: input.role,
-            tenantId: actor?.tenantId ?? env.DEFAULT_TENANT_ID ?? null,
+            // El gimnasio se hereda de quien da el alta y no se pide en el
+            // formulario: un administrador solo puede contratar para su propio
+            // gimnasio, así que preguntárselo sería ofrecerle equivocarse. Sin
+            // esto, el personal quedaba sin gimnasio mientras los socios sí lo
+            // guardaban, y esa asimetría se notaba en cuanto alguien listaba
+            // las cuentas de una marca.
+            tenantId: actor.tenantId,
           },
           transaction,
         );
@@ -339,9 +342,16 @@ export class CustomerStaffService {
     return mapStaff(profile);
   }
 
-  private async validateBranchIds(branchIds: string[]) {
+  /**
+   * Una sede de otro gimnasio se trata como inexistente: sin esto, el alcance
+   * de un empleado era la vía para darle acceso a las sedes del vecino.
+   */
+  private async validateBranchIds(
+    branchIds: string[],
+    tenantScope: string | null,
+  ) {
     for (const branchId of branchIds) {
-      if (!(await this.facilitiesRepository.findBranch(branchId))) {
+      if (!(await this.facilitiesRepository.findBranch(branchId, tenantScope))) {
         throw new UnprocessableEntityException("Una sede asignada no existe.");
       }
     }

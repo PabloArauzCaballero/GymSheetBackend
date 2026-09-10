@@ -13,6 +13,7 @@ import {
   UserRole,
 } from "../../common/enums/domain.enums";
 import { BusinessDateService } from "../../common/time/business-date.service";
+import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { FacilitiesRepository } from "../facilities/facilities.repository";
 import { GymDomainEvent } from "../integration/domain-event.catalog";
 import { DomainEventPublisher } from "../integration/domain-event.publisher";
@@ -75,8 +76,8 @@ export class MembershipService {
     return mapPlan(plan);
   }
 
-  async createPlan(input: CreatePlanInput) {
-    await this.validateScopes(input.scopes);
+  async createPlan(actor: AuthenticatedUser, input: CreatePlanInput) {
+    await this.validateScopes(input.scopes, actor.tenantScope);
     await this.validatePlanImage(input.imageFileId);
     const planId = await this.sequelize.transaction(async (transaction) => {
       const { scopes, ...attributes } = input;
@@ -149,8 +150,12 @@ export class MembershipService {
     return { planId, featureId, desasociado: removed > 0 };
   }
 
-  async replacePlanScopes(planId: string, input: ReplacePlanScopesInput) {
-    await this.validateScopes(input.scopes);
+  async replacePlanScopes(
+    actor: AuthenticatedUser,
+    planId: string,
+    input: ReplacePlanScopesInput,
+  ) {
+    await this.validateScopes(input.scopes, actor.tenantScope);
     await this.sequelize.transaction(async (transaction) => {
       const plan = await this.repository.findPlan(planId, transaction);
       if (!plan) throw new NotFoundException("Plan no encontrado.");
@@ -171,12 +176,12 @@ export class MembershipService {
     return this.customerStaff.listCustomers(page, pageSize, tenantScope);
   }
 
-  createStaff(input: CreateStaffInput, actorUserId: string) {
-    return this.customerStaff.createStaff(input, actorUserId);
+  createStaff(actor: AuthenticatedUser, input: CreateStaffInput) {
+    return this.customerStaff.createStaff(actor, input);
   }
 
-  createStaffUser(input: CreateStaffUserInput, actorUserId: string) {
-    return this.customerStaff.createStaffUser(input, actorUserId);
+  createStaffUser(actor: AuthenticatedUser, input: CreateStaffUserInput) {
+    return this.customerStaff.createStaffUser(actor, input);
   }
 
   listStaff(input: StaffListInput, tenantScope: string | null) {
@@ -648,18 +653,29 @@ export class MembershipService {
     };
   }
 
+  /**
+   * Una sede fuera del alcance se trata como inexistente: el alcance de un plan
+   * es la vía por la que un gimnasio podría dar acceso a las sedes de otro.
+   */
   private async validateScopes(
     scopes: { branchId: string; roomId: string | null }[],
+    tenantScope: string | null,
   ) {
     for (const scope of scopes) {
-      const branch = await this.facilitiesRepository.findBranch(scope.branchId);
+      const branch = await this.facilitiesRepository.findBranch(
+        scope.branchId,
+        tenantScope,
+      );
       if (!branch) {
         throw new UnprocessableEntityException(
           "Una sede del alcance no existe.",
         );
       }
       if (!scope.roomId) continue;
-      const room = await this.facilitiesRepository.findRoom(scope.roomId);
+      const room = await this.facilitiesRepository.findRoom(
+        scope.roomId,
+        tenantScope,
+      );
       if (!room || room.branchId !== scope.branchId) {
         throw new UnprocessableEntityException(
           "Una sala no pertenece a su sede.",

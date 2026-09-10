@@ -57,7 +57,12 @@ export class WorkoutsController {
     @Param('id', UuidParamPipe) sessionId: string,
     @Body(new ZodValidationPipe(finishSessionSchema)) input: FinishSessionInput,
   ) {
-    return this.workoutsService.finishSession(authenticatedUser.id, sessionId, input);
+    return this.workoutsService.finishSession(
+      authenticatedUser.id,
+      authenticatedUser.tenantId,
+      sessionId,
+      input,
+    );
   }
 
   @Patch(':id/cancel')

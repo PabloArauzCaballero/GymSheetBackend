@@ -94,12 +94,13 @@ export class WorkoutsService {
 
   async finishSession(
     userId: string,
+    tenantId: string,
     sessionId: string,
     location: FinishSessionInput = {},
   ): Promise<WorkoutSessionResponse> {
     const session = await this.getSessionModelOrFail(userId, sessionId);
     this.assertSessionInProgress(session.status);
-    const verifiedBranch = await this.resolveGeoVerification(location);
+    const verifiedBranch = await this.resolveGeoVerification(location, tenantId);
     const completedSession = await this.workoutsRepository.changeSessionStatus(
       session,
       WorkoutSessionStatus.COMPLETED,
@@ -112,11 +113,19 @@ export class WorkoutsService {
    * Transparente para quien entrena: sin coordenadas, o sin ninguna sede
    * configurada con radio, la sesión se finaliza igual y sin verificar. No es
    * una condición para que cuente, es un dato adicional cuando está disponible.
+   *
+   * Se verifica contra las sedes del gimnasio de quien entrena: dar por buena
+   * la coordenada de una sede ajena sería marcar como presencial una sesión que
+   * ocurrió en un gimnasio que no es el suyo.
    */
-  private async resolveGeoVerification(location: FinishSessionInput) {
+  private async resolveGeoVerification(
+    location: FinishSessionInput,
+    tenantId: string,
+  ) {
     if (location.latitude === undefined || location.longitude === undefined) return null;
 
-    const branches = await this.facilitiesRepository.findActiveBranchesWithCoordinates();
+    const branches =
+      await this.facilitiesRepository.findActiveBranchesWithCoordinates(tenantId);
     const candidates = branches
       .filter((branch) => branch.latitude !== null && branch.longitude !== null && branch.geofenceRadiusM !== null)
       .map((branch) => ({

@@ -66,13 +66,19 @@ Liveness remains independent of PostgreSQL to avoid restart loops during tempora
 
 ## Authentication
 
-| Method | Route            | Access        | Purpose                                  |
-| ------ | ---------------- | ------------- | ---------------------------------------- |
-| POST   | `/auth/register` | public        | Register a client account                |
-| POST   | `/auth/login`    | public        | Authenticate and issue an access token   |
-| GET    | `/auth/me`       | authenticated | Return the revalidated request principal |
+| Method | Route                          | Access        | Purpose                                                       |
+| ------ | ------------------------------ | ------------- | -------------------------------------------------------------- |
+| POST   | `/auth/register`               | public        | Register a client account                                     |
+| POST   | `/auth/login`                  | public        | Authenticate and issue an access token + refresh token        |
+| POST   | `/auth/refresh`                | public        | Rotate a refresh token for a new access + refresh token pair  |
+| POST   | `/auth/logout`                 | public        | Revoke a refresh token (idempotent)                            |
+| POST   | `/auth/password-reset/request` | public        | Issue a 6-digit reset PIN by email (`202`, always)             |
+| POST   | `/auth/password-reset/confirm` | public        | Redeem `{ email, pin, password }` for a new password           |
+| GET    | `/auth/me`                     | authenticated | Return the revalidated request principal                       |
 
 `register` and `login` use a tighter configurable rate limit than normal API routes. Login failures use a uniform message to reduce account enumeration.
+
+Refresh tokens are opaque, hashed, and stored in `auth.refresh_tokens`; rotating one revokes it and issues a new one in the same family, and presenting an already-rotated token revokes the whole family (theft/reuse signal). Password-reset PINs are single-use, short-lived (`PASSWORD_RESET_TOKEN_TTL`, default 10 minutes), and capped at `PASSWORD_RESET_MAX_ATTEMPTS` wrong guesses (default 5) before the code must be requested again; `password-reset/request` always responds `202` with the same message, matched or not, to avoid account enumeration. No email provider is wired in yet — see `password-reset-notifier.ts`.
 
 ## Users and profile
 

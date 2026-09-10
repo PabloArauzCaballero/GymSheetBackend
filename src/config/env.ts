@@ -252,6 +252,23 @@ export const environmentSchema = z
       .min(60000)
       .max(86400000)
       .default(3600000),
+    /**
+     * Purga de stories caducadas (`worker:stories-purge`). Cada pasada borra
+     * como mucho `STORIES_PURGE_BATCH_SIZE` filas y, si el lote sale lleno,
+     * encadena otro sin esperar; el intervalo solo separa las pasadas ociosas.
+     */
+    STORIES_PURGE_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(60000)
+      .max(86400000)
+      .default(3600000),
+    STORIES_PURGE_BATCH_SIZE: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(5000)
+      .default(200),
     NOTIFICATION_DELIVERY_PROVIDER: z
       .enum(["IN_APP", "HTTP_GATEWAY", "MOCK"])
       .default("IN_APP"),

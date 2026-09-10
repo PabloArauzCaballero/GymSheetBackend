@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/sequelize';
 import { Op } from 'sequelize';
 import { EquipmentModel } from '../equipment/equipment.model';
 import { FacilityStatus, RoomStatus } from '../../common/enums/domain.enums';
+import { tenantScopeWhere } from '../../common/tenancy/tenant-scope';
 import { BranchModel } from './branch.model';
 import { EquipmentAssignmentModel } from './equipment-assignment.model';
 import { PublicBranchListQuery, publicRoomTypes } from './public-facilities.schemas';
@@ -65,6 +66,26 @@ export class PublicFacilitiesRepository {
           ],
         },
       ],
+    });
+  }
+
+  /**
+   * Sedes activas del gimnasio del socio. El directorio público lista las de
+   * todas las marcas a propósito; una sesión ya sabe a qué gimnasio pertenece,
+   * y ver las sedes de otro es una fuga, no una funcionalidad.
+   */
+  listActiveBranchesByTenant(tenantId: string) {
+    return this.branches.findAll({
+      where: { status: FacilityStatus.ACTIVE, ...tenantScopeWhere(tenantId) },
+      include: [
+        {
+          model: RoomModel,
+          required: false,
+          attributes: ['id', 'roomType'],
+          where: { status: RoomStatus.ACTIVE, roomType: { [Op.in]: publicRoomTypes } },
+        },
+      ],
+      order: [['name', 'ASC']],
     });
   }
 

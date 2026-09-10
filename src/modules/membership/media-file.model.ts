@@ -23,6 +23,13 @@ export class MediaFileModel extends Model {
   @Default(DataType.UUIDV4)
   @Column({ type: DataType.UUID, field: "public_id" })
   declare publicId: string;
+  /**
+   * Gimnasio propietario. Nulo = compartido: el material importado de
+   * catálogos externos de ejercicios no es de nadie en particular.
+   */
+  @Column({ type: DataType.STRING(60), allowNull: true, field: "tenant_id" })
+  declare tenantId: string | null;
+
   @Column(DataType.STRING(120)) declare code: string;
   @Column(DataType.STRING(180)) declare name: string;
   @Column({ type: DataType.STRING(30), field: "file_type" })

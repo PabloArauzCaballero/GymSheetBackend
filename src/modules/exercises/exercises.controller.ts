@@ -66,7 +66,7 @@ export class ExercisesController {
     @Body(new ZodValidationPipe(createPersonalExerciseSchema))
     input: CreatePersonalExerciseInput,
   ) {
-    return this.exercisesService.createPersonalExercise(authenticatedUser.id, input);
+    return this.exercisesService.createPersonalExercise(authenticatedUser, input);
   }
 
   @Patch(':id')
@@ -76,7 +76,7 @@ export class ExercisesController {
     @Body(new ZodValidationPipe(updateExerciseSchema)) input: UpdateExerciseInput,
   ) {
     return this.exercisesService.updatePersonalExercise(
-      authenticatedUser.id,
+      authenticatedUser,
       exerciseId,
       input,
     );
@@ -101,17 +101,19 @@ export class AdminExercisesController {
 
   @Post()
   createGlobalExercise(
+    @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(createGlobalExerciseSchema)) input: CreateGlobalExerciseInput,
   ) {
-    return this.exercisesService.createGlobalExercise(input);
+    return this.exercisesService.createGlobalExercise(actor, input);
   }
 
   @Patch(':id')
   updateGlobalExercise(
+    @CurrentUser() actor: AuthenticatedUser,
     @Param('id', UuidParamPipe) exerciseId: string,
     @Body(new ZodValidationPipe(updateExerciseSchema)) input: UpdateExerciseInput,
   ) {
-    return this.exercisesService.updateGlobalExercise(exerciseId, input);
+    return this.exercisesService.updateGlobalExercise(actor, exerciseId, input);
   }
 
   @Delete(':id')

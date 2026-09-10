@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { env } from "../../config/env";
+import { MediaRetentionService } from "../media/media-retention.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
 import { mapProfilePhotoToResponse, ProfilePhotoResponse } from "./profile-photo.mapper";
 import { ProfilePhotosRepository } from "./profile-photos.repository";
@@ -26,6 +27,7 @@ export class ProfilePhotosService {
   constructor(
     private readonly repository: ProfilePhotosRepository,
     @Inject(MEDIA_STORAGE_PROVIDER) private readonly storage: MediaStorageProvider,
+    private readonly retention: MediaRetentionService,
   ) {}
 
   async list(userId: string): Promise<ProfilePhotoResponse[]> {
@@ -75,8 +77,13 @@ export class ProfilePhotosService {
     const photo = await this.repository.findByIdForUser(photoId, userId);
     if (!photo) throw new NotFoundException("Foto no encontrada.");
 
-    await this.storage.remove(photo.storageKey);
-    await this.repository.delete(photo);
+    // La clave de almacenamiento es el SHA-256 del contenido, así que dos
+    // cuentas que subieron la misma imagen comparten fichero. Borrarlo sin
+    // mirar el refcount dejaría a la otra cuenta con la foto rota.
+    await this.retention.deleteRowAndUnreferencedFile(
+      photo.storageKey,
+      (transaction) => this.repository.delete(photo, transaction),
+    );
     return { deleted: true };
   }
 }

@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
-import { Op, QueryTypes, Transaction } from "sequelize";
+import { Op, QueryTypes, Transaction, WhereOptions } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { env } from "../../config/env";
 import { ProgressionBadgeModel } from "./progression-badge.model";
@@ -175,8 +175,17 @@ export class ProgressionRepository {
 
   // ─────────────────────────────────────────────────────────── administración
 
-  listAllLevels(): Promise<ProgressionLevelModel[]> {
+  /**
+   * Catálogo visible para administrar.
+   *
+   * `null` (plataforma sin suplantar) ve todo. Un gimnasio ve lo suyo Y lo
+   * global: las filas globales son las que heredan sus socios, así que
+   * ocultárselas le dejaría administrando una senda que no coincide con la que
+   * ven en la aplicación. Editarlas es otra cosa, y eso lo decide el servicio.
+   */
+  listAllLevels(tenantScope: string | null): Promise<ProgressionLevelModel[]> {
     return this.levelModel.findAll({
+      where: catalogScopeWhere(tenantScope),
       order: [
         ["audience", "ASC"],
         ["sortOrder", "ASC"],
@@ -184,8 +193,9 @@ export class ProgressionRepository {
     });
   }
 
-  listAllBadges(): Promise<ProgressionBadgeModel[]> {
+  listAllBadges(tenantScope: string | null): Promise<ProgressionBadgeModel[]> {
     return this.badgeModel.findAll({
+      where: catalogScopeWhere(tenantScope),
       order: [
         ["audience", "ASC"],
         ["sortOrder", "ASC"],
@@ -604,4 +614,13 @@ function dayDistance(from: string, to: string): number {
 function toUtcDate(dateOnly: string): Date {
   const [year, month, day] = dateOnly.split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day));
+}
+
+/**
+ * Filas de catálogo que un alcance puede ver: las propias más las compartidas.
+ * `null` no filtra —es la plataforma— y devolver `{}` es lo que lo expresa.
+ */
+function catalogScopeWhere(tenantScope: string | null): WhereOptions {
+  if (tenantScope === null) return {};
+  return { tenantId: { [Op.or]: [null, tenantScope] } };
 }

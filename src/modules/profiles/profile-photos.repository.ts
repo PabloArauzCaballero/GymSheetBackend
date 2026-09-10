@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
+import type { Transaction } from "sequelize";
 import type { StoredAsset } from "../media/media-storage.port";
 import { ProfilePhotoModel } from "./profile-photo.model";
 
@@ -32,7 +33,10 @@ export class ProfilePhotosRepository {
     });
   }
 
-  async delete(photo: ProfilePhotoModel): Promise<void> {
-    await photo.destroy();
+  async delete(
+    photo: ProfilePhotoModel,
+    transaction?: Transaction,
+  ): Promise<void> {
+    await photo.destroy({ transaction });
   }
 }

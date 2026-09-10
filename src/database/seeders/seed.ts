@@ -222,7 +222,11 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
       badgesCreated: 0,
       badgesUpdated: 0,
     };
-    let facilities = { branchesCreated: 0, branchesUpdated: 0 };
+    let facilities = {
+      tenantsCreated: 0,
+      branchesCreated: 0,
+      branchesUpdated: 0,
+    };
     let adminPermissions = {
       permissionsCreated: 0,
       permissionsUpdated: 0,

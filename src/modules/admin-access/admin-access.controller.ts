@@ -32,8 +32,11 @@ export class AdminAccessController {
 
   @Get(':userId')
   @RequirePermission(AdminPermissionKey.ADMIN_ACCESS_MANAGE)
-  listForUser(@Param('userId', UuidParamPipe) userId: string) {
-    return this.adminPermissionsService.listGrantsForUser(userId);
+  listForUser(
+    @Param('userId', UuidParamPipe) userId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.adminPermissionsService.listGrantsForUser(userId, actor.tenantScope);
   }
 
   @Post(':userId')
@@ -43,7 +46,12 @@ export class AdminAccessController {
     @Body(new ZodValidationPipe(grantPermissionSchema)) input: GrantPermissionInput,
     @CurrentUser() actor: AuthenticatedUser,
   ) {
-    return this.adminPermissionsService.grant(userId, input, actor.id);
+    return this.adminPermissionsService.grant(
+      userId,
+      input,
+      actor.id,
+      actor.tenantScope,
+    );
   }
 
   @Delete(':userId/:permissionKey')
@@ -51,8 +59,9 @@ export class AdminAccessController {
   async revoke(
     @Param('userId', UuidParamPipe) userId: string,
     @Param('permissionKey') permissionKey: string,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
-    await this.adminPermissionsService.revoke(userId, permissionKey);
+    await this.adminPermissionsService.revoke(userId, permissionKey, actor.tenantScope);
     return { revoked: true };
   }
 }

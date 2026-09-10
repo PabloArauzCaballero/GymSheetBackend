@@ -106,9 +106,10 @@ export class AdminMembershipController {
   @Post("plans")
   @Roles(UserRole.ADMIN)
   createPlan(
+    @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(createPlanSchema)) input: CreatePlanInput,
   ) {
-    return this.service.createPlan(input);
+    return this.service.createPlan(actor, input);
   }
 
   @Patch("plans/:id")
@@ -171,11 +172,12 @@ export class AdminMembershipController {
   @Patch("plans/:id/scopes")
   @Roles(UserRole.ADMIN)
   replaceScopes(
+    @CurrentUser() actor: AuthenticatedUser,
     @Param("id", UuidParamPipe) id: string,
     @Body(new ZodValidationPipe(replacePlanScopesSchema))
     input: ReplacePlanScopesInput,
   ) {
-    return this.service.replacePlanScopes(id, input);
+    return this.service.replacePlanScopes(actor, id, input);
   }
 
   @Post("customers")
@@ -230,7 +232,7 @@ export class AdminMembershipController {
     @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(createStaffSchema)) input: CreateStaffInput,
   ) {
-    return this.service.createStaff(input, actor.id);
+    return this.service.createStaff(actor, input);
   }
 
   /** Alta de cuenta y perfil laboral en un solo paso (entrenadores, recepción). */
@@ -241,7 +243,7 @@ export class AdminMembershipController {
     @Body(new ZodValidationPipe(createStaffUserSchema))
     input: CreateStaffUserInput,
   ) {
-    return this.service.createStaffUser(input, actor.id);
+    return this.service.createStaffUser(actor, input);
   }
 
   @Get("staff")

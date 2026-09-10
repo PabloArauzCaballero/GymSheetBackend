@@ -9,6 +9,8 @@ import {
   MediaService,
   MediaUploadConfig,
 } from "./media.service";
+import { MediaReferencesRepository } from "./media-references.repository";
+import { MediaRetentionService } from "./media-retention.service";
 import { createMediaStorageProvider } from "./media-storage.factory";
 import { MEDIA_STORAGE_PROVIDER } from "./media-storage.port";
 
@@ -18,6 +20,8 @@ import { MEDIA_STORAGE_PROVIDER } from "./media-storage.port";
   providers: [
     MediaRepository,
     MediaService,
+    MediaReferencesRepository,
+    MediaRetentionService,
     {
       provide: MEDIA_STORAGE_PROVIDER,
       useFactory: () =>
@@ -37,6 +41,6 @@ import { MEDIA_STORAGE_PROVIDER } from "./media-storage.port";
       } satisfies MediaUploadConfig,
     },
   ],
-  exports: [MediaService, MEDIA_STORAGE_PROVIDER],
+  exports: [MediaService, MediaRetentionService, MEDIA_STORAGE_PROVIDER],
 })
 export class MediaModule {}

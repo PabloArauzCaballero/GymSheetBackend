@@ -9,6 +9,8 @@ import {
   UserRole,
   UserStatus,
 } from "../../common/enums/domain.enums";
+import { tenantScopeWhere } from "../../common/tenancy/tenant-scope";
+import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { UserModel } from "../users/user.model";
 import { GymDomainEvent } from "../integration/domain-event.catalog";
 import { DomainEventPublisher } from "../integration/domain-event.publisher";
@@ -41,9 +43,21 @@ export class BroadcastService {
     private readonly users: typeof UserModel,
   ) {}
 
+  /**
+   * Destinatarios de una campaña, acotados al gimnasio que la lanza.
+   *
+   * Es el filtro más importante del módulo: sin él, un administrador de un
+   * gimnasio le escribía a los socios de TODOS los gimnasios de la instalación.
+   * A diferencia de una fuga de lectura, esto no se queda en la respuesta —
+   * crea un mensaje y encola su entrega—, así que no había forma de deshacerlo.
+   *
+   * `null` (plataforma sin suplantar) no filtra: es el único caso en el que
+   * escribir a toda la instalación es la intención.
+   */
   private async resolveRecipients(
     segment: BroadcastSegment,
     limit: number,
+    tenantScope: string | null,
   ): Promise<string[]> {
     if (segment === "ACTIVE_MEMBERS") {
       const rows = await this.sequelize.query<{ userId: string }>(
@@ -51,18 +65,21 @@ export class BroadcastService {
          FROM membership.memberships m
          JOIN public.usuarios u ON u.id = m.user_id
          WHERE m.status = 'ACTIVE' AND u.estado = :active
+           AND (:tenantScope::text IS NULL OR u.tenant_id = :tenantScope)
          LIMIT :limit`,
         {
           type: QueryTypes.SELECT,
-          replacements: { active: UserStatus.ACTIVE, limit },
+          replacements: { active: UserStatus.ACTIVE, limit, tenantScope },
         },
       );
       return rows.map((row) => row.userId);
     }
-    const where =
-      segment === "ACTIVE_CLIENTS"
+    const where = {
+      ...(segment === "ACTIVE_CLIENTS"
         ? { status: UserStatus.ACTIVE, role: UserRole.CLIENT }
-        : { status: UserStatus.ACTIVE };
+        : { status: UserStatus.ACTIVE }),
+      ...tenantScopeWhere(tenantScope),
+    };
     const rows = await this.users.findAll({
       where,
       attributes: ["id"],
@@ -71,11 +88,15 @@ export class BroadcastService {
     return rows.map((row) => row.id);
   }
 
-  async broadcast(input: BroadcastInput): Promise<BroadcastResult> {
+  async broadcast(
+    actor: AuthenticatedUser,
+    input: BroadcastInput,
+  ): Promise<BroadcastResult> {
     const campaignId = randomUUID();
     const recipients = await this.resolveRecipients(
       input.segment,
       input.maxRecipients,
+      actor.tenantScope,
     );
     let created = 0;
     let duplicates = 0;
@@ -139,7 +160,15 @@ export class BroadcastService {
       created,
       duplicates,
     };
-    this.logger.log({ event: "notifications.broadcast.sent", ...result });
+    // Queda en el registro quién lanzó la campaña y sobre qué gimnasio: una
+    // campaña no se puede retirar una vez entregada, así que la trazabilidad
+    // es lo único que queda para responder «¿quién mandó esto?».
+    this.logger.log({
+      event: "notifications.broadcast.sent",
+      actorUserId: actor.id,
+      tenantScope: actor.tenantScope,
+      ...result,
+    });
     return result;
   }
 }

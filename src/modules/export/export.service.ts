@@ -1,4 +1,5 @@
 import { Injectable, PayloadTooLargeException } from '@nestjs/common';
+import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { WorkoutSessionStatus } from '../../common/enums/domain.enums';
 import { EquipmentService } from '../equipment/equipment.service';
 import { ProfilesService } from '../profiles/profiles.service';
@@ -25,12 +26,13 @@ export class ExportService {
     private readonly workoutsService: WorkoutsService,
   ) {}
 
-  async buildWorkoutHistoryExport(userId: string) {
+  async buildWorkoutHistoryExport(actor: AuthenticatedUser) {
+    const userId = actor.id;
     const [user, profile, sessions, equipment] = await Promise.all([
       this.usersService.getActiveUserOrFail(userId),
       this.profilesService.getMyProfile(userId),
       this.listSessionsForExport(userId),
-      this.equipmentService.listAvailableEquipment(),
+      this.equipmentService.listAvailableEquipment(actor),
     ]);
 
     return {
@@ -64,8 +66,8 @@ export class ExportService {
    * texto y reglas, y arrastrar Chromium a la imagen del servidor para dibujar
    * una tabla no se paga.
    */
-  async buildWorkoutHistoryPdf(userId: string): Promise<Buffer> {
-    const data = await this.buildWorkoutHistoryExport(userId);
+  async buildWorkoutHistoryPdf(actor: AuthenticatedUser): Promise<Buffer> {
+    const data = await this.buildWorkoutHistoryExport(actor);
 
     const finishedSessions = data.sesiones.filter(
       (session) => session.estado === WorkoutSessionStatus.COMPLETED,
@@ -318,8 +320,8 @@ export class ExportService {
     return rendered;
   }
 
-  async buildWorkoutHistoryCsv(userId: string): Promise<string> {
-    const exportData = await this.buildWorkoutHistoryExport(userId);
+  async buildWorkoutHistoryCsv(actor: AuthenticatedUser): Promise<string> {
+    const exportData = await this.buildWorkoutHistoryExport(actor);
     const rows = [
       [
         'fecha_inicio',

@@ -112,15 +112,16 @@ Ninguno.
 
 ## Pruebas
 
-Sin spec en el módulo.
+`facilities.tenant-scope.spec.ts` — alcance por gimnasio: filtro propio en sedes, por JOIN con la
+sede en salas y accesos, y por JOIN con el equipo en mantenimiento; más el rechazo de escritura
+sobre equipo ajeno.
 
 ## Riesgos
 
 - `ARCH-1` — Eventos con `record` (no encolados).
 - `DATA-1` — Create de branch/room/access-point sin traducir unicidad (branch.code único) a 409 →
   potencial 500.
-- `completeMaintenance` pone el equipo AVAILABLE aunque exista otro mantenimiento abierto
-  (`countOpenMaintenance` existe pero no se usa).
+- `completeMaintenance` pone el equipo AVAILABLE aunque exista otro mantenimiento abierto.
 - FRONT_DESK puede programar/iniciar/completar mantenimiento (muta estado de equipo) pero no crear
   salas — verificar que la separación de permisos es intencional.
 - Sin cobertura de pruebas de la máquina de estados.

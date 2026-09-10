@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { env } from "../../config/env";
+import { MediaRetentionService } from "../media/media-retention.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
 import { mapFeedRowsToResponse, mapStoryToResponse, StoryFeedEntryResponse, StoryResponse } from "./stories.mapper";
 import { StoriesRepository } from "./stories.repository";
@@ -16,6 +17,7 @@ export class StoriesService {
   constructor(
     private readonly repository: StoriesRepository,
     @Inject(MEDIA_STORAGE_PROVIDER) private readonly mediaStorage: MediaStorageProvider,
+    private readonly retention: MediaRetentionService,
   ) {}
 
   async upload(userId: string, tenantId: string, file: UploadedStoryMedia | undefined): Promise<StoryResponse> {
@@ -58,8 +60,13 @@ export class StoriesService {
     const story = await this.repository.findByIdForUser(storyId, userId);
     // 404, no 403: una story ajena no debe confirmar que existe.
     if (!story) throw new NotFoundException("Story no encontrada.");
-    await this.mediaStorage.remove(story.storageKey);
-    await this.repository.delete(story);
+    // El fichero se comparte con quien haya subido el mismo binario (la clave
+    // es el SHA-256 del contenido): la fila siempre cae, el fichero solo si
+    // deja de estar referenciado. Ver `MediaRetentionService`.
+    await this.retention.deleteRowAndUnreferencedFile(
+      story.storageKey,
+      (transaction) => this.repository.delete(story, transaction),
+    );
     return { deleted: true };
   }
 }

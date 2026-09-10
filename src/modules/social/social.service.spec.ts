@@ -47,7 +47,8 @@ describe("SocialService.sendConnection", () => {
 
     const result = await service.sendConnection(userA, "default", userB);
 
-    expect(create).toHaveBeenCalledWith(userA, userB);
+    // El tercer argumento es la transacción opcional: fuera de un swipe no hay.
+    expect(create).toHaveBeenCalledWith(userA, userB, undefined);
     expect(result.status).toBe(ConnectionStatus.PENDING);
   });
 

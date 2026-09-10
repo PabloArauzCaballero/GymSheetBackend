@@ -1,7 +1,9 @@
 import { Transaction } from "sequelize";
 import { FacilityStatus, RoomType } from "../../common/enums/domain.enums";
+import { env } from "../../config/env";
 import { BranchModel } from "../../modules/facilities/branch.model";
 import { RoomModel } from "../../modules/facilities/room.model";
+import { TenantModel } from "../../modules/tenants/tenant.model";
 
 function unsplash(id: string) {
   return `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=1200&q=80`;
@@ -20,6 +22,9 @@ function unsplash(id: string) {
  * real para negocios con los que no tenemos relación. Las comodidades y la
  * galería son igual de ilustrativas que los servicios: fotos de stock de
  * gimnasios genéricos, no fotos reales de cada sede.
+ *
+ * Son cadenas RIVALES entre sí, así que cada marca es un gimnasio distinto del
+ * catálogo (`public.tenants`) y no comparten perímetro: ver `brandTenantId`.
  */
 const branchSeeds: Array<{
   code: string;
@@ -154,6 +159,77 @@ const branchSeeds: Array<{
   },
 ];
 
+/**
+ * Marca propia del producto. Sus sedes NO son de una cadena ajena: son las del
+ * gimnasio de referencia de la instalación, el mismo al que se adscriben las
+ * cuentas sin `tenant_id` propio (`DEFAULT_TENANT_ID`, `topfitness` en
+ * desarrollo). Darle un identificador nuevo derivado del nombre la sacaría del
+ * perímetro de sus propios socios, que es justo lo contrario de lo que hace
+ * falta.
+ */
+const HOUSE_BRAND_NAME = "Top Fitness Center";
+
+/**
+ * Identificador de gimnasio a partir del nombre de la marca. Debe satisfacer
+ * `ck_tenants_id` (`^[a-z0-9][a-z0-9-]*$`, `varchar(60)`), y ser estable entre
+ * ejecuciones: es la clave primaria del catálogo y viaja en `usuarios.tenant_id`
+ * y en la URL de acceso, así que no puede depender de un contador ni del orden.
+ */
+export function slugifyBrandName(brandName: string): string {
+  const slug = brandName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/g, "");
+  if (!slug) {
+    throw new Error(`Brand "${brandName}" produces an empty tenant identifier.`);
+  }
+  return slug;
+}
+
+/** Gimnasio dueño de una marca: la casa va al tenant por defecto, el resto a su slug. */
+export function brandTenantId(
+  brandName: string,
+  defaultTenantId: string = env.DEFAULT_TENANT_ID,
+): string {
+  return brandName === HOUSE_BRAND_NAME
+    ? defaultTenantId
+    : slugifyBrandName(brandName);
+}
+
+/**
+ * Catálogo de gimnasios que exige este seed, uno por marca sembrada.
+ *
+ * Cada sede pertenece a la cadena que la explota, no a quien corrió el seed: sin
+ * esto las nueve sedes caían en el DEFAULT de columna (`topfitness`) y un socio
+ * veía en su directorio sucursales de gimnasios rivales.
+ *
+ * Dos marcas distintas que colapsaran en el mismo identificador se fundirían en
+ * silencio en un solo gimnasio, así que se detecta y se falla antes de escribir.
+ */
+export function resolveBrandTenants(
+  defaultTenantId: string = env.DEFAULT_TENANT_ID,
+): Array<{ brandName: string; tenantId: string }> {
+  const tenants: Array<{ brandName: string; tenantId: string }> = [];
+  const owners = new Map<string, string>();
+  for (const seed of branchSeeds) {
+    const tenantId = brandTenantId(seed.brandName, defaultTenantId);
+    const owner = owners.get(tenantId);
+    if (owner === seed.brandName) continue;
+    if (owner) {
+      throw new Error(
+        `Brands "${owner}" and "${seed.brandName}" both resolve to tenant "${tenantId}".`,
+      );
+    }
+    owners.set(tenantId, seed.brandName);
+    tenants.push({ brandName: seed.brandName, tenantId });
+  }
+  return tenants;
+}
+
 const roomLabel: Record<RoomType, string> = {
   [RoomType.TRAINING]: "Sala de pesas",
   [RoomType.CARDIO]: "Cardio",
@@ -168,16 +244,48 @@ const roomLabel: Record<RoomType, string> = {
 export async function seedFacilities(
   mode: "base" | "mock" | "all",
   transaction: Transaction,
-): Promise<{ branchesCreated: number; branchesUpdated: number }> {
-  if (mode === "base") return { branchesCreated: 0, branchesUpdated: 0 };
+): Promise<{
+  tenantsCreated: number;
+  branchesCreated: number;
+  branchesUpdated: number;
+}> {
+  // El modo `base` es el que corre en producción: ni una sede de demostración,
+  // ni por tanto un gimnasio de demostración en el catálogo.
+  if (mode === "base")
+    return { tenantsCreated: 0, branchesCreated: 0, branchesUpdated: 0 };
+
+  // Primero el catálogo de gimnasios: `fk_branches_tenant` exige que la fila de
+  // `public.tenants` exista antes de que ninguna sede la referencie.
+  let tenantsCreated = 0;
+  for (const tenant of resolveBrandTenants()) {
+    // `findOrCreate` y no `upsert`: el nombre de un gimnasio ya existente es
+    // dato de administración (el Admin Portal lo edita), no del seed. Sólo se
+    // aporta como valor inicial cuando la fila aún no está.
+    const [, created] = await TenantModel.findOrCreate({
+      where: { id: tenant.tenantId },
+      defaults: {
+        id: tenant.tenantId,
+        nombre: tenant.brandName,
+        estado: "ACTIVO",
+      },
+      transaction,
+    });
+    if (created) tenantsCreated += 1;
+  }
 
   let branchesCreated = 0;
   let branchesUpdated = 0;
   for (const seed of branchSeeds) {
+    const tenantId = brandTenantId(seed.brandName);
     const galleryImageUrls = seed.galleryImageIds.map(unsplash);
+    // La búsqueda va por `code` a secas, sin el gimnasio: las filas sembradas
+    // antes de este arreglo quedaron todas en el tenant por defecto, y buscarlas
+    // ya con su gimnasio correcto no las encontraría — crearía un duplicado y
+    // dejaría la fila equivocada visible en el directorio ajeno.
     const [branch, created] = await BranchModel.findOrCreate({
       where: { code: seed.code },
       defaults: {
+        tenantId,
         code: seed.code,
         name: seed.name,
         brandName: seed.brandName,
@@ -197,6 +305,10 @@ export async function seedFacilities(
     else {
       await branch.update(
         {
+          // El gimnasio dueño se reescribe en cada pasada, no sólo al crear: es
+          // lo único que corrige las sedes ya sembradas bajo el tenant por
+          // defecto sin tener que tocar la base a mano.
+          tenantId,
           name: seed.name,
           brandName: seed.brandName,
           description: seed.description,
@@ -225,5 +337,5 @@ export async function seedFacilities(
       });
     }
   }
-  return { branchesCreated, branchesUpdated };
+  return { tenantsCreated, branchesCreated, branchesUpdated };
 }

@@ -8,6 +8,7 @@ import {
 import { UniqueConstraintError } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { ExerciseType } from '../../common/enums/domain.enums';
+import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { EquipmentRepository } from '../equipment/equipment.repository';
 import {
   EquipmentInferenceService,
@@ -136,8 +137,14 @@ export class ExercisesService {
     return mapExerciseToResponse(exercise);
   }
 
-  async createGlobalExercise(input: CreateGlobalExerciseInput): Promise<ExerciseResponse> {
-    const equipmentIds = await this.validateEquipmentIds(input.equipmentIds);
+  async createGlobalExercise(
+    actor: AuthenticatedUser,
+    input: CreateGlobalExerciseInput,
+  ): Promise<ExerciseResponse> {
+    const equipmentIds = await this.validateEquipmentIds(
+      input.equipmentIds,
+      actor.tenantScope,
+    );
     const exerciseId = await this.sequelize.transaction(async (transaction) => {
       const exercise = await this.exercisesRepository.createGlobal(input, transaction);
       await this.exercisesRepository.replaceExerciseEquipment(
@@ -161,11 +168,16 @@ export class ExercisesService {
    * respeta tal cual y no se deduce nada.
    */
   async createPersonalExercise(
-    userId: string,
+    actor: AuthenticatedUser,
     input: CreatePersonalExerciseInput,
   ): Promise<ExerciseResponse> {
     const resolved = await this.resolveMuscleDrivenInput(input);
-    const equipmentIds = await this.validateEquipmentIds(resolved.equipmentIds);
+    const userId = actor.id;
+    // Un ejercicio personal solo puede apuntar al equipo del gimnasio del socio.
+    const equipmentIds = await this.validateEquipmentIds(
+      resolved.equipmentIds,
+      actor.tenantId,
+    );
     const exerciseId = await this.sequelize.transaction(async (transaction) => {
       const exercise = await this.exercisesRepository.createPersonal(
         userId,
@@ -184,15 +196,16 @@ export class ExercisesService {
   }
 
   async updatePersonalExercise(
-    userId: string,
+    actor: AuthenticatedUser,
     exerciseId: string,
     input: UpdateExerciseInput,
   ): Promise<ExerciseResponse> {
+    const userId = actor.id;
     const exercise = await this.findPersonalOwnedExerciseOrFail(userId, exerciseId);
     const equipmentIds =
       input.equipmentIds === undefined
         ? undefined
-        : await this.validateEquipmentIds(input.equipmentIds);
+        : await this.validateEquipmentIds(input.equipmentIds, actor.tenantId);
 
     await this.sequelize.transaction(async (transaction) => {
       await this.exercisesRepository.updateExercise(exercise, input, transaction);
@@ -210,6 +223,7 @@ export class ExercisesService {
   }
 
   async updateGlobalExercise(
+    actor: AuthenticatedUser,
     exerciseId: string,
     input: UpdateExerciseInput,
   ): Promise<ExerciseResponse> {
@@ -217,7 +231,7 @@ export class ExercisesService {
     const equipmentIds =
       input.equipmentIds === undefined
         ? undefined
-        : await this.validateEquipmentIds(input.equipmentIds);
+        : await this.validateEquipmentIds(input.equipmentIds, actor.tenantScope);
 
     await this.sequelize.transaction(async (transaction) => {
       await this.exercisesRepository.updateExercise(exercise, input, transaction);
@@ -372,9 +386,20 @@ export class ExercisesService {
     };
   }
 
-  private async validateEquipmentIds(equipmentIds: string[]): Promise<string[]> {
+  /**
+   * El alcance llega hasta aqui porque enlazar es una forma de leer: sin el,
+   * un ejercicio podia quedar apuntando al equipo de otro gimnasio, y la
+   * respuesta de validacion confirmaba de paso que ese identificador existia.
+   */
+  private async validateEquipmentIds(
+    equipmentIds: string[],
+    tenantScope: string | null,
+  ): Promise<string[]> {
     const uniqueEquipmentIds = [...new Set(equipmentIds)];
-    const linkableIds = await this.equipmentRepository.findLinkableIds(uniqueEquipmentIds);
+    const linkableIds = await this.equipmentRepository.findLinkableIds(
+      uniqueEquipmentIds,
+      tenantScope,
+    );
 
     if (linkableIds.length !== uniqueEquipmentIds.length) {
       throw new BadRequestException(

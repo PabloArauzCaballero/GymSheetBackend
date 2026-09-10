@@ -41,6 +41,7 @@ import { BodyMeasurementModel } from "../../modules/profiles/body-measurement.mo
 import { OnboardingModel } from "../../modules/profiles/onboarding.model";
 import { ProfilePhotoModel } from "../../modules/profiles/profile-photo.model";
 import { ConnectionModel } from "../../modules/social/connection.model";
+import { DiscoveryPassModel } from "../../modules/social/discovery-pass.model";
 import { ProfileSocialSettingsModel } from "../../modules/social/profile-social-settings.model";
 import { ConversationModel } from "../../modules/chat/conversation.model";
 import { ConversationParticipantModel } from "../../modules/chat/conversation-participant.model";
@@ -77,6 +78,7 @@ export const databaseModels = [
   ProfilePhotoModel,
   ConnectionModel,
   ProfileSocialSettingsModel,
+  DiscoveryPassModel,
   ConversationModel,
   ConversationParticipantModel,
   MessageModel,

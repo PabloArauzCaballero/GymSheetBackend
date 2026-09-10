@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op, Transaction } from 'sequelize';
 import { EquipmentStatus } from '../../common/enums/domain.enums';
+import { tenantScopeWhere } from '../../common/tenancy/tenant-scope';
 import { EquipmentModel } from './equipment.model';
 import { CreateEquipmentInput, UpdateEquipmentInput } from './equipment.schemas';
 
@@ -12,9 +13,9 @@ export class EquipmentRepository {
     private readonly equipmentModel: typeof EquipmentModel,
   ) {}
 
-  findAvailable(): Promise<EquipmentModel[]> {
+  findAvailable(tenantScope: string | null): Promise<EquipmentModel[]> {
     return this.equipmentModel.findAll({
-      where: { status: EquipmentStatus.AVAILABLE },
+      where: { status: EquipmentStatus.AVAILABLE, ...tenantScopeWhere(tenantScope) },
       order: [['name', 'ASC']],
     });
   }
@@ -23,20 +24,29 @@ export class EquipmentRepository {
     return this.equipmentModel.findByPk(equipmentId, { transaction });
   }
 
-  async findLinkableIds(equipmentIds: string[]): Promise<string[]> {
+  /**
+   * Filtra una lista de identificadores dejando los enlazables. El alcance
+   * importa aqui tanto como en un listado: es la via por la que un ejercicio de
+   * un gimnasio podria acabar apuntando al equipo de otro.
+   */
+  async findLinkableIds(
+    equipmentIds: string[],
+    tenantScope: string | null,
+  ): Promise<string[]> {
     if (equipmentIds.length === 0) return [];
     const equipmentItems = await this.equipmentModel.findAll({
       attributes: ['id'],
       where: {
         id: { [Op.in]: [...new Set(equipmentIds)] },
         status: { [Op.ne]: EquipmentStatus.INACTIVE },
+        ...tenantScopeWhere(tenantScope),
       },
     });
     return equipmentItems.map((equipment) => equipment.id);
   }
 
-  create(input: CreateEquipmentInput): Promise<EquipmentModel> {
-    return this.equipmentModel.create(input);
+  create(input: CreateEquipmentInput, tenantId: string): Promise<EquipmentModel> {
+    return this.equipmentModel.create({ ...input, tenantId });
   }
 
   async update(

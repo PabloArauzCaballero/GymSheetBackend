@@ -1,15 +1,23 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { Transaction } from "sequelize";
+import { Sequelize } from "sequelize-typescript";
+import { MediaReferencesRepository } from "../media/media-references.repository";
+import { MediaRetentionService } from "../media/media-retention.service";
 import { MediaStorageProvider } from "../media/media-storage.port";
 import { StoriesRepository } from "./stories.repository";
 import { StoriesService } from "./stories.service";
 
 const userId = "00000000-0000-4000-8000-00000000000a";
+const transaction = { id: "tx" } as unknown as Transaction;
 
 function createService(
   repositoryOverrides: Partial<StoriesRepository>,
   mediaStorageOverrides: Partial<MediaStorageProvider> = {},
+  // ¿Queda otra fila (otra story, una foto de perfil, un mensaje…) apuntando
+  // al mismo binario? Es lo que decide si el fichero se borra o se conserva.
+  referencedElsewhere = false,
 ): StoriesService {
-  return new StoriesService(repositoryOverrides as StoriesRepository, {
+  const storage = {
     name: "local",
     upload: jest.fn().mockResolvedValue({
       provider: "local",
@@ -21,7 +29,26 @@ function createService(
     }),
     remove: jest.fn(),
     ...mediaStorageOverrides,
-  } as unknown as MediaStorageProvider);
+  } as unknown as MediaStorageProvider;
+
+  const retention = new MediaRetentionService(
+    {
+      transaction: jest.fn(
+        async (run: (t: Transaction) => Promise<unknown>) => run(transaction),
+      ),
+    } as unknown as Sequelize,
+    {
+      lockStorageKey: jest.fn().mockResolvedValue(undefined),
+      isReferenced: jest.fn().mockResolvedValue(referencedElsewhere),
+    } as unknown as MediaReferencesRepository,
+    storage,
+  );
+
+  return new StoriesService(
+    repositoryOverrides as StoriesRepository,
+    storage,
+    retention,
+  );
 }
 
 describe("StoriesService.upload", () => {
@@ -88,7 +115,7 @@ describe("StoriesService.remove", () => {
     await expect(service.remove("story-1", userId)).rejects.toThrow(NotFoundException);
   });
 
-  it("removes the stored media and the story row", async () => {
+  it("removes the stored media and the story row when nothing else references the file", async () => {
     const destroy = jest.fn().mockResolvedValue(undefined);
     const remove = jest.fn().mockResolvedValue(undefined);
     const service = createService(
@@ -102,5 +129,25 @@ describe("StoriesService.remove", () => {
     await expect(service.remove("story-1", userId)).resolves.toEqual({ deleted: true });
     expect(remove).toHaveBeenCalledWith("stories/some-key.jpg");
     expect(destroy).toHaveBeenCalled();
+  });
+
+  it("keeps the file when another row still references the same binary", async () => {
+    // El nombre del fichero es el SHA-256 del contenido: si otra cuenta subió
+    // el mismo binario comparten fichero, y borrar la story ajena le rompía la
+    // foto. La fila propia cae igual; el fichero no.
+    const destroy = jest.fn().mockResolvedValue(undefined);
+    const remove = jest.fn().mockResolvedValue(undefined);
+    const service = createService(
+      {
+        findByIdForUser: jest.fn().mockResolvedValue({ storageKey: "stories/shared-key.jpg", destroy }),
+        delete: jest.fn().mockImplementation((story: { destroy: () => Promise<void> }) => story.destroy()),
+      },
+      { remove },
+      true,
+    );
+
+    await expect(service.remove("story-1", userId)).resolves.toEqual({ deleted: true });
+    expect(destroy).toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
   });
 });

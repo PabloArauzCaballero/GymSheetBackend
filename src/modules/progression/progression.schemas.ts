@@ -12,16 +12,15 @@ import { z } from "zod";
 const audienceSchema = z.enum(["ANY", "MALE", "FEMALE"]);
 
 /**
- * Nulo = catálogo global, para todos los gimnasios. Es el valor por defecto a
- * propósito: la progresión debe funcionar igual sin importar el inquilino, y
- * declarar un gimnasio es la excepción, no la norma.
+ * Nivel al que se escribe la fila. El gimnasio concreto NO viaja aquí: sale del
+ * token. Antes este contrato aceptaba un `tenantId` en el cuerpo, y con eso
+ * bastaba para escribir en el catálogo de cualquier otro gimnasio.
+ *
+ * Sin valor por defecto a propósito: quien puede elegir nivel (la plataforma)
+ * tiene que decirlo, porque una fila global creada por descuido aparece en
+ * todos los gimnasios. Ver `resolveCatalogTenant`.
  */
-const tenantIdSchema = z
-  .string()
-  .trim()
-  .regex(/^[a-z0-9][a-z0-9-]*$/, "El identificador del gimnasio debe ir en minúsculas.")
-  .max(60)
-  .nullable();
+const alcanceSchema = z.literal("GLOBAL").optional();
 
 const colorSchema = z
   .string()
@@ -38,7 +37,7 @@ const codeSchema = z
   .max(60);
 
 export const createLevelSchema = z.object({
-  tenantId: tenantIdSchema.default(null),
+  alcance: alcanceSchema,
   audience: audienceSchema.default("ANY"),
   code: codeSchema,
   name: z.string().trim().min(2).max(80),
@@ -51,7 +50,14 @@ export const createLevelSchema = z.object({
   active: z.boolean().default(true),
 });
 
+/**
+ * `alcance` queda fuera de la edicion: el nivel de una fila se fija al
+ * crearla. Admitir el cambio convertiria un PATCH en una mudanza entre
+ * gimnasios, que es precisamente el movimiento que el alcance existe para
+ * impedir.
+ */
 export const updateLevelSchema = createLevelSchema
+  .omit({ alcance: true })
   .partial()
   .refine((input) => Object.values(input).some((value) => value !== undefined), {
     message: "Debe enviar al menos un campo para actualizar.",
@@ -74,7 +80,7 @@ export const criterionTypeSchema = z.enum([
 ]);
 
 export const createBadgeSchema = z.object({
-  tenantId: tenantIdSchema.default(null),
+  alcance: alcanceSchema,
   audience: audienceSchema.default("ANY"),
   code: codeSchema,
   name: z.string().trim().min(2).max(80),
@@ -92,7 +98,14 @@ export const createBadgeSchema = z.object({
   sortOrder: z.number().int().min(0).max(10_000).default(0),
 });
 
+/**
+ * `alcance` queda fuera de la edicion: el nivel de una fila se fija al
+ * crearla. Admitir el cambio convertiria un PATCH en una mudanza entre
+ * gimnasios, que es precisamente el movimiento que el alcance existe para
+ * impedir.
+ */
 export const updateBadgeSchema = createBadgeSchema
+  .omit({ alcance: true })
   .partial()
   .refine((input) => Object.values(input).some((value) => value !== undefined), {
     message: "Debe enviar al menos un campo para actualizar.",

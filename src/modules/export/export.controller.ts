@@ -9,14 +9,14 @@ export class ExportController {
 
   @Get('workout-history')
   exportWorkoutHistory(@CurrentUser() currentUser: AuthenticatedUser) {
-    return this.exportService.buildWorkoutHistoryExport(currentUser.id);
+    return this.exportService.buildWorkoutHistoryExport(currentUser);
   }
 
   @Get('workout-history/pdf')
   @Header('Content-Type', 'application/pdf')
   @Header('Content-Disposition', 'attachment; filename="gymsheet-avance.pdf"')
   async exportWorkoutHistoryPdf(@CurrentUser() currentUser: AuthenticatedUser) {
-    const pdf = await this.exportService.buildWorkoutHistoryPdf(currentUser.id);
+    const pdf = await this.exportService.buildWorkoutHistoryPdf(currentUser);
     return new StreamableFile(pdf);
   }
 
@@ -24,6 +24,6 @@ export class ExportController {
   @Header('Content-Type', 'text/csv; charset=utf-8')
   @Header('Content-Disposition', 'attachment; filename="workout-history.csv"')
   exportWorkoutHistoryCsv(@CurrentUser() currentUser: AuthenticatedUser) {
-    return this.exportService.buildWorkoutHistoryCsv(currentUser.id);
+    return this.exportService.buildWorkoutHistoryCsv(currentUser);
   }
 }

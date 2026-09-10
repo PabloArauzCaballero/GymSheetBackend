@@ -1,4 +1,6 @@
 import { PayloadTooLargeException } from '@nestjs/common';
+import { UserRole } from '../../common/enums/domain.enums';
+import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { EquipmentService } from '../equipment/equipment.service';
 import { ProfilesService } from '../profiles/profiles.service';
 import { UsersService } from '../users/users.service';
@@ -7,6 +9,16 @@ import { WorkoutsService } from '../workouts/workouts.service';
 import { ExportService } from './export.service';
 
 const userId = '00000000-0000-4000-8000-000000000001';
+// El exportador recibe el principal entero, no solo su id: el catálogo de
+// equipo que adjunta al informe se acota al gimnasio de quien lo pide.
+const actor = {
+  id: userId,
+  email: 'socio@example.test',
+  role: UserRole.CLIENT,
+  tenantId: 'topfitness',
+  tenantScope: 'topfitness',
+  impersonating: false,
+} as AuthenticatedUser;
 
 function createSession(exerciseName: string): WorkoutSessionResponse {
   return {
@@ -55,7 +67,7 @@ describe('ExportService CSV generation', () => {
     // evaluated as a formula when the exported file is opened.
     const service = createService(singlePage([createSession(hostileName)]));
 
-    const csv = await service.buildWorkoutHistoryCsv(userId);
+    const csv = await service.buildWorkoutHistoryCsv(actor);
 
     expect(csv).toContain(`"'${hostileName}"`);
     expect(csv).not.toContain(`"${hostileName}"`);
@@ -66,7 +78,7 @@ describe('ExportService CSV generation', () => {
       singlePage([createSession('=HYPERLINK("http://evil.test","click")')]),
     );
 
-    const csv = await service.buildWorkoutHistoryCsv(userId);
+    const csv = await service.buildWorkoutHistoryCsv(actor);
 
     // Prefixed so it is not evaluated, and inner quotes doubled so the cell
     // cannot terminate early.
@@ -76,7 +88,7 @@ describe('ExportService CSV generation', () => {
   it('escapes embedded quotes so a cell cannot break out of its column', async () => {
     const service = createService(singlePage([createSession('Press "wide" grip')]));
 
-    const csv = await service.buildWorkoutHistoryCsv(userId);
+    const csv = await service.buildWorkoutHistoryCsv(actor);
 
     expect(csv).toContain('"Press ""wide"" grip"');
   });
@@ -84,7 +96,7 @@ describe('ExportService CSV generation', () => {
   it('keeps an ordinary exercise name unmodified', async () => {
     const service = createService(singlePage([createSession('Bench Press')]));
 
-    const csv = await service.buildWorkoutHistoryCsv(userId);
+    const csv = await service.buildWorkoutHistoryCsv(actor);
 
     expect(csv).toContain('"Bench Press"');
   });
@@ -92,7 +104,7 @@ describe('ExportService CSV generation', () => {
   it('emits a header row followed by one row per set', async () => {
     const service = createService(singlePage([createSession('Bench Press')]));
 
-    const csv = await service.buildWorkoutHistoryCsv(userId);
+    const csv = await service.buildWorkoutHistoryCsv(actor);
     const lines = csv.trimEnd().split('\n');
 
     expect(lines[0]).toBe(
@@ -104,7 +116,7 @@ describe('ExportService CSV generation', () => {
   it('produces only the header when the user has no sessions', async () => {
     const service = createService(singlePage([]));
 
-    const csv = await service.buildWorkoutHistoryCsv(userId);
+    const csv = await service.buildWorkoutHistoryCsv(actor);
 
     expect(csv.trimEnd().split('\n')).toHaveLength(1);
   });
@@ -118,7 +130,7 @@ describe('ExportService bounded reads', () => {
       .mockResolvedValueOnce({ items: [createSession('B')], totalPages: 2, page: 2, pageSize: 100, total: 2 });
     const service = createService(listMySessions);
 
-    const result = await service.buildWorkoutHistoryExport(userId);
+    const result = await service.buildWorkoutHistoryExport(actor);
 
     expect(listMySessions).toHaveBeenCalledTimes(2);
     expect(result.sesiones).toHaveLength(2);
@@ -132,7 +144,7 @@ describe('ExportService bounded reads', () => {
       jest.fn().mockResolvedValue({ items: fullPage, totalPages: 999, page: 1, pageSize: 100, total: 99900 }),
     );
 
-    await expect(service.buildWorkoutHistoryExport(userId)).rejects.toThrow(
+    await expect(service.buildWorkoutHistoryExport(actor)).rejects.toThrow(
       PayloadTooLargeException,
     );
   });

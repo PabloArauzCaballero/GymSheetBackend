@@ -10,7 +10,11 @@ export class BranchModel extends Model {
   @Column(DataType.UUID)
   declare id: string;
 
-  @Column({ type: DataType.STRING(60), allowNull: false, unique: true })
+  /** Gimnasio propietario. El código sólo es único dentro de él. */
+  @Column({ type: DataType.STRING(60), allowNull: false, field: 'tenant_id' })
+  declare tenantId: string;
+
+  @Column({ type: DataType.STRING(60), allowNull: false })
   declare code: string;
 
   @Column({ type: DataType.STRING(180), allowNull: false })

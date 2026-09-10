@@ -32,8 +32,26 @@ export const directoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
+/**
+ * La baraja de descubrimiento: los mismos filtros del directorio, porque es el
+ * mismo catálogo de socios visto de otra forma. El tope es más bajo (30) porque
+ * una baraja se consume de una en una: pedir cincuenta cartas es traer cuarenta
+ * que se van a tirar.
+ */
+export const discoveryDeckQuerySchema = directoryQuerySchema.extend({
+  limit: z.coerce.number().int().min(1).max(30).default(10),
+});
+
+/** Un swipe: «me gusta» o «paso» sobre una carta de la baraja. */
+export const swipeSchema = z.object({
+  targetId: z.string().uuid(),
+  direction: z.enum(["LIKE", "PASS"]),
+});
+
 export type SendConnectionInput = z.infer<typeof sendConnectionSchema>;
 export type RespondConnectionInput = z.infer<typeof respondConnectionSchema>;
 export type ConnectionListQuery = z.infer<typeof connectionListQuerySchema>;
 export type UpdateSocialStatusInput = z.infer<typeof updateSocialStatusSchema>;
 export type DirectoryQuery = z.infer<typeof directoryQuerySchema>;
+export type DiscoveryDeckQuery = z.infer<typeof discoveryDeckQuerySchema>;
+export type SwipeInput = z.infer<typeof swipeSchema>;

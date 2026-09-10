@@ -12,6 +12,7 @@ import { WorkoutsService } from './workouts.service';
 const ownerId = '00000000-0000-4000-8000-000000000001';
 const otherUserId = '00000000-0000-4000-8000-000000000002';
 const setId = '00000000-0000-4000-8000-000000000003';
+const tenantId = 'topfitness';
 
 function createService(
   repositoryOverrides: Partial<WorkoutsRepository>,
@@ -92,13 +93,33 @@ describe('WorkoutsService.finishSession geo-verification', () => {
       changeSessionStatus,
     });
 
-    await service.finishSession(ownerId, 'session-1');
+    await service.finishSession(ownerId, tenantId, 'session-1');
 
     expect(changeSessionStatus).toHaveBeenCalledWith(
       expect.anything(),
       WorkoutSessionStatus.COMPLETED,
       { geoVerified: false, verifiedBranchId: null },
     );
+  });
+
+  it('only checks the branches of the gym the member belongs to', async () => {
+    const findActiveBranchesWithCoordinates = jest.fn().mockResolvedValue([]);
+    const service = createService(
+      {
+        findSessionByIdForUser: jest.fn().mockResolvedValue(createInProgressSession()),
+        changeSessionStatus: jest.fn().mockImplementation((session: WorkoutSessionModel) => session),
+      },
+      { findActiveBranchesWithCoordinates },
+    );
+
+    await service.finishSession(ownerId, tenantId, 'session-1', {
+      latitude: 0,
+      longitude: 0,
+    });
+
+    // Sin el gimnasio, la coordenada de una sede ajena daría por presencial una
+    // sesión ocurrida en un gimnasio que no es el suyo.
+    expect(findActiveBranchesWithCoordinates).toHaveBeenCalledWith(tenantId);
   });
 
   it('marks the session verified when the point falls inside a configured branch', async () => {
@@ -127,7 +148,10 @@ describe('WorkoutsService.finishSession geo-verification', () => {
       },
     );
 
-    await service.finishSession(ownerId, 'session-1', { latitude: 0.0001, longitude: 0 });
+    await service.finishSession(ownerId, tenantId, 'session-1', {
+      latitude: 0.0001,
+      longitude: 0,
+    });
 
     expect(changeSessionStatus).toHaveBeenCalledWith(
       expect.anything(),
@@ -162,7 +186,10 @@ describe('WorkoutsService.finishSession geo-verification', () => {
       },
     );
 
-    await service.finishSession(ownerId, 'session-1', { latitude: 5, longitude: 5 });
+    await service.finishSession(ownerId, tenantId, 'session-1', {
+      latitude: 5,
+      longitude: 5,
+    });
 
     expect(changeSessionStatus).toHaveBeenCalledWith(
       expect.anything(),

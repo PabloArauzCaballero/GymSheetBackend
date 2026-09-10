@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
-import { QueryTypes } from "sequelize";
+import { QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import type { StoredAsset } from "../media/media-storage.port";
 import { StoryModel, StoryMediaType } from "./story.model";
@@ -16,6 +16,16 @@ export interface StoryFeedRow {
   created_at: string;
   expires_at: string;
   viewed_by_me: boolean;
+}
+
+/**
+ * Referencia mínima de una story caducada: lo justo para borrarla y decidir
+ * sobre su binario. Deliberadamente NO es un modelo de Sequelize — la purga no
+ * necesita la fila entera y los modelos ORM no salen del repositorio.
+ */
+export interface ExpiredStoryReference {
+  readonly id: string;
+  readonly storageKey: string;
 }
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -53,8 +63,36 @@ export class StoriesRepository {
     return this.stories.findByPk(id);
   }
 
-  async delete(story: StoryModel): Promise<void> {
-    await story.destroy();
+  async delete(story: StoryModel, transaction?: Transaction): Promise<void> {
+    await story.destroy({ transaction });
+  }
+
+  /**
+   * Stories ya caducadas, de la más antigua a la más nueva, acotadas por lote.
+   * El índice `ix_profile_stories_feed (tenant_id, expires_at)` no sirve aquí
+   * (no filtramos por tenant), pero la tabla se mantiene pequeña justamente
+   * porque esta purga corre.
+   */
+  async findExpired(
+    now: Date,
+    limit: number,
+  ): Promise<ExpiredStoryReference[]> {
+    return this.sequelize.query<ExpiredStoryReference>(
+      `SELECT id, storage_key AS "storageKey"
+         FROM profile.stories
+        WHERE expires_at <= :now
+        ORDER BY expires_at ASC
+        LIMIT :limit`,
+      { type: QueryTypes.SELECT, replacements: { now, limit } },
+    );
+  }
+
+  /**
+   * Borrado por id, idempotente: devuelve cuántas filas cayeron, de modo que
+   * dos purgas simultáneas sobre la misma story no se estorban.
+   */
+  async deleteById(id: string, transaction?: Transaction): Promise<number> {
+    return this.stories.destroy({ where: { id }, transaction });
   }
 
   /**

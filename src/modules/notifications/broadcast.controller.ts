@@ -1,7 +1,9 @@
 import { Body, Controller, Post } from "@nestjs/common";
+import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { UserRole } from "../../common/enums/domain.enums";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { BroadcastService } from "./broadcast.service";
 import { BroadcastInput, broadcastSchema } from "./broadcast.schemas";
 
@@ -13,8 +15,9 @@ export class AdminBroadcastController {
 
   @Post("broadcast")
   broadcast(
+    @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(broadcastSchema)) input: BroadcastInput,
   ) {
-    return this.broadcastService.broadcast(input);
+    return this.broadcastService.broadcast(actor, input);
   }
 }

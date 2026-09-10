@@ -1,11 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op, Transaction } from 'sequelize';
-import {
-  FacilityStatus,
-  MaintenanceStatus,
-  RoomStatus,
-} from '../../common/enums/domain.enums';
+import { FacilityStatus, RoomStatus } from '../../common/enums/domain.enums';
+import { tenantScopeWhere } from '../../common/tenancy/tenant-scope';
+import { EquipmentModel } from '../equipment/equipment.model';
 import { AccessPointModel } from './access-point.model';
 import { BranchModel } from './branch.model';
 import { EquipmentAssignmentModel } from './equipment-assignment.model';
@@ -37,32 +35,66 @@ export class FacilitiesRepository {
     private readonly maintenance: typeof MaintenanceEventModel,
   ) {}
 
-  listBranches(pagination: PaginationInput) {
+  /**
+   * Alcance heredado de la sede.
+   *
+   * `rooms` y `access_points` no guardan gimnasio: el suyo es el de su sede, así
+   * que el filtro entra por el JOIN. `required: true` es lo que lo convierte en
+   * filtro — sin él sería un LEFT JOIN que devuelve la fila igual con la sede a
+   * null, que es exactamente la fuga que esto cierra. `attributes: []` porque la
+   * sede se une para filtrar, no para leerla.
+   */
+  private branchScopeInclude(tenantScope: string | null) {
+    return [
+      {
+        model: BranchModel,
+        required: true,
+        attributes: [],
+        where: tenantScopeWhere(tenantScope),
+      },
+    ];
+  }
+
+  listBranches(pagination: PaginationInput, tenantScope: string | null) {
     return this.branches.findAndCountAll({
+      where: tenantScopeWhere(tenantScope),
       limit: pagination.pageSize,
       offset: (pagination.page - 1) * pagination.pageSize,
       order: [['name', 'ASC']],
     });
   }
 
-  findBranch(branchId: string, transaction?: Transaction) {
-    return this.branches.findByPk(branchId, { transaction });
+  findBranch(
+    branchId: string,
+    tenantScope: string | null,
+    transaction?: Transaction,
+  ) {
+    return this.branches.findOne({
+      where: { id: branchId, ...tenantScopeWhere(tenantScope) },
+      transaction,
+    });
   }
 
-  /** Sedes activas con coordenadas configuradas, para la verificación de racha por geolocalización. */
-  findActiveBranchesWithCoordinates(): Promise<BranchModel[]> {
+  /**
+   * Sedes activas con coordenadas configuradas, para la verificación de racha
+   * por geolocalización. Se acota por `tenantId` y no por `tenantScope` a
+   * propósito: quien entrena verifica contra las sedes de SU gimnasio, no contra
+   * las de toda la plataforma.
+   */
+  findActiveBranchesWithCoordinates(tenantId: string): Promise<BranchModel[]> {
     return this.branches.findAll({
       where: {
         status: FacilityStatus.ACTIVE,
         latitude: { [Op.not]: null },
         longitude: { [Op.not]: null },
         geofenceRadiusM: { [Op.not]: null },
+        ...tenantScopeWhere(tenantId),
       },
     });
   }
 
-  createBranch(input: CreateBranchInput) {
-    return this.branches.create(input);
+  createBranch(input: CreateBranchInput, tenantId: string) {
+    return this.branches.create({ ...input, tenantId });
   }
 
   async updateBranch(branch: BranchModel, input: UpdateBranchInput) {
@@ -80,8 +112,11 @@ export class FacilitiesRepository {
     return room;
   }
 
-  findAccessPoint(id: string) {
-    return this.accessPoints.findByPk(id);
+  findAccessPoint(id: string, tenantScope: string | null) {
+    return this.accessPoints.findOne({
+      where: { id },
+      include: this.branchScopeInclude(tenantScope),
+    });
   }
 
   async updateAccessPoint(
@@ -97,17 +132,31 @@ export class FacilitiesRepository {
     return accessPoint;
   }
 
-  listRooms(branchId: string | undefined, pagination: PaginationInput) {
+  listRooms(
+    branchId: string | undefined,
+    pagination: PaginationInput,
+    tenantScope: string | null,
+  ) {
     return this.rooms.findAndCountAll({
       where: branchId ? { branchId } : undefined,
+      include: this.branchScopeInclude(tenantScope),
       limit: pagination.pageSize,
       offset: (pagination.page - 1) * pagination.pageSize,
       order: [['name', 'ASC']],
+      distinct: true,
     });
   }
 
-  findRoom(roomId: string, transaction?: Transaction) {
-    return this.rooms.findByPk(roomId, { transaction });
+  findRoom(
+    roomId: string,
+    tenantScope: string | null,
+    transaction?: Transaction,
+  ) {
+    return this.rooms.findOne({
+      where: { id: roomId },
+      include: this.branchScopeInclude(tenantScope),
+      transaction,
+    });
   }
 
   createRoom(input: CreateRoomInput) {
@@ -123,13 +172,19 @@ export class FacilitiesRepository {
     return this.accessPoints.create(input);
   }
 
-  listAccessPoints(branchId?: string) {
+  listAccessPoints(branchId: string | undefined, tenantScope: string | null) {
     return this.accessPoints.findAll({
       where: branchId ? { branchId } : undefined,
+      include: this.branchScopeInclude(tenantScope),
       order: [['name', 'ASC']],
     });
   }
 
+  /**
+   * Sin filtro de gimnasio a propósito: el `FOR UPDATE` de esta consulta no
+   * admite el JOIN con `equipment` que haría de filtro. El alcance se comprueba
+   * en el servicio sobre el equipo, antes de llegar aquí.
+   */
   findActiveAssignment(equipmentId: string, transaction?: Transaction) {
     return this.assignments.findOne({
       where: { equipmentId, endedAt: null },
@@ -167,6 +222,7 @@ export class FacilitiesRepository {
     );
   }
 
+  /** Igual que `findActiveAssignment`: el alcance lo comprueba el servicio. */
   findMaintenance(eventId: string, transaction?: Transaction) {
     return this.maintenance.findByPk(eventId, {
       transaction,
@@ -174,16 +230,29 @@ export class FacilitiesRepository {
     });
   }
 
-  listMaintenance(filters: MaintenanceFilterInput) {
+  listMaintenance(
+    filters: MaintenanceFilterInput,
+    tenantScope: string | null,
+  ) {
     const where = {
       ...(filters.equipoId ? { equipmentId: filters.equipoId } : {}),
       ...(filters.estado ? { status: filters.estado } : {}),
     };
     return this.maintenance.findAndCountAll({
       where,
+      // El mantenimiento no guarda gimnasio: lo hereda del equipo intervenido.
+      include: [
+        {
+          model: EquipmentModel,
+          required: true,
+          attributes: [],
+          where: tenantScopeWhere(tenantScope),
+        },
+      ],
       limit: filters.pageSize,
       offset: (filters.page - 1) * filters.pageSize,
       order: [['scheduledFor', 'DESC']],
+      distinct: true,
     });
   }
 
@@ -194,20 +263,5 @@ export class FacilitiesRepository {
   ) {
     await event.update(changes, { transaction });
     return event;
-  }
-
-  countOpenMaintenance(equipmentId: string, transaction?: Transaction) {
-    return this.maintenance.count({
-      where: {
-        equipmentId,
-        status: {
-          [Op.in]: [
-            MaintenanceStatus.SCHEDULED,
-            MaintenanceStatus.IN_PROGRESS,
-          ],
-        },
-      },
-      transaction,
-    });
   }
 }

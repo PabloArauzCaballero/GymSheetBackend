@@ -70,3 +70,21 @@ Invócalas por nombre para procedimientos especializados:
 
 Registra las verificaciones ejecutadas, sus resultados y las limitaciones. No afirmes que una
 integración funciona si no fue autenticada y probada.
+
+## Skills y plugins de Claude Code (OBLIGATORIO)
+
+- `.claude/skills/` del repo (backend-hardening, security-audit, clean-code-review,
+  library-selection, production-verification, graphify-ask) se cargan solas al abrir el
+  proyecto con Claude Code.
+- `.claude/settings.json` declara los plugins obligatorios: `fullstack-dev-skills`
+  (nestjs-expert, postgres-pro, sql-pro, database-optimizer, api-designer,
+  security-reviewer, etc.), `feature-dev`, `code-review`, `security-guidance` y
+  `context7`. Al abrir el repo por primera vez Claude Code pedirá confiar en la carpeta e
+  instalarlos: **aceptar es requisito para trabajar aquí**. Instalación manual si hizo
+  falta: `/plugin marketplace add jeffallan/claude-skills` y
+  `/plugin install fullstack-dev-skills@fullstack-dev-skills`.
+
+**Instrucción para Claude (obligatoria):** al iniciar una sesión verifica que las skills
+del repo y los plugins declarados estén disponibles; si faltan, detente y pide al usuario
+instalarlos antes de tocar código. Las skills de diseño/UI (estilo Apple) viven en el repo
+frontend (`GymSheetFrontend`); este backend no genera UI.

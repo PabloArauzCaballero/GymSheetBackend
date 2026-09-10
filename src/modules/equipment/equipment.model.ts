@@ -10,6 +10,10 @@ export class EquipmentModel extends Model {
   @Column(DataType.UUID)
   declare id: string;
 
+  /** Gimnasio propietario del equipo. */
+  @Column({ type: DataType.STRING(60), allowNull: false, field: 'tenant_id' })
+  declare tenantId: string;
+
   @Column({ type: DataType.STRING(140), allowNull: false, field: 'nombre' })
   declare name: string;
 

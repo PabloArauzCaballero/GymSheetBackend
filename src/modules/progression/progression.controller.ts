@@ -73,52 +73,62 @@ export class ProgressionAdminController {
   constructor(private readonly adminService: ProgressionAdminService) {}
 
   @Get("levels")
-  listLevels() {
-    return this.adminService.listLevels();
+  listLevels(@CurrentUser() actor: AuthenticatedUser) {
+    return this.adminService.listLevels(actor);
   }
 
   @Post("levels")
   createLevel(
+    @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(createLevelSchema)) input: CreateLevelInput,
   ) {
-    return this.adminService.createLevel(input);
+    return this.adminService.createLevel(actor, input);
   }
 
   @Patch("levels/:id")
   updateLevel(
+    @CurrentUser() actor: AuthenticatedUser,
     @Param("id", UuidParamPipe) id: string,
     @Body(new ZodValidationPipe(updateLevelSchema)) input: UpdateLevelInput,
   ) {
-    return this.adminService.updateLevel(id, input);
+    return this.adminService.updateLevel(actor, id, input);
   }
 
   @Delete("levels/:id")
-  deactivateLevel(@Param("id", UuidParamPipe) id: string) {
-    return this.adminService.deactivateLevel(id);
+  deactivateLevel(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param("id", UuidParamPipe) id: string,
+  ) {
+    return this.adminService.deactivateLevel(actor, id);
   }
 
   @Get("badges")
-  listBadges() {
-    return this.adminService.listBadges();
+  listBadges(@CurrentUser() actor: AuthenticatedUser) {
+    return this.adminService.listBadges(actor);
   }
 
   @Post("badges")
   createBadge(
+    @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(createBadgeSchema)) input: CreateBadgeInput,
   ) {
-    return this.adminService.createBadge(input);
+    return this.adminService.createBadge(actor, input);
   }
 
   @Patch("badges/:id")
   updateBadge(
+    @CurrentUser() actor: AuthenticatedUser,
     @Param("id", UuidParamPipe) id: string,
     @Body(new ZodValidationPipe(updateBadgeSchema)) input: UpdateBadgeInput,
   ) {
-    return this.adminService.updateBadge(id, input);
+    return this.adminService.updateBadge(actor, id, input);
   }
 
   @Delete("badges/:id")
-  deactivateBadge(@Param("id", UuidParamPipe) id: string) {
-    return this.adminService.deactivateBadge(id);
+  deactivateBadge(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param("id", UuidParamPipe) id: string,
+  ) {
+    return this.adminService.deactivateBadge(actor, id);
   }
 }

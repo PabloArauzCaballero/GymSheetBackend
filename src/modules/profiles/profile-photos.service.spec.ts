@@ -1,10 +1,15 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { Transaction } from "sequelize";
+import { Sequelize } from "sequelize-typescript";
+import { MediaReferencesRepository } from "../media/media-references.repository";
+import { MediaRetentionService } from "../media/media-retention.service";
 import { MediaStorageProvider } from "../media/media-storage.port";
 import { ProfilePhotosRepository } from "./profile-photos.repository";
 import { ProfilePhotosService, UploadedProfilePhoto } from "./profile-photos.service";
 
 const userId = "00000000-0000-4000-8000-000000000001";
 const otherUserId = "00000000-0000-4000-8000-000000000002";
+const transaction = { id: "tx" } as unknown as Transaction;
 
 function createImageFile(overrides: Partial<UploadedProfilePhoto> = {}): UploadedProfilePhoto {
   return {
@@ -19,8 +24,11 @@ function createImageFile(overrides: Partial<UploadedProfilePhoto> = {}): Uploade
 function createService(
   repositoryOverrides: Partial<ProfilePhotosRepository>,
   storageOverrides: Partial<MediaStorageProvider> = {},
+  // ¿Queda otra fila (otra foto, una story, un mensaje…) apuntando al mismo
+  // binario? Decide si el fichero compartido se borra o se conserva.
+  referencedElsewhere = false,
 ): ProfilePhotosService {
-  return new ProfilePhotosService(repositoryOverrides as ProfilePhotosRepository, {
+  const storage = {
     name: "local",
     upload: jest.fn().mockResolvedValue({
       provider: "local",
@@ -32,7 +40,26 @@ function createService(
     }),
     remove: jest.fn().mockResolvedValue(undefined),
     ...storageOverrides,
-  } as unknown as MediaStorageProvider);
+  } as unknown as MediaStorageProvider;
+
+  const retention = new MediaRetentionService(
+    {
+      transaction: jest.fn(
+        async (run: (t: Transaction) => Promise<unknown>) => run(transaction),
+      ),
+    } as unknown as Sequelize,
+    {
+      lockStorageKey: jest.fn().mockResolvedValue(undefined),
+      isReferenced: jest.fn().mockResolvedValue(referencedElsewhere),
+    } as unknown as MediaReferencesRepository,
+    storage,
+  );
+
+  return new ProfilePhotosService(
+    repositoryOverrides as ProfilePhotosRepository,
+    storage,
+    retention,
+  );
 }
 
 describe("ProfilePhotosService.upload", () => {
@@ -110,5 +137,26 @@ describe("ProfilePhotosService.remove", () => {
     await expect(service.remove(userId, "photo-1")).resolves.toEqual({ deleted: true });
     expect(storageRemove).toHaveBeenCalledWith("profile-photos/key.jpg");
     expect(repositoryDelete).toHaveBeenCalled();
+  });
+
+  it("deletes the row but keeps a file another row still references", async () => {
+    // Dos cuentas que subieron la misma imagen comparten `storageKey`: borrar
+    // el fichero al eliminar una de las filas rompía la foto de la otra.
+    const storageRemove = jest.fn().mockResolvedValue(undefined);
+    const repositoryDelete = jest.fn().mockResolvedValue(undefined);
+    const service = createService(
+      {
+        findByIdForUser: jest
+          .fn()
+          .mockResolvedValue({ id: "photo-1", userId, storageKey: "shared-key.jpg" }),
+        delete: repositoryDelete,
+      },
+      { remove: storageRemove },
+      true,
+    );
+
+    await expect(service.remove(userId, "photo-1")).resolves.toEqual({ deleted: true });
+    expect(repositoryDelete).toHaveBeenCalled();
+    expect(storageRemove).not.toHaveBeenCalled();
   });
 });

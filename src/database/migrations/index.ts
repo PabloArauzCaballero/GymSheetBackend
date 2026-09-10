@@ -35,7 +35,11 @@ import { chatMessageMediaMigration } from "./202608270009-chat-message-media";
 import { profileStoriesMigration } from "./202608280001-profile-stories";
 import { profileViewsMigration } from "./202608280002-profile-views";
 import { tenantsAndSystemAdminMigration } from "./202608290001-tenants-and-system-admin";
+import { usuariosTenantNotNullMigration } from "./202608300001-usuarios-tenant-not-null";
+import { facilitiesEquipmentMediaTenantMigration } from "./202608300002-facilities-equipment-media-tenant";
 import { adminPermissionsMigration } from "./202609010001-admin-permissions";
+import { socialDiscoveryPassesMigration } from "./202609020001-social-discovery-passes";
+import { mediaStorageKeyIndexesMigration } from "./202609080001-media-storage-key-indexes";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -78,4 +82,8 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   profileViewsMigration,
   adminPermissionsMigration,
   tenantsAndSystemAdminMigration,
+  usuariosTenantNotNullMigration,
+  facilitiesEquipmentMediaTenantMigration,
+  socialDiscoveryPassesMigration,
+  mediaStorageKeyIndexesMigration,
 ];

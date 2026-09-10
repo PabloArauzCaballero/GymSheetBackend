@@ -58,17 +58,26 @@ x-app-environment: &app-environment
   # `db:media:mirror` copies external media into local storage (forces JPEG/PNG).
   MEDIA_MIRROR_ALLOWED_HOSTS: ${MEDIA_MIRROR_ALLOWED_HOSTS:-images.unsplash.com,raw.githubusercontent.com}
   MEDIA_MIRROR_TIMEOUT_MS: ${MEDIA_MIRROR_TIMEOUT_MS:-15000}
+  # Purga de stories caducadas (worker-stories-purge). Borra la fila siempre y
+  # el binario solo cuando ninguna otra fila lo referencia (el nombre de fichero
+  # es el SHA-256 del contenido, así que se comparte entre usuarios).
+  STORIES_PURGE_INTERVAL_MS: ${STORIES_PURGE_INTERVAL_MS:-3600000}
+  STORIES_PURGE_BATCH_SIZE: ${STORIES_PURGE_BATCH_SIZE:-200}
   CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
   CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
   CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
   CLOUDINARY_FOLDER: ${CLOUDINARY_FOLDER:-gymsheet}
 
-  DB_HOST: postgres
-  DB_PORT: 5432
+  # Defaults to the compose-network `postgres` service; set DB_HOST/DB_PORT in
+  # .env to point every container (api, migrate, workers) at an external
+  # database (e.g. Neon) instead, without touching this file.
+  DB_HOST: ${DB_HOST:-postgres}
+  DB_PORT: ${DB_PORT:-5432}
   DB_NAME: ${DB_NAME:?DB_NAME is required}
   DB_USER: ${DB_USER:?DB_USER is required}
   DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
   DB_SSL: ${DB_SSL:-false}
+  DB_SSL_REJECT_UNAUTHORIZED: ${DB_SSL_REJECT_UNAUTHORIZED:-true}
   DB_POOL_MAX: ${DB_POOL_MAX:-10}
   DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-15000}
 
@@ -77,16 +86,28 @@ x-app-environment: &app-environment
   JWT_ISSUER: ${JWT_ISSUER:-gym-sheet-api}
   JWT_AUDIENCE: ${JWT_AUDIENCE:-gym-sheet-web}
 
+  # Gimnasio de referencia para una instalación de una sola marca; sin esto
+  # las cuentas creadas sin tenantId explícito se quedan sin marca.
+  DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-}
+  PASSWORD_RESET_TOKEN_TTL: ${PASSWORD_RESET_TOKEN_TTL:-10m}
+  PASSWORD_RESET_MAX_ATTEMPTS: ${PASSWORD_RESET_MAX_ATTEMPTS:-5}
+  # Solo para desarrollo local: nunca en producción (env.ts lo rechaza si
+  # NODE_ENV=production).
+  PASSWORD_RESET_DEV_LOG_ENABLED: ${PASSWORD_RESET_DEV_LOG_ENABLED:-false}
+
   # Shared rate-limit counters. Required here because this stack can scale the
   # api service beyond one replica.
   REDIS_URL: redis://redis:6379
   REDIS_REQUIRED: "true"
 
   METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
-  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+  # 3002 (puerto de la web): el socket de chat lo abre el navegador directo
+  # contra este backend, no a través del BFF, así que necesita CORS propio.
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3002}
   TRUST_PROXY: ${TRUST_PROXY:-false}
   RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
   AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
+  PUBLIC_RATE_LIMIT_MAX: ${PUBLIC_RATE_LIMIT_MAX:-60}
 
 x-worker-runtime: &worker-runtime
   # The image ships an HTTP liveness probe for the API. Workers serve no HTTP,
@@ -113,6 +134,12 @@ services:
       POSTGRES_DB: ${DB_NAME:?DB_NAME is required}
       POSTGRES_USER: ${DB_USER:?DB_USER is required}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    ports:
+      # 5433, not 5432: a native Postgres install already owns 5432 on this
+      # machine. Host access here is for local tooling (seed scripts, a GUI
+      # client) only — the other services reach this container over the
+      # compose network by service name and never touch this mapping.
+      - "5433:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       # Applied only when the data directory is empty, i.e. on first creation.
@@ -300,6 +327,30 @@ services:
           cpus: "1.0"
         reservations:
           memory: 192m
+    stop_grace_period: 45s
+
+  worker-stories-purge:
+    <<: [*app-image, *app-security, *worker-runtime]
+    command: ["node", "dist/workers/stories-purge.worker.js"]
+    environment:
+      <<: *app-environment
+    # Unlike the other workers this one deletes binaries, so it needs the same
+    # media volume the api writes to. Mounted over the read-only root
+    # filesystem, exactly as in the api service.
+    volumes:
+      - media-data:/app/storage/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+          cpus: "0.5"
+        reservations:
+          memory: 128m
     stop_grace_period: 45s
 
 volumes:

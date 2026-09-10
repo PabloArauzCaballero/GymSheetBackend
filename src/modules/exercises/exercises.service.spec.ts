@@ -1,4 +1,6 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { UserRole } from '../../common/enums/domain.enums';
+import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { Sequelize } from 'sequelize-typescript';
 import { ExerciseType } from '../../common/enums/domain.enums';
 import { EquipmentRepository } from '../equipment/equipment.repository';
@@ -6,6 +8,18 @@ import { ExerciseModel } from './exercise.model';
 import { ExercisesRepository } from './exercises.repository';
 import { EquipmentInferenceService } from './equipment-inference.service';
 import { ExercisesService } from './exercises.service';
+
+/** Principal mínimo para las rutas personales; el gimnasio acota el equipo. */
+function actorFor(id: string): AuthenticatedUser {
+  return {
+    id,
+    email: 'socio@example.test',
+    role: UserRole.CLIENT,
+    tenantId: 'topfitness',
+    tenantScope: 'topfitness',
+    impersonating: false,
+  };
+}
 
 const ownerId = '00000000-0000-4000-8000-000000000001';
 const otherUserId = '00000000-0000-4000-8000-000000000002';
@@ -49,7 +63,7 @@ describe('ExercisesService ownership', () => {
     });
 
     await expect(
-      service.updatePersonalExercise(ownerId, exerciseId, { name: 'Updated name' }),
+      service.updatePersonalExercise(actorFor(ownerId), exerciseId, { name: 'Updated name' }),
     ).rejects.toThrow(ForbiddenException);
   });
 

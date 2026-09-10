@@ -9,6 +9,7 @@ import { FacilitiesController } from './facilities.controller';
 import { FacilitiesRepository } from './facilities.repository';
 import { FacilitiesService } from './facilities.service';
 import { MaintenanceEventModel } from './maintenance-event.model';
+import { MeFacilitiesController } from './me-facilities.controller';
 import { PublicFacilitiesController } from './public-facilities.controller';
 import { PublicFacilitiesRepository } from './public-facilities.repository';
 import { PublicFacilitiesService } from './public-facilities.service';
@@ -26,7 +27,7 @@ import { RoomModel } from './room.model';
       MaintenanceEventModel,
     ]),
   ],
-  controllers: [FacilitiesController, PublicFacilitiesController],
+  controllers: [FacilitiesController, PublicFacilitiesController, MeFacilitiesController],
   providers: [
     FacilitiesRepository,
     FacilitiesService,

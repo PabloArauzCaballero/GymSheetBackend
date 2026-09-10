@@ -12,6 +12,15 @@ export class PublicFacilitiesService {
     return branches.map(mapPublicBranchSummary);
   }
 
+  /**
+   * Sedes del gimnasio del socio, con la misma proyección segura que el
+   * directorio público: la sesión acota el alcance, no amplía lo que se ve.
+   */
+  async listTenantBranches(tenantId: string) {
+    const branches = await this.repository.listActiveBranchesByTenant(tenantId);
+    return branches.map(mapPublicBranchSummary);
+  }
+
   async getBranch(id: string) {
     const branch = await this.repository.findActiveBranchDetail(id);
     if (!branch) throw new NotFoundException('Gimnasio no encontrado.');
