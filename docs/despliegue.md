@@ -36,12 +36,12 @@ Archivos ya en el repo:
 
 | Secret                            | Valor                                                            |
 | ---------------------------------- | ----------------------------------------------------------------- |
-| `GYMSHEET_TAILSCALE_AUTHKEY`       | Authkey efímera de Tailscale (consola de Tailscale)                |
-| `GYMSHEET_COOLIFY_TOKEN`           | API token de Coolify con permisos `deploy` + `read`                |
-| `GYMSHEET_BACKEND_COOLIFY_WEBHOOK` | Deploy webhook de esta aplicación en Coolify (lleva el UUID)        |
+| `PABLO_H310_TAILSCALE_AUTHKEY`       | Authkey efímera de Tailscale (consola de Tailscale)                |
+| `PABLO_H310_COOLIFY_TOKEN`           | API token de Coolify con permisos `deploy` + `read`                |
+| `PABLO_H310_COOLIFY_WEBHOOK` | Deploy webhook de esta aplicación en Coolify (lleva el UUID)        |
 
 Si ya existe un token de Coolify de otro proyecto (Atlas) con permiso sobre todos los recursos del
-servidor, puede reutilizarse el mismo valor para `GYMSHEET_COOLIFY_TOKEN` en vez de crear uno
+servidor, puede reutilizarse el mismo valor para `PABLO_H310_COOLIFY_TOKEN` en vez de crear uno
 nuevo.
 
 ## Lo que sigue pendiente tras el primer despliegue
