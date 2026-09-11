@@ -11,9 +11,9 @@
 # `GET /api/v1/deployments/<uuid>` hasta un estado terminal, fallando si no es `finished`.
 #
 # Secrets requeridos en este repositorio (Settings → Secrets and variables → Actions):
-#   GYMSHEET_TAILSCALE_AUTHKEY   credencial efímera para unirse a la tailnet
-#   GYMSHEET_COOLIFY_TOKEN       API token de Coolify, con permisos `deploy` Y `read`
-#   GYMSHEET_BACKEND_COOLIFY_WEBHOOK   URL de despliegue de ESTA aplicación (lleva el UUID)
+#   PABLO_H310_TAILSCALE_AUTHKEY   credencial efímera para unirse a la tailnet
+#   PABLO_H310_COOLIFY_TOKEN       API token de Coolify, con permisos `deploy` Y `read`
+#   PABLO_H310_COOLIFY_WEBHOOK   URL de despliegue de ESTA aplicación (lleva el UUID)
 #
 # Ninguno se imprime nunca: `${{ secrets.* }}` sólo se referencia dentro de `env:`.
 
@@ -41,7 +41,7 @@ jobs:
       - name: Connect to Tailscale
         uses: tailscale/github-action@v4
         with:
-          authkey: ${{ secrets.GYMSHEET_TAILSCALE_AUTHKEY }}
+          authkey: ${{ secrets.PABLO_H310_TAILSCALE_AUTHKEY }}
 
       - name: Verify Coolify connectivity
         shell: bash
@@ -70,18 +70,18 @@ jobs:
       - name: Deploy and wait for Coolify
         shell: bash
         env:
-          COOLIFY_DEPLOY_WEBHOOK: ${{ secrets.GYMSHEET_BACKEND_COOLIFY_WEBHOOK }}
-          COOLIFY_API_TOKEN: ${{ secrets.GYMSHEET_COOLIFY_TOKEN }}
+          COOLIFY_DEPLOY_WEBHOOK: ${{ secrets.PABLO_H310_COOLIFY_WEBHOOK }}
+          COOLIFY_API_TOKEN: ${{ secrets.PABLO_H310_COOLIFY_TOKEN }}
           COOLIFY_API: http://100.101.207.88:8000/api/v1
         run: |
           set -euo pipefail
 
           if [ -z "${COOLIFY_DEPLOY_WEBHOOK:-}" ]; then
-            echo "::error::Falta el secret GYMSHEET_BACKEND_COOLIFY_WEBHOOK."
+            echo "::error::Falta el secret PABLO_H310_COOLIFY_WEBHOOK."
             exit 1
           fi
           if [ -z "${COOLIFY_API_TOKEN:-}" ]; then
-            echo "::error::Falta el secret GYMSHEET_COOLIFY_TOKEN."
+            echo "::error::Falta el secret PABLO_H310_COOLIFY_TOKEN."
             exit 1
           fi
 
@@ -122,7 +122,7 @@ jobs:
             echo "::warning::El API token de Coolify no tiene permiso 'read', así que no se puede"
             echo "::warning::comprobar cómo terminó el despliegue. La orden SÍ se envió."
             echo "::warning::Arreglo: Coolify -> Keys & Tokens -> API tokens -> crear uno con"
-            echo "::warning::'deploy' + 'read' y actualizar GYMSHEET_COOLIFY_TOKEN."
+            echo "::warning::'deploy' + 'read' y actualizar PABLO_H310_COOLIFY_TOKEN."
           }
 
           echo "Pidiendo despliegue a Coolify…"
