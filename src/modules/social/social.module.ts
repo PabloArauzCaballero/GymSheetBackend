@@ -4,6 +4,8 @@ import { UsersModule } from "../users/users.module";
 import { ConnectionModel } from "./connection.model";
 import { DiscoveryPassModel } from "./discovery-pass.model";
 import { ProfileSocialSettingsModel } from "./profile-social-settings.model";
+import { SocialInteractionsController } from "./social-interactions.controller";
+import { SocialInteractionsService } from "./social-interactions.service";
 import { SocialController } from "./social.controller";
 import { SocialRepository } from "./social.repository";
 import { SocialService } from "./social.service";
@@ -13,8 +15,8 @@ import { SocialService } from "./social.service";
     UsersModule,
     SequelizeModule.forFeature([ConnectionModel, ProfileSocialSettingsModel, DiscoveryPassModel]),
   ],
-  controllers: [SocialController],
-  providers: [SocialRepository, SocialService],
+  controllers: [SocialController, SocialInteractionsController],
+  providers: [SocialRepository, SocialService, SocialInteractionsService],
   exports: [SocialService, SocialRepository],
 })
 export class SocialModule {}

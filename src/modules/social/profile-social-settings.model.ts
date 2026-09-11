@@ -30,6 +30,17 @@ export class ProfileSocialSettingsModel extends Model {
   @Column({ type: DataType.BOOLEAN, allowNull: false })
   declare visible: boolean;
 
+  /**
+   * Cuándo abrió por última vez la lista de "quién vio mi perfil".
+   *
+   * Nulo significa que nunca la abrió, no que no haya nada nuevo: con nulo,
+   * todas las visitas cuentan como nuevas. Vive aquí y no en una tabla aparte
+   * porque esto es exactamente lo que esta tabla guarda — una fila de ajustes
+   * sociales por persona.
+   */
+  @Column({ type: DataType.DATE, allowNull: true, field: "profile_views_checked_at" })
+  declare profileViewsCheckedAt: Date | null;
+
   @UpdatedAt
   @Column({ field: "updated_at" })
   declare updatedAt: Date;

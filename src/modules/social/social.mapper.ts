@@ -1,6 +1,6 @@
 import { ConnectionStatus } from "../../common/enums/domain.enums";
 import { ConnectionModel } from "./connection.model";
-import { DirectoryRow, EarnedBadgeRow } from "./social.repository";
+import { DirectoryRow, EarnedBadgeRow, InteractionCountsRow } from "./social.repository";
 
 export type ConnectionResponse = {
   id: string;
@@ -39,7 +39,11 @@ export type DirectoryEntryResponse = {
   connectionId: string | null;
   /** Solo si son conexión aceptada y la otra persona lo marcó visible. */
   socialStatus: string | null;
+  /** La primera de `photos`. Se conserva por compatibilidad con los clientes actuales. */
   photoUrl: string | null;
+  /** La galería del socio, en orden. Vacía si no subió ninguna foto. */
+  photos: { id: string; url: string }[];
+  age: number | null;
   gender: string | null;
   experienceLevel: string | null;
   points: number | null;
@@ -57,6 +61,8 @@ export function mapDirectoryRowToResponse(row: DirectoryRow): DirectoryEntryResp
     connectionId: row.connectionId,
     socialStatus: row.socialStatus,
     photoUrl: row.photoUrl,
+    photos: row.photos,
+    age: row.age,
     gender: row.gender,
     experienceLevel: row.experienceLevel,
     points: row.points,
@@ -134,8 +140,77 @@ export type UndoSwipeResponse = {
   unmatched: boolean;
 };
 
-/** «Ana María Pérez Soto» → «Ana P.» — mismo criterio que la clasificación de la senda. */
-function shortenName(fullName: string): string {
+/**
+ * Un «me gusta» pendiente, con la misma ficha que la baraja.
+ *
+ * Es la ficha del directorio y no un resumen recortado a propósito: quien mira
+ * «quién me dio like» está decidiendo si devuelve el gesto, y esa decisión
+ * necesita exactamente lo mismo que la carta original —fotos, edad, objetivo—.
+ * Un nombre suelto obligaría a abrir cada perfil para poder contestar.
+ *
+ * `connectionId` no es opcional aquí, a diferencia de la ficha del directorio:
+ * si la fila está en esta lista es porque existe la solicitud.
+ */
+export type LikeInteractionResponse = DirectoryEntryResponse & {
+  connectionId: string;
+  likedAt: string;
+};
+
+/** Un descarte, con la misma ficha. Sólo lectura: ver `SocialInteractionsService`. */
+export type PassInteractionResponse = DirectoryEntryResponse & {
+  passedAt: string;
+};
+
+export function mapLikeInteractionToResponse(
+  row: DirectoryRow,
+  connectionId: string,
+  likedAt: Date,
+): LikeInteractionResponse {
+  return {
+    ...mapDirectoryRowToResponse(row),
+    connectionId,
+    likedAt: likedAt.toISOString(),
+  };
+}
+
+export function mapPassInteractionToResponse(
+  row: DirectoryRow,
+  passedAt: Date,
+): PassInteractionResponse {
+  return { ...mapDirectoryRowToResponse(row), passedAt: passedAt.toISOString() };
+}
+
+/** Los contadores de la cabecera y del badge de la pestaña. */
+export type InteractionCountsResponse = {
+  likesReceived: number;
+  likesSent: number;
+  passesReceived: number;
+  passesSent: number;
+  profileViewsNew: number;
+};
+
+export function mapInteractionCountsToResponse(
+  row: InteractionCountsRow,
+): InteractionCountsResponse {
+  return {
+    likesReceived: row.likesReceived,
+    likesSent: row.likesSent,
+    passesReceived: row.passesReceived,
+    passesSent: row.passesSent,
+    profileViewsNew: row.profileViewsNew,
+  };
+}
+
+/**
+ * «Ana María Pérez Soto» → «Ana M.» — mismo criterio que la clasificación de la senda.
+ *
+ * Toma el **segundo token**, que en un nombre español suele ser el segundo
+ * nombre y no el apellido. El comentario anterior decía «Ana P.» y describía
+ * algo que el código nunca hizo; se corrige el comentario, no el código,
+ * porque el nombre corto ya está en uso y cambiarlo movería el nombre de todo
+ * el directorio de golpe.
+ */
+export function shortenName(fullName: string): string {
   const parts = fullName.trim().split(/\s+/);
   const first = parts[0] ?? "";
   const surnameInitial = parts.length > 1 ? `${parts[1].charAt(0).toUpperCase()}.` : "";

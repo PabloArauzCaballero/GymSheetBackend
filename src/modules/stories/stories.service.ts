@@ -2,7 +2,14 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from "@nes
 import { env } from "../../config/env";
 import { MediaRetentionService } from "../media/media-retention.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
-import { mapFeedRowsToResponse, mapStoryToResponse, StoryFeedEntryResponse, StoryResponse } from "./stories.mapper";
+import {
+  mapFeedRowsToResponse,
+  mapStoryToResponse,
+  mapStoryViewersToResponse,
+  StoryFeedEntryResponse,
+  StoryResponse,
+  StoryViewersResponse,
+} from "./stories.mapper";
 import { StoriesRepository } from "./stories.repository";
 
 export interface UploadedStoryMedia {
@@ -45,15 +52,41 @@ export class StoriesService {
   }
 
   async feed(viewerId: string, tenantId: string): Promise<StoryFeedEntryResponse[]> {
-    const rows = await this.repository.feedForTenant(viewerId, tenantId);
+    const rows = await this.repository.feedForConnections(viewerId, tenantId);
     return mapFeedRowsToResponse(rows);
   }
 
+  /**
+   * Marcar una story como vista exige **la misma regla que el feed**: o es
+   * propia, o hay conexión `ACCEPTED`. Antes bastaba con que la story existiera
+   * y fuera del mismo gimnasio, y eso abría una incoherencia real: quien no es
+   * match no puede *ver* la story en su feed, pero conociendo o adivinando el
+   * id sí podía registrarse como espectador y aparecer con nombre y foto en la
+   * lista del autor.
+   *
+   * Quien no cumple recibe 404 y no 403: acceso horizontal no confirma que ese
+   * id exista (regla del repo).
+   */
   async view(storyId: string, viewerId: string, tenantId: string): Promise<{ recorded: true }> {
     const story = await this.repository.findById(storyId);
     if (!story || story.tenantId !== tenantId) throw new NotFoundException("Story no encontrada.");
+    if (story.userId !== viewerId) {
+      const isMatch = await this.repository.hasAcceptedConnection(viewerId, story.userId);
+      if (!isMatch) throw new NotFoundException("Story no encontrada.");
+    }
     await this.repository.recordView(storyId, viewerId);
     return { recorded: true };
+  }
+
+  /**
+   * Quién vio mi story. Solo el autor: una story ajena responde 404 y no 403,
+   * para no confirmar que ese id existe (acceso horizontal, regla del repo).
+   */
+  async viewers(storyId: string, ownerId: string, tenantId: string): Promise<StoryViewersResponse> {
+    const story = await this.repository.findByIdForUser(storyId, ownerId);
+    if (!story || story.tenantId !== tenantId) throw new NotFoundException("Story no encontrada.");
+    const rows = await this.repository.viewersOf(storyId, tenantId);
+    return mapStoryViewersToResponse(storyId, rows);
   }
 
   async remove(storyId: string, userId: string): Promise<{ deleted: true }> {

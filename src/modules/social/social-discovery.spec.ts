@@ -202,6 +202,8 @@ function createFakeRepository(members: readonly FakeMember[]) {
             connectionId: null,
             socialStatus: null,
             photoUrl: null,
+            photos: [],
+            age: null,
             gender: null,
             experienceLevel: null,
             points: null,

@@ -40,6 +40,7 @@ import { facilitiesEquipmentMediaTenantMigration } from "./202608300002-faciliti
 import { adminPermissionsMigration } from "./202609010001-admin-permissions";
 import { socialDiscoveryPassesMigration } from "./202609020001-social-discovery-passes";
 import { mediaStorageKeyIndexesMigration } from "./202609080001-media-storage-key-indexes";
+import { socialInteractionsMigration } from "./202609110001-social-interactions";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -86,4 +87,5 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   facilitiesEquipmentMediaTenantMigration,
   socialDiscoveryPassesMigration,
   mediaStorageKeyIndexesMigration,
+  socialInteractionsMigration,
 ];

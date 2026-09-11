@@ -48,6 +48,17 @@ export const swipeSchema = z.object({
   direction: z.enum(["LIKE", "PASS"]),
 });
 
+/**
+ * Las listas de interacciones (likes y nexts, en las dos direcciones).
+ *
+ * Sin cursor a propósito: son listas cortas por naturaleza —los likes
+ * pendientes se responden y desaparecen— y paginar algo que casi nunca pasa de
+ * una pantalla es complejidad que no se cobra. El tope duro es 50.
+ */
+export const interactionListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
 export type SendConnectionInput = z.infer<typeof sendConnectionSchema>;
 export type RespondConnectionInput = z.infer<typeof respondConnectionSchema>;
 export type ConnectionListQuery = z.infer<typeof connectionListQuerySchema>;
@@ -55,3 +66,4 @@ export type UpdateSocialStatusInput = z.infer<typeof updateSocialStatusSchema>;
 export type DirectoryQuery = z.infer<typeof directoryQuerySchema>;
 export type DiscoveryDeckQuery = z.infer<typeof discoveryDeckQuerySchema>;
 export type SwipeInput = z.infer<typeof swipeSchema>;
+export type InteractionListQuery = z.infer<typeof interactionListQuerySchema>;

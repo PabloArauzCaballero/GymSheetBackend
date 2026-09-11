@@ -6,7 +6,7 @@ import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { env } from "../../config/env";
 import { StoriesService, UploadedStoryMedia } from "./stories.service";
 
-/** Stories del gimnasio (tenant): foto/video que expira a las 24h, visible a todo el tenant. */
+/** Stories: foto/video que expira a las 24h, visible solo para el autor y sus matches. */
 @Controller("me/stories")
 export class StoriesController {
   constructor(private readonly service: StoriesService) {}
@@ -20,6 +20,11 @@ export class StoriesController {
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: env.CHAT_MEDIA_MAX_BYTES, files: 1 } }))
   upload(@CurrentUser() user: AuthenticatedUser, @UploadedFile() file: UploadedStoryMedia | undefined) {
     return this.service.upload(user.id, user.tenantId, file);
+  }
+
+  @Get(":id/viewers")
+  viewers(@CurrentUser() user: AuthenticatedUser, @Param("id", UuidParamPipe) storyId: string) {
+    return this.service.viewers(storyId, user.id, user.tenantId);
   }
 
   @Post(":id/view")
