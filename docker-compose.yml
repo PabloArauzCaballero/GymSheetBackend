@@ -89,11 +89,8 @@ x-app-environment: &app-environment
   # Gimnasio de referencia para una instalación de una sola marca; sin esto
   # las cuentas creadas sin tenantId explícito se quedan sin marca.
   DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-}
-  PASSWORD_RESET_TOKEN_TTL: ${PASSWORD_RESET_TOKEN_TTL:-10m}
+  PASSWORD_RESET_PIN_TTL_MINUTES: ${PASSWORD_RESET_PIN_TTL_MINUTES:-10}
   PASSWORD_RESET_MAX_ATTEMPTS: ${PASSWORD_RESET_MAX_ATTEMPTS:-5}
-  # Solo para desarrollo local: nunca en producción (env.ts lo rechaza si
-  # NODE_ENV=production).
-  PASSWORD_RESET_DEV_LOG_ENABLED: ${PASSWORD_RESET_DEV_LOG_ENABLED:-false}
 
   # Shared rate-limit counters. Required here because this stack can scale the
   # api service beyond one replica.

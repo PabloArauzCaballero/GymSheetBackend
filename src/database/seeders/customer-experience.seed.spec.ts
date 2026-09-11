@@ -16,8 +16,14 @@ jest.mock("../../modules/membership/membership-feature.model", () => ({
 jest.mock("../../modules/membership/membership-intent.model", () => ({
   MembershipIntentModel: { findOrCreate: jest.fn(instance) },
 }));
+const strayUpdate = jest.fn();
 jest.mock("../../modules/membership/membership.model", () => ({
-  MembershipModel: { findOrCreate: jest.fn(instance) },
+  MembershipModel: {
+    findOrCreate: jest.fn(instance),
+    // Una membresía ajena a la siembra, como la que deja cualquier prueba de
+    // activación manual sobre una cuenta de escenario.
+    findAll: jest.fn(async () => [{ id: "stray-id", update: strayUpdate }]),
+  },
 }));
 jest.mock("../../modules/membership/membership-plan.model", () => ({
   MembershipPlanModel: { findOrCreate: jest.fn(instance) },
@@ -60,5 +66,22 @@ describe("seedCustomerExperience — idempotencia de membresías mock", () => {
     expect(activeCall?.[0].where).toEqual({
       externalReference: "mock-active.mock@gymsheet.local",
     });
+  });
+
+  it("aparta las membresías que la siembra no creó, para que la cuenta siga representando su escenario", async () => {
+    strayUpdate.mockClear();
+    await seedCustomerExperience("mock", {} as Transaction);
+
+    // No se borra —el historial de estados es sólo-añadir— sino que se desplaza
+    // al pasado: deja de ser la vigente y la más reciente, y la pantalla vuelve
+    // a mostrar el caso que la cuenta representa.
+    expect(strayUpdate).toHaveBeenCalled();
+    const [values] = strayUpdate.mock.calls[0] as [
+      { startsOn: string; endsOn: string },
+    ];
+    expect(new Date(values.endsOn).getTime()).toBeLessThan(Date.now());
+    expect(new Date(values.startsOn).getTime()).toBeLessThan(
+      new Date(values.endsOn).getTime(),
+    );
   });
 });

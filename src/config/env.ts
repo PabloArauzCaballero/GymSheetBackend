@@ -147,21 +147,6 @@ export const environmentSchema = z
     JWT_ISSUER: z.string().trim().min(3).default("gym-sheet-api"),
     JWT_AUDIENCE: z.string().trim().min(3).default("gym-sheet-web"),
 
-    /** How long a password-reset PIN stays usable before it expires. Short:
-     * unlike an unguessable link token, a 6-digit PIN's safety window
-     * depends on the reset flow not staying open for long. */
-    PASSWORD_RESET_TOKEN_TTL: jwtDurationSchema.default("10m"),
-    /** Wrong guesses a single issued PIN tolerates before it is burned. This,
-     * not the PIN's length, is what makes a 1,000,000-value space safe. */
-    PASSWORD_RESET_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
-    /**
-     * Prints the raw reset PIN to the server log instead of emailing it.
-     * This project has no email provider wired in (see
-     * `password-reset-notifier.ts`), so this is the only way to exercise the
-     * reset flow locally. Refused outright in production below.
-     */
-    PASSWORD_RESET_DEV_LOG_ENABLED: environmentBooleanSchema.default(false),
-
     BCRYPT_SALT_ROUNDS: z.coerce.number().int().min(10).max(14).default(12),
     RATE_LIMIT_TTL_SECONDS: z.coerce
       .number()
@@ -281,6 +266,59 @@ export const environmentSchema = z
       .min(1000)
       .max(60000)
       .default(10000),
+
+    /**
+     * Cómo salen los correos. `LOG` los escribe en el registro con el cuerpo
+     * completo —imprescindible para recorrer el flujo de recuperación en local
+     * sin un buzón—, y por eso mismo está prohibido en producción: un PIN en
+     * los registros es una credencial en los registros.
+     */
+    MAIL_TRANSPORT: z.enum(["LOG", "SMTP", "GMAIL"]).default("LOG"),
+    MAIL_FROM: z.string().trim().email().optional(),
+    MAIL_SMTP_HOST: z.string().trim().min(1).optional(),
+    MAIL_SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+    MAIL_SMTP_USER: z.string().trim().min(1).optional(),
+    MAIL_SMTP_PASSWORD: z.string().trim().min(1).optional(),
+    MAIL_SMTP_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1000)
+      .max(60000)
+      .default(10000),
+
+    /**
+     * Gmail por OAuth2. Se usa el refresh token en vez de una contraseña de
+     * aplicación porque Google la revoca en cuanto la cuenta cambia de
+     * política, y porque un token acotado a enviar correo no da acceso al
+     * buzón.
+     */
+    GMAIL_CLIENT_ID: z.string().trim().min(1).optional(),
+    GMAIL_CLIENT_SECRET: z.string().trim().min(1).optional(),
+    GMAIL_REFRESH_TOKEN: z.string().trim().min(1).optional(),
+    GMAIL_FROM_EMAIL: z.string().trim().email().optional(),
+
+    /**
+     * Dónde vive el portal web, para componer enlaces que se envían fuera de la
+     * aplicación. Un enlace de activación viaja por WhatsApp y tiene que abrir
+     * el portal del gimnasio, no la API.
+     */
+    PORTAL_PUBLIC_URL: z.string().trim().url().default("http://localhost:3000"),
+
+    /** Vida del enlace de activación por pago en efectivo. */
+    ACTIVATION_LINK_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(48),
+
+    /**
+     * Vida del PIN de recuperación. Corta a propósito: es el único intervalo en
+     * el que una credencial de seis cifras vale para entrar en una cuenta.
+     */
+    PASSWORD_RESET_PIN_TTL_MINUTES: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(60)
+      .default(10),
+    /** Intentos fallidos antes de quemar el PIN. Seis cifras se prueban solas. */
+    PASSWORD_RESET_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
 
     EXERCISES_DATASET_ENABLED: environmentBooleanSchema.default(false),
     EXERCISES_DATASET_JSON_URL: z
@@ -498,16 +536,6 @@ export const environmentSchema = z
       });
     if (
       configuration.NODE_ENV === "production" &&
-      configuration.PASSWORD_RESET_DEV_LOG_ENABLED
-    )
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["PASSWORD_RESET_DEV_LOG_ENABLED"],
-        message:
-          "Logging password-reset tokens is forbidden in production; wire a real email adapter instead.",
-      });
-    if (
-      configuration.NODE_ENV === "production" &&
       configuration.NOTIFICATION_DELIVERY_PROVIDER === "MOCK"
     )
       context.addIssue({
@@ -515,6 +543,38 @@ export const environmentSchema = z
         path: ["NOTIFICATION_DELIVERY_PROVIDER"],
         message: "MOCK notification delivery is forbidden in production.",
       });
+    if (
+      configuration.NODE_ENV === "production" &&
+      configuration.MAIL_TRANSPORT === "LOG"
+    )
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["MAIL_TRANSPORT"],
+        message:
+          "The LOG mail transport prints message bodies, including reset PINs. It is forbidden in production.",
+      });
+    if (configuration.MAIL_TRANSPORT === "GMAIL") {
+      if (
+        !configuration.GMAIL_CLIENT_ID ||
+        !configuration.GMAIL_CLIENT_SECRET ||
+        !configuration.GMAIL_REFRESH_TOKEN ||
+        !configuration.GMAIL_FROM_EMAIL
+      )
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["GMAIL_CLIENT_ID"],
+          message:
+            "Gmail delivery requires client id, client secret, refresh token and sender address.",
+        });
+    }
+    if (configuration.MAIL_TRANSPORT === "SMTP") {
+      if (!configuration.MAIL_SMTP_HOST || !configuration.MAIL_FROM)
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["MAIL_SMTP_HOST"],
+          message: "SMTP mail delivery requires a host and a sender address.",
+        });
+    }
     if (configuration.NOTIFICATION_DELIVERY_PROVIDER === "HTTP_GATEWAY") {
       if (
         !configuration.NOTIFICATION_GATEWAY_URL ||

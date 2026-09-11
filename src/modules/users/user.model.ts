@@ -34,7 +34,12 @@ export class UserModel extends Model {
 
   /**
    * Gimnasio al que pertenece la cuenta. Nulo en una instalación de un solo
-   * gimnasio, donde el cliente usa la identidad de referencia.
+   * gimnasio, donde el cliente usa la identidad de referencia: no es un dato
+   * que falte, es uno que no aplica.
+   *
+   * 60 y no 40: la columna la crea `202608180001-user-tenant`, la primera de
+   * las dos migraciones paralelas que la añadieron, y es la que gana en una
+   * base nueva.
    */
   @Column({ type: DataType.STRING(60), allowNull: true, field: 'tenant_id' })
   declare tenantId: string | null;

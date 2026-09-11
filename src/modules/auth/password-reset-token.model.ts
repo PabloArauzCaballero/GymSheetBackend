@@ -1,47 +1,48 @@
 import {
   Column,
-  CreatedAt,
   DataType,
-  Default,
   ForeignKey,
   Model,
-  PrimaryKey,
   Table,
-  UpdatedAt,
 } from 'sequelize-typescript';
 import { UserModel } from '../users/user.model';
 
-@Table({ tableName: 'password_reset_tokens', schema: 'auth', underscored: true, timestamps: true })
+/**
+ * Un PIN de recuperación, guardado como se guarda una credencial.
+ *
+ * El código en claro sólo existe dos veces: en la memoria del proceso el
+ * instante que tarda en enviarse, y en el buzón de quien lo pidió. Aquí vive su
+ * hash, por la misma razón por la que no se guardan contraseñas: seis cifras
+ * bastan para entrar en una cuenta, y quien lea esta tabla no debe poder
+ * hacerlo.
+ */
+@Table({
+  tableName: 'password_reset_tokens',
+  underscored: true,
+  timestamps: true,
+})
 export class PasswordResetTokenModel extends Model {
-  @PrimaryKey
-  @Default(DataType.UUIDV4)
-  @Column(DataType.UUID)
+  @Column({ type: DataType.UUID, defaultValue: DataType.UUIDV4, primaryKey: true })
   declare id: string;
 
   @ForeignKey(() => UserModel)
-  @Column({ type: DataType.UUID, allowNull: false, field: 'user_id' })
-  declare userId: string;
+  @Column({ type: DataType.UUID, allowNull: false, field: 'usuario_id' })
+  declare usuarioId: string;
 
-  // Not unique: this hashes a 6-digit PIN, and two different users' codes can
-  // land on the same digits by chance. Rows are looked up by `userId`.
-  @Column({ type: DataType.STRING(64), allowNull: false, field: 'token_hash' })
-  declare tokenHash: string;
+  @Column({ type: DataType.TEXT, allowNull: false, field: 'pin_hash' })
+  declare pinHash: string;
 
-  @Default(0)
-  @Column({ type: DataType.SMALLINT, allowNull: false })
-  declare attempts: number;
+  @Column({ type: DataType.DATE, allowNull: false, field: 'expira_en' })
+  declare expiraEn: Date;
 
-  @Column({ type: DataType.DATE, allowNull: false, field: 'expires_at' })
-  declare expiresAt: Date;
+  /** Sellado al usarse. Un token gastado no se borra: su uso es un hecho. */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'consumido_en' })
+  declare consumidoEn: Date | null;
 
-  @Column({ type: DataType.DATE, allowNull: true, field: 'used_at' })
-  declare usedAt: Date | null;
+  /** Intentos fallidos. Al llegar al tope, el PIN se quema. */
+  @Column({ type: DataType.INTEGER, allowNull: false, defaultValue: 0 })
+  declare intentos: number;
 
-  @CreatedAt
-  @Column({ field: 'created_at' })
-  declare createdAt: Date;
-
-  @UpdatedAt
-  @Column({ field: 'updated_at' })
-  declare updatedAt: Date;
+  @Column({ type: DataType.STRING, allowNull: true, field: 'solicitado_desde_ip' })
+  declare solicitadoDesdeIp: string | null;
 }

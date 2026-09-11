@@ -58,6 +58,7 @@ import { MembershipExtensionModel } from "../../modules/membership/membership-ex
 import { MembershipFeatureModel } from "../../modules/membership/membership-feature.model";
 import { MembershipIntentModel } from "../../modules/membership/membership-intent.model";
 import { PlanFeatureModel } from "../../modules/membership/plan-feature.model";
+import { MembershipActivationRequestModel } from "../../modules/membership/membership-activation-request.model";
 import { ProgressionLevelModel } from "../../modules/progression/progression-level.model";
 import { ProgressionBadgeModel } from "../../modules/progression/progression-badge.model";
 import { UserBadgeModel } from "../../modules/progression/user-badge.model";
@@ -72,6 +73,7 @@ export const databaseModels = [
   UserModel,
   RefreshTokenModel,
   PasswordResetTokenModel,
+  MembershipActivationRequestModel,
   AnthropometricProfileModel,
   OnboardingModel,
   BodyMeasurementModel,

@@ -1,4 +1,4 @@
-import { hashOpaqueToken, issueOpaqueToken, issuePasswordResetPin } from './token-hash.util';
+import { hashOpaqueToken, issueOpaqueToken } from './token-hash.util';
 
 describe('token-hash.util', () => {
   it('issues a 64-character hex raw token and a 64-character hex hash', () => {
@@ -17,32 +17,17 @@ describe('token-hash.util', () => {
   });
 
   it('rehashing the same raw token under the same purpose reproduces the same hash', () => {
-    const { rawToken, tokenHash } = issueOpaqueToken('password-reset');
+    const { rawToken, tokenHash } = issueOpaqueToken('refresh');
 
-    expect(hashOpaqueToken('password-reset', rawToken)).toBe(tokenHash);
+    expect(hashOpaqueToken('refresh', rawToken)).toBe(tokenHash);
   });
 
-  it('scopes the hash by purpose, so the same raw bytes never collide across token types', () => {
-    const { rawToken } = issueOpaqueToken('refresh');
+  // El hash nunca contiene el valor en claro: quien lea la tabla no puede
+  // presentar de vuelta a la API lo que encuentre allí.
+  it('never embeds the raw token in its hash', () => {
+    const { rawToken, tokenHash } = issueOpaqueToken('refresh');
 
-    expect(hashOpaqueToken('refresh', rawToken)).not.toBe(hashOpaqueToken('password-reset', rawToken));
-  });
-});
-
-describe('issuePasswordResetPin', () => {
-  it('issues a 6-digit numeric PIN, zero-padded, and its hash', () => {
-    const { rawPin, pinHash } = issuePasswordResetPin();
-
-    expect(rawPin).toMatch(/^\d{6}$/);
-    expect(pinHash).toBe(hashOpaqueToken('password-reset', rawPin));
-  });
-
-  it('produces PINs across the full range, including ones that need zero-padding', () => {
-    // Deterministic against the tiny chance of flaking: draw enough PINs that
-    // seeing none under 100000 (which would print with fewer than 6 digits
-    // without padStart) is effectively impossible if padding were broken.
-    const pins = Array.from({ length: 200 }, () => issuePasswordResetPin().rawPin);
-
-    expect(pins.every((pin) => pin.length === 6)).toBe(true);
+    expect(tokenHash).not.toContain(rawToken);
+    expect(tokenHash).not.toBe(rawToken);
   });
 });

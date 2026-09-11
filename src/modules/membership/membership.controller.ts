@@ -14,14 +14,19 @@ import { UserRole } from "../../common/enums/domain.enums";
 import { UuidParamPipe } from "../../common/pipes/uuid-param.pipe";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
+import { GymInsightsService } from "./gym-insights.service";
+import { MembershipActivationService } from "./membership-activation.service";
 import { MembershipService } from "./membership.service";
 import {
+  ActivationConfirmInput,
+  ActivationRequestInput,
   CreateCustomerInput,
   CreateFeatureInput,
   CreateMembershipInput,
   CreatePlanInput,
   CreateStaffInput,
   CreateStaffUserInput,
+  MembershipIntentInput,
   MembershipListInput,
   MembershipStatusInput,
   ReplacePlanScopesInput,
@@ -29,19 +34,20 @@ import {
   UpdateFeatureInput,
   UpdatePlanInput,
   UpdateStaffStatusInput,
+  activationConfirmSchema,
+  activationRequestSchema,
   createCustomerSchema,
   createFeatureSchema,
   createMembershipSchema,
   createPlanSchema,
   createStaffSchema,
   createStaffUserSchema,
-  updateFeatureSchema,
+  membershipIntentSchema,
   membershipListSchema,
   membershipStatusSchema,
-  membershipIntentSchema,
-  MembershipIntentInput,
   replacePlanScopesSchema,
   staffListSchema,
+  updateFeatureSchema,
   updatePlanSchema,
   updateStaffStatusSchema,
 } from "./membership.schemas";
@@ -58,7 +64,11 @@ export class MembershipController {
 
 @Controller()
 export class MembershipStoreController {
-  constructor(private readonly service: MembershipService) {}
+  constructor(
+    private readonly service: MembershipService,
+    private readonly activation: MembershipActivationService,
+    private readonly insights: GymInsightsService,
+  ) {}
 
   @Get("membership/plans") listPlans() {
     return this.service.listStorePlans();
@@ -84,6 +94,21 @@ export class MembershipStoreController {
   ) {
     return this.service.createRenewalIntent(user.id, input);
   }
+  /**
+   * Pide que un administrador active la cuenta tras un pago fuera de la app.
+   *
+   * Devuelve el enlace ya compuesto, no un identificador que el cliente tenga
+   * que armar: quien pulsa esto está bloqueado y con prisa, y cada paso extra
+   * es una oportunidad de abandonar.
+   */
+  @Post("me/membership/activation-request") activationRequest(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(activationRequestSchema))
+    input: ActivationRequestInput,
+  ) {
+    return this.activation.request(user.id, input.nota ?? null);
+  }
+
   @Post("me/membership/extension-intent") extension(
     @CurrentUser() user: AuthenticatedUser,
     @Body(new ZodValidationPipe(membershipIntentSchema))
@@ -96,7 +121,11 @@ export class MembershipStoreController {
 @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
 @Controller("admin/membership")
 export class AdminMembershipController {
-  constructor(private readonly service: MembershipService) {}
+  constructor(
+    private readonly service: MembershipService,
+    private readonly activation: MembershipActivationService,
+    private readonly insights: GymInsightsService,
+  ) {}
 
   @Get("plans")
   listPlans() {
@@ -119,6 +148,66 @@ export class AdminMembershipController {
     @Body(new ZodValidationPipe(updatePlanSchema)) input: UpdatePlanInput,
   ) {
     return this.service.updatePlan(id, input);
+  }
+
+  /**
+   * A quién activaría este enlace. Sólo lectura, y protegido como todo lo
+   * demás de este controlador: el enlace identifica a la persona, pero quien
+   * decide sigue teniendo que ser un administrador con sesión.
+   */
+  @Get("activation/:token")
+  @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+  describeActivation(@Param("token") token: string) {
+    return this.activation.describe(token);
+  }
+
+  /** Confirma la activación con el plan elegido. */
+  @Post("activation/:token")
+  @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+  confirmActivation(
+    @Param("token") token: string,
+    @Body(new ZodValidationPipe(activationConfirmSchema))
+    input: ActivationConfirmInput,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.activation.confirm(token, input.planId, admin.id);
+  }
+
+  /**
+   * Uso por máquina en una ventana de días. La ventana llega por consulta y no
+   * fija: el panel deja cambiarla, y quien mira decide si le importa la semana
+   * o el trimestre.
+   */
+  @Get("insights/equipment-usage")
+  @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+  equipmentUsage(@Query("days") days?: string) {
+    return this.insights.equipmentUsage(readWindow(days));
+  }
+
+  /** Actividad en la app y entradas físicas, día a día. */
+  @Get("insights/people-flow")
+  @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+  peopleFlow(@Query("days") days?: string) {
+    return this.insights.peopleFlow(readWindow(days));
+  }
+
+  /** Todas las cuentas, con su membresía y su última actividad resueltas. */
+  @Get("users")
+  @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+  listUsers(@Query("q") q?: string, @Query("limit") limit?: string) {
+    const parsed = Number(limit);
+    const bounded = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 500) : 200;
+    const filtro = q?.trim() ? q.trim() : null;
+    return this.insights.listUsers(bounded, filtro);
+  }
+
+  /** Personas cuya membresía venció o que nunca tuvieron una. */
+  @Get("insights/lapsed")
+  @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+  lapsed(@Query("limit") limit?: string) {
+    const parsed = Number(limit);
+    const bounded = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 200) : 50;
+    return this.insights.lapsedMembers(bounded);
   }
 
   @Get("features")
@@ -274,4 +363,17 @@ export class AdminMembershipController {
   ) {
     return this.service.confirmIntent(id, actor.id);
   }
+}
+
+/**
+ * Ventana temporal de un informe, acotada.
+ *
+ * Sin tope, un `?days=100000` obliga a la base a recorrer todo el histórico por
+ * una petición cualquiera. 90 días cubre el trimestre, que es el horizonte con
+ * el que un gimnasio decide comprar una máquina.
+ */
+function readWindow(value: string | undefined): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 30;
+  return Math.min(Math.max(Math.trunc(parsed), 1), 90);
 }

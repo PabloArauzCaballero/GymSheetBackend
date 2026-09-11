@@ -11,7 +11,18 @@ import { trainingPlansRoutinesMigration } from "./202608010001-training-plans-ro
 import { localExerciseMediaUrlMigration } from "./202608130001-local-exercise-media-url";
 import { exerciseMusclesAndRatingsMigration } from "./202608130002-exercise-muscles-and-ratings";
 import { routineRecurrenceWindowMigration } from "./202608170001-routine-recurrence-window";
-import { userTenantMigration } from "./202608180001-user-tenant";
+// Dos ramas paralelas añadieron `usuarios.tenant_id` con ids distintos. Los
+// ids son inmutables tras el despliegue (regla 80-database), así que ambas
+// quedan registradas en orden de id: la primera crea la columna, el CHECK de
+// formato y el índice; la segunda es idempotente y no hace nada cuando la
+// columna ya está. El alias por id evita la colisión de nombres de export.
+import { userTenantMigration as userTenant202608180001Migration } from "./202608180001-user-tenant";
+import { passwordResetAndEmailChannelMigration } from "./202608190001-password-reset-and-email-channel";
+import { userTenantMigration as userTenant202608190002Migration } from "./202608190002-user-tenant";
+import { equipmentUsageAndCashActivationMigration } from "./202608190003-equipment-usage-and-cash-activation";
+import { dropRedundantExerciseEquipmentMigration } from "./202608190004-drop-redundant-exercise-equipment";
+import { uniqueGlobalExerciseNameMigration } from "./202608200001-unique-global-exercise-name";
+import { scopeUniqueExerciseNameToCustomMigration } from "./202608200002-scope-unique-exercise-name-to-custom";
 import { progressionMigration } from "./202608230001-progression";
 import { userGenderMigration } from "./202608230002-user-gender";
 import { authTokensMigration } from "./202608230003-auth-tokens";
@@ -41,6 +52,7 @@ import { adminPermissionsMigration } from "./202609010001-admin-permissions";
 import { socialDiscoveryPassesMigration } from "./202609020001-social-discovery-passes";
 import { mediaStorageKeyIndexesMigration } from "./202609080001-media-storage-key-indexes";
 import { socialInteractionsMigration } from "./202609110001-social-interactions";
+import { dropOrphanAuthPasswordResetTokensMigration } from "./202609110002-drop-orphan-auth-password-reset-tokens";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -58,7 +70,13 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   localExerciseMediaUrlMigration,
   exerciseMusclesAndRatingsMigration,
   routineRecurrenceWindowMigration,
-  userTenantMigration,
+  userTenant202608180001Migration,
+  passwordResetAndEmailChannelMigration,
+  userTenant202608190002Migration,
+  equipmentUsageAndCashActivationMigration,
+  dropRedundantExerciseEquipmentMigration,
+  uniqueGlobalExerciseNameMigration,
+  scopeUniqueExerciseNameToCustomMigration,
   progressionMigration,
   userGenderMigration,
   authTokensMigration,
@@ -88,4 +106,5 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   socialDiscoveryPassesMigration,
   mediaStorageKeyIndexesMigration,
   socialInteractionsMigration,
+  dropOrphanAuthPasswordResetTokensMigration,
 ];

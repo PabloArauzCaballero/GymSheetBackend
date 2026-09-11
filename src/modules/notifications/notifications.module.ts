@@ -1,11 +1,17 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { BusinessDateService } from '../../common/time/business-date.service';
+import { env } from '../../config/env';
 import { IntegrationModule } from '../integration/integration.module';
 import { UserModel } from '../users/user.model';
 import { AdminBroadcastController } from './broadcast.controller';
 import { BroadcastService } from './broadcast.service';
+import { EmailNotificationAdapter } from './delivery/email-notification.adapter';
 import { HttpGatewayNotificationAdapter } from './delivery/http-gateway-notification.adapter';
+import { GmailMailTransport } from './delivery/gmail-mail.transport';
+import { LogMailTransport } from './delivery/log-mail.transport';
+import { MAIL_TRANSPORT } from './delivery/mail.transport';
+import { SmtpMailTransport } from './delivery/smtp-mail.transport';
 import { InAppNotificationAdapter } from './delivery/in-app-notification.adapter';
 import { MockNotificationAdapter } from './delivery/mock-notification.adapter';
 import { NotificationAdapterFactory } from './delivery/notification-adapter.factory';
@@ -39,11 +45,33 @@ import { NotificationModel } from './notification.model';
     NotificationScheduleService,
     NotificationDeliveryService,
     InAppNotificationAdapter,
+    EmailNotificationAdapter,
     HttpGatewayNotificationAdapter,
+    LogMailTransport,
+    SmtpMailTransport,
+    GmailMailTransport,
+    {
+      // El transporte se elige una vez, al arrancar, y no en cada envío: qué
+      // buzón usa este despliegue es configuración, no una decisión que deba
+      // repetirse por correo. Ambas implementaciones se registran para que la
+      // elección sea un cambio de variable de entorno y no de código.
+      provide: MAIL_TRANSPORT,
+      inject: [LogMailTransport, SmtpMailTransport, GmailMailTransport],
+      useFactory: (
+        log: LogMailTransport,
+        smtp: SmtpMailTransport,
+        gmail: GmailMailTransport,
+      ) => {
+        if (env.MAIL_TRANSPORT === 'SMTP') return smtp;
+        if (env.MAIL_TRANSPORT === 'GMAIL') return gmail;
+        return log;
+      },
+    },
     MockNotificationAdapter,
     NotificationAdapterFactory,
   ],
   exports: [
+    MAIL_TRANSPORT,
     NotificationRepository,
     NotificationService,
     MembershipReminderService,

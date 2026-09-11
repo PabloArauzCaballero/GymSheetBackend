@@ -188,7 +188,16 @@ export const createCustomerSchema = z
       .email()
       .max(180)
       .transform((value) => value.toLowerCase()),
-    password: z.string().min(10).max(128),
+    /**
+     * Opcional a propósito.
+     *
+     * Quien da de alta en recepción no debería inventar contraseñas: acaba
+     * poniendo la misma para todos, o una que el cliente nunca recibe. Si no
+     * llega ninguna, el servidor genera una y se la manda por correo a la
+     * persona, con la recomendación de cambiarla. Se acepta igualmente para no
+     * romper a quien ya integraba este endpoint.
+     */
+    password: z.string().min(10).max(128).optional(),
     pinAcceso: z.string().regex(/^\d{4,12}$/),
     nombreCompleto: z.string().trim().min(3).max(180),
     numeroCliente: z.string().trim().min(2).max(80),
@@ -372,3 +381,22 @@ export type CreateStaffInput = z.infer<typeof createStaffSchema>;
 export type CreateStaffUserInput = z.infer<typeof createStaffUserSchema>;
 export type StaffListInput = z.infer<typeof staffListSchema>;
 export type UpdateStaffStatusInput = z.infer<typeof updateStaffStatusSchema>;
+
+/**
+ * Petición de activación por pago fuera de la aplicación.
+ *
+ * La nota es opcional y corta a propósito: sirve para «pagué en recepción el
+ * martes», no para abrir una conversación. La conversación ya ocurre en el
+ * WhatsApp que este botón abre.
+ */
+export const activationRequestSchema = z.object({
+  nota: z.string().trim().max(280).nullable().optional(),
+});
+
+/** Confirmación del administrador: sólo hay que elegir el plan. */
+export const activationConfirmSchema = z.object({
+  planId: z.string().uuid(),
+});
+
+export type ActivationRequestInput = z.infer<typeof activationRequestSchema>;
+export type ActivationConfirmInput = z.infer<typeof activationConfirmSchema>;

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Ip, Post } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
@@ -23,6 +23,7 @@ import {
   refreshTokenSchema,
   registerSchema,
 } from './auth.schemas';
+import { PasswordResetService } from './password-reset.service';
 
 const authThrottleOptions = {
   default: {
@@ -36,6 +37,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly socketTickets: SocketTicketService,
+    private readonly passwordReset: PasswordResetService,
   ) {}
 
   @Public()
@@ -69,26 +71,40 @@ export class AuthController {
     await this.authService.logout(input.refreshToken);
   }
 
-  // 202: accepted regardless of whether the email matches an account — the
-  // response must never let a caller distinguish the two cases.
+  /**
+   * Pide un PIN al correo. Responde 202 siempre, exista la cuenta o no.
+   *
+   * El código de estado forma parte de la decisión: 202 dice «queda aceptado y
+   * se procesará», que es cierto en ambos casos y no revela nada. Un 200 con
+   * cuerpo o un 404 convertirían este endpoint en un comprobador de qué
+   * direcciones están registradas.
+   *
+   * El límite de peticiones es el de autenticación, no uno propio: mandar
+   * correos a demanda de un desconocido es más caro que probar una contraseña,
+   * no menos.
+   */
   @Public()
   @Throttle(authThrottleOptions)
   @HttpCode(HttpStatus.ACCEPTED)
   @Post('password-reset/request')
-  requestPasswordReset(
+  async requestPasswordReset(
     @Body(new ZodValidationPipe(passwordResetRequestSchema)) input: PasswordResetRequestInput,
+    @Ip() requesterIp: string,
   ) {
-    return this.authService.requestPasswordReset(input);
+    await this.passwordReset.requestPin(input.email, requesterIp || null);
+    return { accepted: true };
   }
 
+  /** Canjea el PIN por una contraseña nueva. */
   @Public()
   @Throttle(authThrottleOptions)
   @HttpCode(HttpStatus.OK)
   @Post('password-reset/confirm')
-  confirmPasswordReset(
+  async confirmPasswordReset(
     @Body(new ZodValidationPipe(passwordResetConfirmSchema)) input: PasswordResetConfirmInput,
   ) {
-    return this.authService.confirmPasswordReset(input);
+    await this.passwordReset.confirm(input.email, input.pin, input.password);
+    return { updated: true };
   }
 
   /**

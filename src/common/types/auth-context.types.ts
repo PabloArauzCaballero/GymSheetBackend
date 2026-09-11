@@ -10,6 +10,10 @@ export type AuthenticatedUser = {
    * `tenant_id` propio caen en `env.DEFAULT_TENANT_ID`, así el aislamiento
    * entre gimnasios (directorio, conexiones, chat) nunca queda sin filtro.
    *
+   * Sale de la base de datos en cada petición, no del token: si a alguien se
+   * le cambia de gimnasio, su sesión abierta debe reflejarlo sin esperar a que
+   * el token caduque.
+   *
    * Cuando un `SYSTEM_ADMIN` está suplantando, este es el gimnasio mirado, no
    * el suyo: el dominio de socio no tiene que saber nada de suplantaciones.
    */

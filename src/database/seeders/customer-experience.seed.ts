@@ -1,4 +1,4 @@
-import { Transaction } from "sequelize";
+import { Op, Transaction } from "sequelize";
 import {
   FitnessGoal,
   MembershipStatus,
@@ -330,6 +330,42 @@ export async function seedCustomerExperience(
         { planId: plan.id, startsOn, endsOn, status: scenario.membership },
         { transaction },
       );
+
+      /*
+       * La siembra es dueña del estado de sus cuentas de escenario.
+       *
+       * Estas cuentas existen para representar una situación exacta —«el socio
+       * cuya membresía venció»— y las pruebas de extremo a extremo la dan por
+       * cierta. Basta con que alguien active a `expired.mock` una vez, probando
+       * el cobro en efectivo, para que la cuenta deje de ser la que dice ser:
+       * la pantalla pasa a mostrar la membresía nueva, la prueba falla y el
+       * fallo parece un defecto del producto cuando es sólo el escenario
+       * contaminado.
+       *
+       * Las membresías ajenas no se borran —el historial de estados es
+       * sólo-añadir y con razón—: se apartan poniendo su fin antes del
+       * escenario, con lo que dejan de ser la vigente y la más reciente. Queda
+       * el rastro de lo que pasó, y la cuenta vuelve a representar su caso.
+       *
+       * Sólo corre en modo `mock`/`all`, que la propia siembra prohíbe en
+       * producción.
+       */
+      const strays = await MembershipModel.findAll({
+        where: {
+          userId: user.id,
+          externalReference: { [Op.or]: [{ [Op.ne]: externalReference }, null] },
+        },
+        transaction,
+      });
+      for (const stray of strays) {
+        // Se mueve el periodo entero, no sólo el fin: la tabla comprueba que
+        // una membresía no termine antes de empezar, y la ajena suele empezar
+        // hoy mismo —es la que acaba de crear quien estuviera probando—.
+        await stray.update(
+          { startsOn: dateOffset(-400), endsOn: dateOffset(-399) },
+          { transaction },
+        );
+      }
       if (scenario.pending)
         await MembershipIntentModel.findOrCreate({
           where: { userId: user.id, idempotencyKey: "mock-pending-renewal" },

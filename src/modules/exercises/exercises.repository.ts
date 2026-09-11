@@ -22,15 +22,6 @@ export type ExercisePageResult = {
   count: number;
 };
 
-/** Fila cruda de `listTaxonomy`; ver la nota en ese método sobre los dos nombres. */
-type TaxonomyAggregateRow = {
-  bodyPart?: string | null;
-  body_part?: string | null;
-  targetMuscle?: string | null;
-  target_muscle?: string | null;
-  total?: string | number | null;
-};
-
 @Injectable()
 export class ExercisesRepository {
   constructor(
@@ -120,14 +111,11 @@ export class ExercisesRepository {
     });
     // `raw: true` devuelve las columnas sin tipar, y el nombre depende de si
     // gana el alias del atributo (camelCase) o la columna física del GROUP BY
-    // (snake_case); de ahí que se consulten ambas formas. Se declara la forma
-    // en vez de tratarlas como `unknown`: `String(unknown)` habría rendido
-    // "[object Object]" en silencio ante una fila inesperada, en lugar de
-    // fallar donde se pueda ver.
-    return (rows as unknown as Array<TaxonomyAggregateRow>).map((row) => ({
-      bodyPart: row.bodyPart ?? row.body_part ?? "",
-      targetMuscle: row.targetMuscle ?? row.target_muscle ?? "",
-      total: Number(row.total ?? 0),
+    // (snake_case); de ahí que `readText` consulte ambas formas.
+    return (rows as unknown as Array<Record<string, unknown>>).map((row) => ({
+      bodyPart: readText(row, "bodyPart", "body_part"),
+      targetMuscle: readText(row, "targetMuscle", "target_muscle"),
+      total: Number(row["total"] ?? 0),
     }));
   }
 
@@ -317,4 +305,23 @@ export class ExercisesRepository {
     const { equipmentIds: _equipmentIds, ...attributes } = input;
     return attributes;
   }
+}
+
+/**
+ * Lee una columna de texto de una fila cruda.
+ *
+ * Sequelize devuelve las agregaciones sin pasar por el modelo, así que la clave
+ * llega en camelCase o en snake_case según el dialecto y el valor es `unknown`.
+ * Se acepta sólo texto: convertir a ciegas con `String()` produciría
+ * «[object Object]» como nombre de grupo muscular si alguna vez llegase otra
+ * cosa, y ese valor terminaría en un filtro de la interfaz sin que nadie
+ * entendiera de dónde salió.
+ */
+function readText(
+  row: Record<string, unknown>,
+  camelKey: string,
+  snakeKey: string,
+): string {
+  const value = row[camelKey] ?? row[snakeKey];
+  return typeof value === "string" ? value : "";
 }

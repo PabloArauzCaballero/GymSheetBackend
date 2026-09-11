@@ -20,6 +20,20 @@ export class EquipmentRepository {
     });
   }
 
+  /**
+   * Todo el equipamiento, sea cual sea su estado.
+   *
+   * `findAvailable` filtra por disponible, que es lo correcto para elegir en un
+   * entrenamiento pero no para comprobar duplicados: una prensa en
+   * mantenimiento sigue siendo una prensa que ya existe.
+   */
+  findAll(tenantScope: string | null): Promise<EquipmentModel[]> {
+    return this.equipmentModel.findAll({
+      where: tenantScopeWhere(tenantScope),
+      order: [['name', 'ASC']],
+    });
+  }
+
   findById(equipmentId: string, transaction?: Transaction): Promise<EquipmentModel | null> {
     return this.equipmentModel.findByPk(equipmentId, { transaction });
   }

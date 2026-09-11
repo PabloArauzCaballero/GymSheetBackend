@@ -75,8 +75,15 @@ export const passwordResetRequestSchema = z.object({
   email: normalizedEmailSchema,
 });
 
-/** `email` is required alongside the PIN because the PIN alone is not
- * globally unique — see the schema comment on `auth.password_reset_tokens`. */
+/**
+ * Confirmación del PIN y contraseña nueva. El `email` es obligatorio junto al
+ * PIN porque el PIN por sí solo no es único: seis dígitos son un millón de
+ * valores y dos cuentas pueden coincidir por azar.
+ *
+ * El formato se valida en el borde: un PIN imposible no merece gastar un
+ * `bcrypt.compare`, que es justo el trabajo que una fuerza bruta busca
+ * hacernos gastar.
+ */
 export const passwordResetConfirmSchema = z.object({
   email: normalizedEmailSchema,
   pin: z.string().trim().regex(/^\d{6}$/u, 'El código son seis dígitos.'),

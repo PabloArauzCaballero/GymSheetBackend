@@ -1,7 +1,6 @@
 import {
   ConflictException,
   ForbiddenException,
-  Inject,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -21,14 +20,10 @@ import {
   CURRENT_TERMS_VERSION,
   ImpersonateTenantInput,
   LoginInput,
-  PasswordResetConfirmInput,
-  PasswordResetRequestInput,
   RegisterInput,
 } from './auth.schemas';
-import { PasswordResetNotifier, PASSWORD_RESET_NOTIFIER } from './password-reset-notifier';
-import { PasswordResetTokenRepository } from './password-reset-token.repository';
 import { RefreshTokenRepository } from './refresh-token.repository';
-import { hashOpaqueToken, issueOpaqueToken, issuePasswordResetPin } from './token-hash.util';
+import { hashOpaqueToken, issueOpaqueToken } from './token-hash.util';
 
 /**
  * Decoy hash compared against when no account matches the submitted email.
@@ -39,14 +34,6 @@ const UNKNOWN_ACCOUNT_PASSWORD_HASH = bcrypt.hashSync(
   'unknown-account-placeholder',
   env.BCRYPT_SALT_ROUNDS,
 );
-
-/** Generic response for both branches of password-reset request: enumerating
- * registered emails through response differences is exactly what this text
- * exists to prevent. */
-const PASSWORD_RESET_REQUESTED_MESSAGE =
-  'Si existe una cuenta con ese correo, se enviarán instrucciones para restablecer la contraseña.';
-
-const INVALID_OR_EXPIRED_RESET_PIN_MESSAGE = 'El código no es válido o ha caducado.';
 
 export type AuthResponse = {
   accessToken: string;
@@ -70,10 +57,8 @@ export class AuthService {
     private readonly usersRepository: UsersRepository,
     private readonly tenantsService: TenantsService,
     private readonly refreshTokenRepository: RefreshTokenRepository,
-    private readonly passwordResetTokenRepository: PasswordResetTokenRepository,
     private readonly jwtService: JwtService,
     private readonly sequelize: Sequelize,
-    @Inject(PASSWORD_RESET_NOTIFIER) private readonly passwordResetNotifier: PasswordResetNotifier,
   ) {}
 
   async register(input: RegisterInput): Promise<AuthResponse> {
@@ -227,90 +212,6 @@ export class AuthService {
     if (!existingToken || existingToken.revokedAt) return;
 
     await this.refreshTokenRepository.revoke(existingToken.id, RefreshTokenRevokedReason.LOGOUT);
-  }
-
-  async requestPasswordReset(input: PasswordResetRequestInput): Promise<{ message: string }> {
-    const activeUser = await this.usersRepository.findActiveByEmail(input.email);
-
-    // No branch here may depend on whether `activeUser` exists beyond this
-    // point: an unknown or inactive email must be indistinguishable from a
-    // known one to a caller, or password reset becomes an account-enumeration
-    // oracle.
-    if (activeUser) {
-      const { rawPin, pinHash } = issuePasswordResetPin();
-      const expiresAt = new Date(Date.now() + parseDurationToMs(env.PASSWORD_RESET_TOKEN_TTL));
-      await this.sequelize.transaction(async (transaction) => {
-        // A fresh code retires whatever the user requested before it: only
-        // ever one live PIN, so "pedir otro código" in the UI cannot leave a
-        // still-guessable older code sitting around.
-        await this.passwordResetTokenRepository.invalidateActiveForUser(activeUser.id, transaction);
-        await this.passwordResetTokenRepository.create(
-          { userId: activeUser.id, tokenHash: pinHash, expiresAt },
-          transaction,
-        );
-      });
-      await this.passwordResetNotifier.notify({
-        userId: activeUser.id,
-        email: activeUser.email,
-        pin: rawPin,
-        expiresAt,
-      });
-    }
-
-    return { message: PASSWORD_RESET_REQUESTED_MESSAGE };
-  }
-
-  /**
-   * A 6-digit PIN has only 1,000,000 possible values — far fewer than the
-   * opaque tokens used elsewhere in this file — so unlike `refresh` this
-   * path cannot rely on unguessability alone. `attempts` bounds how many
-   * wrong guesses one issued PIN tolerates before it is burned, which is
-   * what actually keeps this safe against brute force.
-   */
-  async confirmPasswordReset(input: PasswordResetConfirmInput): Promise<{ message: string }> {
-    const activeUser = await this.usersRepository.findActiveByEmail(input.email);
-    // An unknown email still fails with the same generic message as a wrong
-    // PIN, below. Doing so costs a query, not a deliberately slow hash
-    // comparison as in `login`, so the timing gap this leaves is negligible.
-    if (!activeUser) {
-      throw new UnauthorizedException(INVALID_OR_EXPIRED_RESET_PIN_MESSAGE);
-    }
-
-    const resetToken = await this.passwordResetTokenRepository.findActiveForUser(activeUser.id);
-    const isExpired = resetToken !== null && resetToken.expiresAt.getTime() <= Date.now();
-    const attemptsExhausted = resetToken !== null && resetToken.attempts >= env.PASSWORD_RESET_MAX_ATTEMPTS;
-
-    if (!resetToken || isExpired || attemptsExhausted) {
-      throw new UnauthorizedException(INVALID_OR_EXPIRED_RESET_PIN_MESSAGE);
-    }
-
-    const submittedPinHash = hashOpaqueToken('password-reset', input.pin);
-    if (submittedPinHash !== resetToken.tokenHash) {
-      await this.passwordResetTokenRepository.incrementAttempts(resetToken.id);
-      // The last tolerated wrong guess burns the PIN immediately, rather
-      // than leaving it valid-but-unusable until the next request: nothing
-      // should be able to consume this PIN from this point forward.
-      if (resetToken.attempts + 1 >= env.PASSWORD_RESET_MAX_ATTEMPTS) {
-        await this.passwordResetTokenRepository.invalidateActiveForUser(activeUser.id);
-      }
-      throw new UnauthorizedException(INVALID_OR_EXPIRED_RESET_PIN_MESSAGE);
-    }
-
-    const passwordHash = await bcrypt.hash(input.password, env.BCRYPT_SALT_ROUNDS);
-
-    await this.sequelize.transaction(async (transaction) => {
-      await this.usersRepository.updatePasswordHash(activeUser.id, passwordHash, transaction);
-      await this.passwordResetTokenRepository.invalidateActiveForUser(activeUser.id, transaction);
-      // A password reset should end every session the account had open —
-      // that is the whole point of resetting it after a suspected compromise.
-      await this.refreshTokenRepository.revokeAllForUser(
-        activeUser.id,
-        RefreshTokenRevokedReason.PASSWORD_RESET,
-        transaction,
-      );
-    });
-
-    return { message: 'Contraseña actualizada correctamente.' };
   }
 
   /**

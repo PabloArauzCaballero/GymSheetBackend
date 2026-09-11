@@ -78,7 +78,7 @@ Liveness remains independent of PostgreSQL to avoid restart loops during tempora
 
 `register` and `login` use a tighter configurable rate limit than normal API routes. Login failures use a uniform message to reduce account enumeration.
 
-Refresh tokens are opaque, hashed, and stored in `auth.refresh_tokens`; rotating one revokes it and issues a new one in the same family, and presenting an already-rotated token revokes the whole family (theft/reuse signal). Password-reset PINs are single-use, short-lived (`PASSWORD_RESET_TOKEN_TTL`, default 10 minutes), and capped at `PASSWORD_RESET_MAX_ATTEMPTS` wrong guesses (default 5) before the code must be requested again; `password-reset/request` always responds `202` with the same message, matched or not, to avoid account enumeration. No email provider is wired in yet — see `password-reset-notifier.ts`.
+Refresh tokens are opaque, hashed, and stored in `auth.refresh_tokens`; rotating one revokes it and issues a new one in the same family, and presenting an already-rotated token revokes the whole family (theft/reuse signal). Password-reset PINs live in `public.password_reset_tokens`: hashed with bcrypt, single-use, short-lived (`PASSWORD_RESET_PIN_TTL_MINUTES`, default 10) and capped at `PASSWORD_RESET_MAX_ATTEMPTS` wrong guesses (default 5) before the code is burned. `password-reset/request` always responds `202` with the same body, matched or not, to avoid account enumeration. The code is delivered by email through the messaging port (`NotificationChannel.EMAIL`); confirming the change also revokes every refresh token the account had open.
 
 ## Users and profile
 

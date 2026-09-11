@@ -5,6 +5,8 @@ import { Sequelize } from "sequelize-typescript";
 import { UserRole, UserStatus } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
 import { UserModel } from "../../modules/users/user.model";
+import { seedEquipmentCatalog } from "./equipment-catalog.seed";
+import { seedExerciseEquipment } from "./exercise-equipment.seed";
 import { databaseModels } from "../models";
 import { seedAdminPermissions } from "./admin-permissions.seed";
 import { seedCustomerExperience } from "./customer-experience.seed";
@@ -252,6 +254,16 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
         transaction,
         env.SEED_ADMIN_EMAIL,
       );
+      // El catálogo de equipamiento va en la siembra base porque no es
+      // contenido de demostración: es el punto de partida de cualquier
+      // instalación real, y sin él el panel de equipamiento abre vacío.
+      if (mode === "base" || mode === "all") {
+        await seedEquipmentCatalog(sequelize, transaction);
+        // Después del catálogo y no antes: enlazar ejercicios con máquinas
+        // exige que las máquinas ya existan. Es lo que permite que el gimnasio
+        // vea qué equipamiento se usa sin pedirle nada a quien entrena.
+        await seedExerciseEquipment(sequelize, transaction);
+      }
       await seedCustomerExperience(mode, transaction);
       // El catálogo de la senda es producto, no datos de prueba: se siembra en
       // todos los modos para que ningún despliegue arranque con la pantalla vacía.
