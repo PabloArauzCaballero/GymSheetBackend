@@ -1,16 +1,88 @@
-# Despliegue en Coolify. Cuatro reglas que no se pueden relajar (ver AtlasDashboardsBackend,
-# el mismo VPS y el mismo panel):
+# Despliegue en Coolify. Postgres y Redis viven EN ESTE MISMO compose (no como recursos aparte
+# de Coolify): un volumen nombrado por servicio les da persistencia entre despliegues, y
+# `depends_on: condition: service_healthy` bloquea `migrate`/`api` hasta que ambos respondan.
 #
-# 1. NUNCA `ports:`. Coolify crea el contenedor nuevo antes de retirar el viejo y un puerto fijo
-#    del host da «address already in use» en cada despliegue. Se publica por el proxy.
+# Reglas que no se pueden relajar:
+#
+# 1. NUNCA `ports:` en `api`. Coolify crea el contenedor nuevo antes de retirar el viejo y un
+#    puerto fijo del host da «address already in use» en cada despliegue. Se publica por el
+#    proxy. `postgres`/`redis` tampoco publican puerto: solo se hablan por la red `coolify`.
 # 2. NUNCA `env_file:`. Coolify añade el suyo a cada servicio; las variables se pegan en la
-#    interfaz de la aplicación (ver .env.example para la lista completa).
-# 3. DB_HOST y REDIS_URL deben apuntar al alias interno del recurso de Coolify (Postgres/Redis
-#    creados en el mismo proyecto), nunca a una IP ni a `localhost`.
+#    interfaz de la aplicación (ver .env.coolify.recommended).
+# 3. TODAS las variables deben quedar "Runtime only" en Coolify (no "Available at Buildtime"):
+#    este backend no necesita nada en build-time, y NODE_ENV=production en build-time hace que
+#    yarn se salte devDependencies y `yarn build` truene con exit 127.
 # 4. Hay que activar «Connect To Predefined Network» en la aplicación.
 name: gymsheet-backend
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:?DB_NAME is required}
+      POSTGRES_USER: ${DB_USER:?DB_USER is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - default
+      - coolify
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  redis:
+    image: redis:7-alpine
+    # Sin persistencia: solo guarda contadores de rate-limit, seguros de perder y baratos de
+    # reconstruir.
+    command:
+      [
+        'redis-server',
+        '--save',
+        '',
+        '--appendonly',
+        'no',
+        '--maxmemory',
+        '256mb',
+        '--maxmemory-policy',
+        'allkeys-lru',
+      ]
+    networks:
+      - default
+      - coolify
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
   migrate:
     image: gymsheet-backend:coolify
     build:
@@ -19,6 +91,15 @@ services:
       cache_from:
         - gymsheet-backend:coolify
     command: ['node', 'dist/database/migrate.js', 'up']
+    environment:
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_NAME: ${DB_NAME:?DB_NAME is required}
+      DB_USER: ${DB_USER:?DB_USER is required}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: 'no'
     networks:
       - default
@@ -33,7 +114,16 @@ services:
     # Sin `build:`: reutiliza la imagen que construyó `migrate`. Dos builds simultáneos de la
     # misma imagen agotan la memoria del VPS y el despliegue muere sin decir por qué.
     image: gymsheet-backend:coolify
+    environment:
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      REDIS_URL: redis://redis:6379
+      REDIS_REQUIRED: 'true'
     depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
@@ -62,6 +152,9 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+volumes:
+  postgres-data:
 
 networks:
   default: {}
