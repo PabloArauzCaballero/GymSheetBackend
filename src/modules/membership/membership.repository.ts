@@ -407,7 +407,19 @@ export class MembershipRepository {
         MembershipPlanModel,
         // El gimnasio de una membresia es el de su titular: la membresia no lo
         // guarda, asi que el filtro entra por el usuario.
-        { model: UserModel, required: true, where: tenantScopeWhere(tenantScope) },
+        //
+        // `as` es obligatorio aqui: `MembershipModel` declara **dos** relaciones
+        // con `UserModel` — el titular (`user`) y quien la dio de alta
+        // (`createdByUser`) —, asi que Sequelize no puede deducir cual de las
+        // dos se pide y aborta la consulta entera con «Alias cannot be
+        // inferred», que el filtro de excepciones convierte en un 500. Sin esto
+        // el listado de membresias del panel de administracion no responde.
+        {
+          model: UserModel,
+          as: "user",
+          required: true,
+          where: tenantScopeWhere(tenantScope),
+        },
       ],
       limit: filters.pageSize,
       offset: (filters.page - 1) * filters.pageSize,
