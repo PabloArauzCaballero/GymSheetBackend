@@ -142,8 +142,22 @@ x-app-environment: &app-environment
 # Todo lo que comparten los cinco workers. Sin `build:` — reutilizan la imagen que construye
 # `migrate`, igual que `api`. Sin `expose:` ni healthcheck: no escuchan en ningún puerto, así que
 # lo único que Docker puede vigilar de ellos es que el proceso siga vivo (`restart: unless-stopped`).
+x-app-build: &app-build
+  context: .
+  dockerfile: Dockerfile
+  cache_from:
+    - gymsheet-backend:coolify
+
 x-worker-service: &worker-service
   image: gymsheet-backend:coolify
+  # Repetir `build:` en cada servicio es lo que evita que Coolify intente hacer
+  # `docker pull gymsheet-backend:coolify` de un registro donde esa imagen nunca
+  # existió: `docker compose ... pull --ignore-buildable` solo se salta el pull
+  # de un servicio si ESE servicio trae su propio bloque `build:`, no le basta
+  # con que otro servicio del mismo compose construya la misma imagen. Con
+  # `cache_from` apuntando al mismo tag, BuildKit reutiliza las capas que ya
+  # construyó `migrate` y este build repetido tarda segundos, no minutos.
+  build: *app-build
   profiles: ['workers']
   environment:
     <<: *app-environment
@@ -240,11 +254,7 @@ services:
 
   migrate:
     image: gymsheet-backend:coolify
-    build:
-      context: .
-      dockerfile: Dockerfile
-      cache_from:
-        - gymsheet-backend:coolify
+    build: *app-build
     command: ['node', 'dist/database/migrate.js', 'up']
     environment:
       <<: *app-environment
@@ -262,9 +272,12 @@ services:
         max-file: '3'
 
   api:
-    # Sin `build:`: reutiliza la imagen que construyó `migrate`. Dos builds simultáneos de la
-    # misma imagen agotan la memoria del VPS y el despliegue muere sin decir por qué.
+    # `build:` repetido a propósito (ver comentario en `x-worker-service` arriba): sin él,
+    # Coolify intenta un `docker pull` de una imagen que nunca se publicó y el despliegue muere
+    # con "pull access denied ... repository does not exist". `cache_from` hace que este build
+    # reutilice las capas de `migrate` en vez de reconstruir todo de nuevo.
     image: gymsheet-backend:coolify
+    build: *app-build
     environment:
       <<: *app-environment
       PORT: '3000'
