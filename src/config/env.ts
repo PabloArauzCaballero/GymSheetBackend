@@ -36,6 +36,17 @@ const optionalSecretSchema = z.preprocess(
   (value) => (value === "" ? undefined : value),
   z.string().min(32).optional(),
 );
+// Deployment platforms (Coolify, Docker, k8s) commonly materialize an unset
+// optional variable as an empty string rather than omitting it entirely; a
+// bare `.optional()` still runs its validators against "" and rejects it.
+const optionalNonEmptyStringSchema = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().trim().min(1).optional(),
+);
+const optionalEmailSchema = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().trim().email().optional(),
+);
 
 export const environmentSchema = z
   .object({
@@ -274,11 +285,11 @@ export const environmentSchema = z
      * los registros es una credencial en los registros.
      */
     MAIL_TRANSPORT: z.enum(["LOG", "SMTP", "GMAIL"]).default("LOG"),
-    MAIL_FROM: z.string().trim().email().optional(),
-    MAIL_SMTP_HOST: z.string().trim().min(1).optional(),
+    MAIL_FROM: optionalEmailSchema,
+    MAIL_SMTP_HOST: optionalNonEmptyStringSchema,
     MAIL_SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
-    MAIL_SMTP_USER: z.string().trim().min(1).optional(),
-    MAIL_SMTP_PASSWORD: z.string().trim().min(1).optional(),
+    MAIL_SMTP_USER: optionalNonEmptyStringSchema,
+    MAIL_SMTP_PASSWORD: optionalNonEmptyStringSchema,
     MAIL_SMTP_TIMEOUT_MS: z.coerce
       .number()
       .int()
@@ -292,10 +303,10 @@ export const environmentSchema = z
      * política, y porque un token acotado a enviar correo no da acceso al
      * buzón.
      */
-    GMAIL_CLIENT_ID: z.string().trim().min(1).optional(),
-    GMAIL_CLIENT_SECRET: z.string().trim().min(1).optional(),
-    GMAIL_REFRESH_TOKEN: z.string().trim().min(1).optional(),
-    GMAIL_FROM_EMAIL: z.string().trim().email().optional(),
+    GMAIL_CLIENT_ID: optionalNonEmptyStringSchema,
+    GMAIL_CLIENT_SECRET: optionalNonEmptyStringSchema,
+    GMAIL_REFRESH_TOKEN: optionalNonEmptyStringSchema,
+    GMAIL_FROM_EMAIL: optionalEmailSchema,
 
     /**
      * Dónde vive el portal web, para componer enlaces que se envían fuera de la
