@@ -7,13 +7,137 @@
 # 1. NUNCA `ports:` en `api`. Coolify crea el contenedor nuevo antes de retirar el viejo y un
 #    puerto fijo del host da «address already in use» en cada despliegue. Se publica por el
 #    proxy. `postgres`/`redis` tampoco publican puerto: solo se hablan por la red `coolify`.
-# 2. NUNCA `env_file:`. Coolify añade el suyo a cada servicio; las variables se pegan en la
-#    interfaz de la aplicación (ver .env.coolify.recommended).
+# 2. NUNCA `env_file:`. Coolify añade el suyo a cada servicio SOLO como archivo de interpolación
+#    (`--env-file` de `docker compose`), no como entorno del contenedor: una variable únicamente
+#    llega al proceso si algún `environment:` de ESTE archivo la referencia con `${VAR}`. Por eso
+#    `x-app-environment` de abajo tiene que listar cada variable que el backend necesita —
+#    limitarse a las de base de datos (como se hizo en un intento anterior) deja sin
+#    `JWT_ACCESS_SECRET`/`WHATSAPP_MEMBERSHIP_PHONE`/etc. al contenedor, que revienta con
+#    `exit 1` al arrancar (env.ts rechaza el proceso si falta cualquier variable requerida) sin
+#    dejar rastro en el log de despliegue de Coolify, solo en el log del propio contenedor.
 # 3. TODAS las variables deben quedar "Runtime only" en Coolify (no "Available at Buildtime"):
 #    este backend no necesita nada en build-time, y NODE_ENV=production en build-time hace que
-#    yarn se salte devDependencies y `yarn build` truene con exit 127.
+#    yarn se salte devDependencies y `yarn build` truene con exit 127. Con NODE_ENV=development
+#    el build sí compila (development no salta devDependencies), pero igual conviene marcarlas
+#    Runtime-only: build-time innecesario solo invalida caché de capas en cada cambio de env.
 # 4. Hay que activar «Connect To Predefined Network» en la aplicación.
 name: gymsheet-backend
+
+x-app-environment: &app-environment
+  NODE_ENV: ${NODE_ENV:-development}
+  API_PREFIX: ${API_PREFIX:-api/v1}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+  TRUST_PROXY: ${TRUST_PROXY:-true}
+  REQUEST_BODY_LIMIT: ${REQUEST_BODY_LIMIT:-1mb}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  BUSINESS_TIME_ZONE: ${BUSINESS_TIME_ZONE:-America/La_Paz}
+  DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-}
+  ACCESS_POLICY_VERSION: ${ACCESS_POLICY_VERSION:-2026-07-19}
+  ACCESS_MOCK_ENABLED: ${ACCESS_MOCK_ENABLED:-false}
+  WHATSAPP_MEMBERSHIP_PHONE: ${WHATSAPP_MEMBERSHIP_PHONE:?WHATSAPP_MEMBERSHIP_PHONE is required}
+  METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
+
+  # Fijos a los alias internos de los servicios `postgres`/`redis` de este mismo stack. Lo que
+  # se pegue en Coolify para estas cinco no se usa (interceptadas aquí a propósito).
+  DB_HOST: postgres
+  DB_PORT: '5432'
+  REDIS_URL: redis://redis:6379
+  REDIS_REQUIRED: 'true'
+  REDIS_CONNECT_TIMEOUT_MS: ${REDIS_CONNECT_TIMEOUT_MS:-5000}
+
+  DB_NAME: ${DB_NAME:?DB_NAME is required}
+  DB_USER: ${DB_USER:?DB_USER is required}
+  DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+  DB_SSL: ${DB_SSL:-false}
+  DB_SSL_REJECT_UNAUTHORIZED: ${DB_SSL_REJECT_UNAUTHORIZED:-true}
+  DB_LOGGING: ${DB_LOGGING:-false}
+  DB_POOL_MAX: ${DB_POOL_MAX:-10}
+  DB_POOL_MIN: ${DB_POOL_MIN:-0}
+  DB_POOL_ACQUIRE_MS: ${DB_POOL_ACQUIRE_MS:-30000}
+  DB_POOL_IDLE_MS: ${DB_POOL_IDLE_MS:-10000}
+  DB_CONNECT_TIMEOUT_MS: ${DB_CONNECT_TIMEOUT_MS:-10000}
+  DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-15000}
+
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET is required}
+  JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+  JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+  JWT_ISSUER: ${JWT_ISSUER:-gym-sheet-api}
+  JWT_AUDIENCE: ${JWT_AUDIENCE:-gym-sheet-web}
+
+  PASSWORD_RESET_PIN_TTL_MINUTES: ${PASSWORD_RESET_PIN_TTL_MINUTES:-10}
+  PASSWORD_RESET_MAX_ATTEMPTS: ${PASSWORD_RESET_MAX_ATTEMPTS:-5}
+
+  BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-12}
+  RATE_LIMIT_TTL_SECONDS: ${RATE_LIMIT_TTL_SECONDS:-60}
+  RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
+  AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
+  PUBLIC_RATE_LIMIT_MAX: ${PUBLIC_RATE_LIMIT_MAX:-60}
+  GATEWAY_ENABLED: ${GATEWAY_ENABLED:-true}
+
+  WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-1000}
+  WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-50}
+  WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-5}
+  WORKER_LOCK_TIMEOUT_MS: ${WORKER_LOCK_TIMEOUT_MS:-300000}
+  WORKER_MAX_ATTEMPTS: ${WORKER_MAX_ATTEMPTS:-5}
+  OUTBOX_RETENTION_DAYS: ${OUTBOX_RETENTION_DAYS:-30}
+  OUTBOX_PRUNE_BATCH_SIZE: ${OUTBOX_PRUNE_BATCH_SIZE:-1000}
+  REMINDER_SCAN_INTERVAL_MS: ${REMINDER_SCAN_INTERVAL_MS:-3600000}
+  STORIES_PURGE_INTERVAL_MS: ${STORIES_PURGE_INTERVAL_MS:-3600000}
+  STORIES_PURGE_BATCH_SIZE: ${STORIES_PURGE_BATCH_SIZE:-200}
+  NOTIFICATION_DELIVERY_PROVIDER: ${NOTIFICATION_DELIVERY_PROVIDER:-IN_APP}
+  NOTIFICATION_GATEWAY_URL: ${NOTIFICATION_GATEWAY_URL:-}
+  NOTIFICATION_GATEWAY_SECRET: ${NOTIFICATION_GATEWAY_SECRET:-}
+  NOTIFICATION_GATEWAY_ALLOWED_HOSTS: ${NOTIFICATION_GATEWAY_ALLOWED_HOSTS:-}
+  NOTIFICATION_GATEWAY_TIMEOUT_MS: ${NOTIFICATION_GATEWAY_TIMEOUT_MS:-10000}
+
+  MAIL_TRANSPORT: ${MAIL_TRANSPORT:-LOG}
+  MAIL_FROM: ${MAIL_FROM:-}
+  MAIL_SMTP_HOST: ${MAIL_SMTP_HOST:-}
+  MAIL_SMTP_PORT: ${MAIL_SMTP_PORT:-587}
+  MAIL_SMTP_USER: ${MAIL_SMTP_USER:-}
+  MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD:-}
+  MAIL_SMTP_TIMEOUT_MS: ${MAIL_SMTP_TIMEOUT_MS:-10000}
+  GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
+  GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
+  GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN:-}
+  GMAIL_FROM_EMAIL: ${GMAIL_FROM_EMAIL:-}
+
+  PORTAL_PUBLIC_URL: ${PORTAL_PUBLIC_URL:-http://localhost:3001}
+  ACTIVATION_LINK_TTL_HOURS: ${ACTIVATION_LINK_TTL_HOURS:-48}
+
+  EXERCISES_DATASET_ENABLED: ${EXERCISES_DATASET_ENABLED:-false}
+  EXERCISES_DATASET_JSON_URL: ${EXERCISES_DATASET_JSON_URL:-https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json}
+  EXERCISES_DATASET_ALLOWED_HOSTS: ${EXERCISES_DATASET_ALLOWED_HOSTS:-raw.githubusercontent.com}
+  EXERCISES_DATASET_TIMEOUT_MS: ${EXERCISES_DATASET_TIMEOUT_MS:-15000}
+  EXERCISES_DATASET_MAX_RESPONSE_BYTES: ${EXERCISES_DATASET_MAX_RESPONSE_BYTES:-25000000}
+  EXERCISES_DATASET_BATCH_SIZE: ${EXERCISES_DATASET_BATCH_SIZE:-100}
+  EXERCISES_DATASET_MIN_RECORDS: ${EXERCISES_DATASET_MIN_RECORDS:-1000}
+  EXERCISES_DATASET_REFRESH_INTERVAL_MS: ${EXERCISES_DATASET_REFRESH_INTERVAL_MS:-86400000}
+  EXERCISES_DATASET_REFRESH_RETRY_MS: ${EXERCISES_DATASET_REFRESH_RETRY_MS:-3600000}
+  EXERCISES_DATASET_IMPORT_MEDIA: ${EXERCISES_DATASET_IMPORT_MEDIA:-false}
+  EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED: ${EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED:-false}
+  EXERCISES_OPEN_MEDIA_ENABLED: ${EXERCISES_OPEN_MEDIA_ENABLED:-true}
+  EXERCISES_OPEN_MEDIA_JSON_URL: ${EXERCISES_OPEN_MEDIA_JSON_URL:-https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json}
+  EXERCISES_OPEN_MEDIA_BASE_URL: ${EXERCISES_OPEN_MEDIA_BASE_URL:-https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/}
+  CANONICAL_EXERCISES_SOURCE: ${CANONICAL_EXERCISES_SOURCE:-seeders}
+
+  SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+  SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+  SEED_ADMIN_FULL_NAME: ${SEED_ADMIN_FULL_NAME:-GymSheet Administrator}
+  SEED_MOCK_PASSWORD: ${SEED_MOCK_PASSWORD:-}
+
+  MEDIA_STORAGE_PROVIDER: ${MEDIA_STORAGE_PROVIDER:-local}
+  MEDIA_STORAGE_LOCAL_ROOT: ${MEDIA_STORAGE_LOCAL_ROOT:-storage/media}
+  MEDIA_STORAGE_PUBLIC_BASE_URL: ${MEDIA_STORAGE_PUBLIC_BASE_URL:-http://localhost:3000/media}
+  MEDIA_UPLOAD_MAX_BYTES: ${MEDIA_UPLOAD_MAX_BYTES:-5242880}
+  MEDIA_ALLOWED_MIME: ${MEDIA_ALLOWED_MIME:-image/jpeg,image/png,image/webp,image/gif}
+  MEDIA_MIRROR_ALLOWED_HOSTS: ${MEDIA_MIRROR_ALLOWED_HOSTS:-images.unsplash.com,raw.githubusercontent.com}
+  MEDIA_MIRROR_TIMEOUT_MS: ${MEDIA_MIRROR_TIMEOUT_MS:-15000}
+  CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+  CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+  CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+  CLOUDINARY_FOLDER: ${CLOUDINARY_FOLDER:-gymsheet}
 
 services:
   postgres:
@@ -92,11 +216,7 @@ services:
         - gymsheet-backend:coolify
     command: ['node', 'dist/database/migrate.js', 'up']
     environment:
-      DB_HOST: postgres
-      DB_PORT: '5432'
-      DB_NAME: ${DB_NAME:?DB_NAME is required}
-      DB_USER: ${DB_USER:?DB_USER is required}
-      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      <<: *app-environment
     depends_on:
       postgres:
         condition: service_healthy
@@ -115,10 +235,8 @@ services:
     # misma imagen agotan la memoria del VPS y el despliegue muere sin decir por qué.
     image: gymsheet-backend:coolify
     environment:
-      DB_HOST: postgres
-      DB_PORT: '5432'
-      REDIS_URL: redis://redis:6379
-      REDIS_REQUIRED: 'true'
+      <<: *app-environment
+      PORT: '3000'
     depends_on:
       postgres:
         condition: service_healthy
