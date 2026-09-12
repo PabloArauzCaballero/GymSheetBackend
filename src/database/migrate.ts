@@ -138,6 +138,39 @@ async function migrateDown(sequelize: Sequelize): Promise<void> {
   });
 }
 
+/**
+ * The official Postgres image restarts itself once between `initdb` and
+ * serving real traffic (see docker-entrypoint.sh: bootstrap on a Unix socket,
+ * then a full restart listening on TCP with the final roles). A healthcheck
+ * that only calls `pg_isready` can report healthy during that brief restart
+ * window, right before the TCP listener is actually ready to authenticate —
+ * observed in production as `migrate` failing with "password authentication
+ * failed" on the very first deploy of a fresh volume, then succeeding
+ * immediately on a manual retry seconds later. A few short retries absorb
+ * that window without needing a fixed startup delay.
+ */
+async function authenticateWithRetry(
+  sequelize: Sequelize,
+  attempts = 5,
+  delayMs = 2000,
+): Promise<void> {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await sequelize.authenticate();
+      return;
+    } catch (error) {
+      if (attempt === attempts) throw error;
+      logger.warn({
+        event: 'migration.connection_retry',
+        attempt,
+        attempts,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 export async function runMigrations(
   direction: MigrationDirection,
 ): Promise<void> {
@@ -145,7 +178,7 @@ export async function runMigrations(
   let lockAcquired = false;
 
   try {
-    await sequelize.authenticate();
+    await authenticateWithRetry(sequelize);
     await acquireMigrationLock(sequelize);
     lockAcquired = true;
     if (direction === 'up') {
