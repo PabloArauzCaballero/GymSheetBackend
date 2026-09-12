@@ -85,22 +85,29 @@ jobs:
             exit 1
           fi
 
-          case "${COOLIFY_DEPLOY_WEBHOOK}" in
-            *:8000/api/v1/deploy*) ;;
-            *)
-              echo "::error::El webhook no tiene la forma esperada. Coolify escucha en el puerto"
-              echo "::error::8000, y la URL debe ser del tipo:"
-              echo "::error::  http://<host>:8000/api/v1/deploy?uuid=<UUID_DEL_RECURSO>&force=false"
-              echo "::error::Sácala de Coolify -> la aplicación -> Webhooks -> Deploy Webhook."
-              exit 1
-              ;;
-          esac
-
-          app_uuid=$(printf '%s' "${COOLIFY_DEPLOY_WEBHOOK}" | sed -n 's/.*[?&]uuid=\([^&]*\).*/\1/p')
+          # Del webhook sólo se aprovecha el identificador del recurso.
+          #
+          # Antes se exigía que la URL contuviera literalmente `:8000` y luego se
+          # llamaba a esa misma URL. Las dos cosas estaban mal. Coolify genera el
+          # Deploy Webhook a partir de la dirección **pública** de su instancia,
+          # que no tiene por qué llevar ese puerto —y no lo lleva si está detrás
+          # de un proxy en 80/443 o con dominio propio—, así que una URL copiada
+          # correctamente de la interfaz se rechazaba. Y aunque hubiera pasado la
+          # comprobación, el runner llega a Coolify por Tailscale: la dirección
+          # pública puede no ser alcanzable desde aquí.
+          #
+          # Se acepta cualquier forma que traiga `uuid=`, y la petición se
+          # construye contra `COOLIFY_API`, que es la ruta que sí sabemos viva.
+          app_uuid=$(printf '%s' "${COOLIFY_DEPLOY_WEBHOOK}" | sed -n 's/.*[?&]uuid=\([^&#]*\).*/\1/p')
           if [ -z "${app_uuid}" ]; then
-            echo "::error::La URL del webhook no lleva ?uuid=<UUID_DEL_RECURSO>."
+            echo "::error::No encuentro el identificador del recurso en el webhook."
+            echo "::error::Tiene que llevar '?uuid=<UUID>'. Cópialo de Coolify -> la"
+            echo "::error::aplicación -> Webhooks -> Deploy Webhook, entero."
             exit 1
           fi
+
+          deploy_url="${COOLIFY_API}/deploy?uuid=${app_uuid}&force=false"
+          echo "Desplegando el recurso ${app_uuid} vía ${COOLIFY_API}."
 
           auth="Authorization: Bearer ${COOLIFY_API_TOKEN}"
 
@@ -136,7 +143,7 @@ jobs:
             --output "${respuesta}" \
             --write-out '%{http_code}' \
             --header "${auth}" \
-            "${COOLIFY_DEPLOY_WEBHOOK}") || true
+            "${deploy_url}") || true
           codigo="${codigo:-000}"
 
           if [ "${codigo}" != "200" ]; then
