@@ -139,6 +139,37 @@ x-app-environment: &app-environment
   CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
   CLOUDINARY_FOLDER: ${CLOUDINARY_FOLDER:-gymsheet}
 
+# Todo lo que comparten los cinco workers. Sin `build:` — reutilizan la imagen que construye
+# `migrate`, igual que `api`. Sin `expose:` ni healthcheck: no escuchan en ningún puerto, así que
+# lo único que Docker puede vigilar de ellos es que el proceso siga vivo (`restart: unless-stopped`).
+x-worker-service: &worker-service
+  image: gymsheet-backend:coolify
+  profiles: ['workers']
+  environment:
+    <<: *app-environment
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+  restart: unless-stopped
+  init: true
+  networks:
+    - default
+    - coolify
+  stop_grace_period: 20s
+  deploy:
+    resources:
+      limits:
+        memory: 320m
+  logging:
+    driver: json-file
+    options:
+      max-size: '10m'
+      max-file: '3'
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -253,6 +284,12 @@ services:
           - gymsheet-backend
     expose:
       - '3000'
+    volumes:
+      # MEDIA_STORAGE_PROVIDER=local escribe aquí. Sin este volumen cada despliegue estrena
+      # contenedor y las imágenes subidas desaparecen sin error: la fila en base de datos
+      # sobrevive y la URL devuelve 404. El Dockerfile crea /app/storage/media como `node`
+      # para que el volumen herede esa propiedad al crearse.
+      - media-data:/app/storage/media
     cpu_shares: 4096
     stop_grace_period: 20s
     deploy:
@@ -271,8 +308,52 @@ services:
       retries: 3
       start_period: 20s
 
+  # ---------------------------------------------------------------------------
+  # Workers. Apagados por defecto: cada uno es un proceso Node completo (~200 MB
+  # con el runtime de Nest dentro) y encenderlos los cinco a ciegas puede dejar
+  # sin memoria al VPS y tumbar el despliegue de la API, que es lo que de verdad
+  # no puede caerse. Para encenderlos, añadir en las variables de la aplicación
+  # en Coolify:
+  #
+  #     COMPOSE_PROFILES=workers
+  #
+  # y redesplegar. Docker Compose lee COMPOSE_PROFILES del archivo de entorno que
+  # Coolify pasa con --env-file, igual que el resto de variables. Si por lo que
+  # sea no lo leyera, el fallo es benigno: los workers no arrancan y todo lo
+  # demás queda exactamente como hoy.
+  #
+  # Reparto de responsabilidades (docs/workers/notification-workers.md):
+  #   access-event        → drena la bandeja de eventos de acceso física
+  #   membership-reminder → avisos de vencimiento de membresía
+  #   notification-delivery → entrega lo que el outbox transaccional deja listo
+  #   stories-purge       → borra stories caducadas
+  #   exercises-dataset-refresh → refresco del dataset externo de ejercicios;
+  #     solo hace trabajo real con EXERCISES_DATASET_ENABLED=true.
+  # ---------------------------------------------------------------------------
+
+  worker-access-event:
+    <<: *worker-service
+    command: ['node', 'dist/workers/access-event.worker.js']
+
+  worker-membership-reminder:
+    <<: *worker-service
+    command: ['node', 'dist/workers/membership-reminder.worker.js']
+
+  worker-notification-delivery:
+    <<: *worker-service
+    command: ['node', 'dist/workers/notification-delivery.worker.js']
+
+  worker-stories-purge:
+    <<: *worker-service
+    command: ['node', 'dist/workers/stories-purge.worker.js']
+
+  worker-exercises-dataset-refresh:
+    <<: *worker-service
+    command: ['node', 'dist/workers/exercises-dataset-refresh.worker.js']
+
 volumes:
   postgres-data:
+  media-data:
 
 networks:
   default: {}

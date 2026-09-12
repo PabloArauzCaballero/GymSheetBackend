@@ -23,6 +23,7 @@ RUN yarn build \
     && test -f dist/workers/membership-reminder.worker.js \
     && test -f dist/workers/notification-delivery.worker.js \
     && test -f dist/workers/exercises-dataset-refresh.worker.js \
+    && test -f dist/workers/stories-purge.worker.js \
     && test ! -d dist/src
 
 ##

@@ -1,7 +1,13 @@
 # Despliegue en Coolify
 
-Calco del patrón de los repos de Atlas: mismo VPS, mismo panel. Este documento es la lista de lo
-que falta para que `git push origin dev` despliegue solo, no una confirmación de que ya está hecho.
+Calco del patrón de los repos de Atlas: mismo VPS, mismo panel.
+
+**Estado: el primer despliegue automático ya salió verde.** El 12/09/2026 a las 03:08 UTC Coolify
+terminó el despliegue del commit `343c6c8` lanzado por `git push origin dev`
+([run 34667590466](https://github.com/PabloArauzCaballero/GymSheetBackend/actions/runs/34667590466)).
+La cadena completa —Tailscale, webhook, construcción, migraciones, API— funciona sin intervención.
+El apartado de abajo con los pasos manuales queda como referencia de lo que hubo que configurar una
+vez; no hay que repetirlo.
 
 Archivos ya en el repo:
 
@@ -46,15 +52,41 @@ Si ya existe un token de Coolify de otro proyecto (Atlas) con permiso sobre todo
 servidor, puede reutilizarse el mismo valor para `PABLO_H310_COOLIFY_TOKEN` en vez de crear uno
 nuevo.
 
-## Lo que sigue pendiente tras el primer despliegue
+## Workers: definidos, apagados por defecto
 
-- **Workers** (`access-event`, `membership-reminder`, `notification-delivery`,
-  `exercises-dataset-refresh`): no están en `docker-compose.coolify.yml` todavía. El primer
-  despliegue cubre solo la API; los workers se añaden como servicios adicionales del mismo compose
-  cuando se necesiten en producción.
-- **Dominio público**, si la API debe ser alcanzable desde fuera de la red `coolify` (por ejemplo,
-  el frontend en producción llama al backend por un origen público para el socket de chat — ver
-  `docs/despliegue.md` de GymSheetFrontend).
-- **Proveedor de media** (`MEDIA_STORAGE_PROVIDER=local`): el volumen del contenedor no persiste
-  entre despliegues salvo que se monte un volumen de Coolify; revisar antes de subir imágenes
-  reales a producción.
+Los cinco workers (`access-event`, `membership-reminder`, `notification-delivery`, `stories-purge`,
+`exercises-dataset-refresh`) ya están en `docker-compose.coolify.yml`, pero **no arrancan salvo que
+se pidan**. Para encenderlos, añadir en las variables de la aplicación en Coolify:
+
+```
+COMPOSE_PROFILES=workers
+```
+
+y redesplegar. Comprobado que Docker Compose lee esa variable del archivo de entorno que Coolify
+pasa con `--env-file`: sin ella el despliegue levanta exactamente los cuatro servicios de siempre
+(`postgres`, `redis`, `migrate`, `api`); con ella, esos cuatro más los cinco workers.
+
+Están apagados por defecto a propósito: cada worker es un proceso Node completo con el runtime de
+Nest dentro (límite de 320 MB cada uno) y encenderlos los cinco a ciegas puede dejar sin memoria al
+VPS y tumbar la API, que es lo que de verdad no puede caerse. Con el consumo real del servidor
+delante, se encienden.
+
+Consecuencia de tenerlos apagados, para decidir con conocimiento: los avisos de vencimiento de
+membresía no salen solos, las notificaciones del outbox transaccional no se entregan, las stories
+caducadas no se borran y los eventos de acceso físico se acumulan sin drenar. Nada de eso pierde
+datos —el trabajo queda en cola en base de datos y se procesa en cuanto los workers arrancan—, pero
+tampoco ocurre mientras estén apagados.
+
+## Media: ya persiste entre despliegues
+
+`MEDIA_STORAGE_PROVIDER=local` escribe en `/app/storage/media`, que ahora es un volumen nombrado
+(`media-data`) montado en el servicio `api`. Antes cada despliegue estrenaba contenedor y las
+imágenes subidas desaparecían **sin error visible**: la fila en base de datos sobrevivía y la URL
+devolvía 404. El `Dockerfile` ya creaba ese directorio como usuario `node` precisamente para que un
+volumen montado ahí heredase la propiedad correcta al crearse.
+
+## Lo que sigue pendiente y no depende del código
+
+- **Dominio público de la API**, si debe ser alcanzable desde fuera de la red `coolify`. Lo necesita
+  el socket de chat del frontend (ver `docs/despliegue.md` de GymSheetFrontend). Se configura en
+  Coolify → Domains de la aplicación.
