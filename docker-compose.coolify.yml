@@ -274,6 +274,12 @@ services:
       postgres:
         condition: service_healthy
     restart: 'no'
+    # `init: true` es tini (Docker lo trae incorporado) como PID 1. Sin él, un SIGTERM a mitad de
+    # migración (Coolify cancelando un despliegue, por ejemplo) no le llega a Node y el contenedor
+    # termina en SIGKILL forzado tras el grace period, en vez de un cierre ordenado. La migración
+    # corre en transacción (ver migrateUp en src/database/migrate.ts), así que Postgres revierte
+    # igual ante un kill; esto solo evita el kill innecesario.
+    init: true
     networks:
       - default
       - coolify
