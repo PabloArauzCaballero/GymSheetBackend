@@ -1,5 +1,7 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { NotificationChannel } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
+import { NotificationService } from "../notifications/notification.service";
 import { UsersRepository } from "../users/users.repository";
 import { SocialService } from "../social/social.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
@@ -27,8 +29,11 @@ export class ChatService {
     private readonly presence: ChatPresenceService,
     private readonly systemChat: SystemChatService,
     private readonly usersRepository: UsersRepository,
+    private readonly notifications: NotificationService,
     @Inject(MEDIA_STORAGE_PROVIDER) private readonly mediaStorage: MediaStorageProvider,
   ) {}
+
+  private readonly logger = new Logger(ChatService.name);
 
   /**
    * El chat solo tiene sentido entre personas conectadas — es la regla que
@@ -96,7 +101,62 @@ export class ChatService {
     const message = await this.repository.createMessage(conversationId, senderId, fields);
     const response = mapMessageToResponse(message);
     this.chatEvents.emitMessage(response);
+    await this.pushToAbsentRecipients(response, senderId);
     return response;
+  }
+
+  /**
+   * Avisa por push a quien no tenga un socket abierto.
+   *
+   * El socket ya entrega el mensaje a quien está dentro de la app; el push
+   * existe justamente para el caso contrario, y mandarlo igual a quien está
+   * mirando la conversación sería un doble aviso. La presencia es en memoria
+   * del proceso, así que esto es una comprobación barata.
+   *
+   * No propaga errores: el mensaje ya está escrito y emitido. Que el aviso
+   * falle no puede convertir un envío correcto en un 500 para quien escribió.
+   */
+  private async pushToAbsentRecipients(message: MessageResponse, senderId: string): Promise<void> {
+    try {
+      const recipients = await this.repository.listOtherParticipants(message.conversationId, senderId);
+      const absent = recipients.filter((participant) => !this.presence.isOnline(participant.userId));
+      if (absent.length === 0) return;
+      const sender = await this.usersRepository.findActiveById(senderId);
+      const title = sender?.fullName ?? "Mensaje nuevo";
+      const preview = ChatService.previewFor(message);
+      await Promise.all(
+        absent.map((participant) =>
+          this.notifications.enqueueDirectMessage({
+            recipientUserId: participant.userId,
+            channel: NotificationChannel.PUSH,
+            subject: title,
+            body: preview,
+            // Un mensaje, un aviso por destinatario: si el envío se reintenta
+            // (reconexión del socket, reenvío del cliente) la clave impide que
+            // el teléfono suene dos veces por lo mismo.
+            deduplicationKey: `chat.message:${message.id}:${participant.userId}`,
+            metadata: { conversationId: message.conversationId, messageId: message.id },
+          }),
+        ),
+      );
+    } catch (error: unknown) {
+      this.logger.warn({
+        event: "chat.push_notify_failed",
+        conversationId: message.conversationId,
+        messageId: message.id,
+        reason: error instanceof Error ? error.name : "UnknownError",
+      });
+    }
+  }
+
+  /** Qué se lee en la pantalla bloqueada. El contenido de un medio no se adelanta ahí. */
+  private static previewFor(message: MessageResponse): string {
+    if (message.type === "image") return message.viewOnce ? "Te envió una foto de vista única" : "Te envió una foto";
+    if (message.type === "video") return message.viewOnce ? "Te envió un video de vista única" : "Te envió un video";
+    if (message.type === "location") return "Compartió su ubicación";
+    const body = message.body?.trim() ?? "";
+    if (body.length === 0) return "Te envió un mensaje";
+    return body.length > 140 ? `${body.slice(0, 139)}…` : body;
   }
 
   async sendMessage(conversationId: string, senderId: string, body: string): Promise<MessageResponse> {

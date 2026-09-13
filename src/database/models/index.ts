@@ -34,6 +34,7 @@ import { PlanAccessScopeModel } from "../../modules/membership/plan-access-scope
 import { StaffBranchScopeModel } from "../../modules/membership/staff-branch-scope.model";
 import { StaffProfileModel } from "../../modules/membership/staff-profile.model";
 import { DeliveryAttemptModel } from "../../modules/notifications/delivery-attempt.model";
+import { DeviceTokenModel } from "../../modules/notifications/device-token.model";
 import { NotificationPreferenceModel } from "../../modules/notifications/notification-preference.model";
 import { NotificationModel } from "../../modules/notifications/notification.model";
 import { AnthropometricProfileModel } from "../../modules/profiles/anthropometric-profile.model";
@@ -128,6 +129,7 @@ export const databaseModels = [
   NotificationModel,
   NotificationPreferenceModel,
   DeliveryAttemptModel,
+  DeviceTokenModel,
   DomainEventModel,
   OutboxJobModel,
   LegacyImportBatchModel,

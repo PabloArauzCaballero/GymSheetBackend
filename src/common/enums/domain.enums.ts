@@ -272,7 +272,20 @@ export enum NotificationChannel {
   IN_APP = "IN_APP",
   EMAIL = "EMAIL",
   HTTP_GATEWAY = "HTTP_GATEWAY",
+  PUSH = "PUSH",
   MOCK = "MOCK",
+}
+
+/**
+ * Plataforma del dispositivo que registró un token de push.
+ *
+ * No decide a qué servicio se envía —de eso se encarga Expo, que habla con FCM
+ * o APNs según el token— pero sí permite retirar de golpe los tokens de una
+ * plataforma cuando sus credenciales cambian, y leer la tabla sin adivinar.
+ */
+export enum DevicePlatform {
+  ANDROID = "ANDROID",
+  IOS = "IOS",
 }
 
 export enum NotificationStatus {

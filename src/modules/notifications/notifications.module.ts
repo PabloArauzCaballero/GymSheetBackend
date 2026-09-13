@@ -7,6 +7,7 @@ import { UserModel } from '../users/user.model';
 import { AdminBroadcastController } from './broadcast.controller';
 import { BroadcastService } from './broadcast.service';
 import { EmailNotificationAdapter } from './delivery/email-notification.adapter';
+import { ExpoPushNotificationAdapter } from './delivery/expo-push-notification.adapter';
 import { HttpGatewayNotificationAdapter } from './delivery/http-gateway-notification.adapter';
 import { GmailMailTransport } from './delivery/gmail-mail.transport';
 import { LogMailTransport } from './delivery/log-mail.transport';
@@ -16,6 +17,8 @@ import { InAppNotificationAdapter } from './delivery/in-app-notification.adapter
 import { MockNotificationAdapter } from './delivery/mock-notification.adapter';
 import { NotificationAdapterFactory } from './delivery/notification-adapter.factory';
 import { DeliveryAttemptModel } from './delivery-attempt.model';
+import { DeviceTokenModel } from './device-token.model';
+import { DeviceTokenRepository } from './device-token.repository';
 import { MembershipReminderService } from './membership-reminder.service';
 import { NotificationController } from './notification.controller';
 import { NotificationDeliveryService } from './notification-delivery.service';
@@ -32,6 +35,7 @@ import { NotificationModel } from './notification.model';
       NotificationModel,
       NotificationPreferenceModel,
       DeliveryAttemptModel,
+      DeviceTokenModel,
       UserModel,
     ]),
   ],
@@ -39,6 +43,7 @@ import { NotificationModel } from './notification.model';
   providers: [
     BusinessDateService,
     NotificationRepository,
+    DeviceTokenRepository,
     NotificationService,
     BroadcastService,
     MembershipReminderService,
@@ -47,6 +52,7 @@ import { NotificationModel } from './notification.model';
     InAppNotificationAdapter,
     EmailNotificationAdapter,
     HttpGatewayNotificationAdapter,
+    ExpoPushNotificationAdapter,
     LogMailTransport,
     SmtpMailTransport,
     GmailMailTransport,
@@ -73,6 +79,7 @@ import { NotificationModel } from './notification.model';
   exports: [
     MAIL_TRANSPORT,
     NotificationRepository,
+    DeviceTokenRepository,
     NotificationService,
     MembershipReminderService,
     NotificationDeliveryService,

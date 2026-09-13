@@ -279,6 +279,28 @@ export const environmentSchema = z
       .default(10000),
 
     /**
+     * Push a los teléfonos, vía el servicio de Expo (que es quien habla con FCM
+     * y APNs). Apagado por defecto: un despliegue sin credenciales de push en
+     * EAS no debe intentar enviar y acumular fallos en la bandeja de salida.
+     *
+     * `EXPO_PUSH_ACCESS_TOKEN` solo hace falta si el proyecto de Expo tiene
+     * activada la seguridad de envío; sin ella el endpoint acepta cualquier
+     * origen que conozca el token del dispositivo.
+     */
+    PUSH_NOTIFICATIONS_ENABLED: environmentBooleanSchema.default(false),
+    EXPO_PUSH_API_URL: z
+      .string()
+      .url()
+      .default("https://exp.host/--/api/v2/push/send"),
+    EXPO_PUSH_ACCESS_TOKEN: optionalNonEmptyStringSchema,
+    EXPO_PUSH_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1000)
+      .max(60000)
+      .default(10000),
+
+    /**
      * Cómo salen los correos. `LOG` los escribe en el registro con el cuerpo
      * completo —imprescindible para recorrer el flujo de recuperación en local
      * sin un buzón—, y por eso mismo está prohibido en producción: un PIN en
@@ -586,6 +608,19 @@ export const environmentSchema = z
           message: "SMTP mail delivery requires a host and a sender address.",
         });
     }
+    // En producción el destino del push tiene que ir cifrado: el token de un
+    // dispositivo es la credencial para hacerle sonar avisos. En local se
+    // permite `http` para poder apuntar a un servidor de pruebas.
+    if (
+      configuration.NODE_ENV === "production" &&
+      configuration.PUSH_NOTIFICATIONS_ENABLED &&
+      new URL(configuration.EXPO_PUSH_API_URL).protocol !== "https:"
+    )
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["EXPO_PUSH_API_URL"],
+        message: "The Expo push endpoint must use HTTPS in production.",
+      });
     if (configuration.NOTIFICATION_DELIVERY_PROVIDER === "HTTP_GATEWAY") {
       if (
         !configuration.NOTIFICATION_GATEWAY_URL ||

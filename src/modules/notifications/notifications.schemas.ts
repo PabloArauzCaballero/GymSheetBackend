@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  DevicePlatform,
   NotificationChannel,
   NotificationStatus,
 } from '../../common/enums/domain.enums';
@@ -81,6 +82,38 @@ export const updateNotificationPreferenceSchema = z
     quietHoursEnd: input.horaSilencioFin ?? null,
     metadata: input.metadata,
   }));
+
+/**
+ * Formato del token que emite Expo: `ExponentPushToken[...]` (el que devuelve
+ * hoy `getExpoPushTokenAsync`) o `ExpoPushToken[...]`, que Expo también acepta.
+ * Validarlo aquí evita guardar basura —una cadena vacía, un token de FCM
+ * crudo— que solo se descubriría al primer envío, cuando ya no hay nadie
+ * delante para arreglarla.
+ */
+const expoPushTokenSchema = z
+  .string()
+  .trim()
+  .max(200)
+  .regex(
+    /^Expo(nent)?PushToken\[[A-Za-z0-9_-]+\]$/,
+    'El token de push no tiene el formato de Expo.',
+  );
+
+export const registerDeviceTokenSchema = z
+  .object({
+    expoPushToken: expoPushTokenSchema,
+    platform: z.nativeEnum(DevicePlatform),
+  })
+  .strict();
+
+export const unregisterDeviceTokenSchema = z
+  .object({ expoPushToken: expoPushTokenSchema })
+  .strict();
+
+export type RegisterDeviceTokenInput = z.infer<typeof registerDeviceTokenSchema>;
+export type UnregisterDeviceTokenInput = z.infer<
+  typeof unregisterDeviceTokenSchema
+>;
 
 export type NotificationListInput = z.infer<typeof notificationListSchema>;
 export type UpdateNotificationPreferenceInput = z.infer<

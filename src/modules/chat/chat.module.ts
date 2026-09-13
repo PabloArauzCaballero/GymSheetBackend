@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { SequelizeModule } from "@nestjs/sequelize";
 import { RealtimeModule } from "../../common/realtime/realtime.module";
 import { MediaModule } from "../media/media.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { SocialModule } from "../social/social.module";
 import { UsersModule } from "../users/users.module";
 import { ChatEventsService } from "./chat-events.service";
@@ -21,6 +22,7 @@ import { SystemChatService } from "./system-chat.service";
     SocialModule,
     RealtimeModule,
     MediaModule,
+    NotificationsModule,
     SequelizeModule.forFeature([ConversationModel, ConversationParticipantModel, MessageModel]),
   ],
   controllers: [ChatController],

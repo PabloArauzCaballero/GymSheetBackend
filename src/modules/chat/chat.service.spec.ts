@@ -1,8 +1,9 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
-import { UserStatus } from "../../common/enums/domain.enums";
+import { NotificationChannel, UserStatus } from "../../common/enums/domain.enums";
 import { SocialService } from "../social/social.service";
 import { UsersRepository } from "../users/users.repository";
 import { MediaStorageProvider } from "../media/media-storage.port";
+import { NotificationService } from "../notifications/notification.service";
 import { ChatEventsService } from "./chat-events.service";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatRepository } from "./chat.repository";
@@ -19,10 +20,16 @@ function createService(
   presenceOverrides: Partial<ChatPresenceService> = {},
   systemChatOverrides: Partial<SystemChatService> = {},
   usersRepositoryOverrides: Partial<UsersRepository> = {},
+  notificationOverrides: Partial<NotificationService> = {},
   mediaStorageOverrides: Partial<MediaStorageProvider> = {},
 ): ChatService {
   return new ChatService(
-    repositoryOverrides as ChatRepository,
+    {
+      // Por defecto nadie más en la conversación: los casos que no van de
+      // avisos no deberían tener que declarar destinatarios.
+      listOtherParticipants: jest.fn().mockResolvedValue([]),
+      ...repositoryOverrides,
+    } as unknown as ChatRepository,
     { isConnected: jest.fn().mockResolvedValue(true), ...socialOverrides } as unknown as SocialService,
     {
       emitMessage: jest.fn(),
@@ -39,6 +46,10 @@ function createService(
       findActiveById: jest.fn().mockResolvedValue({ id: userA, tenantId: "default", status: UserStatus.ACTIVE }),
       ...usersRepositoryOverrides,
     } as unknown as UsersRepository,
+    {
+      enqueueDirectMessage: jest.fn().mockResolvedValue(true),
+      ...notificationOverrides,
+    } as unknown as NotificationService,
     {
       name: "local",
       upload: jest.fn().mockResolvedValue({
@@ -235,6 +246,7 @@ describe("ChatService.sendMediaMessage", () => {
     });
     const service = createService(
       { getParticipant: jest.fn().mockResolvedValue({ canWrite: true }), createMessage },
+      {},
       {},
       {},
       {},
@@ -460,5 +472,98 @@ describe("ChatService.markRead", () => {
     expect(markRead).toHaveBeenCalledWith("conv-1", userA);
     expect(emitDelivered).toHaveBeenCalledWith("conv-1", expect.objectContaining({ userId: userA }));
     expect(emitRead).toHaveBeenCalledWith("conv-1", expect.objectContaining({ userId: userA }));
+  });
+});
+
+describe("ChatService push a quien no está conectado", () => {
+  const textMessage = {
+    id: "msg-push-1",
+    conversationId: "conv-1",
+    senderId: userA,
+    body: "¿Entrenamos mañana?",
+    type: "text",
+    mediaUrl: null,
+    mediaMimeType: null,
+    viewOnce: false,
+    viewedAt: null,
+    locationLat: null,
+    locationLng: null,
+    createdAt: new Date("2026-09-13T00:00:00.000Z"),
+  };
+
+  function serviceWith(
+    online: boolean,
+    enqueueDirectMessage = jest.fn().mockResolvedValue(true),
+    message: Record<string, unknown> = textMessage,
+  ) {
+    const service = createService(
+      {
+        getParticipant: jest.fn().mockResolvedValue({ canWrite: true }),
+        createMessage: jest.fn().mockResolvedValue(message),
+        listOtherParticipants: jest.fn().mockResolvedValue([{ userId: userB }]),
+      },
+      {},
+      {},
+      { isOnline: jest.fn().mockReturnValue(online) },
+      {},
+      { findActiveById: jest.fn().mockResolvedValue({ id: userA, fullName: "Camila Ruiz" }) },
+      { enqueueDirectMessage },
+    );
+    return { service, enqueueDirectMessage };
+  }
+
+  it("avisa al destinatario ausente por el canal PUSH", async () => {
+    const { service, enqueueDirectMessage } = serviceWith(false);
+
+    await service.sendMessage("conv-1", userA, "¿Entrenamos mañana?");
+
+    expect(enqueueDirectMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipientUserId: userB,
+        channel: NotificationChannel.PUSH,
+        subject: "Camila Ruiz",
+        body: "¿Entrenamos mañana?",
+        deduplicationKey: `chat.message:msg-push-1:${userB}`,
+      }),
+    );
+  });
+
+  it("no avisa a quien tiene la conversación abierta — ya le llegó por el socket", async () => {
+    const { service, enqueueDirectMessage } = serviceWith(true);
+
+    await service.sendMessage("conv-1", userA, "¿Entrenamos mañana?");
+
+    expect(enqueueDirectMessage).not.toHaveBeenCalled();
+  });
+
+  it("no adelanta el contenido de una foto de vista única", async () => {
+    const { service, enqueueDirectMessage } = serviceWith(false, jest.fn().mockResolvedValue(true), {
+      ...textMessage,
+      id: "msg-push-2",
+      body: null,
+      type: "image",
+      viewOnce: true,
+      mediaUrl: "http://localhost:3000/media/chat/photo.jpg",
+      mediaMimeType: "image/jpeg",
+    });
+
+    await service.sendMessage("conv-1", userA, "");
+
+    expect(enqueueDirectMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ body: "Te envió una foto de vista única" }),
+    );
+  });
+
+  it("un fallo del aviso no rompe el envío del mensaje", async () => {
+    const { service } = serviceWith(
+      false,
+      jest.fn().mockRejectedValue(new Error("outbox caído")),
+    );
+
+    // El mensaje ya está escrito y emitido: el push es un añadido, no una
+    // condición para que exista.
+    await expect(service.sendMessage("conv-1", userA, "hola")).resolves.toMatchObject({
+      id: "msg-push-1",
+    });
   });
 });

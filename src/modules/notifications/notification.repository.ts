@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { QueryTypes, Transaction } from 'sequelize';
+import { Op, QueryTypes, Transaction } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import {
   NotificationChannel,
@@ -37,10 +37,19 @@ export class NotificationRepository {
     private readonly sequelize: Sequelize,
   ) {}
 
+  /**
+   * La bandeja que se lee dentro de la app.
+   *
+   * Deja fuera el canal PUSH a propósito: un mensaje de ese canal es una
+   * entrega a un dispositivo —el aviso de un mensaje de chat, por ejemplo—,
+   * no un elemento para leer aquí; el chat ya lo muestra en su sitio. Quien
+   * quiera las dos cosas encola dos mensajes, uno por canal.
+   */
   listForUser(userId: string, filters: NotificationListInput) {
     return this.messages.findAndCountAll({
       where: {
         recipientUserId: userId,
+        channel: { [Op.ne]: NotificationChannel.PUSH },
         ...(filters.estado ? { status: filters.estado } : {}),
       },
       limit: filters.pageSize,

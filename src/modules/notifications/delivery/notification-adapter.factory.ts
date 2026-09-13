@@ -3,6 +3,7 @@ import { NotificationChannel } from '../../../common/enums/domain.enums';
 import { env } from '../../../config/env';
 import { HttpGatewayNotificationAdapter } from './http-gateway-notification.adapter';
 import { EmailNotificationAdapter } from './email-notification.adapter';
+import { ExpoPushNotificationAdapter } from './expo-push-notification.adapter';
 import { InAppNotificationAdapter } from './in-app-notification.adapter';
 import { MockNotificationAdapter } from './mock-notification.adapter';
 import { NotificationDeliveryAdapter } from './notification-delivery.adapter';
@@ -13,6 +14,7 @@ export class NotificationAdapterFactory {
     private readonly inApp: InAppNotificationAdapter,
     private readonly email: EmailNotificationAdapter,
     private readonly httpGateway: HttpGatewayNotificationAdapter,
+    private readonly push: ExpoPushNotificationAdapter,
     private readonly mock: MockNotificationAdapter,
   ) {}
 
@@ -22,6 +24,10 @@ export class NotificationAdapterFactory {
     // entre pasarela externa y simulacro para el canal HTTP, y el buzón se
     // configura por su cuenta con MAIL_TRANSPORT.
     if (channel === NotificationChannel.EMAIL) return this.email;
+    // El push no depende de NOTIFICATION_DELIVERY_PROVIDER por la misma razón
+    // que el correo: es un canal propio con su interruptor, no la pasarela
+    // externa genérica. El adaptador comprueba que esté encendido.
+    if (channel === NotificationChannel.PUSH) return this.push;
     if (channel !== NotificationChannel.HTTP_GATEWAY) {
       throw new ServiceUnavailableException('Unsupported notification channel.');
     }

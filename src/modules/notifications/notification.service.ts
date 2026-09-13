@@ -6,14 +6,21 @@ import { GymDomainEvent } from '../integration/domain-event.catalog';
 import { DomainEventPublisher } from '../integration/domain-event.publisher';
 import { BusinessDateService } from '../../common/time/business-date.service';
 import { env } from '../../config/env';
+import { DeviceTokenRepository } from './device-token.repository';
 import { mapNotification, mapNotificationPreference } from './notification.mapper';
 import { NotificationRepository } from './notification.repository';
-import { NotificationListInput, UpdateNotificationPreferenceInput } from './notifications.schemas';
+import {
+  NotificationListInput,
+  RegisterDeviceTokenInput,
+  UnregisterDeviceTokenInput,
+  UpdateNotificationPreferenceInput,
+} from './notifications.schemas';
 
 @Injectable()
 export class NotificationService {
   constructor(
     private readonly repository: NotificationRepository,
+    private readonly deviceTokens: DeviceTokenRepository,
     private readonly dates: BusinessDateService,
     private readonly events: DomainEventPublisher,
     private readonly sequelize: Sequelize,
@@ -95,6 +102,37 @@ export class NotificationService {
       if (error instanceof UniqueConstraintError) return false;
       throw error;
     }
+  }
+
+  /**
+   * Da de alta el dispositivo desde el que se pide.
+   *
+   * La app lo llama en cada inicio de sesión, así que tiene que ser idempotente
+   * y barato. Devuelve siempre `{ registered: true }`: para quien llama no hay
+   * diferencia entre haberlo creado y haberlo refrescado, y distinguirlo sólo
+   * filtraría si ese teléfono ya estaba asociado a otra cuenta.
+   */
+  async registerDeviceToken(userId: string, input: RegisterDeviceTokenInput) {
+    await this.deviceTokens.register({
+      userId,
+      expoPushToken: input.expoPushToken,
+      platform: input.platform,
+    });
+    return { registered: true };
+  }
+
+  /**
+   * Baja del dispositivo (cierre de sesión).
+   *
+   * Responde lo mismo tanto si había un token que retirar como si no: el
+   * resultado que le importa a la app —ese dispositivo ya no está registrado—
+   * es idéntico en los dos casos. Un 404 cuando el token no es tuyo le
+   * confirmaría a un tercero cuáles existen, y el repositorio ya exige que sea
+   * de quien pide la baja para tocarlo.
+   */
+  async unregisterDeviceToken(userId: string, input: UnregisterDeviceTokenInput) {
+    await this.deviceTokens.revoke(userId, input.expoPushToken);
+    return { registered: false };
   }
 
   async listMine(userId: string, filters: NotificationListInput) {
