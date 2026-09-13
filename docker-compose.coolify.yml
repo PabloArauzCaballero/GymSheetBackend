@@ -28,6 +28,18 @@
 #    en GymSheetFrontend sirve — no es exclusivo de un repo). Con `:-` en vez de `:?`: sin la key
 #    puesta, solo `tunnel` falla, `api` sigue sirviendo normal (ver GymSheetFrontend para el
 #    incidente real de por qué NO se usa `:?` aquí).
+# 6. SOLO `migrate` declara `build:`. `api` y los workers comparten la MISMA imagen
+#    (`gymsheet-backend:coolify`) vía `image:` + `pull_policy: never`, nunca su propio `build:`.
+#    Patrón confirmado en los repos de Atlas (AtlasBackend, comentario "La imagen se construye UNA
+#    VEZ"): darle `build:` a varios servicios que apuntan al mismo tag hace que Compose los
+#    construya en PARALELO — varios `yarn install --frozen-lockfile` a la vez, cada uno resolviendo
+#    el árbol entero, agotan la memoria del VPS y el OOM killer se lleva a uno; el síntoma es
+#    `yarn install ... exit code: 1` sin mención de memoria, y el servicio que muere CAMBIA entre
+#    intentos (la firma de una carrera por recursos, no de un fallo real de build). `pull_policy:
+#    never` es lo que reemplaza al viejo truco de "build: en todos" para que el pre-pull de Coolify
+#    (`docker compose pull --ignore-buildable`) no intente bajar `gymsheet-backend:coolify` de un
+#    registro donde nunca existió: `--ignore-buildable` salta a quien declara `build:` (`migrate`);
+#    quien solo declara `image:` necesita `pull_policy: never` para no intentar el pull igual.
 name: gymsheet-backend
 
 x-app-environment: &app-environment
@@ -146,25 +158,13 @@ x-app-environment: &app-environment
   CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
   CLOUDINARY_FOLDER: ${CLOUDINARY_FOLDER:-gymsheet}
 
-# Todo lo que comparten los cinco workers. Sin `build:` — reutilizan la imagen que construye
-# `migrate`, igual que `api`. Sin `expose:` ni healthcheck: no escuchan en ningún puerto, así que
-# lo único que Docker puede vigilar de ellos es que el proceso siga vivo (`restart: unless-stopped`).
-x-app-build: &app-build
-  context: .
-  dockerfile: Dockerfile
-  cache_from:
-    - gymsheet-backend:coolify
-
+# Sin `build:` — reutilizan la imagen que construye `migrate` (ver regla 6 arriba: darle `build:`
+# a varios servicios del mismo tag los hace construir en PARALELO y compite por memoria). Sin
+# `expose:` ni healthcheck: no escuchan en ningún puerto, así que lo único que Docker puede vigilar
+# de ellos es que el proceso siga vivo (`restart: unless-stopped`).
 x-worker-service: &worker-service
   image: gymsheet-backend:coolify
-  # Repetir `build:` en cada servicio es lo que evita que Coolify intente hacer
-  # `docker pull gymsheet-backend:coolify` de un registro donde esa imagen nunca
-  # existió: `docker compose ... pull --ignore-buildable` solo se salta el pull
-  # de un servicio si ESE servicio trae su propio bloque `build:`, no le basta
-  # con que otro servicio del mismo compose construya la misma imagen. Con
-  # `cache_from` apuntando al mismo tag, BuildKit reutiliza las capas que ya
-  # construyó `migrate` y este build repetido tarda segundos, no minutos.
-  build: *app-build
+  pull_policy: never
   profiles: ['workers']
   environment:
     <<: *app-environment
@@ -261,7 +261,12 @@ services:
 
   migrate:
     image: gymsheet-backend:coolify
-    build: *app-build
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # NUNCA `cache_from`: en este VPS no hay registro, así que apuntar `cache_from` al propio tag
+      # falla siempre con "pull access denied" y solo ensucia el log — la caché que de verdad se usa
+      # es la del propio BuildKit del daemon, automática, sin declarar nada.
     command: ['node', 'dist/database/migrate.js', 'up']
     environment:
       <<: *app-environment
@@ -279,12 +284,11 @@ services:
         max-file: '3'
 
   api:
-    # `build:` repetido a propósito (ver comentario en `x-worker-service` arriba): sin él,
-    # Coolify intenta un `docker pull` de una imagen que nunca se publicó y el despliegue muere
-    # con "pull access denied ... repository does not exist". `cache_from` hace que este build
-    # reutilice las capas de `migrate` en vez de reconstruir todo de nuevo.
+    # Sin `build:` (ver regla 6 arriba): reutiliza la imagen que construyó `migrate`.
+    # `pull_policy: never` es lo que le dice al pre-pull de Coolify que no intente bajarla de un
+    # registro inexistente, sin caer en la trampa de reconstruir en paralelo.
     image: gymsheet-backend:coolify
-    build: *app-build
+    pull_policy: never
     environment:
       <<: *app-environment
       PORT: '3000'
