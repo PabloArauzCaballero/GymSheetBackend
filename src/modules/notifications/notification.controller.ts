@@ -1,9 +1,16 @@
-import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { NotificationService } from './notification.service';
+import { DeviceTokenService } from './device-token.service';
+import {
+  RegisterDeviceTokenInput,
+  UnregisterDeviceTokenInput,
+  registerDeviceTokenSchema,
+  unregisterDeviceTokenSchema,
+} from './device-token.schemas';
 import {
   NotificationListInput,
   UpdateNotificationPreferenceInput,
@@ -13,7 +20,10 @@ import {
 
 @Controller('notifications')
 export class NotificationController {
-  constructor(private readonly service: NotificationService) {}
+  constructor(
+    private readonly service: NotificationService,
+    private readonly deviceTokens: DeviceTokenService,
+  ) {}
 
   @Get('me')
   listMine(
@@ -43,5 +53,26 @@ export class NotificationController {
     input: UpdateNotificationPreferenceInput,
   ) {
     return this.service.updateMyPreference(user.id, input);
+  }
+
+  // 200 con un cuerpo chico, no 204: el interceptor global de respuesta siempre envuelve en
+  // `{ ok, data }`, y el cliente del móvil hace `response.json()` sin condicionar por status —
+  // un 204 de verdad (sin cuerpo) le rompería el parseo.
+  @Post('device-tokens')
+  async registerDeviceToken(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(registerDeviceTokenSchema)) input: RegisterDeviceTokenInput,
+  ) {
+    await this.deviceTokens.register(user.id, input);
+    return { registered: true } as const;
+  }
+
+  @Delete('device-tokens')
+  async unregisterDeviceToken(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(unregisterDeviceTokenSchema)) input: UnregisterDeviceTokenInput,
+  ) {
+    await this.deviceTokens.unregister(user.id, input);
+    return { registered: false } as const;
   }
 }

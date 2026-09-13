@@ -14,8 +14,12 @@ import { MAIL_TRANSPORT } from './delivery/mail.transport';
 import { SmtpMailTransport } from './delivery/smtp-mail.transport';
 import { InAppNotificationAdapter } from './delivery/in-app-notification.adapter';
 import { MockNotificationAdapter } from './delivery/mock-notification.adapter';
+import { ExpoPushService } from './delivery/expo-push.service';
 import { NotificationAdapterFactory } from './delivery/notification-adapter.factory';
 import { DeliveryAttemptModel } from './delivery-attempt.model';
+import { DeviceTokenModel } from './device-token.model';
+import { DeviceTokenRepository } from './device-token.repository';
+import { DeviceTokenService } from './device-token.service';
 import { MembershipReminderService } from './membership-reminder.service';
 import { NotificationController } from './notification.controller';
 import { NotificationDeliveryService } from './notification-delivery.service';
@@ -32,6 +36,7 @@ import { NotificationModel } from './notification.model';
       NotificationModel,
       NotificationPreferenceModel,
       DeliveryAttemptModel,
+      DeviceTokenModel,
       UserModel,
     ]),
   ],
@@ -44,6 +49,9 @@ import { NotificationModel } from './notification.model';
     MembershipReminderService,
     NotificationScheduleService,
     NotificationDeliveryService,
+    DeviceTokenRepository,
+    DeviceTokenService,
+    ExpoPushService,
     InAppNotificationAdapter,
     EmailNotificationAdapter,
     HttpGatewayNotificationAdapter,

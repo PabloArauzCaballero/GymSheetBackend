@@ -36,6 +36,7 @@ import { StaffProfileModel } from "../../modules/membership/staff-profile.model"
 import { DeliveryAttemptModel } from "../../modules/notifications/delivery-attempt.model";
 import { NotificationPreferenceModel } from "../../modules/notifications/notification-preference.model";
 import { NotificationModel } from "../../modules/notifications/notification.model";
+import { DeviceTokenModel } from "../../modules/notifications/device-token.model";
 import { AnthropometricProfileModel } from "../../modules/profiles/anthropometric-profile.model";
 import { BodyMeasurementModel } from "../../modules/profiles/body-measurement.model";
 import { OnboardingModel } from "../../modules/profiles/onboarding.model";
@@ -127,6 +128,7 @@ export const databaseModels = [
   AccessDecisionModel,
   NotificationModel,
   NotificationPreferenceModel,
+  DeviceTokenModel,
   DeliveryAttemptModel,
   DomainEventModel,
   OutboxJobModel,
