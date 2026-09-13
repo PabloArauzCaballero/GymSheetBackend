@@ -330,21 +330,30 @@ services:
 
   # Origen público de esta API (Tailscale Funnel, acceso anónimo). Nodo de tailnet propio
   # (hostname `gymsheet-backend`) por la misma razón que en GymSheetFrontend: los tres puertos
-  # de Funnel del VPS ya sirven `/` de otras apps. `TS_SERVE_CONFIG` lo aplica `containerboot`
-  # solo, reenviando a `http://gymsheet-backend:3000` por la red `coolify`.
+  # de Funnel del VPS ya sirven `/` de otras apps. El JSON de TS_SERVE_CONFIG se escribe DENTRO
+  # del contenedor al arrancar, no por bind mount: un bind mount a un archivo del repo se rompió
+  # en producción (en GymSheetFrontend) cuando un despliegue fallido dejó esa ruta como directorio
+  # vacío en el filesystem persistente de Coolify, y los redeploys siguientes no lo corrigen solos
+  # porque el sync de Coolify no reemplaza un directorio por un archivo del mismo nombre.
   tunnel:
     image: tailscale/tailscale:v1.90.6
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY:-}
       TS_HOSTNAME: gymsheet-backend
       TS_STATE_DIR: /var/lib/tailscale
-      TS_SERVE_CONFIG: /etc/tailscale/serve.json
+      TS_SERVE_CONFIG: /tmp/tailscale-serve.json
       TS_ACCEPT_DNS: 'false'
     volumes:
       - tailscale-backend-state:/var/lib/tailscale
-      - ./deploy/tailscale-serve.json:/etc/tailscale/serve.json:ro
     networks:
       - coolify
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        cat > /tmp/tailscale-serve.json <<'JSON'
+        {"TCP":{"443":{"HTTPS":true}},"Web":{"gymsheet-backend.taila8f993.ts.net:443":{"Handlers":{"/":{"Proxy":"http://gymsheet-backend:3000"}}}},"AllowFunnel":{"gymsheet-backend.taila8f993.ts.net:443":true}}
+        JSON
+        exec /usr/local/bin/containerboot
     restart: unless-stopped
     deploy:
       resources:
