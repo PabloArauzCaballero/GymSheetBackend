@@ -21,6 +21,13 @@
 #    el build sí compila (development no salta devDependencies), pero igual conviene marcarlas
 #    Runtime-only: build-time innecesario solo invalida caché de capas en cada cambio de env.
 # 4. Hay que activar «Connect To Predefined Network» en la aplicación.
+# 5. El servicio `tunnel` da a esta API un origen público real (Tailscale Funnel, acceso anónimo,
+#    sin VPN) para que el frontend use en `BACKEND_PUBLIC_ORIGIN`: el navegador del usuario NO
+#    está en la red `coolify`, así que el alias interno `gymsheet-backend:3000` no le sirve para
+#    abrir el socket de chat directo. Requiere el secret `TS_AUTHKEY` en Coolify (mismo valor que
+#    en GymSheetFrontend sirve — no es exclusivo de un repo). Con `:-` en vez de `:?`: sin la key
+#    puesta, solo `tunnel` falla, `api` sigue sirviendo normal (ver GymSheetFrontend para el
+#    incidente real de por qué NO se usa `:?` aquí).
 name: gymsheet-backend
 
 x-app-environment: &app-environment
@@ -321,6 +328,34 @@ services:
       retries: 3
       start_period: 20s
 
+  # Origen público de esta API (Tailscale Funnel, acceso anónimo). Nodo de tailnet propio
+  # (hostname `gymsheet-backend`) por la misma razón que en GymSheetFrontend: los tres puertos
+  # de Funnel del VPS ya sirven `/` de otras apps. `TS_SERVE_CONFIG` lo aplica `containerboot`
+  # solo, reenviando a `http://gymsheet-backend:3000` por la red `coolify`.
+  tunnel:
+    image: tailscale/tailscale:v1.90.6
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: gymsheet-backend
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /etc/tailscale/serve.json
+      TS_ACCEPT_DNS: 'false'
+    volumes:
+      - tailscale-backend-state:/var/lib/tailscale
+      - ./deploy/tailscale-serve.json:/etc/tailscale/serve.json:ro
+    networks:
+      - coolify
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
   # ---------------------------------------------------------------------------
   # Workers. Apagados por defecto: cada uno es un proceso Node completo (~200 MB
   # con el runtime de Nest dentro) y encenderlos los cinco a ciegas puede dejar
@@ -367,6 +402,7 @@ services:
 volumes:
   postgres-data:
   media-data:
+  tailscale-backend-state:
 
 networks:
   default: {}

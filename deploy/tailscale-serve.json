@@ -1,0 +1,19 @@
+{
+  "TCP": {
+    "443": {
+      "HTTPS": true
+    }
+  },
+  "Web": {
+    "gymsheet-backend.taila8f993.ts.net:443": {
+      "Handlers": {
+        "/": {
+          "Proxy": "http://gymsheet-backend:3000"
+        }
+      }
+    }
+  },
+  "AllowFunnel": {
+    "gymsheet-backend.taila8f993.ts.net:443": true
+  }
+}
