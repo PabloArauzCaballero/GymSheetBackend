@@ -78,12 +78,15 @@ export class MediaMirrorService {
           maxBytes: this.config.maxBytes,
           timeoutMs: this.config.timeoutMs,
         });
-        const stored = await this.storage.upload({
-          originalName: `${row.code}`,
-          mimeType: image.mimeType,
-          sizeBytes: image.buffer.byteLength,
-          buffer: image.buffer,
-        });
+        const stored = await this.storage.upload(
+          {
+            originalName: `${row.code}`,
+            mimeType: image.mimeType,
+            sizeBytes: image.buffer.byteLength,
+            buffer: image.buffer,
+          },
+          { category: "catalog" },
+        );
         await row.update({ storageUrl: stored.url });
         mirrored += 1;
         this.logger.log({
@@ -145,12 +148,15 @@ export class MediaMirrorService {
           maxBytes: this.config.maxBytes,
           timeoutMs: this.config.timeoutMs,
         });
-        const stored = await this.storage.upload({
-          originalName: `exercise-${row.exerciseId}-${row.mediaType}`,
-          mimeType: image.mimeType,
-          sizeBytes: image.buffer.byteLength,
-          buffer: image.buffer,
-        });
+        const stored = await this.storage.upload(
+          {
+            originalName: `exercise-${row.exerciseId}-${row.mediaType}`,
+            mimeType: image.mimeType,
+            sizeBytes: image.buffer.byteLength,
+            buffer: image.buffer,
+          },
+          { category: "catalog" },
+        );
         await row.update({
           url: stored.url,
           mimeType: image.mimeType,

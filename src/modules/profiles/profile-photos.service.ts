@@ -60,12 +60,15 @@ export class ProfilePhotosService {
       );
     }
 
-    const stored = await this.storage.upload({
-      originalName: file.originalname,
-      mimeType,
-      sizeBytes: file.size,
-      buffer: file.buffer,
-    });
+    const stored = await this.storage.upload(
+      {
+        originalName: file.originalname,
+        mimeType,
+        sizeBytes: file.size,
+        buffer: file.buffer,
+      },
+      { category: "perfiles", ownerUserId: userId },
+    );
 
     const photo = await this.repository.create(userId, stored, existingCount);
     return mapProfilePhotoToResponse(photo);

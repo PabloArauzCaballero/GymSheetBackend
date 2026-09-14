@@ -95,6 +95,19 @@ export class MediaRetentionService {
       return { fileRemoved: false };
     }
 
+    // Almacén inmutable (ADR-0010): la fila ya cayó —la story caduca, la foto
+    // sale de la galería— pero el binario se conserva por requisito de
+    // producto. Se informa aquí en vez de dejar que el no-op del adaptador
+    // haga pasar por borrado algo que no lo fue.
+    if (this.storage.immutable) {
+      this.logger.log({
+        event: "media.retention.file_kept",
+        storageKey,
+        reason: "immutable_storage",
+      });
+      return { fileRemoved: false };
+    }
+
     await this.storage.remove(storageKey);
     this.logger.log({ event: "media.retention.file_removed", storageKey });
     return { fileRemoved: true };

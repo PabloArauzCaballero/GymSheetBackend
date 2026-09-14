@@ -1,37 +1,15 @@
-import { UnsupportedMediaTypeException } from "@nestjs/common";
 import { createHash } from "crypto";
 import { existsSync } from "fs";
 import { mkdir, unlink, writeFile } from "fs/promises";
-import { join, resolve } from "path";
+import { dirname, join, resolve, sep } from "path";
 import {
   MediaStorageProvider,
   MediaUploadInput,
+  MediaUploadTarget,
+  mediaTargetPrefix,
   StoredAsset,
 } from "../media-storage.port";
-
-/**
- * Única fuente de la extensión con la que se escribe un binario en disco.
- *
- * La extensión NO puede derivarse del nombre que manda el cliente: `express.static`
- * resuelve el `Content-Type` a partir de ella, así que quien elige la extensión
- * elige cómo se interpreta el fichero al servirlo. Un adjunto declarado
- * `video/quicktime` con nombre `algo.html` quedaba escrito como `<sha>.html` y se
- * servía como `text/html` desde el propio origen de la API — XSS almacenado.
- *
- * Por eso el mapa es cerrado y `resolveExtension` rechaza lo que no esté aquí:
- * añadir un tipo permitido en `MEDIA_ALLOWED_MIME` o `CHAT_MEDIA_ALLOWED_MIME`
- * obliga a declarar también su extensión, y olvidarlo falla de forma visible en
- * vez de abrir el agujero en silencio.
- */
-export const MIME_EXTENSION: Record<string, string> = {
-  "image/jpeg": ".jpg",
-  "image/png": ".png",
-  "image/webp": ".webp",
-  "image/gif": ".gif",
-  "video/mp4": ".mp4",
-  "video/quicktime": ".mov",
-  "application/pdf": ".pdf",
-};
+import { resolveMediaExtension } from "./mime-extension";
 
 export interface LocalStorageConfig {
   /** Directorio raíz donde se escriben los binarios. */
@@ -44,12 +22,21 @@ export interface LocalStorageConfig {
  * Adaptador de almacenamiento en disco local. Es el respaldo del `FileInterceptor`
  * de Multer (memoryStorage): recibe el buffer en memoria y lo persiste en disco.
  *
+ * La clave replica el layout del adaptador remoto
+ * (`users/<userId>/<categoria>/<sha256>.<ext>`, ver `mediaTargetPrefix`) para que
+ * desarrollo y producción produzcan exactamente la misma estructura y cambiar de
+ * proveedor no obligue a reescribir claves.
+ *
  * Idempotencia por contenido: el nombre de archivo se deriva del SHA-256 del
- * binario, de modo que subir el mismo contenido dos veces no crea un archivo
- * nuevo ni cambia la URL (`reused = true` en la segunda vez).
+ * binario, de modo que subir el mismo contenido dos veces EN LA MISMA CARPETA no
+ * crea un archivo nuevo ni cambia la URL (`reused = true` en la segunda vez). La
+ * deduplicación ya no cruza usuarios: dos socios que suben la misma foto tienen
+ * cada uno la suya, porque la propiedad del contenido pesa más que el ahorro de
+ * disco (y porque borrar la del primero no puede afectar al segundo).
  */
 export class LocalStorageAdapter implements MediaStorageProvider {
   readonly name = "local" as const;
+  readonly immutable = false;
   private readonly root: string;
   private readonly publicBaseUrl: string;
 
@@ -58,15 +45,18 @@ export class LocalStorageAdapter implements MediaStorageProvider {
     this.publicBaseUrl = config.publicBaseUrl.replace(/\/+$/, "");
   }
 
-  async upload(input: MediaUploadInput): Promise<StoredAsset> {
+  async upload(
+    input: MediaUploadInput,
+    target: MediaUploadTarget,
+  ): Promise<StoredAsset> {
     const checksumSha256 = createHash("sha256").update(input.buffer).digest("hex");
-    const extension = this.resolveExtension(input);
-    const fileName = `${checksumSha256}${extension}`;
-    const absolutePath = join(this.root, fileName);
+    const extension = resolveMediaExtension(input.mimeType);
+    const key = `${mediaTargetPrefix(target)}/${checksumSha256}${extension}`;
+    const absolutePath = this.resolveWithinRoot(key);
 
     const reused = existsSync(absolutePath);
     if (!reused) {
-      await mkdir(this.root, { recursive: true });
+      await mkdir(dirname(absolutePath), { recursive: true });
       // `wx` falla si otro proceso ganó la carrera; en ese caso el contenido es
       // idéntico (misma clave por checksum), así que lo tratamos como reutilizado.
       try {
@@ -78,8 +68,8 @@ export class LocalStorageAdapter implements MediaStorageProvider {
 
     return {
       provider: this.name,
-      key: fileName,
-      url: `${this.publicBaseUrl}/${fileName}`,
+      key,
+      url: `${this.publicBaseUrl}/${key}`,
       sizeBytes: input.buffer.byteLength,
       checksumSha256,
       reused,
@@ -87,28 +77,29 @@ export class LocalStorageAdapter implements MediaStorageProvider {
   }
 
   async remove(key: string): Promise<void> {
-    const absolutePath = join(this.root, key);
+    const absolutePath = this.resolveWithinRoot(key);
     if (existsSync(absolutePath)) await unlink(absolutePath);
   }
 
   /**
-   * Deriva la extensión SÓLO del tipo declarado y validado, nunca del nombre
-   * que envía el cliente. Antes había un respaldo a `extname(originalName)`
-   * para los MIME sin mapear: bastaba declarar un tipo permitido pero no
-   * mapeado y llamar al fichero `algo.html` para escribir `<sha>.html` en la
-   * raíz pública. Un MIME sin extensión conocida es un fallo de configuración
-   * (alguien lo añadió a la allowlist sin añadirlo aquí), no algo que el
-   * usuario deba poder resolver eligiendo el nombre.
+   * Resuelve una clave dentro de la raíz y se niega a salir de ella.
+   *
+   * Mientras las claves eran un SHA-256 plano, `join(root, key)` no podía
+   * escaparse. Ahora llevan barras y llegan desde la base de datos, así que un
+   * valor con `..` —fila corrompida, migración mal hecha, dato importado—
+   * apuntaría a un `unlink` fuera del almacén. El guardia es barato y convierte
+   * ese caso en un error visible en vez de un borrado silencioso.
    */
-  private resolveExtension(input: MediaUploadInput): string {
-    const extension = MIME_EXTENSION[input.mimeType.toLowerCase()];
-
-    if (!extension) {
-      throw new UnsupportedMediaTypeException(
-        "Tipo de archivo no admitido para almacenamiento.",
+  private resolveWithinRoot(key: string): string {
+    const absolutePath = resolve(join(this.root, key));
+    if (
+      absolutePath !== this.root &&
+      !absolutePath.startsWith(`${this.root}${sep}`)
+    ) {
+      throw new Error(
+        `Clave de almacenamiento fuera de la raíz de media: ${key}`,
       );
     }
-
-    return extension;
+    return absolutePath;
   }
 }

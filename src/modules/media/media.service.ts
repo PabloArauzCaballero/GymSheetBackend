@@ -68,12 +68,16 @@ export class MediaService {
         `Tipo de archivo no permitido. Permitidos: ${this.config.allowedMimeTypes.join(", ")}.`,
       );
 
-    const stored = await this.storage.upload({
-      originalName: file.originalname,
-      mimeType,
-      sizeBytes: file.size,
-      buffer: file.buffer,
-    });
+    const stored = await this.storage.upload(
+      {
+        originalName: file.originalname,
+        mimeType,
+        sizeBytes: file.size,
+        buffer: file.buffer,
+      },
+      // Mediateca administrada del gimnasio: no pertenece a ningún socio.
+      { category: "catalog" },
+    );
 
     const record = await this.repository.upsertByCode({
       code: metadata.code,

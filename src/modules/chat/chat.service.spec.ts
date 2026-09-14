@@ -259,6 +259,9 @@ describe("ChatService.sendMediaMessage", () => {
 
     expect(upload).toHaveBeenCalledWith(
       expect.objectContaining({ originalName: "photo.jpg", mimeType: "image/jpeg" }),
+      // El adjunto cuelga del perfil de QUIEN LO ENVÍA, dentro de la carpeta de
+      // la conversación (ADR-0010).
+      { category: "chats", ownerUserId: userA, conversationId: "conv-1" },
     );
     expect(createMessage).toHaveBeenCalledWith(
       "conv-1",

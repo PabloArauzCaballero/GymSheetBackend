@@ -29,6 +29,15 @@ import { MEDIA_STORAGE_PROVIDER } from "./media-storage.port";
           provider: env.MEDIA_STORAGE_PROVIDER,
           localRoot: env.MEDIA_STORAGE_LOCAL_ROOT,
           publicBaseUrl: env.MEDIA_STORAGE_PUBLIC_BASE_URL,
+          minio: {
+            endPoint: env.MINIO_ENDPOINT,
+            port: env.MINIO_PORT,
+            useSSL: env.MINIO_USE_SSL,
+            accessKey: env.MINIO_ACCESS_KEY,
+            secretKey: env.MINIO_SECRET_KEY,
+            bucket: env.MINIO_BUCKET,
+            region: env.MINIO_REGION,
+          },
         }),
     },
     {

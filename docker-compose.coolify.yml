@@ -151,8 +151,25 @@ x-app-environment: &app-environment
   MEDIA_STORAGE_PUBLIC_BASE_URL: ${MEDIA_STORAGE_PUBLIC_BASE_URL:-http://localhost:3000/media}
   MEDIA_UPLOAD_MAX_BYTES: ${MEDIA_UPLOAD_MAX_BYTES:-5242880}
   MEDIA_ALLOWED_MIME: ${MEDIA_ALLOWED_MIME:-image/jpeg,image/png,image/webp,image/gif}
+  # Faltaban: el contenedor corría con los defaults de env.ts y cualquier ajuste
+  # pegado en Coolify no llegaba al proceso (ver regla 2 arriba).
+  CHAT_MEDIA_MAX_BYTES: ${CHAT_MEDIA_MAX_BYTES:-26214400}
+  CHAT_MEDIA_ALLOWED_MIME: '${CHAT_MEDIA_ALLOWED_MIME:-image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime}'
   MEDIA_MIRROR_ALLOWED_HOSTS: ${MEDIA_MIRROR_ALLOWED_HOSTS:-images.unsplash.com,raw.githubusercontent.com}
   MEDIA_MIRROR_TIMEOUT_MS: ${MEDIA_MIRROR_TIMEOUT_MS:-15000}
+
+  # Almacén de media inmutable (ADR-0010). `MINIO_ENDPOINT` es el alias INTERNO
+  # del servicio de abajo: por ahí escribe la API. Por dónde LEEN los navegadores
+  # es otra cosa — `MEDIA_STORAGE_PUBLIC_BASE_URL`, que apunta al Funnel.
+  # Las credenciales sólo se exigen con MEDIA_STORAGE_PROVIDER=minio, y quien lo
+  # comprueba es el factory al arrancar (sin fallback silencioso).
+  MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio}
+  MINIO_PORT: ${MINIO_PORT:-9000}
+  MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-}
+  MINIO_BUCKET: ${MINIO_BUCKET:-gymsheet-media}
+  MINIO_REGION: ${MINIO_REGION:-us-east-1}
   CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
   CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
   CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
@@ -168,6 +185,14 @@ x-worker-service: &worker-service
   profiles: ['workers']
   environment:
     <<: *app-environment
+  volumes:
+    # `worker-stories-purge` borra binarios de stories caducadas. Sin este
+    # volumen veía un /app/storage/media vacío: la fila caía pero el fichero
+    # quedaba huérfano en el volumen de `api`, sin error y sin rastro. Con
+    # MEDIA_STORAGE_PROVIDER=minio el borrado ya no ocurre nunca (ADR-0010) y
+    # el montaje es inocuo, pero mientras exista el proveedor local tiene que
+    # ver exactamente el mismo disco que la API.
+    - media-data:/app/storage/media
   depends_on:
     postgres:
       condition: service_healthy
@@ -376,6 +401,186 @@ services:
         max-file: '3'
 
   # ---------------------------------------------------------------------------
+  # Almacén de media inmutable (ADR-0010). Sustituye al volumen `media-data`
+  # como destino de lo que suben los socios: fotos de perfil, stories y
+  # adjuntos de chat, ordenados por usuario en
+  # `users/<userId>/<categoria>/<sha256>.<ext>`.
+  #
+  # Sin `ports:` como el resto del stack: la API le habla por el alias interno
+  # `minio` y el mundo entra por el Funnel de `tunnel-media`.
+  #
+  # `api` NO declara `depends_on` sobre estos dos servicios a propósito, por la
+  # misma razón que `tunnel` usa `:-` y no `:?`: si el almacén tiene un mal día,
+  # la API tiene que seguir sirviendo entrenamientos, membresías y chat de
+  # texto. Lo que no puede pasar es que arranque a medio configurar, y de eso se
+  # encarga el factory, que detiene el proceso si falta una credencial.
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+    networks:
+      - default
+      - coolify
+    expose:
+      - '9000'
+    stop_grace_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # Una pasada al desplegar, como `migrate`: crea el bucket, activa el
+  # versionado y deja al usuario de la API SIN permiso de borrado. Reutiliza la
+  # imagen del servidor —que ya trae `mc`— para no bajar una segunda.
+  #
+  # Idempotente: se ejecuta entero en cada despliegue y converge al mismo
+  # estado. Es además el sitio donde vive la garantía de "no se borra nunca":
+  # el no-op del adaptador es código y alguien puede quitarlo; esto es el
+  # servidor diciendo que no.
+  minio-init:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
+      MINIO_BUCKET: ${MINIO_BUCKET:-gymsheet-media}
+    entrypoint: ['/bin/sh', '-c']
+    # `$$` porque Compose interpola `$` antes de que lo vea la shell del contenedor.
+    command:
+      - |
+        set -eu
+        mc alias set gs "http://minio:9000" "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+
+        mc mb --ignore-existing gs/"$$MINIO_BUCKET"
+        # Versionado: una sobrescritura nunca destruye la versión previa.
+        mc version enable gs/"$$MINIO_BUCKET"
+
+        # Política del usuario de la API: escribir y leer, NUNCA borrar. Sin
+        # s3:DeleteObject ni s3:DeleteObjectVersion, a propósito.
+        cat > /tmp/app-policy.json <<JSON
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": ["s3:PutObject", "s3:GetObject"],
+              "Resource": ["arn:aws:s3:::$$MINIO_BUCKET/*"]
+            },
+            {
+              "Effect": "Allow",
+              "Action": ["s3:ListBucket"],
+              "Resource": ["arn:aws:s3:::$$MINIO_BUCKET"]
+            }
+          ]
+        }
+        JSON
+
+        mc admin user info gs "$$MINIO_ACCESS_KEY" >/dev/null 2>&1 \
+          || mc admin user add gs "$$MINIO_ACCESS_KEY" "$$MINIO_SECRET_KEY"
+        mc admin policy create gs gymsheet-api /tmp/app-policy.json \
+          || mc admin policy add gs gymsheet-api /tmp/app-policy.json
+        mc admin policy attach gs gymsheet-api --user "$$MINIO_ACCESS_KEY" 2>/dev/null || true
+
+        # Lectura anónima por prefijo. `perfiles` es público por diseño (el
+        # directorio del gimnasio lo consumen navegadores sin sesión); el resto
+        # conserva el modelo que ya tenía el adaptador local, donde
+        # express.static servía todo el directorio. Se apoya en que la clave es
+        # el SHA-256 del contenido, así que la URL no se adivina — y por eso
+        # NO se concede s3:ListBucket anónimo: sin listado, no hay enumeración.
+        cat > /tmp/bucket-policy.json <<JSON
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"AWS": ["*"]},
+              "Action": ["s3:GetObject"],
+              "Resource": [
+                "arn:aws:s3:::$$MINIO_BUCKET/users/*/perfiles/*",
+                "arn:aws:s3:::$$MINIO_BUCKET/users/*/stories/*",
+                "arn:aws:s3:::$$MINIO_BUCKET/users/*/publicaciones/*",
+                "arn:aws:s3:::$$MINIO_BUCKET/users/*/chats/*",
+                "arn:aws:s3:::$$MINIO_BUCKET/catalog/*"
+              ]
+            }
+          ]
+        }
+        JSON
+        mc anonymous set-json /tmp/bucket-policy.json gs/"$$MINIO_BUCKET"
+
+        echo "minio-init: bucket $$MINIO_BUCKET listo (versionado on, usuario de API sin borrado)"
+    restart: 'no'
+    init: true
+    networks:
+      - default
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # Origen público del almacén, nodo de tailnet propio (`gymsheet-media`) por la
+  # misma razón que `tunnel`: los puertos de Funnel de un nodo ya sirven `/` de
+  # otra cosa.
+  #
+  # El proxy apunta a la RAÍZ de MinIO, no al bucket, así que la URL pública
+  # lleva el nombre del bucket delante (`.../gymsheet-media/users/...`). Es a
+  # propósito: esas URLs se persisten en base de datos y sobreviven al cambio,
+  # así que vale más una forma que se sabe exacta que una reescritura de ruta
+  # elegante cuyo comportamiento haya que adivinar.
+  tunnel-media:
+    image: tailscale/tailscale:v1.90.6
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: gymsheet-media
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /tmp/tailscale-serve.json
+      TS_ACCEPT_DNS: 'false'
+    volumes:
+      - tailscale-media-state:/var/lib/tailscale
+    networks:
+      - default
+      - coolify
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        cat > /tmp/tailscale-serve.json <<'JSON'
+        {"TCP":{"443":{"HTTPS":true}},"Web":{"gymsheet-media.taila8f993.ts.net:443":{"Handlers":{"/":{"Proxy":"http://minio:9000"}}}},"AllowFunnel":{"gymsheet-media.taila8f993.ts.net:443":true}}
+        JSON
+        exec /usr/local/bin/containerboot
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # ---------------------------------------------------------------------------
   # Workers. Apagados por defecto: cada uno es un proceso Node completo (~200 MB
   # con el runtime de Nest dentro) y encenderlos los cinco a ciegas puede dejar
   # sin memoria al VPS y tumbar el despliegue de la API, que es lo que de verdad
@@ -420,8 +625,13 @@ services:
 
 volumes:
   postgres-data:
+  # Media del proveedor `local`. Se conserva aunque el stack ya use MinIO: es el
+  # respaldo de lo que hubiera antes de la conmutación, y borrarlo sería
+  # exactamente lo que este cambio promete que no pasa.
   media-data:
+  minio-data:
   tailscale-backend-state:
+  tailscale-media-state:
 
 networks:
   default: {}

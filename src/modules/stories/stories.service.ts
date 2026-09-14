@@ -40,12 +40,15 @@ export class StoriesService {
     }
     const mediaType = mimeType.startsWith("video/") ? "video" : "image";
 
-    const stored = await this.mediaStorage.upload({
-      originalName: file.originalname,
-      mimeType,
-      sizeBytes: file.size,
-      buffer: file.buffer,
-    });
+    const stored = await this.mediaStorage.upload(
+      {
+        originalName: file.originalname,
+        mimeType,
+        sizeBytes: file.size,
+        buffer: file.buffer,
+      },
+      { category: "stories", ownerUserId: userId },
+    );
 
     const story = await this.repository.create(userId, tenantId, stored, mediaType);
     return mapStoryToResponse(story);

@@ -58,6 +58,7 @@ describe("MediaService", () => {
   beforeEach(() => {
     storage = {
       name: "local",
+      immutable: false,
       upload: jest.fn().mockResolvedValue(fakeStored()),
       remove: jest.fn(),
     };
@@ -97,6 +98,9 @@ describe("MediaService", () => {
 
     expect(storage.upload).toHaveBeenCalledWith(
       expect.objectContaining({ mimeType: "image/jpeg", sizeBytes: 3 }),
+      // La mediateca es contenido administrado del gimnasio: no cuelga del
+      // perfil de ningún socio.
+      { category: "catalog" },
     );
     expect(repository.upsertByCode).toHaveBeenCalledWith(
       expect.objectContaining({

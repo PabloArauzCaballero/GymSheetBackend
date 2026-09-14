@@ -194,12 +194,18 @@ export class ChatService {
       throw new ForbiddenException("Esta conversación es de solo lectura.");
     }
 
-    const stored = await this.mediaStorage.upload({
-      originalName: file.originalname,
-      mimeType,
-      sizeBytes: file.size,
-      buffer: file.buffer,
-    });
+    const stored = await this.mediaStorage.upload(
+      {
+        originalName: file.originalname,
+        mimeType,
+        sizeBytes: file.size,
+        buffer: file.buffer,
+      },
+      // La carpeta es del REMITENTE: quien sube es el dueño del binario, y así
+      // un adjunto vive bajo el perfil de quien lo compartió aunque la
+      // conversación tenga dos lados.
+      { category: "chats", ownerUserId: senderId, conversationId },
+    );
 
     return this.persistMessage(conversationId, senderId, {
       type: options.type,

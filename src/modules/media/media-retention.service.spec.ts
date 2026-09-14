@@ -19,6 +19,7 @@ function createService(options: {
   isReferenced: boolean;
   storageRemove?: jest.Mock;
   lockStorageKey?: jest.Mock;
+  immutable?: boolean;
 }) {
   const lockStorageKey =
     options.lockStorageKey ?? jest.fn().mockResolvedValue(undefined);
@@ -28,7 +29,12 @@ function createService(options: {
   const service = new MediaRetentionService(
     createSequelize(),
     { lockStorageKey, isReferenced } as unknown as MediaReferencesRepository,
-    { name: "local", upload: jest.fn(), remove } as unknown as MediaStorageProvider,
+    {
+      name: "local",
+      immutable: options.immutable ?? false,
+      upload: jest.fn(),
+      remove,
+    } as unknown as MediaStorageProvider,
   );
 
   return { service, lockStorageKey, isReferenced, remove };
@@ -65,6 +71,30 @@ describe("MediaRetentionService.deleteRowAndUnreferencedFile", () => {
     expect(result).toEqual({ fileRemoved: true });
     expect(deleteOwnRow).toHaveBeenCalledWith(transaction);
     expect(remove).toHaveBeenCalledWith("sha256.jpg");
+  });
+
+  /**
+   * Requisito de producto (ADR-0010): con un almacén inmutable la fila cae
+   * igual —la story caduca, la foto sale de la galería— pero el binario se
+   * conserva. Lo importante de este test es la SEGUNDA aserción: el servicio
+   * no debe anunciar `fileRemoved: true` por un borrado que el adaptador va a
+   * ignorar.
+   */
+  it("keeps the file on immutable storage, even with no references left", async () => {
+    const { service, remove } = createService({
+      isReferenced: false,
+      immutable: true,
+    });
+    const deleteOwnRow = jest.fn().mockResolvedValue(undefined);
+
+    const result = await service.deleteRowAndUnreferencedFile(
+      "users/u1/stories/sha256.jpg",
+      deleteOwnRow,
+    );
+
+    expect(deleteOwnRow).toHaveBeenCalledWith(transaction);
+    expect(result).toEqual({ fileRemoved: false });
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it("counts references only after deleting its own row, inside one transaction", async () => {

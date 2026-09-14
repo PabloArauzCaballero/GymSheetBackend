@@ -464,11 +464,13 @@ export const environmentSchema = z
 
     /**
      * Almacenamiento de media (arquitectura de puertos y adaptadores). `local`
-     * persiste en disco vía el adaptador Multer; `cloudinary`/`s3` requieren su
-     * adaptador implementado (hoy detienen el arranque, sin fallback silencioso).
+     * persiste en disco vía el adaptador Multer; `minio` en un almacén
+     * S3-compatible auto-hospedado e INMUTABLE (ver ADR-0010);
+     * `cloudinary`/`s3` requieren su adaptador implementado (hoy detienen el
+     * arranque, sin fallback silencioso).
      */
     MEDIA_STORAGE_PROVIDER: z
-      .enum(["local", "cloudinary", "s3"])
+      .enum(["local", "minio", "cloudinary", "s3"])
       .default("local"),
     MEDIA_STORAGE_LOCAL_ROOT: z.string().trim().min(1).default("storage/media"),
     MEDIA_STORAGE_PUBLIC_BASE_URL: z
@@ -508,6 +510,23 @@ export const environmentSchema = z
       .min(1000)
       .max(60000)
       .default(15000),
+    /**
+     * Conexión al almacén MinIO. Sólo se exigen cuando
+     * `MEDIA_STORAGE_PROVIDER=minio` (lo comprueba el factory al construir el
+     * adaptador, que es donde el fallo es accionable).
+     *
+     * `MINIO_ENDPOINT` es el HOST interno del servidor (p. ej. el alias de
+     * Compose `minio`), no la URL pública: por dónde escribe la API y por dónde
+     * leen los navegadores son cosas distintas — lo público es
+     * `MEDIA_STORAGE_PUBLIC_BASE_URL`.
+     */
+    MINIO_ENDPOINT: optionalNonEmptyStringSchema,
+    MINIO_PORT: z.coerce.number().int().min(1).max(65535).default(9000),
+    MINIO_USE_SSL: environmentBooleanSchema.default(false),
+    MINIO_ACCESS_KEY: optionalNonEmptyStringSchema,
+    MINIO_SECRET_KEY: optionalSecretSchema,
+    MINIO_BUCKET: z.string().trim().min(1).default("gymsheet-media"),
+    MINIO_REGION: z.string().trim().min(1).default("us-east-1"),
     /** Credenciales opcionales para un futuro CloudinaryAdapter (no versionar valores). */
     CLOUDINARY_CLOUD_NAME: z.preprocess(
       (value) => (value === "" ? undefined : value),
