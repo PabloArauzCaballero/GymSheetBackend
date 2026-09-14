@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { env } from "../../config/env";
-import { ExpoPushService } from "../notifications/delivery/expo-push.service";
+import { PushDispatcherService } from "../notifications/delivery/push-dispatcher.service";
 import { UsersRepository } from "../users/users.repository";
 import { SocialService } from "../social/social.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
@@ -28,7 +28,9 @@ export class ChatService {
     private readonly presence: ChatPresenceService,
     private readonly systemChat: SystemChatService,
     private readonly usersRepository: UsersRepository,
-    private readonly expoPush: ExpoPushService,
+    // El despachador, no un transporte concreto: quien no tiene la app abierta
+    // puede tener el navegador delante, y desde ADR-0011 ambos destinos suenan.
+    private readonly push: PushDispatcherService,
     @Inject(MEDIA_STORAGE_PROVIDER) private readonly mediaStorage: MediaStorageProvider,
   ) {}
 
@@ -131,7 +133,13 @@ export class ChatService {
       const title = sender?.fullName ?? "Mensaje nuevo";
       const body = ChatService.previewFor(message);
       await Promise.all(
-        absent.map((participant) => this.expoPush.sendToUser(participant.userId, { title, body })),
+        absent.map((participant) =>
+          this.push.sendToUser(participant.userId, {
+            title,
+            body,
+            url: `/chat/${message.conversationId}`,
+          }),
+        ),
       );
     } catch (error: unknown) {
       this.logger.warn({

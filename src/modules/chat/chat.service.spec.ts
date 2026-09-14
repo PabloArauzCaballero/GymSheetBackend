@@ -3,7 +3,7 @@ import { UserStatus } from "../../common/enums/domain.enums";
 import { SocialService } from "../social/social.service";
 import { UsersRepository } from "../users/users.repository";
 import { MediaStorageProvider } from "../media/media-storage.port";
-import { ExpoPushService } from "../notifications/delivery/expo-push.service";
+import { PushDispatcherService } from "../notifications/delivery/push-dispatcher.service";
 import { ChatEventsService } from "./chat-events.service";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatRepository } from "./chat.repository";
@@ -20,7 +20,7 @@ function createService(
   presenceOverrides: Partial<ChatPresenceService> = {},
   systemChatOverrides: Partial<SystemChatService> = {},
   usersRepositoryOverrides: Partial<UsersRepository> = {},
-  expoPushOverrides: Partial<ExpoPushService> = {},
+  pushOverrides: Partial<PushDispatcherService> = {},
   mediaStorageOverrides: Partial<MediaStorageProvider> = {},
 ): ChatService {
   return new ChatService(
@@ -48,8 +48,8 @@ function createService(
     } as unknown as UsersRepository,
     {
       sendToUser: jest.fn().mockResolvedValue({ sent: 1, deactivated: 0 }),
-      ...expoPushOverrides,
-    } as unknown as ExpoPushService,
+      ...pushOverrides,
+    } as unknown as PushDispatcherService,
     {
       name: "local",
       upload: jest.fn().mockResolvedValue({
@@ -523,6 +523,9 @@ describe("ChatService avisa por push a quien no está conectado", () => {
     expect(sendToUser).toHaveBeenCalledWith(userB, {
       title: "Camila Ruiz",
       body: "¿Entrenamos mañana?",
+      // Ruta relativa: quien la resuelve contra su propio origen es el service
+      // worker del navegador, y así el mismo aviso vale para cualquier host.
+      url: "/chat/conv-1",
     });
   });
 
@@ -554,6 +557,7 @@ describe("ChatService avisa por push a quien no está conectado", () => {
     expect(sendToUser).toHaveBeenCalledWith(userB, {
       title: "Camila Ruiz",
       body: "Te envió una foto de vista única",
+      url: "/chat/conv-1",
     });
   });
 

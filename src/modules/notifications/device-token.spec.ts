@@ -1,3 +1,4 @@
+import { PushDispatcherService } from './delivery/push-dispatcher.service';
 import { DeviceTokenRepository } from './device-token.repository';
 import { DeviceTokenService } from './device-token.service';
 import { DevicePlatform } from './device-token.model';
@@ -44,17 +45,32 @@ describe('registerDeviceTokenSchema', () => {
   });
 });
 
+/** Despachador que sí sabe entregar a cualquier plataforma. */
+function createPush(): PushDispatcherService {
+  return {
+    supports: jest.fn().mockReturnValue(true),
+  } as unknown as PushDispatcherService;
+}
+
 describe('DeviceTokenService', () => {
   it('registra el dispositivo a nombre de la sesión', async () => {
     const repository = {
       upsert: jest.fn().mockResolvedValue(undefined),
       deactivate: jest.fn().mockResolvedValue(undefined),
     } as unknown as DeviceTokenRepository;
-    const service = new DeviceTokenService(repository);
+    const service = new DeviceTokenService(repository, createPush());
 
     await service.register(userId, { expoPushToken: token, platform: DevicePlatform.IOS });
 
-    expect(repository.upsert).toHaveBeenCalledWith(userId, DevicePlatform.IOS, token);
+    // Desde ADR-0011 el repositorio recibe el destino ya traducido: el token de
+    // Expo va en `pushToken`, y las claves de cifrado quedan nulas porque un
+    // destino móvil no las tiene.
+    expect(repository.upsert).toHaveBeenCalledWith(userId, {
+      platform: DevicePlatform.IOS,
+      pushToken: token,
+      p256dh: null,
+      auth: null,
+    });
   });
 
   it('la baja va acotada al dueño del token', async () => {
@@ -62,7 +78,7 @@ describe('DeviceTokenService', () => {
       upsert: jest.fn().mockResolvedValue(undefined),
       deactivate: jest.fn().mockResolvedValue(undefined),
     } as unknown as DeviceTokenRepository;
-    const service = new DeviceTokenService(repository);
+    const service = new DeviceTokenService(repository, createPush());
 
     await service.unregister(userId, { expoPushToken: token });
 
