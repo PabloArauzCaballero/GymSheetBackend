@@ -177,7 +177,7 @@ x-app-environment: &app-environment
   # es otra cosa — `MEDIA_STORAGE_PUBLIC_BASE_URL`, que apunta al Funnel.
   # Las credenciales sólo se exigen con MEDIA_STORAGE_PROVIDER=minio, y quien lo
   # comprueba es el factory al arrancar (sin fallback silencioso).
-  MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio}
+  MINIO_ENDPOINT: ${MINIO_ENDPOINT:-gymsheet-minio}
   MINIO_PORT: ${MINIO_PORT:-9000}
   MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
   MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-}
@@ -483,9 +483,18 @@ services:
     volumes:
       - minio-data:/data
     restart: unless-stopped
+    # Alias con prefijo de proyecto, por lo mismo que `postgres`/`redis` (ver su
+    # comentario arriba): `minio` es un nombre genérico y la red `coolify` la
+    # comparten TODAS las apps del VPS — hay otros dos proyectos con su propio
+    # servicio `minio` ahí. Visto en producción al levantar esto: el Funnel
+    # resolvía `minio` al almacén de otro proyecto y devolvía AccessDenied para
+    # una ruta que en el nuestro era pública. Nadie debe usar `minio` a secas
+    # como hostname.
     networks:
-      - default
-      - coolify
+      default:
+        aliases: [gymsheet-minio]
+      coolify:
+        aliases: [gymsheet-minio]
     expose:
       - '9000'
     stop_grace_period: 20s
@@ -538,7 +547,7 @@ services:
         set -eu
         : "$${MINIO_ACCESS_KEY:?falta MINIO_ACCESS_KEY en las variables de Coolify}"
         : "$${MINIO_SECRET_KEY:?falta MINIO_SECRET_KEY en las variables de Coolify}"
-        mc alias set gs "http://minio:9000" "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc alias set gs "http://gymsheet-minio:9000" "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
 
         mc mb --ignore-existing gs/"$$MINIO_BUCKET"
         # Versionado: una sobrescritura nunca destruye la versión previa.
@@ -635,7 +644,7 @@ services:
     command:
       - |
         cat > /tmp/tailscale-serve.json <<'JSON'
-        {"TCP":{"443":{"HTTPS":true}},"Web":{"gymsheet-media.taila8f993.ts.net:443":{"Handlers":{"/":{"Proxy":"http://minio:9000"}}}},"AllowFunnel":{"gymsheet-media.taila8f993.ts.net:443":true}}
+        {"TCP":{"443":{"HTTPS":true}},"Web":{"gymsheet-media.taila8f993.ts.net:443":{"Handlers":{"/":{"Proxy":"http://gymsheet-minio:9000"}}}},"AllowFunnel":{"gymsheet-media.taila8f993.ts.net:443":true}}
         JSON
         exec /usr/local/bin/containerboot
     restart: unless-stopped
