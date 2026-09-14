@@ -461,7 +461,13 @@ services:
   # defecto, que con el Funnel delante sería root abierto al mundo.
   # ---------------------------------------------------------------------------
   minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    # quay.io, NO Docker Hub: `minio/minio` ya no se puede bajar de Docker Hub
+    # («pull access denied … repository does not exist»), y eso tumbó un
+    # despliegue entero porque Coolify hace `docker compose pull` de todo antes
+    # de levantar nada. Comprobado en este VPS: redis:7-alpine baja sin
+    # problema, minio/minio no, quay.io/minio/minio sí. Es además el registro
+    # que ya usa el stack de Atlas en esta misma máquina.
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
     profiles: ['media']
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
@@ -508,7 +514,13 @@ services:
   # el no-op del adaptador es código y alguien puede quitarlo; esto es el
   # servidor diciendo que no.
   minio-init:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    # quay.io, NO Docker Hub: `minio/minio` ya no se puede bajar de Docker Hub
+    # («pull access denied … repository does not exist»), y eso tumbó un
+    # despliegue entero porque Coolify hace `docker compose pull` de todo antes
+    # de levantar nada. Comprobado en este VPS: redis:7-alpine baja sin
+    # problema, minio/minio no, quay.io/minio/minio sí. Es además el registro
+    # que ya usa el stack de Atlas en esta misma máquina.
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
     profiles: ['media']
     depends_on:
       minio:
