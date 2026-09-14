@@ -56,11 +56,12 @@ x-app-environment: &app-environment
   WHATSAPP_MEMBERSHIP_PHONE: ${WHATSAPP_MEMBERSHIP_PHONE:?WHATSAPP_MEMBERSHIP_PHONE is required}
   METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
 
-  # Fijos a los alias internos de los servicios `postgres`/`redis` de este mismo stack. Lo que
-  # se pegue en Coolify para estas cinco no se usa (interceptadas aquí a propósito).
-  DB_HOST: postgres
+  # Fijos a los alias internos (con prefijo de proyecto, ver comentario en el servicio `postgres`
+  # más abajo) de los servicios `postgres`/`redis` de este mismo stack. Lo que se pegue en Coolify
+  # para estas cinco no se usa (interceptadas aquí a propósito).
+  DB_HOST: gymsheet-postgres
   DB_PORT: '5432'
-  REDIS_URL: redis://redis:6379
+  REDIS_URL: redis://gymsheet-redis:6379
   REDIS_REQUIRED: 'true'
   REDIS_CONNECT_TIMEOUT_MS: ${REDIS_CONNECT_TIMEOUT_MS:-5000}
 
@@ -225,9 +226,20 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    # Alias explícito y con prefijo de proyecto en las dos redes, NO el nombre genérico del
+    # servicio. `coolify` es una red COMPARTIDA por todas las apps del VPS: sin alias explícito,
+    # Compose usa el nombre del servicio ("postgres") como alias por defecto ahí, y CUALQUIER
+    # otro proyecto que también tenga un servicio "postgres" en esa misma red compartida colisiona
+    # con el nuestro. Se vio en producción: `api` resolvía "postgres" a una IP que no era la de
+    # nuestro contenedor (mismo síntoma con "redis": NOAUTH Authentication required, porque el
+    # Redis de otro proyecto SÍ tiene contraseña y el nuestro no). El contenedor de un proyecto
+    # está unido a las dos redes (`default` y `coolify`) y la resolución DNS de Docker busca en
+    # TODAS las redes a las que está unido, así que ambigüedad en cualquiera de las dos alcanza.
     networks:
-      - default
-      - coolify
+      default:
+        aliases: [gymsheet-postgres]
+      coolify:
+        aliases: [gymsheet-postgres]
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
       interval: 5s
@@ -263,9 +275,13 @@ services:
         '--maxmemory-policy',
         'allkeys-lru',
       ]
+    # Ver el comentario de `postgres` arriba: alias con prefijo de proyecto en ambas redes, nunca
+    # el nombre genérico del servicio en la red compartida `coolify`.
     networks:
-      - default
-      - coolify
+      default:
+        aliases: [gymsheet-redis]
+      coolify:
+        aliases: [gymsheet-redis]
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
