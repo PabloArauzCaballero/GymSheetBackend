@@ -1,0 +1,24 @@
+# Unidad DEL SISTEMA, no de usuario: necesita hablar con el demonio de docker.
+[Unit]
+Description=Reconcilia el VPS con la punta de dev de GymSheet (compara y encola en Coolify; no construye)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/gymsheet-reconcile-dev.sh
+
+# `flock` sin espera: si la pasada anterior sigue viva, esta se salta en vez de acumularse.
+ExecCondition=/usr/bin/flock -n /run/gymsheet-reconcile.lock /bin/true
+
+# Un desfase recién encolado NO es un fallo (el script solo devuelve error con ATASCO o ERROR),
+# pero aun así conviene que un rojo no deje la unidad en estado failed para siempre.
+SuccessExitStatus=0
+TimeoutStartSec=120
+
+# Cinturón: pase lo que pase, esto no compite con un build por la CPU.
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

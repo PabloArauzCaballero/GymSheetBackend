@@ -1,0 +1,22 @@
+# Cada quince minutos, no cada uno. El camino rápido es el workflow de GitHub Actions, que
+# dispara en el push; esto es la red de debajo, no un sustituto.
+[Unit]
+Description=Comprueba cada cuarto de hora que el VPS sigue en la punta de dev de GymSheet
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+AccuracySec=1min
+
+# `Persistent=false` a propósito: si la máquina estuvo apagada no interesa recuperar las pasadas
+# perdidas. Solo importa el estado de AHORA, y la siguiente pasada ya lo ve.
+Persistent=false
+
+# Reparte el disparo dentro de un minuto para no coincidir siempre con otros temporizadores de la
+# máquina (el de Atlas corre igual cada 15 min).
+RandomizedDelaySec=60
+
+Unit=gymsheet-reconcile.service
+
+[Install]
+WantedBy=timers.target
