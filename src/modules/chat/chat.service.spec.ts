@@ -3,6 +3,7 @@ import { UserStatus } from "../../common/enums/domain.enums";
 import { SocialService } from "../social/social.service";
 import { UsersRepository } from "../users/users.repository";
 import { MediaStorageProvider } from "../media/media-storage.port";
+import { ExpoPushService } from "../notifications/delivery/expo-push.service";
 import { ChatEventsService } from "./chat-events.service";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatRepository } from "./chat.repository";
@@ -19,10 +20,16 @@ function createService(
   presenceOverrides: Partial<ChatPresenceService> = {},
   systemChatOverrides: Partial<SystemChatService> = {},
   usersRepositoryOverrides: Partial<UsersRepository> = {},
+  expoPushOverrides: Partial<ExpoPushService> = {},
   mediaStorageOverrides: Partial<MediaStorageProvider> = {},
 ): ChatService {
   return new ChatService(
-    repositoryOverrides as ChatRepository,
+    {
+      // Por defecto nadie más en la conversación: los casos que no van de
+      // avisos no deberían tener que declarar destinatarios.
+      listOtherParticipants: jest.fn().mockResolvedValue([]),
+      ...repositoryOverrides,
+    } as unknown as ChatRepository,
     { isConnected: jest.fn().mockResolvedValue(true), ...socialOverrides } as unknown as SocialService,
     {
       emitMessage: jest.fn(),
@@ -39,6 +46,10 @@ function createService(
       findActiveById: jest.fn().mockResolvedValue({ id: userA, tenantId: "default", status: UserStatus.ACTIVE }),
       ...usersRepositoryOverrides,
     } as unknown as UsersRepository,
+    {
+      sendToUser: jest.fn().mockResolvedValue({ sent: 1, deactivated: 0 }),
+      ...expoPushOverrides,
+    } as unknown as ExpoPushService,
     {
       name: "local",
       upload: jest.fn().mockResolvedValue({
@@ -235,6 +246,7 @@ describe("ChatService.sendMediaMessage", () => {
     });
     const service = createService(
       { getParticipant: jest.fn().mockResolvedValue({ canWrite: true }), createMessage },
+      {},
       {},
       {},
       {},
@@ -460,5 +472,122 @@ describe("ChatService.markRead", () => {
     expect(markRead).toHaveBeenCalledWith("conv-1", userA);
     expect(emitDelivered).toHaveBeenCalledWith("conv-1", expect.objectContaining({ userId: userA }));
     expect(emitRead).toHaveBeenCalledWith("conv-1", expect.objectContaining({ userId: userA }));
+  });
+});
+
+describe("ChatService avisa por push a quien no está conectado", () => {
+  const textMessage = {
+    id: "msg-push-1",
+    conversationId: "conv-1",
+    senderId: userA,
+    body: "¿Entrenamos mañana?",
+    type: "text",
+    mediaUrl: null,
+    mediaMimeType: null,
+    viewOnce: false,
+    viewedAt: null,
+    locationLat: null,
+    locationLng: null,
+    createdAt: new Date("2026-09-13T00:00:00.000Z"),
+  };
+
+  function serviceWith(
+    online: boolean,
+    sendToUser = jest.fn().mockResolvedValue({ sent: 1, deactivated: 0 }),
+    message: Record<string, unknown> = textMessage,
+  ) {
+    const service = createService(
+      {
+        getParticipant: jest.fn().mockResolvedValue({ canWrite: true }),
+        createMessage: jest.fn().mockResolvedValue(message),
+        listOtherParticipants: jest.fn().mockResolvedValue([{ userId: userB }]),
+      },
+      {},
+      {},
+      { isOnline: jest.fn().mockReturnValue(online) },
+      {},
+      { findActiveById: jest.fn().mockResolvedValue({ id: userA, fullName: "Camila Ruiz" }) },
+      { sendToUser },
+    );
+    return { service, sendToUser };
+  }
+
+  it("empuja al teléfono del destinatario ausente, con el nombre de quien escribe", async () => {
+    const { service, sendToUser } = serviceWith(false);
+
+    await service.sendMessage("conv-1", userA, "¿Entrenamos mañana?");
+
+    expect(sendToUser).toHaveBeenCalledWith(userB, {
+      title: "Camila Ruiz",
+      body: "¿Entrenamos mañana?",
+    });
+  });
+
+  it("no avisa a quien tiene la app abierta — ya le llegó por el socket", async () => {
+    const { service, sendToUser } = serviceWith(true);
+
+    await service.sendMessage("conv-1", userA, "¿Entrenamos mañana?");
+
+    expect(sendToUser).not.toHaveBeenCalled();
+  });
+
+  it("no adelanta el contenido de una foto de vista única", async () => {
+    const { service, sendToUser } = serviceWith(
+      false,
+      jest.fn().mockResolvedValue({ sent: 1, deactivated: 0 }),
+      {
+        ...textMessage,
+        id: "msg-push-2",
+        body: null,
+        type: "image",
+        viewOnce: true,
+        mediaUrl: "http://localhost:3000/media/chat/photo.jpg",
+        mediaMimeType: "image/jpeg",
+      },
+    );
+
+    await service.sendMessage("conv-1", userA, "");
+
+    expect(sendToUser).toHaveBeenCalledWith(userB, {
+      title: "Camila Ruiz",
+      body: "Te envió una foto de vista única",
+    });
+  });
+
+  it("recorta un mensaje largo en vez de mandarlo entero a la pantalla bloqueada", async () => {
+    const largo = "a".repeat(300);
+    const { service, sendToUser } = serviceWith(
+      false,
+      jest.fn().mockResolvedValue({ sent: 1, deactivated: 0 }),
+      { ...textMessage, body: largo },
+    );
+
+    await service.sendMessage("conv-1", userA, largo);
+
+    const [[, notification]] = sendToUser.mock.calls as [[string, { body: string }]];
+    expect(notification.body).toHaveLength(140);
+    expect(notification.body.endsWith("…")).toBe(true);
+  });
+
+  it("un fallo al resolver destinatarios no rompe el envío del mensaje", async () => {
+    const service = createService(
+      {
+        getParticipant: jest.fn().mockResolvedValue({ canWrite: true }),
+        createMessage: jest.fn().mockResolvedValue(textMessage),
+        listOtherParticipants: jest.fn().mockRejectedValue(new Error("base caída")),
+      },
+      {},
+      {},
+      { isOnline: jest.fn().mockReturnValue(false) },
+      {},
+      {},
+      {},
+    );
+
+    // El mensaje ya está escrito y emitido: el push es un añadido, no una
+    // condición para que exista.
+    await expect(service.sendMessage("conv-1", userA, "hola")).resolves.toMatchObject({
+      id: "msg-push-1",
+    });
   });
 });

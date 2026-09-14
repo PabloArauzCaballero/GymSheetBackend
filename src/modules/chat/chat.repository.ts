@@ -122,6 +122,16 @@ export class ChatRepository {
     return this.participants.findOne({ where: { conversationId, userId } });
   }
 
+  /** Los destinatarios de un mensaje: todos los de la conversación menos quien escribe. */
+  listOtherParticipants(
+    conversationId: string,
+    senderId: string,
+  ): Promise<ConversationParticipantModel[]> {
+    return this.participants.findAll({
+      where: { conversationId, userId: { [Op.ne]: senderId } },
+    });
+  }
+
   /** `null` borra el apodo; se aplica siempre a la fila del propio llamante. */
   async setNickname(conversationId: string, userId: string, nickname: string | null): Promise<void> {
     await this.participants.update({ nickname }, { where: { conversationId, userId } });

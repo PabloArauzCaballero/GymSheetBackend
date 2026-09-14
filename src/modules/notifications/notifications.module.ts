@@ -80,6 +80,9 @@ import { NotificationModel } from './notification.model';
   ],
   exports: [
     MAIL_TRANSPORT,
+    // El chat lo necesita para avisar a quien no tiene la app abierta; es el
+    // único consumidor fuera de este módulo.
+    ExpoPushService,
     NotificationRepository,
     NotificationService,
     MembershipReminderService,

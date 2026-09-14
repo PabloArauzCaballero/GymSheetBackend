@@ -1,5 +1,6 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { env } from "../../config/env";
+import { ExpoPushService } from "../notifications/delivery/expo-push.service";
 import { UsersRepository } from "../users/users.repository";
 import { SocialService } from "../social/social.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
@@ -27,8 +28,11 @@ export class ChatService {
     private readonly presence: ChatPresenceService,
     private readonly systemChat: SystemChatService,
     private readonly usersRepository: UsersRepository,
+    private readonly expoPush: ExpoPushService,
     @Inject(MEDIA_STORAGE_PROVIDER) private readonly mediaStorage: MediaStorageProvider,
   ) {}
+
+  private readonly logger = new Logger(ChatService.name);
 
   /**
    * El chat solo tiene sentido entre personas conectadas — es la regla que
@@ -96,7 +100,57 @@ export class ChatService {
     const message = await this.repository.createMessage(conversationId, senderId, fields);
     const response = mapMessageToResponse(message);
     this.chatEvents.emitMessage(response);
+    await this.pushToAbsentRecipients(response, senderId);
     return response;
+  }
+
+  /**
+   * Avisa al teléfono de quien no tenga un socket abierto.
+   *
+   * Hasta ahora el chat no avisaba de nada fuera de la app: emitía por socket y
+   * nada más. El push del repo viajaba solo con las notificaciones in-app que
+   * ya existían —recordatorios de membresía—, así que un mensaje a alguien con
+   * la app cerrada no producía nada, que es justamente el caso por el que un
+   * chat quiere push.
+   *
+   * Quien está conectado no lo recibe: el socket ya le entregó el mensaje y un
+   * push encima sería un doble aviso. La presencia es del proceso, así que con
+   * varias instancias de la API alguien conectado a otra instancia sí recibiría
+   * push; es asumible con el despliegue de una sola instancia que hay hoy.
+   *
+   * `sendToUser` nunca lanza (es best-effort por diseño); el try/catch cubre la
+   * consulta de participantes y la del remitente. El mensaje ya está escrito y
+   * emitido: que el aviso falle no puede convertir un envío correcto en un 500.
+   */
+  private async pushToAbsentRecipients(message: MessageResponse, senderId: string): Promise<void> {
+    try {
+      const recipients = await this.repository.listOtherParticipants(message.conversationId, senderId);
+      const absent = recipients.filter((participant) => !this.presence.isOnline(participant.userId));
+      if (absent.length === 0) return;
+      const sender = await this.usersRepository.findActiveById(senderId);
+      const title = sender?.fullName ?? "Mensaje nuevo";
+      const body = ChatService.previewFor(message);
+      await Promise.all(
+        absent.map((participant) => this.expoPush.sendToUser(participant.userId, { title, body })),
+      );
+    } catch (error: unknown) {
+      this.logger.warn({
+        event: "chat.push_notify_failed",
+        conversationId: message.conversationId,
+        messageId: message.id,
+        reason: error instanceof Error ? error.name : "UnknownError",
+      });
+    }
+  }
+
+  /** Qué se lee en la pantalla bloqueada. El contenido de un medio no se adelanta ahí. */
+  private static previewFor(message: MessageResponse): string {
+    if (message.type === "image") return message.viewOnce ? "Te envió una foto de vista única" : "Te envió una foto";
+    if (message.type === "video") return message.viewOnce ? "Te envió un video de vista única" : "Te envió un video";
+    if (message.type === "location") return "Compartió su ubicación";
+    const body = message.body?.trim() ?? "";
+    if (body.length === 0) return "Te envió un mensaje";
+    return body.length > 140 ? `${body.slice(0, 139)}…` : body;
   }
 
   async sendMessage(conversationId: string, senderId: string, body: string): Promise<MessageResponse> {
