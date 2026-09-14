@@ -1,6 +1,34 @@
 # Plan — MinIO como almacén de media inmutable en el VPS
 
-Fecha: 2026-09-13 · Rama base: `dev` @ `01441a0` · Estado: **propuesto**
+Fecha: 2026-09-13 · Rama base: `dev` · Estado: **ejecutado en dev (2026-09-14)**
+
+## Estado
+
+B0, B1 y B3 hechas; B2 resultó innecesaria (ver abajo). MinIO corre en el VPS y la API ya
+escribe ahí. Verificado de extremo a extremo el 2026-09-14:
+
+- Subida real por `POST /me/photos` → clave
+  `users/6e93af87…/perfiles/c414cd0e….png`, exactamente el layout previsto.
+- La foto se ve en `https://gymsheet-media.taila8f993.ts.net/gymsheet-media/…` (200) y el
+  **listado anónimo del bucket está denegado** (403): sin enumeración, la clave por
+  SHA-256 no se adivina.
+- El socio borra la foto por la API → la galería queda vacía **y el objeto sigue
+  devolviendo 200**. El log dice `media.retention.file_kept · reason: immutable_storage`.
+- Con las credenciales de la API, `mc rm` responde `Access Denied` y el objeto permanece.
+- Incluso con root, un borrado solo crea *delete markers*: el versionado conserva las
+  versiones.
+
+Pendiente: **B4 (respaldo y vigilancia de disco)** y, opcionalmente, B5.
+
+Dos trampas que costaron un despliegue fallido cada una y que conviene no reaprender:
+
+1. **Compose interpola el fichero entero antes de aplicar los perfiles**, así que un
+   `${VAR:?}` en un servicio que el perfil excluye rompe el despliegue completo.
+2. **`minio` es un nombre genérico en una red compartida.** Había otros dos MinIO en la
+   red `coolify` del VPS; el Funnel resolvía al almacén ajeno y devolvía 403 para una
+   ruta que en el nuestro era pública. Mismo bug que postgres/redis en `a332390`. Nada
+   debe usar `minio` a secas como hostname: es `gymsheet-minio`.
+3. **MinIO ya no se publica en Docker Hub**; hay que bajarlo de `quay.io/minio/minio`.
 
 ## Objetivo
 
