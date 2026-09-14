@@ -54,6 +54,7 @@ import { mediaStorageKeyIndexesMigration } from "./202609080001-media-storage-ke
 import { socialInteractionsMigration } from "./202609110001-social-interactions";
 import { dropOrphanAuthPasswordResetTokensMigration } from "./202609110002-drop-orphan-auth-password-reset-tokens";
 import { deviceTokensMigration } from "./202609131200-device-tokens";
+import { webPushDeviceTokensMigration } from "./202609160001-web-push-device-tokens";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -109,4 +110,5 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   socialInteractionsMigration,
   dropOrphanAuthPasswordResetTokensMigration,
   deviceTokensMigration,
+  webPushDeviceTokensMigration,
 ];

@@ -55,6 +55,15 @@ export class NotificationController {
     return this.service.updateMyPreference(user.id, input);
   }
 
+  // Lo primero que consulta el navegador antes de ofrecer el botón de activar:
+  // si este despliegue hace push web y con qué `applicationServerKey`. Requiere
+  // sesión como el resto del controlador — no es un secreto, pero tampoco hace
+  // falta publicarlo a quien no ha entrado.
+  @Get('push/web-config')
+  getWebPushConfig() {
+    return this.deviceTokens.webPushConfig();
+  }
+
   // 200 con un cuerpo chico, no 204: el interceptor global de respuesta siempre envuelve en
   // `{ ok, data }`, y el cliente del móvil hace `response.json()` sin condicionar por status —
   // un 204 de verdad (sin cuerpo) le rompería el parseo.

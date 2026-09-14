@@ -111,6 +111,19 @@ x-app-environment: &app-environment
   NOTIFICATION_GATEWAY_ALLOWED_HOSTS: ${NOTIFICATION_GATEWAY_ALLOWED_HOSTS:-}
   NOTIFICATION_GATEWAY_TIMEOUT_MS: ${NOTIFICATION_GATEWAY_TIMEOUT_MS:-10000}
 
+  # Push al navegador (ADR-0011). Independiente de Expo: el móvil no necesita
+  # configuración aquí porque sus credenciales viven en el proyecto de EAS. El
+  # par VAPID se genera una vez por despliegue y se pega en las variables de
+  # Coolify; rotarlo invalida todas las suscripciones existentes. Con
+  # WEB_PUSH_TRANSPORT=VAPID y sin claves el contenedor NO arranca (a propósito).
+  WEB_PUSH_TRANSPORT: ${WEB_PUSH_TRANSPORT:-DISABLED}
+  VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+  VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+  VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+  WEB_PUSH_ALLOWED_HOSTS: '${WEB_PUSH_ALLOWED_HOSTS:-fcm.googleapis.com,updates.push.services.mozilla.com,web.push.apple.com}'
+  WEB_PUSH_TIMEOUT_MS: ${WEB_PUSH_TIMEOUT_MS:-10000}
+  WEB_PUSH_TTL_SECONDS: ${WEB_PUSH_TTL_SECONDS:-86400}
+
   MAIL_TRANSPORT: ${MAIL_TRANSPORT:-LOG}
   MAIL_FROM: ${MAIL_FROM:-}
   MAIL_SMTP_HOST: ${MAIL_SMTP_HOST:-}

@@ -4,31 +4,35 @@ import {
   NotificationDeliveryRequest,
   NotificationDeliveryResult,
 } from './notification-delivery.adapter';
-import { ExpoPushService } from './expo-push.service';
+import { PushDispatcherService } from './push-dispatcher.service';
+
+/** Dónde aterriza el usuario al pulsar el aviso; la resuelve el cliente. */
+const NOTIFICATION_LANDING_PATH = '/notifications';
 
 @Injectable()
 export class InAppNotificationAdapter implements NotificationDeliveryAdapter {
   private readonly logger = new Logger('InAppNotificationAdapter');
 
-  constructor(private readonly expoPush: ExpoPushService) {}
+  constructor(private readonly push: PushDispatcherService) {}
 
   async deliver(
     request: NotificationDeliveryRequest,
   ): Promise<NotificationDeliveryResult> {
     // El mensaje IN_APP ya quedó grabado en `messages` antes de llegar aquí (es la fuente de
-    // verdad); esto solo agrega un empujón real al teléfono si el usuario tiene algún
-    // dispositivo registrado. Nunca puede tumbar la entrega in-app: un fallo de push queda
+    // verdad); esto solo agrega un empujón real al teléfono o al navegador si el usuario tiene
+    // algún dispositivo registrado. Nunca puede tumbar la entrega in-app: un fallo de push queda
     // solo en el log, no propaga.
     try {
-      const result = await this.expoPush.sendToUser(request.recipientUserId, {
+      const result = await this.push.sendToUser(request.recipientUserId, {
         title: request.subject,
         body: request.body,
+        url: NOTIFICATION_LANDING_PATH,
       });
-      if (result.sent > 0) {
+      if (result.delivered > 0) {
         this.logger.log({
           event: 'push.delivered',
           notificationId: request.notificationId,
-          devices: result.sent,
+          devices: result.delivered,
         });
       }
     } catch (error) {

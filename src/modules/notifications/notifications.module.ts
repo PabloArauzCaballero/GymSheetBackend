@@ -14,7 +14,10 @@ import { MAIL_TRANSPORT } from './delivery/mail.transport';
 import { SmtpMailTransport } from './delivery/smtp-mail.transport';
 import { InAppNotificationAdapter } from './delivery/in-app-notification.adapter';
 import { MockNotificationAdapter } from './delivery/mock-notification.adapter';
-import { ExpoPushService } from './delivery/expo-push.service';
+import { ExpoPushTransport } from './delivery/expo-push.transport';
+import { PushDispatcherService } from './delivery/push-dispatcher.service';
+import { PUSH_TRANSPORTS, PushTransport } from './delivery/push.transport';
+import { createWebPushTransport } from './delivery/push-transport.factory';
 import { NotificationAdapterFactory } from './delivery/notification-adapter.factory';
 import { DeliveryAttemptModel } from './delivery-attempt.model';
 import { DeviceTokenModel } from './device-token.model';
@@ -51,7 +54,29 @@ import { NotificationModel } from './notification.model';
     NotificationDeliveryService,
     DeviceTokenRepository,
     DeviceTokenService,
-    ExpoPushService,
+    ExpoPushTransport,
+    {
+      // La lista de transportes se arma UNA vez al arrancar, y el despachador
+      // deriva de ella su tabla de rutas por plataforma. Expo siempre está: no
+      // necesita configuración local porque las credenciales de FCM/APNs viven
+      // en el proyecto de EAS. El de web sólo si este despliegue lo pidió, y si
+      // lo pidió mal el factory detiene el arranque (ADR-0011).
+      provide: PUSH_TRANSPORTS,
+      inject: [ExpoPushTransport],
+      useFactory: (expo: ExpoPushTransport): PushTransport[] => {
+        const web = createWebPushTransport({
+          transport: env.WEB_PUSH_TRANSPORT,
+          subject: env.VAPID_SUBJECT,
+          publicKey: env.VAPID_PUBLIC_KEY,
+          privateKey: env.VAPID_PRIVATE_KEY,
+          allowedHosts: env.WEB_PUSH_ALLOWED_HOSTS,
+          timeoutMs: env.WEB_PUSH_TIMEOUT_MS,
+          ttlSeconds: env.WEB_PUSH_TTL_SECONDS,
+        });
+        return web ? [expo, web] : [expo];
+      },
+    },
+    PushDispatcherService,
     InAppNotificationAdapter,
     EmailNotificationAdapter,
     HttpGatewayNotificationAdapter,

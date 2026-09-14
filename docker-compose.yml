@@ -58,6 +58,18 @@ x-app-environment: &app-environment
   # `db:media:mirror` copies external media into local storage (forces JPEG/PNG).
   MEDIA_MIRROR_ALLOWED_HOSTS: ${MEDIA_MIRROR_ALLOWED_HOSTS:-images.unsplash.com,raw.githubusercontent.com}
   MEDIA_MIRROR_TIMEOUT_MS: ${MEDIA_MIRROR_TIMEOUT_MS:-15000}
+
+  # Browser push (VAPID, ADR-0011). Off by default: it needs a key pair of this
+  # deployment's own (`npx web-push generate-vapid-keys`). Declared here so a
+  # value set in the shell actually reaches the container instead of falling
+  # back to the defaults baked into env.ts.
+  WEB_PUSH_TRANSPORT: ${WEB_PUSH_TRANSPORT:-DISABLED}
+  VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+  VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+  VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+  WEB_PUSH_ALLOWED_HOSTS: '${WEB_PUSH_ALLOWED_HOSTS:-fcm.googleapis.com,updates.push.services.mozilla.com,web.push.apple.com}'
+  WEB_PUSH_TIMEOUT_MS: ${WEB_PUSH_TIMEOUT_MS:-10000}
+  WEB_PUSH_TTL_SECONDS: ${WEB_PUSH_TTL_SECONDS:-86400}
   # Purga de stories caducadas (worker-stories-purge). Borra la fila siempre y
   # el binario solo cuando ninguna otra fila lo referencia (el nombre de fichero
   # es el SHA-256 del contenido, así que se comparte entre usuarios).

@@ -279,6 +279,54 @@ export const environmentSchema = z
       .default(10000),
 
     /**
+     * Push al NAVEGADOR (ADR-0011). Es independiente de Expo a propósito: el
+     * push al móvil no necesita configuración porque las credenciales viven en
+     * el proyecto de EAS, y el del navegador exige un par VAPID propio de este
+     * despliegue. `DISABLED` es la forma explícita de decir «aquí no hay push
+     * web»; pedir `VAPID` sin claves detiene el arranque (lo comprueba
+     * `createWebPushTransport`, que es donde el fallo es accionable), sin
+     * fallback silencioso.
+     *
+     * El par se genera UNA vez por despliegue con
+     * `npx web-push generate-vapid-keys`. Cambiarlo invalida todas las
+     * suscripciones existentes: el navegador ata cada una a la clave pública con
+     * la que se creó.
+     */
+    WEB_PUSH_TRANSPORT: z.enum(["DISABLED", "VAPID"]).default("DISABLED"),
+    /** `mailto:` o `https:` de contacto; lo exige RFC 8292 para poder avisar de abusos. */
+    VAPID_SUBJECT: optionalNonEmptyStringSchema,
+    /** Clave pública (base64url). Es pública por diseño: el navegador la necesita. */
+    VAPID_PUBLIC_KEY: optionalNonEmptyStringSchema,
+    VAPID_PRIVATE_KEY: optionalSecretSchema,
+    /**
+     * Allowlist SSRF de servicios de push. El `endpoint` de una suscripción lo
+     * elige el cliente, así que sin esta lista el backend haría peticiones a la
+     * URL que le mandaran (ver `web-push-endpoint.ts`). Un navegador cuyo
+     * servicio no esté aquí no puede suscribirse: añadirlo es una decisión de
+     * despliegue, no algo que se cuele solo.
+     */
+    WEB_PUSH_ALLOWED_HOSTS: commaSeparatedListSchema.default(
+      "fcm.googleapis.com,updates.push.services.mozilla.com,web.push.apple.com",
+    ),
+    WEB_PUSH_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1000)
+      .max(60000)
+      .default(10000),
+    /**
+     * Cuánto guarda el servicio de push un aviso para un navegador cerrado. Un
+     * día: más allá, el aviso que aparece al abrir el portal ya no es noticia, y
+     * la bandeja in-app sigue teniéndolo de todas formas.
+     */
+    WEB_PUSH_TTL_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(2419200)
+      .default(86400),
+
+    /**
      * Cómo salen los correos. `LOG` los escribe en el registro con el cuerpo
      * completo —imprescindible para recorrer el flujo de recuperación en local
      * sin un buzón—, y por eso mismo está prohibido en producción: un PIN en
@@ -605,6 +653,19 @@ export const environmentSchema = z
           message: "SMTP mail delivery requires a host and a sender address.",
         });
     }
+    // La PRESENCIA de las claves la exige `createWebPushTransport` al arrancar,
+    // para que el mensaje diga qué falta y cómo generarlo. Aquí sólo se valida
+    // la FORMA del sujeto, que es lo que RFC 8292 acota y lo que un servicio de
+    // push rechaza con un 400 imposible de diagnosticar desde el otro lado.
+    if (
+      configuration.VAPID_SUBJECT &&
+      !/^(mailto:|https:\/\/)/u.test(configuration.VAPID_SUBJECT)
+    )
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["VAPID_SUBJECT"],
+        message: "VAPID_SUBJECT must be a mailto: address or an https:// URL.",
+      });
     if (configuration.NOTIFICATION_DELIVERY_PROVIDER === "HTTP_GATEWAY") {
       if (
         !configuration.NOTIFICATION_GATEWAY_URL ||
