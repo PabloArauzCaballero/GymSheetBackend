@@ -107,7 +107,20 @@ cuatro servicios consumidores ya conocen su `userId`/`conversationId` — cambio
 
 ## Fases
 
-### B0 — Provisión en el VPS (compose + Coolify)
+### B0 — Provisión en el VPS (compose + Coolify) — **implementado**
+
+Los tres servicios (`minio`, `minio-init`, `tunnel-media`) van **apagados por defecto**
+tras el perfil `media`, como los workers. Encenderlos = poner las credenciales en Coolify
+y añadir `media` a `COMPOSE_PROFILES`.
+
+Trampa verificada durante la implementación: **Compose interpola el fichero entero antes
+de aplicar los perfiles**, así que un `${VAR:?}` dentro de un servicio que el perfil
+excluye rompe igual el despliegue completo. Por eso las credenciales usan `:-` y el
+guardia vive en una comprobación de shell del `command` (`: "${VAR:?mensaje}"`): falla el
+contenedor con un mensaje legible en lugar de tumbar el despliegue de la API, y —lo
+importante— impide que MinIO arranque con el `minioadmin/minioadmin` por defecto, que con
+el Funnel delante sería root abierto al mundo.
+
 
 - Servicio `minio` en `docker-compose.coolify.yml`: imagen `minio/minio` fijada por
   digest, volumen nuevo `minio-data`, sin `ports:` (regla del compose actual), healthcheck,
