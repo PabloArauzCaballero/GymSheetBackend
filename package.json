@@ -24,6 +24,7 @@
     "worker:exercises-dataset:dev": "node --watch -r ts-node/register src/workers/exercises-dataset-refresh.worker.ts",
     "worker:stories-purge:dev": "node --watch -r ts-node/register src/workers/stories-purge.worker.ts",
     "db:sync:workoutkata": "ts-node src/workers/exercises-dataset-sync.command.ts",
+    "db:sync:workoutkata:prod": "node dist/workers/exercises-dataset-sync.command.js",
     "db:outbox:prune": "ts-node src/workers/outbox-prune.command.ts",
     "db:outbox:prune:prod": "node dist/workers/outbox-prune.command.js",
     "db:media:mirror": "ts-node src/workers/media-mirror.command.ts",
