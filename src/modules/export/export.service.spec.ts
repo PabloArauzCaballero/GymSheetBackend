@@ -149,3 +149,18 @@ describe('ExportService bounded reads', () => {
     );
   });
 });
+
+describe('ExportService PDF generation', () => {
+  function countPages(pdf: Buffer): number {
+    // Cada página es un objeto `/Type /Page`; `/Type /Pages` es el árbol que las agrupa.
+    return (pdf.toString('latin1').match(/\/Type \/Page(?!s)/g) ?? []).length;
+  }
+
+  it('does not append blank pages when drawing the footer', async () => {
+    const service = createService(singlePage([createSession('Press banca')]));
+
+    const pdf = await service.buildWorkoutHistoryPdf(actor);
+
+    expect(countPages(pdf)).toBe(1);
+  });
+});

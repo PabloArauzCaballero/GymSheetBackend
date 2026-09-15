@@ -298,6 +298,12 @@ export class ExportService {
     const range = doc.bufferedPageRange();
     for (let page = range.start; page < range.start + range.count; page += 1) {
       doc.switchToPage(page);
+      // El pie vive dentro del margen inferior. PDFKit trata cualquier texto por
+      // debajo de `maxY` como desbordamiento y abre una página nueva por cada
+      // `.text()`: eran las dos hojas en blanco del final. Se anula el margen
+      // mientras se escribe el pie y se restaura después.
+      const bottomMargin = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0;
       doc
         .fillColor('#9ca3af')
         .font('Helvetica')
@@ -306,14 +312,15 @@ export class ExportService {
           `GymSheet · ${data.usuario.email}`,
           MARGIN,
           doc.page.height - MARGIN + 6,
-          { width: contentWidth },
+          { width: contentWidth, lineBreak: false },
         )
         .text(
           `${page - range.start + 1} / ${range.count}`,
           MARGIN,
           doc.page.height - MARGIN + 6,
-          { width: contentWidth, align: 'right' },
+          { width: contentWidth, align: 'right', lineBreak: false },
         );
+      doc.page.margins.bottom = bottomMargin;
     }
 
     doc.end();
