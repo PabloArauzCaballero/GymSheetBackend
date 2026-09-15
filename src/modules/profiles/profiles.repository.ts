@@ -19,10 +19,16 @@ export class ProfilesRepository {
     input: UpsertProfileInput,
   ): Promise<AnthropometricProfileModel> {
     const existingProfile = await this.findByUserId(userId);
+    // `age`/`birthDate` ausentes significan «no tocar»: una app antigua que no
+    // conoce la fecha no debe borrarla al guardar el peso.
+    const birthFields = {
+      ...(input.age !== undefined ? { age: input.age } : {}),
+      ...(input.birthDate !== undefined ? { birthDate: input.birthDate } : {}),
+    };
 
     if (existingProfile) {
       await existingProfile.update({
-        age: input.age,
+        ...birthFields,
         weightKg: input.weightKg,
         heightCm: input.heightCm,
         goal: input.goal,
@@ -33,7 +39,7 @@ export class ProfilesRepository {
 
     return this.profileModel.create({
       userId,
-      age: input.age,
+      ...birthFields,
       weightKg: input.weightKg,
       heightCm: input.heightCm,
       goal: input.goal,

@@ -34,8 +34,13 @@ export class AnthropometricProfileModel extends Model {
   })
   declare userId: string;
 
+  /** Edad declarada. Solo se lee si no hay `birthDate` (perfiles antiguos). */
   @Column({ type: DataType.INTEGER, allowNull: true, field: "edad" })
   declare age: number | null;
+
+  /** `YYYY-MM-DD`. La edad de la respuesta se calcula a partir de aquí. */
+  @Column({ type: DataType.DATEONLY, allowNull: true, field: "fecha_nacimiento" })
+  declare birthDate: string | null;
 
   @Column({ type: DataType.DECIMAL(6, 2), allowNull: false, field: "peso_kg" })
   declare weightKg: string;

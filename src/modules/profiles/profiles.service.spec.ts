@@ -8,6 +8,7 @@ const userId = "00000000-0000-4000-8000-000000000001";
 const otherUserId = "00000000-0000-4000-8000-000000000002";
 const profileInput = {
   age: 30,
+  birthDate: "1996-01-15",
   weightKg: 75,
   heightCm: 180,
   goal: TrainingGoal.HYPERTROPHY,

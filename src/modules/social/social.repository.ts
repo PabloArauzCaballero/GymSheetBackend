@@ -32,7 +32,7 @@ export interface DirectoryRow {
    * consumidores vivos en web y móvil que la leen.
    */
   photos: { id: string; url: string }[];
-  /** Años, de `perfiles_antropometricos.edad`. Nulo mientras no se haya medido. */
+  /** Años, calculados desde `fecha_nacimiento` (o `edad` en perfiles antiguos). Nulo si no hay ninguno. */
   age: number | null;
   gender: string | null;
   experienceLevel: string | null;
@@ -453,7 +453,7 @@ export class SocialRepository {
               s.social_status,
               s.visible AS social_visible,
               ph.items AS photos,
-              p.edad AS age,
+              COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad) AS age,
               up.points,
               up.level_code
          FROM public.usuarios u

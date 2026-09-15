@@ -68,8 +68,8 @@
       "name": "Profile",
       "item": [
         { "name": "Get profile", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/profile" } },
-        { "name": "Create profile", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/profile", "body": { "mode": "raw", "raw": "{\n  \"edad\": 24,\n  \"pesoKg\": 80,\n  \"estaturaCm\": 178,\n  \"objetivo\": \"HIPERTROFIA\"\n}", "options": { "raw": { "language": "json" } } } } },
-        { "name": "Update profile", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/profile", "body": { "mode": "raw", "raw": "{\n  \"edad\": 25,\n  \"pesoKg\": 81,\n  \"estaturaCm\": 178,\n  \"objetivo\": \"FUERZA\"\n}", "options": { "raw": { "language": "json" } } } } }
+        { "name": "Create profile", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/profile", "body": { "mode": "raw", "raw": "{\n  \"fechaNacimiento\": \"2002-03-15\",\n  \"pesoKg\": 80,\n  \"estaturaCm\": 178,\n  \"objetivo\": \"HIPERTROFIA\"\n}", "options": { "raw": { "language": "json" } } } } },
+        { "name": "Update profile", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/profile", "body": { "mode": "raw", "raw": "{\n  \"fechaNacimiento\": \"2001-03-15\",\n  \"pesoKg\": 81,\n  \"estaturaCm\": 178,\n  \"objetivo\": \"FUERZA\"\n}", "options": { "raw": { "language": "json" } } } } }
       ]
     },
     {

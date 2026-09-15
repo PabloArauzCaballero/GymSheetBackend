@@ -61,7 +61,7 @@ describe('Profile edits feed the body-measurement history (e2e)', () => {
     await request(httpServer)
       .post(url('/profile'))
       .set('Authorization', `Bearer ${accessToken}`)
-      .send({ edad: 28, pesoKg: 80, estaturaCm: 178, objetivo: 'HIPERTROFIA' })
+      .send({ fechaNacimiento: "1998-01-15", pesoKg: 80, estaturaCm: 178, objetivo: 'HIPERTROFIA' })
       .expect(201);
 
     const history = await request(httpServer)
@@ -78,13 +78,13 @@ describe('Profile edits feed the body-measurement history (e2e)', () => {
     await request(httpServer)
       .post(url('/profile'))
       .set('Authorization', `Bearer ${accessToken}`)
-      .send({ edad: 28, pesoKg: 80, estaturaCm: 178, objetivo: 'HIPERTROFIA' })
+      .send({ fechaNacimiento: "1998-01-15", pesoKg: 80, estaturaCm: 178, objetivo: 'HIPERTROFIA' })
       .expect(201);
 
     await request(httpServer)
       .patch(url('/profile'))
       .set('Authorization', `Bearer ${accessToken}`)
-      .send({ edad: 28, pesoKg: 81.5, estaturaCm: 178, objetivo: 'HIPERTROFIA' })
+      .send({ fechaNacimiento: "1998-01-15", pesoKg: 81.5, estaturaCm: 178, objetivo: 'HIPERTROFIA' })
       .expect(200);
 
     const history = await request(httpServer)
@@ -102,14 +102,14 @@ describe('Profile edits feed the body-measurement history (e2e)', () => {
     await request(httpServer)
       .post(url('/profile'))
       .set('Authorization', `Bearer ${accessToken}`)
-      .send({ edad: 28, pesoKg: 80, estaturaCm: 178, objetivo: 'HIPERTROFIA' })
+      .send({ fechaNacimiento: "1998-01-15", pesoKg: 80, estaturaCm: 178, objetivo: 'HIPERTROFIA' })
       .expect(201);
 
-    // Solo cambia la edad; el peso se reenvía igual.
+    // Solo cambia la fecha de nacimiento; el peso se reenvía igual.
     await request(httpServer)
       .patch(url('/profile'))
       .set('Authorization', `Bearer ${accessToken}`)
-      .send({ edad: 29, pesoKg: 80, estaturaCm: 178, objetivo: 'HIPERTROFIA' })
+      .send({ fechaNacimiento: "1997-01-15", pesoKg: 80, estaturaCm: 178, objetivo: 'HIPERTROFIA' })
       .expect(200);
 
     const history = await request(httpServer)
