@@ -4,6 +4,7 @@ import { Sequelize } from 'sequelize-typescript';
 import { WorkoutSessionStatus } from '../../common/enums/domain.enums';
 import { ExercisesService } from '../exercises/exercises.service';
 import { FacilitiesRepository } from '../facilities/facilities.repository';
+import { ProgressionService } from '../progression/progression.service';
 import { WorkoutSessionModel } from './workout-session.model';
 import { WorkoutSetModel } from './workout-set.model';
 import { WorkoutsRepository } from './workouts.repository';
@@ -26,6 +27,9 @@ function createService(
       ...facilitiesOverrides,
     } as unknown as FacilitiesRepository,
     {} as Sequelize,
+    {
+      snapshot: jest.fn().mockRejectedValue(new Error('sin senda en este test')),
+    } as unknown as ProgressionService,
   );
 }
 

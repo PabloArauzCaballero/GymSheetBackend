@@ -17,7 +17,7 @@ import { UserBadgeModel } from "./user-badge.model";
  * los umbrales de los rangos. Cambiar estos números sin mover los umbrales
  * recoloca a todo el gimnasio de golpe, así que van juntos.
  */
-const POINTS = {
+export const POINTS = {
   /** Aparecer y terminar. Es lo que el producto quiere que se repita. */
   perSession: 50,
   /** El trabajo real dentro de la sesión. */
@@ -31,6 +31,54 @@ const POINTS = {
    */
   perLongestStreakDay: 10,
 } as const;
+
+/** De dónde sale cada punto. La suma de las cinco partes es el total. */
+export interface PointsBreakdown {
+  session: number;
+  sets: number;
+  volume: number;
+  streak: number;
+  badges: number;
+}
+
+/**
+ * Lo que una sesión recién terminada movió en la senda.
+ *
+ * Existe para que el cliente pueda enseñar causa y efecto en el momento en que
+ * ocurre —«+74 puntos: 50 por terminar, 16 por las series, 8 por los kilos»— y
+ * abrir la carta de cada insignia ganada sin tener que adivinar qué cambió.
+ */
+export interface SessionRewardView {
+  pointsBefore: number;
+  pointsAfter: number;
+  pointsEarned: number;
+  /** Diferencia por partida entre antes y después de la sesión. */
+  breakdown: PointsBreakdown;
+  levelBefore: LevelView | null;
+  levelAfter: LevelView | null;
+  leveledUp: boolean;
+  nextLevel: LevelView | null;
+  pointsToNextLevel: number | null;
+  /** Avance dentro del tramo del rango anterior, para animar la barra desde ahí. */
+  levelProgressBefore: number;
+  levelProgress: number;
+  unlockedNow: BadgeView[];
+}
+
+/** Las reglas publicadas, para que los clientes las expliquen sin copiarlas. */
+export interface PointRulesView {
+  perSession: number;
+  perSet: number;
+  perVolumeUnitKg: number;
+  perLongestStreakDay: number;
+}
+
+interface ProgressionSnapshot {
+  points: number;
+  breakdown: PointsBreakdown;
+  level: LevelView | null;
+  levelProgress: number;
+}
 
 export interface LevelView {
   code: string;
@@ -125,18 +173,7 @@ export class ProgressionService {
    * dos casos dejarían el marcador desviado para siempre y sin forma de saberlo.
    */
   async getProgression(userId: string): Promise<ProgressionView> {
-    const user = await this.usersRepository.findById(userId);
-    if (!user) throw new NotFoundException("Usuario no encontrado.");
-
-    const audience = toAudience(user.gender);
-    const tenantId = user.tenantId ?? env.DEFAULT_TENANT_ID ?? null;
-
-    const [metrics, levels, badges, earned] = await Promise.all([
-      this.progressionRepository.computeMetrics(userId),
-      this.progressionRepository.listLevels(tenantId, audience),
-      this.progressionRepository.listBadges(tenantId, audience),
-      this.progressionRepository.listUserBadges(userId),
-    ]);
+    const { audience, metrics, levels, badges, earned } = await this.loadContext(userId);
 
     const earnedByBadgeId = new Map(earned.map((row) => [row.badgeId, row]));
 
@@ -208,6 +245,85 @@ export class ProgressionService {
       },
       unlockedNow: badgeViews.filter((view) => newlyEarnedIds.has(idOf(badges, view.code))),
     };
+  }
+
+  private async loadContext(userId: string) {
+    const user = await this.usersRepository.findById(userId);
+    if (!user) throw new NotFoundException("Usuario no encontrado.");
+
+    const audience = toAudience(user.gender);
+    const tenantId = user.tenantId ?? env.DEFAULT_TENANT_ID ?? null;
+
+    const [metrics, levels, badges, earned] = await Promise.all([
+      this.progressionRepository.computeMetrics(userId),
+      this.progressionRepository.listLevels(tenantId, audience),
+      this.progressionRepository.listBadges(tenantId, audience),
+      this.progressionRepository.listUserBadges(userId),
+    ]);
+    return { audience, metrics, levels, badges, earned };
+  }
+
+  /**
+   * Foto de la senda **sin efectos**: no otorga insignias ni guarda progreso.
+   *
+   * Se toma justo antes de cerrar una sesión para poder decir después cuánto
+   * movió esa sesión en concreto. Si otorgara, las insignias ganadas antes y
+   * todavía sin recalcular se contarían como fruto de esta sesión.
+   */
+  async snapshot(userId: string): Promise<ProgressionSnapshot> {
+    const { metrics, levels, badges } = await this.loadContext(userId);
+    const satisfied = badges.filter(
+      (badge) => measure(metrics, badge.criterionType) >= Number(badge.criterionThreshold),
+    );
+    const breakdown = computePointsBreakdown(metrics, satisfied);
+    const points = sumBreakdown(breakdown);
+    const path = buildPath(levels, points);
+    const level = path.filter((entry) => entry.unlocked).at(-1) ?? null;
+    const next = path.find((entry) => !entry.unlocked) ?? null;
+    return { points, breakdown, level, levelProgress: tierProgress(points, level, next) };
+  }
+
+  /**
+   * Recalcula la senda tras una sesión y la compara con la foto previa.
+   *
+   * Pasa por `getProgression`, así que otorga las insignias recién cumplidas y
+   * guarda el progreso exactamente igual que abrir la pantalla de la senda.
+   */
+  async recordSessionReward(
+    userId: string,
+    before: ProgressionSnapshot,
+  ): Promise<SessionRewardView> {
+    const [after, afterSnapshot] = await Promise.all([
+      this.getProgression(userId),
+      this.snapshot(userId),
+    ]);
+    const delta = (key: keyof PointsBreakdown) =>
+      Math.max(0, afterSnapshot.breakdown[key] - before.breakdown[key]);
+
+    return {
+      pointsBefore: before.points,
+      pointsAfter: after.points,
+      pointsEarned: Math.max(0, after.points - before.points),
+      breakdown: {
+        session: delta("session"),
+        sets: delta("sets"),
+        volume: delta("volume"),
+        streak: delta("streak"),
+        badges: delta("badges"),
+      },
+      levelBefore: before.level,
+      levelAfter: after.level,
+      leveledUp: (after.level?.sortOrder ?? -1) > (before.level?.sortOrder ?? -1),
+      nextLevel: after.nextLevel,
+      pointsToNextLevel: after.pointsToNextLevel,
+      levelProgressBefore: before.levelProgress,
+      levelProgress: after.levelProgress,
+      unlockedNow: after.unlockedNow,
+    };
+  }
+
+  getRules(): PointRulesView {
+    return { ...POINTS };
   }
 
   /**
@@ -284,18 +400,30 @@ export function toAudience(gender: UserGender | null): ProgressionAudience {
   return "ANY";
 }
 
+export function computePointsBreakdown(
+  metrics: TrainingMetrics,
+  earnedBadges: readonly { pointsReward: number }[],
+): PointsBreakdown {
+  return {
+    session: metrics.totalSessions * POINTS.perSession,
+    sets: metrics.totalSets * POINTS.perSet,
+    volume: Math.floor(metrics.totalVolumeKg / POINTS.perVolumeUnitKg),
+    streak: metrics.longestStreakDays * POINTS.perLongestStreakDay,
+    badges: earnedBadges.reduce((total, badge) => total + badge.pointsReward, 0),
+  };
+}
+
+function sumBreakdown(breakdown: PointsBreakdown): number {
+  return (
+    breakdown.session + breakdown.sets + breakdown.volume + breakdown.streak + breakdown.badges
+  );
+}
+
 export function computePoints(
   metrics: TrainingMetrics,
   earnedBadges: readonly { pointsReward: number }[],
 ): number {
-  const badgePoints = earnedBadges.reduce((total, badge) => total + badge.pointsReward, 0);
-  return (
-    metrics.totalSessions * POINTS.perSession +
-    metrics.totalSets * POINTS.perSet +
-    Math.floor(metrics.totalVolumeKg / POINTS.perVolumeUnitKg) +
-    metrics.longestStreakDays * POINTS.perLongestStreakDay +
-    badgePoints
-  );
+  return sumBreakdown(computePointsBreakdown(metrics, earnedBadges));
 }
 
 /** Métrica que mide cada criterio. Un `switch` exhaustivo: si se añade un criterio al catálogo, el compilador obliga a medirlo. */

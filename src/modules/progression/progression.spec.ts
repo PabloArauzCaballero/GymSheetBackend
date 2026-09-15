@@ -3,7 +3,12 @@ import { computeStreaks } from "./progression.repository";
 import type { TrainingMetrics } from "./progression.repository";
 import { badgeSeeds, levelSeeds } from "./progression-catalog";
 import { restDaysSchema } from "./progression.schemas";
-import { computePoints, measure, toAudience } from "./progression.service";
+import {
+  computePoints,
+  computePointsBreakdown,
+  measure,
+  toAudience,
+} from "./progression.service";
 
 const NO_TRAINING: TrainingMetrics = {
   totalSessions: 0,
@@ -170,6 +175,22 @@ describe("computePoints", () => {
       longestStreakDays: 2, // 20
     };
     expect(computePoints(metrics, [])).toBe(210);
+  });
+
+  it("splits the total into parts that add up to it", () => {
+    const metrics: TrainingMetrics = {
+      ...NO_TRAINING,
+      totalSessions: 2,
+      totalSets: 20,
+      totalVolumeKg: 5050,
+      longestStreakDays: 2,
+    };
+    const badges = [{ pointsReward: 25 }];
+    const breakdown = computePointsBreakdown(metrics, badges);
+    expect(breakdown).toEqual({ session: 100, sets: 40, volume: 50, streak: 20, badges: 25 });
+    const sum =
+      breakdown.session + breakdown.sets + breakdown.volume + breakdown.streak + breakdown.badges;
+    expect(sum).toBe(computePoints(metrics, badges));
   });
 
   it("adds the reward of every satisfied badge", () => {

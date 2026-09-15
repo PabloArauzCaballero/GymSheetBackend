@@ -9,6 +9,7 @@ import { Sequelize } from 'sequelize-typescript';
 import { WorkoutSessionStatus } from '../../common/enums/domain.enums';
 import { ExercisesService } from '../exercises/exercises.service';
 import { FacilitiesRepository } from '../facilities/facilities.repository';
+import { ProgressionService, SessionRewardView } from '../progression/progression.service';
 import { resolveVerifiedBranch } from './geo-verification.util';
 import {
   mapSessionExerciseToResponse,
@@ -40,6 +41,7 @@ export class WorkoutsService {
     private readonly exercisesService: ExercisesService,
     private readonly facilitiesRepository: FacilitiesRepository,
     private readonly sequelize: Sequelize,
+    private readonly progressionService: ProgressionService,
   ) {}
 
   async startSession(
@@ -97,16 +99,42 @@ export class WorkoutsService {
     tenantId: string,
     sessionId: string,
     location: FinishSessionInput = {},
-  ): Promise<WorkoutSessionResponse> {
+  ): Promise<WorkoutSessionResponse & { progression: SessionRewardView | null }> {
     const session = await this.getSessionModelOrFail(userId, sessionId);
     this.assertSessionInProgress(session.status);
     const verifiedBranch = await this.resolveGeoVerification(location, tenantId);
+    const before = await this.progressionSnapshot(userId);
     const completedSession = await this.workoutsRepository.changeSessionStatus(
       session,
       WorkoutSessionStatus.COMPLETED,
       { geoVerified: verifiedBranch !== null, verifiedBranchId: verifiedBranch?.id ?? null },
     );
-    return mapWorkoutSessionToResponse(completedSession);
+    const progression = before ? await this.progressionReward(userId, before) : null;
+    return { ...mapWorkoutSessionToResponse(completedSession), progression };
+  }
+
+  /**
+   * La recompensa es un añadido: si la senda falla, la sesión se cierra igual.
+   * Perder un entrenamiento porque no se pudo contar su premio sería peor que
+   * no enseñar el premio.
+   */
+  private async progressionSnapshot(userId: string) {
+    try {
+      return await this.progressionService.snapshot(userId);
+    } catch {
+      return null;
+    }
+  }
+
+  private async progressionReward(
+    userId: string,
+    before: Awaited<ReturnType<ProgressionService['snapshot']>>,
+  ): Promise<SessionRewardView | null> {
+    try {
+      return await this.progressionService.recordSessionReward(userId, before);
+    } catch {
+      return null;
+    }
   }
 
   /**

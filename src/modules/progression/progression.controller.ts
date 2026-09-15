@@ -32,6 +32,12 @@ export class ProgressionController {
     return this.progressionService.getProgression(user.id);
   }
 
+  /** Cuánto vale cada cosa, para que la pantalla lo explique con las cifras reales. */
+  @Get("rules")
+  getRules() {
+    return this.progressionService.getRules();
+  }
+
   /** El cliente confirma que ya ha celebrado las novedades. */
   @Post("acknowledge")
   acknowledge(@CurrentUser() user: AuthenticatedUser) {
