@@ -5,6 +5,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Sequelize } from 'sequelize-typescript';
 import {
@@ -19,12 +20,18 @@ import {
   MEDIA_STORAGE_PROVIDER,
   MediaStorageProvider,
   MediaStorageProviderName,
+  StoredAsset,
 } from '../media/media-storage.port';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import {
   ExerciseMediaResponse,
   mapExerciseMediaToResponse,
 } from './exercise.mapper';
+import {
+  buildExerciseMediaExternalId,
+  isOwnStorageUrl,
+  isStorableMediaUrl,
+} from './exercise-media-naming';
 import { ExerciseMediaModel } from './exercise-media.model';
 import { ExerciseMediaRepository } from './exercise-media.repository';
 import { ExerciseModel } from './exercise.model';
@@ -145,6 +152,25 @@ export class ExerciseMediaService {
         `Tipo de archivo no admitido: ${mimeType}.`,
       );
     }
+    /**
+     * El póster llega como URL porque se sube en su propia pieza, y eso abre la
+     * puerta a apuntar la miniatura de una fila nuestra a un servidor ajeno: la
+     * app la pediría en cada listado y ese tercero vería el tráfico de los
+     * socios. Se exige que sea del almacenamiento propio. Se comprueba antes de
+     * guardar el binario para no dejar un objeto huérfano en un almacén que no
+     * borra nada (ADR-0010).
+     */
+    if (
+      input.thumbnailUrl &&
+      !isOwnStorageUrl(input.thumbnailUrl, env.MEDIA_STORAGE_PUBLIC_BASE_URL)
+    ) {
+      throw new BadRequestException(
+        'El póster debe estar alojado en el almacenamiento propio.',
+      );
+    }
+    // Ambas URLs, la del archivo y la del póster, tienen que poder guardarse.
+    this.assertStorableUrl(this.predictableStorageUrl(exerciseId));
+    if (input.thumbnailUrl) this.assertStorableUrl(input.thumbnailUrl);
 
     const stored = await this.storage.upload(
       {
@@ -157,7 +183,22 @@ export class ExerciseMediaService {
     );
 
     const provider = mediaProviderForStorage(stored.provider);
-    const externalId = input.externalId ?? stored.key.slice(0, 180);
+    const variant = input.variant ?? 'NEUTRO';
+
+    /**
+     * Identidad natural de la pieza (§5 del plan de vídeos): ejercicio,
+     * variante, formato y versión de render. No es la clave del objeto: esa es
+     * el SHA-256 del contenido, así que recodificar el mismo plano produciría
+     * una clave distinta y, sin esta identidad, una fila huérfana por reintento.
+     */
+    const conventionalExternalId =
+      input.externalId ??
+      buildExerciseMediaExternalId({
+        exerciseId,
+        variant,
+        mimeType,
+        renderVersion: input.renderVersion,
+      });
 
     /**
      * Volver a subir el mismo archivo no es un error: el almacenamiento ya
@@ -165,13 +206,26 @@ export class ExerciseMediaService {
      * Sin esto, repetir la subida chocaba contra la unicidad de
      * (ejercicio, proveedor, identificador) y salía un 500.
      */
-    const existing = await this.mediaRepository.findByExternalIdentity(
+    let existing = await this.mediaRepository.findByExternalIdentity(
       exerciseId,
       provider,
-      externalId,
+      conventionalExternalId,
     );
+    /**
+     * Compatibilidad con lo ya cargado: antes de existir la convención, la
+     * identidad era la clave del objeto. Sin esta segunda búsqueda, la primera
+     * recarga de una pieza antigua crearía una fila duplicada en vez de
+     * actualizarla.
+     */
+    if (!existing && !input.externalId) {
+      existing = await this.mediaRepository.findByExternalIdentity(
+        exerciseId,
+        provider,
+        stored.key.slice(0, 180),
+      );
+    }
     if (existing) {
-      const updated = await this.reactivate(existing, input, mimeType);
+      const updated = await this.reactivate(existing, input, mimeType, stored);
       return mapExerciseMediaToResponse(updated);
     }
 
@@ -188,9 +242,9 @@ export class ExerciseMediaService {
       {
         mediaType: mediaTypeForMime(mimeType),
         provider,
-        externalId,
+        externalId: conventionalExternalId,
         url: stored.url,
-        thumbnailUrl: null,
+        thumbnailUrl: input.thumbnailUrl ?? null,
         mimeType,
         width: null,
         height: null,
@@ -200,13 +254,7 @@ export class ExerciseMediaService {
         license: input.license ?? null,
         isPrimary: input.isPrimary,
         sortOrder: input.sortOrder,
-        metadata: {
-          variant: input.variant ?? 'NEUTRO',
-          storageKey: stored.key,
-          storageProvider: stored.provider,
-          sizeBytes: stored.sizeBytes,
-          reused: stored.reused,
-        },
+        metadata: this.buildMetadata(input, stored, variant),
       },
       input.isPrimary || activeMediaCount === 0,
       authenticatedUser.id,
@@ -224,6 +272,7 @@ export class ExerciseMediaService {
     media: ExerciseMediaModel,
     input: UploadExerciseMediaInput,
     mimeType: string,
+    stored: StoredAsset,
   ): Promise<ExerciseMediaModel> {
     return this.sequelize.transaction(async (transaction) => {
       const shouldBePrimary = input.isPrimary || media.isPrimary;
@@ -235,6 +284,10 @@ export class ExerciseMediaService {
         // `isPrimary` y el ejercicio se quedaría sin demostración principal.
         media.set("isPrimary", false);
       }
+      const previous: Record<string, unknown> = media.metadata;
+      const variant =
+        input.variant ??
+        ((previous.variant as UploadExerciseMediaInput['variant']) ?? 'NEUTRO');
       return media.update(
         {
           status: ExerciseMediaStatus.ACTIVE,
@@ -245,17 +298,73 @@ export class ExerciseMediaService {
           license: input.license ?? null,
           sortOrder: input.sortOrder,
           isPrimary: shouldBePrimary,
-          metadata: {
-            ...media.metadata,
-            variant:
-              input.variant ??
-              (media.metadata as { variant?: string }).variant ??
-              'NEUTRO',
-          },
+          // El póster solo se pisa si llega uno nuevo: una recarga sin póster no
+          // debe dejar sin miniatura una fila que ya la tenía.
+          thumbnailUrl: input.thumbnailUrl ?? media.thumbnailUrl,
+          metadata: this.buildMetadata(input, stored, variant, previous),
         },
         { transaction },
       );
     });
+  }
+
+  /**
+   * URL que va a producir el almacenamiento para este ejercicio. Sirve para
+   * comprobar la restricción de la base ANTES de escribir el binario: el
+   * adaptador compone `<base pública>/<clave>` y la clave empieza siempre por
+   * `ejercicios/<id>/`.
+   */
+  private predictableStorageUrl(exerciseId: string): string {
+    const base = env.MEDIA_STORAGE_PUBLIC_BASE_URL.replace(/\/+$/, '');
+    return `${base}/ejercicios/${exerciseId}/objeto`;
+  }
+
+  /**
+   * `training.exercise_media` tiene `ck_exercise_media_https`: la URL debe ser
+   * HTTPS, o HTTP contra localhost/127.0.0.1. Con el almacén servido por HTTP
+   * plano en un host público, el binario se escribía y el INSERT fallaba
+   * después, dejando el objeto huérfano en un almacén inmutable y devolviendo
+   * un 500 sin explicación.
+   *
+   * Es un fallo de configuración del servidor, no de quien sube: 503 y un
+   * mensaje que nombre la variable a corregir.
+   */
+  private assertStorableUrl(url: string): void {
+    if (isStorableMediaUrl(url)) return;
+    throw new ServiceUnavailableException(
+      'El almacenamiento de media no está configurado para guardar enlaces: ' +
+        'MEDIA_STORAGE_PUBLIC_BASE_URL debe servirse por HTTPS (o por HTTP en ' +
+        'localhost). Configura TLS delante del almacén antes de subir archivos.',
+    );
+  }
+
+  /**
+   * Metadatos de la pieza. Los campos opcionales solo se escriben si llegan:
+   * una recarga que no los manda conserva lo que ya había en vez de borrarlo,
+   * que es lo que permite corregir el texto alternativo sin perder la revisión
+   * ni el resaltado ya registrados.
+   */
+  private buildMetadata(
+    input: UploadExerciseMediaInput,
+    stored: StoredAsset,
+    variant: string,
+    previous: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      ...previous,
+      variant,
+      renderVersion: input.renderVersion,
+      ...(input.reps === undefined ? {} : { reps: input.reps }),
+      ...(input.durationMs === undefined
+        ? {}
+        : { durationMs: input.durationMs }),
+      ...(input.loop === undefined ? {} : { loop: input.loop }),
+      ...(input.highlight === undefined ? {} : { highlight: input.highlight }),
+      storageKey: stored.key,
+      storageProvider: stored.provider,
+      sizeBytes: stored.sizeBytes,
+      reused: stored.reused,
+    };
   }
 
   /** Inserta la fila y mantiene la invariante de que solo hay un principal. */

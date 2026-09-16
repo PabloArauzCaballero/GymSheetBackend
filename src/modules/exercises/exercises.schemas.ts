@@ -251,8 +251,49 @@ const formBooleanSchema = z
  * almacenamiento, no quien sube, que es justo lo que evita registrar un enlace
  * a un origen ajeno como si fuera nuestro.
  */
+/** Un objeto que viaja como campo de formulario llega serializado en texto. */
+function parseJsonObjectField(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    // Se devuelve tal cual para que el esquema de destino emita el error de
+    // tipo, que dice más que un «JSON inválido» genérico.
+    return value;
+  }
+}
+
+/**
+ * Qué músculo resalta la pieza. Sale del catálogo (`target_muscle`,
+ * `secondary_muscles`), no del criterio de quien anima: es lo que permite
+ * comprobar en la revisión que el resaltado coincide con el ejercicio.
+ */
+const mediaHighlightSchema = z.preprocess(
+  parseJsonObjectField,
+  z.object({
+    target: z.string().trim().max(120).nullable(),
+    secondary: z.array(z.string().trim().max(120)).max(20).default([]),
+  }),
+);
+
 export const uploadExerciseMediaSchema = z.object({
   altText: z.string().trim().min(3).max(500),
+  /**
+   * Póster del vídeo. Va como URL y no como archivo porque se sube antes, en su
+   * propia pieza; el servicio exige que sea una URL de NUESTRO almacenamiento
+   * para que una fila no pueda apuntar la miniatura a un servidor ajeno.
+   */
+  thumbnailUrl: z.string().trim().url().max(2048).optional().nullable(),
+  /**
+   * Versión del render. Forma parte de la identidad natural de la pieza, así
+   * que subir una corrección con `renderVersion + 1` crea una fila nueva en vez
+   * de pisar la que el socio ya vio.
+   */
+  renderVersion: z.coerce.number().int().min(1).max(999).default(1),
+  reps: z.coerce.number().int().min(1).max(20).optional(),
+  durationMs: z.coerce.number().int().min(1).max(600000).optional(),
+  loop: formBooleanSchema.optional(),
+  highlight: mediaHighlightSchema.optional(),
   /**
    * Opcional a propósito, sin valor por defecto: al volver a subir el mismo
    * archivo sin indicarla, omitirla debe conservar la variante que ya tenía.
