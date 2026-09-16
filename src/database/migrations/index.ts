@@ -9,6 +9,7 @@ import { exerciseDatasetSyncStateMigration } from "./202607220001-exercise-datas
 import { customerExperienceMigration } from "./202607220002-customer-experience";
 import { trainingPlansRoutinesMigration } from "./202608010001-training-plans-routines";
 import { localExerciseMediaUrlMigration } from "./202608130001-local-exercise-media-url";
+import { exerciseMediaPlainHttpMigration } from "./202609160003-exercise-media-plain-http";
 import { exerciseMusclesAndRatingsMigration } from "./202608130002-exercise-muscles-and-ratings";
 import { routineRecurrenceWindowMigration } from "./202608170001-routine-recurrence-window";
 // Dos ramas paralelas añadieron `usuarios.tenant_id` con ids distintos. Los
@@ -55,7 +56,6 @@ import { socialInteractionsMigration } from "./202609110001-social-interactions"
 import { dropOrphanAuthPasswordResetTokensMigration } from "./202609110002-drop-orphan-auth-password-reset-tokens";
 import { deviceTokensMigration } from "./202609131200-device-tokens";
 import { webPushDeviceTokensMigration } from "./202609160001-web-push-device-tokens";
-import { profileBirthDateMigration } from "./202609160002-profile-birth-date";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -112,5 +112,5 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   dropOrphanAuthPasswordResetTokensMigration,
   deviceTokensMigration,
   webPushDeviceTokensMigration,
-  profileBirthDateMigration,
+  exerciseMediaPlainHttpMigration,
 ];

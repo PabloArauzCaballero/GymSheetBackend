@@ -146,26 +146,28 @@ describe("isStorableMediaUrl", () => {
     expect(isStorableMediaUrl("https://media.gymsheet.test/x.mp4")).toBe(true);
   });
 
-  it("rechaza HTTP contra un host público, que es lo que pasa hoy en test", () => {
+  /**
+   * Decisión del propietario (2026-09-16), con su migración
+   * `202609160003-exercise-media-plain-http`: el almacén propio de los entornos
+   * sin certificado se publica por http plano, y exigir https ahí solo producía
+   * objetos huérfanos en un almacén que no borra nunca.
+   */
+  it("acepta HTTP contra un host público: el MinIO sin TLS del entorno de test", () => {
     expect(
       isStorableMediaUrl(
         "http://gym-media.161.97.85.216.sslip.io/gymsheet-media/x.mp4",
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("acepta HTTP en localhost, que es el desarrollo de todos los días", () => {
     expect(isStorableMediaUrl("http://localhost:3011/media/x.mp4")).toBe(true);
   });
 
-  it("acepta HTTP en 127.0.0.1", () => {
-    expect(isStorableMediaUrl("http://127.0.0.1:9000/gymsheet-media/x.mp4")).toBe(
-      true,
-    );
-  });
-
-  /** `localhost.evil.test` no es localhost: la barra tras el host es obligatoria. */
-  it("no se deja engañar por un host que empieza por localhost", () => {
-    expect(isStorableMediaUrl("http://localhost.evil.test/x.mp4")).toBe(false);
+  it("rechaza lo que no es http ni https", () => {
+    expect(isStorableMediaUrl("file:///etc/passwd")).toBe(false);
+    expect(isStorableMediaUrl("javascript:alert(1)")).toBe(false);
+    expect(isStorableMediaUrl("data:video/mp4;base64,AAAA")).toBe(false);
+    expect(isStorableMediaUrl("/media/x.mp4")).toBe(false);
   });
 });

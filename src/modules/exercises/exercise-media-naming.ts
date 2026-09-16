@@ -103,12 +103,10 @@ export function buildExerciseMediaAltText(params: {
 
 /**
  * Réplica EXACTA de la restricción `ck_exercise_media_https` de
- * `training.exercise_media`:
+ * `training.exercise_media`, tras la migración `202609160003-exercise-media-plain-http`:
  *
  * ```sql
- * CHECK (url ~ '^https://'
- *     OR url ~ '^http://localhost(:[0-9]+)?/'
- *     OR url ~ '^http://127\.0\.0\.1(:[0-9]+)?/')
+ * CHECK (url ~ '^https://' OR url ~ '^http://')
  * ```
  *
  * Se replica aquí porque el orden de las operaciones importa: primero se
@@ -117,17 +115,13 @@ export function buildExerciseMediaAltText(params: {
  * para siempre**, porque el almacén es inmutable (ADR-0010). Comprobarlo antes
  * convierte una corrupción silenciosa en un error de configuración visible.
  *
- * Pasó de verdad en el entorno de test: MinIO servido como
- * `http://gym-media.<host>.sslip.io/...` cumple el origen propio pero no esta
- * regla. La corrección es poner TLS delante del host de media; relajar la
- * restricción sería guardar enlaces que el navegador bloqueará por contenido
- * mixto en cuanto la app se sirva por HTTPS.
+ * Qué sigue rechazando: cualquier esquema que no sea http o https —`file:`,
+ * `javascript:`, `data:`— y las rutas relativas. Lo que ya no impone es el
+ * cifrado: el almacén propio de los entornos sin certificado se publica por http
+ * plano, y exigir https ahí solo producía objetos huérfanos. Donde haya TLS, la
+ * URL sale https sola, porque la construye `MEDIA_STORAGE_PUBLIC_BASE_URL`.
  */
-const STORABLE_URL_PATTERNS: readonly RegExp[] = [
-  /^https:\/\//,
-  /^http:\/\/localhost(:[0-9]+)?\//,
-  /^http:\/\/127\.0\.0\.1(:[0-9]+)?\//,
-];
+const STORABLE_URL_PATTERNS: readonly RegExp[] = [/^https:\/\//, /^http:\/\//];
 
 export function isStorableMediaUrl(url: string): boolean {
   return STORABLE_URL_PATTERNS.some((pattern) => pattern.test(url));
