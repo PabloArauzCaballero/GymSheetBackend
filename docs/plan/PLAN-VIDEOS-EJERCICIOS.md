@@ -1,6 +1,6 @@
 # Plan — Vídeos de demostración por ejercicio (hombre y mujer)
 
-Fecha: 2026-09-16 · Rama base: `dev` · Estado: **propuesta, sin ejecutar**
+Fecha: 2026-09-16 · Rama base: `dev` · Estado: **decidido y en ejecución** (ver §12)
 
 Objetivo del documento: decidir **cómo se producen** 2.648 demostraciones (1.324 ejercicios ×
 2 variantes) con la máxima calidad alcanzable, y dejar cerrada la parte técnica —formato,
@@ -42,8 +42,12 @@ observación.
    secundarios (`secondary_muscles`) en un tono atenuado, con la misma paleta en todos.
 6. **Dos variantes**: cuerpo masculino y femenino, mismo movimiento, mismo plano, misma
    duración. No es el mismo modelo recoloreado: proporciones y ejecución distintas.
-7. **Equipo correcto**: el objeto en pantalla es el de `required_equipment` (barra,
-   mancuerna, polea, máquina, banda, peso corporal).
+7. **Equipo reconocible, no protagonista**: decisión del propietario (2026-09-16). Lo que
+   se evalúa es el **cuerpo y el movimiento**; la máquina puede ir esbozada —silueta simple,
+   sin logotipos ni detalle de fabricante— siempre que se entienda qué sujeta y dónde apoya
+   quien entrena. Un banco, una polea o una barra mal dibujados no son motivo de rechazo; un
+   agarre o un recorrido mal representados, sí. Esto abarata el modelado y concentra el
+   esfuerzo donde está el valor: la ejecución.
 8. **Sin audio, sin texto quemado, sin marca de agua.** El texto va en la interfaz, que es
    traducible; quemarlo en el vídeo lo congela en un idioma.
 
@@ -151,18 +155,52 @@ el piloto no convence, se ha gastado el 1,5 % del esfuerzo total.
 
 ### 3.1 Los 20 del piloto
 
-Elegidos por cobertura de patrón y equipo, no por gusto: sentadilla con barra, peso muerto,
-press de banca, press militar, remo con barra, dominada, flexión, fondo en paralelas,
-zancada con mancuernas, hip thrust, prensa de piernas, curl con mancuerna, extensión de
-tríceps en polea, jalón al pecho, elevación lateral, face pull, peso muerto rumano,
-elevación de talones, plancha y russian twist.
+Resueltos contra el catálogo real el 2026-09-16 (nombres exactos, en inglés, como están
+sembrados). Elegidos por cobertura de patrón y de equipo, no por gusto: empuje horizontal y
+vertical, tracción horizontal y vertical, bisagra de cadera, sentadilla, zancada, aislados de
+brazo y hombro, gemelo y dos de core.
+
+| # | Nombre en el catálogo | Equipo | Músculo objetivo |
+|---|---|---|---|
+| 1 | barbell full squat | barbell | glutes |
+| 2 | barbell deadlift | barbell | glutes |
+| 3 | barbell bench press | barbell | pectorals |
+| 4 | barbell seated overhead press | barbell | delts |
+| 5 | barbell bent over row | barbell | upper back |
+| 6 | pull-up | body weight | lats |
+| 7 | push-up | body weight | pectorals |
+| 8 | ring dips | body weight | triceps |
+| 9 | dumbbell lunge | dumbbell | glutes |
+| 10 | barbell glute bridge | barbell | glutes |
+| 11 | sled 45 degrees one leg press | sled machine | glutes |
+| 12 | dumbbell biceps curl | dumbbell | biceps |
+| 13 | cable triceps pushdown (v-bar) | cable | triceps |
+| 14 | cable pulldown | cable | lats |
+| 15 | dumbbell lateral raise | dumbbell | delts |
+| 16 | cable rear delt row (stirrups) | cable | delts |
+| 17 | barbell romanian deadlift | barbell | glutes |
+| 18 | dumbbell standing calf raise | dumbbell | calves |
+| 19 | weighted front plank | weighted | abs |
+| 20 | russian twist | body weight | abs |
+
+Tres sustituciones respecto al borrador, porque esos nombres no existen en el catálogo:
+press militar de pie → `barbell seated overhead press`; hip thrust → `barbell glute bridge`
+(mismo patrón de extensión de cadera); face pull → `cable rear delt row (stirrups)`.
+
+Para obtener los identificadores en el entorno donde se vaya a cargar:
 
 ```sql
--- Sustituir por los nombres exactos del catálogo antes de usarlo.
 SELECT id, nombre, required_equipment, target_muscle
   FROM ejercicios
- WHERE data_source <> 'CUSTOM'
-   AND lower(nombre) IN ('barbell full squat', 'barbell deadlift', 'barbell bench press');
+ WHERE data_source <> 'CUSTOM' AND estado = 'ACTIVO'
+   AND lower(nombre) IN (
+     'barbell full squat','barbell deadlift','barbell bench press',
+     'barbell seated overhead press','barbell bent over row','pull-up','push-up','ring dips',
+     'dumbbell lunge','barbell glute bridge','sled 45 degrees one leg press',
+     'dumbbell biceps curl','cable triceps pushdown (v-bar)','cable pulldown',
+     'dumbbell lateral raise','cable rear delt row (stirrups)','barbell romanian deadlift',
+     'dumbbell standing calf raise','weighted front plank','russian twist')
+ ORDER BY nombre;
 ```
 
 ## 4. Especificación técnica del asset
@@ -364,15 +402,21 @@ render. Con las horas de arriba y una tarifa cerrada, el cálculo es inmediato.
 
 Los tres primeros son de código o configuración, y **hoy impedirían subir un vídeo**:
 
-1. **El esquema exige HTTPS.** `createExerciseMediaSchema.url` rechaza cualquier URL que no
-   sea `https:`. El MinIO del entorno de test se sirve por **HTTP plano**
-   (`http://gym-media.161.97.85.216.sslip.io`), así que el alta fallaría con error de
-   validación. Hay que poner TLS delante de ese host antes de cargar nada ahí.
-2. **`MEDIA_ALLOWED_MIME` no admite vídeo.** Su valor por defecto es
-   `image/jpeg,image/png,image/webp,image/gif`. Hay que añadir `video/mp4,video/webm` —o un
-   límite propio para media de ejercicio, como ya existe `CHAT_MEDIA_ALLOWED_MIME`.
-3. **`MEDIA_UPLOAD_MAX_BYTES` por defecto son 5 MB** (máximo admitido por el esquema: 50 MB).
-   Una pieza de 1,9 MB entra; un máster, no. Fijarlo explícitamente en Coolify.
+1. **HTTPS obligatorio, y no solo en el esquema — también en la base.** Verificado contra el
+   entorno de test el 2026-09-16 subiendo un archivo real: existe
+   `ck_exercise_media_https CHECK (url ~ '^https://' OR url ~ '^http://localhost(:[0-9]+)?/'
+   OR url ~ '^http://127\.0\.0\.1(:[0-9]+)?/')`. El MinIO de test se publica como
+   `http://gym-media.161.97.85.216.sslip.io/gymsheet-media`, así que la carga **guarda el
+   objeto en MinIO y luego falla al insertar la fila**, dejando un huérfano en un almacén que
+   nunca borra (ADR-0010). Lo que sí quedó demostrado es el resto de la cadena: el objeto
+   aterrizó en `ejercicios/<exerciseId>/<sha256>.gif` del bucket `gymsheet-media`.
+   Arreglo real: **TLS delante del host de media** (o publicar el bucket por un dominio con
+   certificado). No relajar la restricción. Mientras tanto, el código comprueba la URL antes
+   de subir y falla con un mensaje accionable en vez de un 500 opaco.
+2. ~~`MEDIA_ALLOWED_MIME` no admite vídeo.~~ **Resuelto** (da4c4e9): `EXERCISE_MEDIA_ALLOWED_MIME`
+   incluye `video/mp4` y `video/webm`, con su extensión en el mapa cerrado de MIME.
+3. ~~`MEDIA_UPLOAD_MAX_BYTES` por defecto son 5 MB.~~ **Resuelto** (da4c4e9):
+   `EXERCISE_MEDIA_MAX_BYTES` = 50 MB por defecto, propio del media de ejercicio.
 4. **B4 del plan de MinIO** (respaldo y alerta de disco) debería estar hecho antes de V2, no
    después.
 
@@ -384,3 +428,28 @@ Los tres primeros son de código o configuración, y **hoy impedirían subir un 
    hora, las estimaciones de §9 se convierten en cifra.
 3. **Alcance**: ¿los 1.324 ejercicios, o los 200 más usados y la cola larga después? Mi
    recomendación es la segunda, midiendo el uso real antes de gastar 950 h en la cola.
+
+
+## 12. Decisiones tomadas y estado de ejecución
+
+Decisiones del propietario (2026-09-16), por la recomendación de este plan:
+
+1. **Origen del contenido: 3D propio (opción a).** Descartadas la IA por riesgo biomecánico y
+   la licencia de terceros por no traer variante femenina ni resaltado muscular.
+2. **Alcance: por fases.** Piloto de 20 (§3.1), después los 200 más usados, y la cola larga
+   solo si el piloto convence al verlo en el móvil.
+3. **Presupuesto y quién produce: pendiente.** Es la única decisión que no se puede cerrar sin
+   una tarifa por hora; las horas de §9 ya están calculadas.
+4. **Foco del asset: el movimiento.** El equipo va esbozado (§1.7).
+
+Estado de la parte que no necesita producción:
+
+| Pieza | Estado |
+|---|---|
+| Carpeta por ejercicio en MinIO y subida multiparte | Hecho y desplegado en `dev` y `test` (da4c4e9 / eb16170) |
+| Variante hombre/mujer en los metadatos | Hecho |
+| Reintento idempotente de la carga | Hecho |
+| Póster en `thumbnailUrl`, `externalId` canónico, comando de carga por lotes, validación con ffprobe | En curso |
+| Reproducción en la app: variante por perfil, póster en listas, vídeo solo en la ficha | En curso |
+| TLS delante del MinIO de test | **Bloqueado**: es infraestructura del servidor de Contabo |
+| Producción de los 2.648 vídeos | **No la puede hacer una máquina.** Requiere animador 3D y revisión firmada por entrenador titulado |
