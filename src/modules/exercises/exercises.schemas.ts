@@ -230,4 +230,44 @@ export type CreatePersonalExerciseInput = z.infer<typeof createPersonalExerciseS
 export type UpdateExerciseInput = z.infer<typeof updateExerciseSchema>;
 export type ExerciseFilterInput = z.infer<typeof exerciseFilterSchema>;
 export type CreateExerciseMediaInput = z.infer<typeof createExerciseMediaSchema>;
+
+/**
+ * Variante corporal de una demostración. El catálogo enseña la misma técnica en
+ * cuerpo de hombre y de mujer, y la app elige según el perfil de quien mira;
+ * `NEUTRO` es lo que no distingue (una lámina, un esquema).
+ */
+export const exerciseMediaVariants = ["HOMBRE", "MUJER", "NEUTRO"] as const;
+export type ExerciseMediaVariant = (typeof exerciseMediaVariants)[number];
+
+/** Un campo de formulario multiparte llega como texto; "true"/"1" es verdadero. */
+const formBooleanSchema = z
+  .union([z.boolean(), z.string()])
+  .transform((value) =>
+    typeof value === "boolean" ? value : ["true", "1", "on"].includes(value.trim().toLowerCase()),
+  );
+
+/**
+ * Datos que acompañan a un archivo subido. La URL no está: la pone el
+ * almacenamiento, no quien sube, que es justo lo que evita registrar un enlace
+ * a un origen ajeno como si fuera nuestro.
+ */
+export const uploadExerciseMediaSchema = z.object({
+  altText: z.string().trim().min(3).max(500),
+  /**
+   * Opcional a propósito, sin valor por defecto: al volver a subir el mismo
+   * archivo sin indicarla, omitirla debe conservar la variante que ya tenía.
+   * Con un `default` no se distinguía «no la mando» de «ponla en NEUTRO», y
+   * repetir una subida degradaba una demostración de mujer a neutra.
+   */
+  variant: z.enum(exerciseMediaVariants).optional(),
+  attribution: z.string().trim().max(2000).optional().nullable(),
+  license: z.string().trim().max(160).optional().nullable(),
+  isPrimary: formBooleanSchema.default(false),
+  sortOrder: z.coerce.number().int().min(0).max(1000).default(0),
+  /** Identidad estable del asset en el proceso de producción, si la hay. */
+  externalId: z.string().trim().min(1).max(180).optional().nullable(),
+});
+
+export type UploadExerciseMediaInput = z.infer<typeof uploadExerciseMediaSchema>;
+
 export type EquipmentSuggestionQuery = z.infer<typeof equipmentSuggestionQuerySchema>;

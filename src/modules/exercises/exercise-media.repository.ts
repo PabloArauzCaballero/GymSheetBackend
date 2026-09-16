@@ -35,6 +35,21 @@ export class ExerciseMediaRepository {
     });
   }
 
+  /**
+   * Busca por la identidad única (ejercicio, proveedor, identificador externo),
+   * en cualquier estado. Es lo que permite que volver a subir el mismo archivo
+   * reutilice la fila en vez de chocar contra `uq_exercise_media_external_identity`.
+   */
+  findByExternalIdentity(
+    exerciseId: string,
+    provider: string,
+    externalId: string,
+  ): Promise<ExerciseMediaModel | null> {
+    return this.mediaModel.findOne({
+      where: { exerciseId, provider, externalId },
+    });
+  }
+
   findActiveById(mediaId: string): Promise<ExerciseMediaModel | null> {
     return this.mediaModel.findOne({
       where: { id: mediaId, status: ExerciseMediaStatus.ACTIVE },
