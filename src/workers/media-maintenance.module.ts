@@ -31,6 +31,19 @@ import { DatabaseModule } from "../database/database.module";
           provider: env.MEDIA_STORAGE_PROVIDER,
           localRoot: env.MEDIA_STORAGE_LOCAL_ROOT,
           publicBaseUrl: env.MEDIA_STORAGE_PUBLIC_BASE_URL,
+          // Mismo bloque que `MediaModule`: sin él, con
+          // `MEDIA_STORAGE_PROVIDER=minio` el comando ni arrancaba —el factory
+          // exige endpoint, claves y bucket— así que espejar media a MinIO era
+          // imposible en cualquier entorno que use MinIO. Medido en test.
+          minio: {
+            endPoint: env.MINIO_ENDPOINT,
+            port: env.MINIO_PORT,
+            useSSL: env.MINIO_USE_SSL,
+            accessKey: env.MINIO_ACCESS_KEY,
+            secretKey: env.MINIO_SECRET_KEY,
+            bucket: env.MINIO_BUCKET,
+            region: env.MINIO_REGION,
+          },
         }),
     },
     {
