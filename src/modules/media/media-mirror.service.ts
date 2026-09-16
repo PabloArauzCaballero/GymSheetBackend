@@ -155,7 +155,11 @@ export class MediaMirrorService {
             sizeBytes: image.buffer.byteLength,
             buffer: image.buffer,
           },
-          { category: "catalog" },
+          // Una carpeta por ejercicio, igual que la subida directa: así todo lo
+          // de un ejercicio —láminas espejadas y demostraciones propias— vive
+          // junto y se puede listar o purgar sin consultar la base. Antes caía
+          // en `catalog/`, un cajón plano con miles de objetos sin dueño visible.
+          { category: "ejercicios", exerciseId: row.exerciseId },
         );
         await row.update({
           url: stored.url,
