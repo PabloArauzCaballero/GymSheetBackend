@@ -23,6 +23,16 @@ export const EXERCISES_BOOT_SNAPSHOT_PATH =
   "src/database/seeders/boot/exercises.snapshot.json";
 
 /**
+ * El mismo snapshot comprimido, que es la forma en la que se versiona.
+ *
+ * Son 1.324 ejercicios con descripción e instrucciones: ~17 MB en claro y ~2 MB
+ * comprimido. El clon del repo es parte de cada despliegue, así que el formato
+ * por defecto es el gzip; el `.json` sin comprimir se sigue aceptando para poder
+ * inspeccionarlo a mano sin herramientas.
+ */
+export const EXERCISES_BOOT_SNAPSHOT_GZIP_PATH = `${EXERCISES_BOOT_SNAPSHOT_PATH}.gz`;
+
+/**
  * Decide, de forma pura y testeable, qué debe hacer el arranque con el catálogo
  * de ejercicios. Lanza si la combinación es incoherente (defensa en profundidad;
  * la validación de entorno ya rechaza `github` sin dataset habilitado).
