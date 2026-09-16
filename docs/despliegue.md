@@ -52,6 +52,17 @@ Si ya existe un token de Coolify de otro proyecto (Atlas) con permiso sobre todo
 servidor, puede reutilizarse el mismo valor para `PABLO_H310_COOLIFY_TOKEN` en vez de crear uno
 nuevo.
 
+## Catálogo de ejercicios: viene con el arranque
+
+Con `CANONICAL_EXERCISES_SOURCE=seeders` (valor por defecto) la siembra base aplica el snapshot
+versionado `src/database/seeders/boot/exercises.snapshot.json.gz`: 1.324 ejercicios con descripción
+en español e instrucciones por idioma, sin red. En una base limpia el mismo arranque deja además
+1.078 enlaces con el catálogo de máquinas, porque el snapshot se aplica antes de enlazarlos.
+
+Solo inserta lo que falta, así que redesplegar no duplica ni pisa correcciones del gimnasio. Para
+actualizar el catálogo desde la fuente externa sigue estando el worker (`exercises-dataset-refresh`)
+o el endpoint de importación; el snapshot es el punto de partida, no la autoridad.
+
 ## Workers: definidos, apagados por defecto
 
 Los cinco workers (`access-event`, `membership-reminder`, `notification-delivery`, `stories-purge`,

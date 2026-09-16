@@ -31,6 +31,7 @@
     "db:media:mirror:prod": "node dist/workers/media-mirror.command.js",
     "db:enrich:exercises": "ts-node src/workers/exercise-enrichment.command.ts",
     "db:enrich:exercises:prod": "node dist/workers/exercise-enrichment.command.js",
+    "db:snapshot:exercises": "ts-node src/workers/exercises-snapshot.command.ts",
     "worker:access:prod": "node dist/workers/access-event.worker.js",
     "worker:reminders:prod": "node dist/workers/membership-reminder.worker.js",
     "worker:notifications:prod": "node dist/workers/notification-delivery.worker.js",

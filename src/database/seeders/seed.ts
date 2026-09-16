@@ -7,6 +7,10 @@ import { env } from "../../config/env";
 import { UserModel } from "../../modules/users/user.model";
 import { seedEquipmentCatalog } from "./equipment-catalog.seed";
 import { seedExerciseEquipment } from "./exercise-equipment.seed";
+import {
+  seedExercisesFromSnapshot,
+  type SnapshotSeedResult,
+} from "./exercises-snapshot.seed";
 import { databaseModels } from "../models";
 import { seedAdminPermissions } from "./admin-permissions.seed";
 import { seedCustomerExperience } from "./customer-experience.seed";
@@ -229,6 +233,12 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
       branchesCreated: 0,
       branchesUpdated: 0,
     };
+    let exercisesSnapshot: SnapshotSeedResult = {
+      applied: false,
+      total: 0,
+      inserted: 0,
+      skipped: 0,
+    };
     let adminPermissions = {
       permissionsCreated: 0,
       permissionsUpdated: 0,
@@ -258,6 +268,13 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
       // contenido de demostración: es el punto de partida de cualquier
       // instalación real, y sin él el panel de equipamiento abre vacío.
       if (mode === "base" || mode === "all") {
+        // El catálogo de ejercicios va primero: es lo que enlazan los dos pasos
+        // siguientes. Solo inserta lo que falta y solo con
+        // `CANONICAL_EXERCISES_SOURCE=seeders`.
+        exercisesSnapshot = await seedExercisesFromSnapshot(
+          sequelize,
+          transaction,
+        );
         await seedEquipmentCatalog(sequelize, transaction);
         // Después del catálogo y no antes: enlazar ejercicios con máquinas
         // exige que las máquinas ya existan. Es lo que permite que el gimnasio
@@ -273,6 +290,9 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
     logger.log({
       event: "database.seed.completed",
       mode,
+      exercisesSnapshotApplied: exercisesSnapshot.applied,
+      exercisesInserted: exercisesSnapshot.inserted,
+      exercisesSkipped: exercisesSnapshot.skipped,
       ...counters,
       ...adminPermissions,
       ...progression,
