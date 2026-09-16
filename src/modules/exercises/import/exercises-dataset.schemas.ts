@@ -55,14 +55,17 @@ export const exerciseDatasetImportOptionsSchema = z.object({
   importMedia: z.boolean().optional(),
 });
 
+/** Un ejercicio del catálogo libre. Sin al menos una imagen no aporta nada. */
+export const openExerciseMediaRecordSchema = z
+  .object({
+    id: z.string().trim().min(1).max(180),
+    name: z.string().trim().min(1).max(180),
+    images: z.array(z.string().trim().min(1).max(500)).min(1).max(10),
+  })
+  .passthrough();
+
 export const openExerciseMediaCatalogSchema = z.array(
-  z
-    .object({
-      id: z.string().trim().min(1).max(180),
-      name: z.string().trim().min(1).max(180),
-      images: z.array(z.string().trim().min(1).max(500)).min(1).max(10),
-    })
-    .passthrough(),
+  openExerciseMediaRecordSchema,
 );
 
 export type ExternalExercise = z.infer<typeof externalExerciseSchema>;
