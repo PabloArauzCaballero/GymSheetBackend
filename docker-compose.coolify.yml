@@ -21,13 +21,13 @@
 #    el build sí compila (development no salta devDependencies), pero igual conviene marcarlas
 #    Runtime-only: build-time innecesario solo invalida caché de capas en cada cambio de env.
 # 4. Hay que activar «Connect To Predefined Network» en la aplicación.
-# 5. El servicio `tunnel` da a esta API un origen público real (Tailscale Funnel, acceso anónimo,
-#    sin VPN) para que el frontend use en `BACKEND_PUBLIC_ORIGIN`: el navegador del usuario NO
-#    está en la red `coolify`, así que el alias interno `gymsheet-backend:3000` no le sirve para
-#    abrir el socket de chat directo. Requiere el secret `TS_AUTHKEY` en Coolify (mismo valor que
-#    en GymSheetFrontend sirve — no es exclusivo de un repo). Con `:-` en vez de `:?`: sin la key
-#    puesta, solo `tunnel` falla, `api` sigue sirviendo normal (ver GymSheetFrontend para el
-#    incidente real de por qué NO se usa `:?` aquí).
+# 5. RAMA `test` (VPS de Contabo): AQUÍ NO HAY SIDECARS DE TAILSCALE. En `dev` (H310) la API se
+#    publica con un Funnel porque esa máquina no tiene IP pública; Contabo sí la tiene, así que
+#    el origen público lo da el Traefik de Coolify con un dominio `sslip.io`
+#    (`docker_compose_domains` de la aplicación). Los servicios `tunnel` y `tunnel-media` están
+#    borrados A PROPÓSITO en esta rama, no olvidados: levantarlos aquí reclamaría los MISMOS
+#    hostnames de tailnet (`gymsheet-backend`, `gymsheet-media`) que ya usa el despliegue de
+#    `dev`, y Tailscale renombra el nodo nuevo — el Funnel de dev dejaría de resolver.
 # 6. SOLO `migrate` declara `build:`. `api` y los workers comparten la MISMA imagen
 #    (`gymsheet-backend:coolify`) vía `image:` + `pull_policy: never`, nunca su propio `build:`.
 #    Patrón confirmado en los repos de Atlas (AtlasBackend, comentario "La imagen se construye UNA
@@ -392,43 +392,6 @@ services:
       retries: 3
       start_period: 20s
 
-  # Origen público de esta API (Tailscale Funnel, acceso anónimo). Nodo de tailnet propio
-  # (hostname `gymsheet-backend`) por la misma razón que en GymSheetFrontend: los tres puertos
-  # de Funnel del VPS ya sirven `/` de otras apps. El JSON de TS_SERVE_CONFIG se escribe DENTRO
-  # del contenedor al arrancar, no por bind mount: un bind mount a un archivo del repo se rompió
-  # en producción (en GymSheetFrontend) cuando un despliegue fallido dejó esa ruta como directorio
-  # vacío en el filesystem persistente de Coolify, y los redeploys siguientes no lo corrigen solos
-  # porque el sync de Coolify no reemplaza un directorio por un archivo del mismo nombre.
-  tunnel:
-    image: tailscale/tailscale:v1.90.6
-    environment:
-      TS_AUTHKEY: ${TS_AUTHKEY:-}
-      TS_HOSTNAME: gymsheet-backend
-      TS_STATE_DIR: /var/lib/tailscale
-      TS_SERVE_CONFIG: /tmp/tailscale-serve.json
-      TS_ACCEPT_DNS: 'false'
-    volumes:
-      - tailscale-backend-state:/var/lib/tailscale
-    networks:
-      - coolify
-    entrypoint: ['/bin/sh', '-c']
-    command:
-      - |
-        cat > /tmp/tailscale-serve.json <<'JSON'
-        {"TCP":{"443":{"HTTPS":true}},"Web":{"gymsheet-backend.taila8f993.ts.net:443":{"Handlers":{"/":{"Proxy":"http://gymsheet-backend:3000"}}}},"AllowFunnel":{"gymsheet-backend.taila8f993.ts.net:443":true}}
-        JSON
-        exec /usr/local/bin/containerboot
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 128m
-    logging:
-      driver: json-file
-      options:
-        max-size: '10m'
-        max-file: '3'
-
   # ---------------------------------------------------------------------------
   # Almacén de media inmutable (ADR-0010). Sustituye al volumen `media-data`
   # como destino de lo que suben los socios: fotos de perfil, stories y
@@ -436,10 +399,10 @@ services:
   # `users/<userId>/<categoria>/<sha256>.<ext>`.
   #
   # Sin `ports:` como el resto del stack: la API le habla por el alias interno
-  # `minio` y el mundo entra por el Funnel de `tunnel-media`.
+  # `minio` y el mundo entra por el dominio `sslip.io` que Traefik enruta a este servicio.
   #
-  # `api` NO declara `depends_on` sobre estos servicios a propósito, por la
-  # misma razón que `tunnel` usa `:-` y no `:?`: si el almacén tiene un mal día,
+  # `api` NO declara `depends_on` sobre estos servicios a propósito: si el
+  # almacén tiene un mal día,
   # la API tiene que seguir sirviendo entrenamientos, membresías y chat de
   # texto. Lo que no puede pasar es que arranque a medio configurar, y de eso se
   # encarga el factory, que detiene el proceso si falta una credencial.
@@ -617,47 +580,6 @@ services:
         max-size: '10m'
         max-file: '3'
 
-  # Origen público del almacén, nodo de tailnet propio (`gymsheet-media`) por la
-  # misma razón que `tunnel`: los puertos de Funnel de un nodo ya sirven `/` de
-  # otra cosa.
-  #
-  # El proxy apunta a la RAÍZ de MinIO, no al bucket, así que la URL pública
-  # lleva el nombre del bucket delante (`.../gymsheet-media/users/...`). Es a
-  # propósito: esas URLs se persisten en base de datos y sobreviven al cambio,
-  # así que vale más una forma que se sabe exacta que una reescritura de ruta
-  # elegante cuyo comportamiento haya que adivinar.
-  tunnel-media:
-    image: tailscale/tailscale:v1.90.6
-    profiles: ['media']
-    environment:
-      TS_AUTHKEY: ${TS_AUTHKEY:-}
-      TS_HOSTNAME: gymsheet-media
-      TS_STATE_DIR: /var/lib/tailscale
-      TS_SERVE_CONFIG: /tmp/tailscale-serve.json
-      TS_ACCEPT_DNS: 'false'
-    volumes:
-      - tailscale-media-state:/var/lib/tailscale
-    networks:
-      - default
-      - coolify
-    entrypoint: ['/bin/sh', '-c']
-    command:
-      - |
-        cat > /tmp/tailscale-serve.json <<'JSON'
-        {"TCP":{"443":{"HTTPS":true}},"Web":{"gymsheet-media.taila8f993.ts.net:443":{"Handlers":{"/":{"Proxy":"http://gymsheet-minio:9000"}}}},"AllowFunnel":{"gymsheet-media.taila8f993.ts.net:443":true}}
-        JSON
-        exec /usr/local/bin/containerboot
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 128m
-    logging:
-      driver: json-file
-      options:
-        max-size: '10m'
-        max-file: '3'
-
   # ---------------------------------------------------------------------------
   # Workers. Apagados por defecto: cada uno es un proceso Node completo (~200 MB
   # con el runtime de Nest dentro) y encenderlos los cinco a ciegas puede dejar
@@ -708,8 +630,6 @@ volumes:
   # exactamente lo que este cambio promete que no pasa.
   media-data:
   minio-data:
-  tailscale-backend-state:
-  tailscale-media-state:
 
 networks:
   default: {}
