@@ -112,9 +112,25 @@ el equipo de animación. Nada que el socio vaya a ver como referencia técnica.
 
 ### (e) Licenciar una librería existente
 
-Proveedores a consultar: GymVisual, ExerciseDB, Everkinetic. El catálogo actual ya viene de
-`free-exercise-db`, y sus **imágenes** son de dominio público (`Unlicense`, atribución ya
-registrada en el importador).
+Proveedores localizados en una búsqueda del 2026-09-16 (datos **tomados de su propia
+publicidad, sin verificar** contra su contrato; la sesión se quedó sin búsquedas antes de
+poder leer los términos):
+
+| Proveedor | Lo que anuncia | Precio anunciado |
+|---|---|---|
+| Gym Animations | 7.000+ animaciones 3D, versión masculina y femenina, licencia comercial de por vida | sin precio en la búsqueda |
+| Exercise Animatic | 2.600+ vídeos de ejercicio en 4K/HD, derechos comerciales no exclusivos | sin precio en la búsqueda |
+| MoveKit | animaciones 3D con licencia comercial para apps | 4,99 $/clip; 149 $ por 104 ejercicios; 299 $ por 412 |
+| VectorFit Exercises | pack gratuito solo para creación de contenido; producto requiere licencia comercial | gratis / de pago |
+
+El catálogo actual ya viene de `free-exercise-db`, y sus **imágenes** son de dominio público
+(`Unlicense`, atribución ya registrada en el importador).
+
+**Lo que hay que confirmar por escrito antes de pagar nada**: (1) que la licencia permita
+**auto-hospedar** los binarios en nuestro MinIO y servirlos desde la app, no solo incrustar
+desde su CDN; (2) si incluye **resaltado muscular**; (3) si la variante femenina cubre el
+catálogo entero o solo una parte; (4) qué pasa al cancelar: si los archivos ya descargados
+siguen siendo usables.
 
 - **Calidad**: buena y homogénea. Normalmente **sin variante femenina** y **sin resaltado
   muscular** configurable.
@@ -337,8 +353,10 @@ dos veces no se duplica.
 
 ## 7. Control de calidad
 
-Cada pieza pasa una revisión con esta lista. **Firma un entrenador con titulación**, no el
-equipo de producción, y su nombre queda en `metadata.reviewedBy`.
+Cada pieza pasa una revisión con esta lista. La revisa **alguien que sepa entrenar** —no hace
+falta titulación, decisión del propietario (2026-09-16)— y su nombre queda en
+`metadata.reviewedBy`. Lo que importa es que alguien distinto de quien animó mire la pieza
+con la lista delante: el vídeo es una guía, no una prescripción médica.
 
 - [ ] Posición inicial y final coinciden con `instruction_steps.es`
 - [ ] Agarre y anchura de manos correctos
@@ -402,17 +420,16 @@ render. Con las horas de arriba y una tarifa cerrada, el cálculo es inmediato.
 
 Los tres primeros son de código o configuración, y **hoy impedirían subir un vídeo**:
 
-1. **HTTPS obligatorio, y no solo en el esquema — también en la base.** Verificado contra el
-   entorno de test el 2026-09-16 subiendo un archivo real: existe
-   `ck_exercise_media_https CHECK (url ~ '^https://' OR url ~ '^http://localhost(:[0-9]+)?/'
-   OR url ~ '^http://127\.0\.0\.1(:[0-9]+)?/')`. El MinIO de test se publica como
-   `http://gym-media.161.97.85.216.sslip.io/gymsheet-media`, así que la carga **guarda el
-   objeto en MinIO y luego falla al insertar la fila**, dejando un huérfano en un almacén que
-   nunca borra (ADR-0010). Lo que sí quedó demostrado es el resto de la cadena: el objeto
-   aterrizó en `ejercicios/<exerciseId>/<sha256>.gif` del bucket `gymsheet-media`.
-   Arreglo real: **TLS delante del host de media** (o publicar el bucket por un dominio con
-   certificado). No relajar la restricción. Mientras tanto, el código comprueba la URL antes
-   de subir y falla con un mensaje accionable en vez de un 500 opaco.
+1. ~~HTTPS obligatorio.~~ **Resuelto** (844dd8b, migración
+   `202609160003-exercise-media-plain-http`). Decisión del propietario: el almacén propio
+   puede servirse por http plano. La restricción pasó a admitir `http://` además de
+   `https://`, y sigue rechazando `file:`, `javascript:`, `data:` y rutas relativas.
+   Verificado en el entorno de test con una carga real: HTTP 201, objeto en
+   `ejercicios/<exerciseId>/<sha256>.gif` del bucket `gymsheet-media`, fila con proveedor S3
+   y su variante. Antes del arreglo el mismo intento daba 500 y dejaba el binario huérfano.
+   Riesgo aceptado: si algún día la web se sirve por HTTPS y el almacén sigue en HTTP, el
+   navegador bloqueará el medio por contenido mixto; se arregla poniendo TLS al almacén, y la
+   URL saldrá https sola.
 2. ~~`MEDIA_ALLOWED_MIME` no admite vídeo.~~ **Resuelto** (da4c4e9): `EXERCISE_MEDIA_ALLOWED_MIME`
    incluye `video/mp4` y `video/webm`, con su extensión en el mapa cerrado de MIME.
 3. ~~`MEDIA_UPLOAD_MAX_BYTES` por defecto son 5 MB.~~ **Resuelto** (da4c4e9):
@@ -441,6 +458,14 @@ Decisiones del propietario (2026-09-16), por la recomendación de este plan:
 3. **Presupuesto y quién produce: pendiente.** Es la única decisión que no se puede cerrar sin
    una tarifa por hora; las horas de §9 ya están calculadas.
 4. **Foco del asset: el movimiento.** El equipo va esbozado (§1.7).
+5. **HTTP admitido en el almacén propio** (2026-09-16): no se espera a tener certificado para
+   empezar a cargar. Ver §10.1.
+6. **Revisión sin titulación** (2026-09-16): la firma un revisor competente, no un titulado.
+   Ver §7.
+7. **Comprar una librería vuelve a estar sobre la mesa** (§2e): hay proveedores que anuncian
+   variante masculina y femenina, que era lo que descartaba esa opción en la primera versión
+   de este plan. Si el contrato permite auto-hospedar, cubre el catálogo en días en vez de en
+   meses, y el 3D propio queda para lo que falte o para rehacer lo que no guste.
 
 Estado de la parte que no necesita producción:
 
@@ -449,7 +474,7 @@ Estado de la parte que no necesita producción:
 | Carpeta por ejercicio en MinIO y subida multiparte | Hecho y desplegado en `dev` y `test` (da4c4e9 / eb16170) |
 | Variante hombre/mujer en los metadatos | Hecho |
 | Reintento idempotente de la carga | Hecho |
-| Póster en `thumbnailUrl`, `externalId` canónico, comando de carga por lotes, validación con ffprobe | En curso |
-| Reproducción en la app: variante por perfil, póster en listas, vídeo solo en la ficha | En curso |
-| TLS delante del MinIO de test | **Bloqueado**: es infraestructura del servidor de Contabo |
+| Póster en `thumbnailUrl`, `externalId` canónico, comando de carga por lotes, validación con ffprobe | Hecho (7f5617b / c168075) |
+| Reproducción en la app: variante por perfil, póster en listas, vídeo solo en la ficha | Hecho (d82acb6 / 90e2c26) |
+| Carga contra el MinIO de test sin TLS | Hecho y verificado (844dd8b / 96fec35) |
 | Producción de los 2.648 vídeos | **No la puede hacer una máquina.** Requiere animador 3D y revisión firmada por entrenador titulado |
