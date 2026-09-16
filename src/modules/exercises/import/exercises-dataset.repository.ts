@@ -212,17 +212,38 @@ export class ExercisesDatasetRepository {
         defaults: attributes,
         transaction,
       });
+      /**
+       * Una lámina ya espejada a nuestro almacén guarda su origen en
+       * `metadata.mirroredFrom` y apunta a MinIO. Si es la MISMA imagen de
+       * origen, su URL y su checksum propios se conservan: antes la importación
+       * los devolvía a la URL de GitHub y cada refresco deshacía el espejo
+       * (medido en test: `updatedMedia: 134` sobre 134 láminas ya espejadas).
+       */
+      const mirroredFrom =
+        typeof media.metadata?.mirroredFrom === "string"
+          ? media.metadata.mirroredFrom
+          : null;
+      const alreadyMirrored = !created && mirroredFrom === attributes.url;
+      const effectiveAttributes = alreadyMirrored
+        ? {
+            ...attributes,
+            url: media.url,
+            mimeType: media.mimeType,
+            checksumSha256: media.checksumSha256,
+            metadata: { ...media.metadata, ...attributes.metadata },
+          }
+        : attributes;
       const changed =
         !created &&
-        (media.url !== attributes.url ||
-          media.altText !== attributes.altText ||
-          media.attribution !== attributes.attribution ||
-          media.license !== attributes.license ||
-          media.isPrimary !== attributes.isPrimary ||
-          media.sortOrder !== attributes.sortOrder ||
-          media.status !== attributes.status ||
+        (media.url !== effectiveAttributes.url ||
+          media.altText !== effectiveAttributes.altText ||
+          media.attribution !== effectiveAttributes.attribution ||
+          media.license !== effectiveAttributes.license ||
+          media.isPrimary !== effectiveAttributes.isPrimary ||
+          media.sortOrder !== effectiveAttributes.sortOrder ||
+          media.status !== effectiveAttributes.status ||
           media.metadata?.sourcePath !== relativePath);
-      if (changed) await media.update(attributes, { transaction });
+      if (changed) await media.update(effectiveAttributes, { transaction });
       if (isPrimary) primaryMediaByExercise.set(exercise.id, externalId);
       counters.matched += 1;
       counters.created += Number(created);
