@@ -1,4 +1,4 @@
-import { Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { ZodError } from "zod";
 import { env } from "../../../config/env";
@@ -6,7 +6,7 @@ import {
   ExternalExercise,
   externalExerciseDatasetSchema,
   OpenExerciseMediaRecord,
-  openExerciseMediaCatalogSchema,
+  openExerciseMediaRecordSchema,
 } from "./exercises-dataset.schemas";
 
 export type ExercisesDatasetSnapshot = {
@@ -28,6 +28,8 @@ export function isSupportedDatasetContentType(contentType: string): boolean {
 
 @Injectable()
 export class ExercisesDatasetClient {
+  private readonly logger = new Logger(ExercisesDatasetClient.name);
+
   /**
    * Downloads and validates one immutable snapshot of the configured dataset.
    * Redirects are rejected to prevent an allowlisted URL from becoming SSRF
@@ -94,6 +96,51 @@ export class ExercisesDatasetClient {
     }
   }
 
+  /**
+   * Valida el catálogo libre **registro a registro** y descarta los que no
+   * sirven, en vez de tirar el catálogo entero.
+   *
+   * Por qué: 3 de los 876 ejercicios de `free-exercise-db` vienen con
+   * `images: []`, y el esquema exige al menos una imagen. Validando el array
+   * completo de una vez, esos 3 registros invalidaban los 873 buenos y el
+   * enriquecimiento acababa con cero imágenes y un aviso genérico —«no se pudo
+   * descargar o validar»— que no señalaba a la causa. Medido contra el catálogo
+   * real el 2026-09-16.
+   *
+   * Un catálogo ajeno que empeora un poco no debe dejar sin ilustrar a todo el
+   * gimnasio; uno que llega entero roto, sí debe fallar, y por eso se sigue
+   * exigiendo que la respuesta sea una lista y que quede al menos un registro
+   * utilizable.
+   */
+  private parseOpenMediaCatalog(payload: unknown): OpenExerciseMediaRecord[] {
+    if (!Array.isArray(payload)) {
+      throw new ServiceUnavailableException(
+        "Open exercise media catalog is not a list.",
+      );
+    }
+    const usable: OpenExerciseMediaRecord[] = [];
+    let discarded = 0;
+    for (const entry of payload) {
+      const parsed = openExerciseMediaRecordSchema.safeParse(entry);
+      if (parsed.success) usable.push(parsed.data);
+      else discarded += 1;
+    }
+    if (usable.length === 0) {
+      throw new ServiceUnavailableException(
+        "Open exercise media catalog has no usable records.",
+      );
+    }
+    if (discarded > 0) {
+      this.logger.warn({
+        event: "exercises_dataset.open_media_records_discarded",
+        discarded,
+        usable: usable.length,
+        detail: "Registros sin imágenes o con forma inesperada.",
+      });
+    }
+    return usable;
+  }
+
   /** Downloads the optional public-domain image catalog used for exact-name enrichment. */
   async fetchOpenMediaCatalog(): Promise<OpenExerciseMediaRecord[]> {
     if (!env.EXERCISES_OPEN_MEDIA_ENABLED) return [];
@@ -120,7 +167,7 @@ export class ExercisesDatasetClient {
       }
       this.assertJsonResponse(response);
       const text = await this.readBoundedResponse(response);
-      return openExerciseMediaCatalogSchema.parse(JSON.parse(text) as unknown);
+      return this.parseOpenMediaCatalog(JSON.parse(text) as unknown);
     } catch (error: unknown) {
       if (error instanceof ServiceUnavailableException) throw error;
       throw new ServiceUnavailableException(
