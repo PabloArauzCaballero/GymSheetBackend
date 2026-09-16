@@ -31,7 +31,8 @@ export type MediaCategory =
   | "stories"
   | "publicaciones"
   | "chats"
-  | "catalog";
+  | "catalog"
+  | "ejercicios";
 
 /**
  * Destino de una carga. Es una unión discriminada a propósito: el compilador
@@ -52,7 +53,17 @@ export type MediaUploadTarget =
       readonly ownerUserId: string;
       readonly conversationId: string;
     }
-  | { readonly category: "catalog" };
+  | { readonly category: "catalog" }
+  /**
+   * Demostraciones de un ejercicio del catálogo: una carpeta por ejercicio.
+   *
+   * No es `catalog` a secas porque aquí el volumen es otro —dos vídeos por
+   * ejercicio y más de mil ejercicios— y mezclarlos dejaría miles de objetos
+   * planos en la misma carpeta, imposible de revisar o de purgar por ejercicio.
+   * El identificador del ejercicio en la clave permite listar, reemplazar y
+   * borrar lo de un ejercicio concreto sin consultar la base de datos.
+   */
+  | { readonly category: "ejercicios"; readonly exerciseId: string };
 
 /** Archivo entrante ya materializado en memoria (forma de Multer memoryStorage). */
 export interface MediaUploadInput {
@@ -114,6 +125,9 @@ export interface MediaStorageProvider {
  */
 export function mediaTargetPrefix(target: MediaUploadTarget): string {
   if (target.category === "catalog") return "catalog";
+  if (target.category === "ejercicios") {
+    return `ejercicios/${target.exerciseId}`;
+  }
   if (target.category === "chats") {
     return `users/${target.ownerUserId}/chats/${target.conversationId}`;
   }

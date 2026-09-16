@@ -548,6 +548,23 @@ export const environmentSchema = z
     CHAT_MEDIA_ALLOWED_MIME: commaSeparatedListSchema.default(
       "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime",
     ),
+    /**
+     * Demostraciones de ejercicio: límite y tipos propios.
+     *
+     * Un vídeo de técnica en alta calidad pesa mucho más que una foto de perfil
+     * (`MEDIA_UPLOAD_MAX_BYTES`, 5 MB) y es contenido administrado, no subido
+     * por un socio. Se admite WebM además de MP4 porque es el formato en el que
+     * un mismo clip pesa la mitad, y el catálogo se sirve a móvil.
+     */
+    EXERCISE_MEDIA_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1024)
+      .max(209715200)
+      .default(52428800),
+    EXERCISE_MEDIA_ALLOWED_MIME: commaSeparatedListSchema.default(
+      "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm",
+    ),
     /** Allowlist SSRF de orígenes desde los que `db:media:mirror` puede descargar. */
     MEDIA_MIRROR_ALLOWED_HOSTS: commaSeparatedListSchema.default(
       "images.unsplash.com,raw.githubusercontent.com",

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { EquipmentModule } from '../equipment/equipment.module';
+import { MediaModule } from '../media/media.module';
 import {
   ExerciseMediaController,
   ExerciseMediaManagementController,
@@ -39,6 +40,9 @@ import {
 @Module({
   imports: [
     EquipmentModule,
+    // Da acceso al proveedor de almacenamiento (MinIO/local) para subir
+    // demostraciones de ejercicio bajo `ejercicios/<id>/`.
+    MediaModule,
     SequelizeModule.forFeature([
       ExerciseModel,
       ExerciseEquipmentModel,
