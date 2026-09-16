@@ -478,3 +478,54 @@ Estado de la parte que no necesita producción:
 | Reproducción en la app: variante por perfil, póster en listas, vídeo solo en la ficha | Hecho (d82acb6 / 90e2c26) |
 | Carga contra el MinIO de test sin TLS | Hecho y verificado (844dd8b / 96fec35) |
 | Producción de los 2.648 vídeos | **No la puede hacer una máquina.** Requiere animador 3D y revisión firmada por entrenador titulado |
+
+
+## 13. Lo que ya se ve en la app (2026-09-16, verificado en test)
+
+| Medida | Resultado |
+|---|---|
+| Ejercicios con lámina de demostración | **211 de 1.324** (antes 0) |
+| Servidas desde nuestro MinIO | 211 de 211, en `ejercicios/<exerciseId>/` |
+| Lectura pública de una lámina | HTTP 200, `image/jpeg` |
+| Listado anónimo del bucket | HTTP 403 (sigue cerrado) |
+| Reimportar el catálogo | 0 cambios: ya no deshace el espejo |
+
+Origen: imágenes de `free-exercise-db`, **dominio público** (Unlicense). Son fotos fijas del
+movimiento, no animaciones, y cubren solo lo que casa por nombre y equipo.
+
+Cinco fallos encontrados por el camino, todos corregidos y desplegados:
+
+1. **3 registros sin imagen tiraban el catálogo libre entero** (876 registros) → 0 láminas.
+2. **El comando de espejo no recibía las credenciales de MinIO** → no arrancaba nunca con MinIO.
+3. **La base exigía HTTPS** → la carga guardaba el objeto y fallaba la fila, dejando huérfanos.
+4. **La política pública del bucket no incluía `ejercicios/`** → todas las láminas daban 403.
+5. **Cada importación devolvía las láminas espejadas a su URL de GitHub.**
+
+Por qué no más de 211: el emparejamiento exige mismo conjunto de palabras y mismo equipo.
+Reglas más laxas llegaban a 300–960, pero medidas contra los catálogos reales casaban
+ejercicios distintos («bench press» con «guillotine bench press», «standing twist» con
+«seated twist»). Colgar la lámina de otro ejercicio enseña otro movimiento, así que se
+descartaron; esas parejas quedaron fijadas en tests.
+
+## 14. Los GIFs de movimiento del catálogo actual NO se pueden usar sin licencia
+
+El dataset que alimenta el catálogo (`hasaneyldrm/exercises-dataset`) trae **un GIF animado
+del movimiento para los 1.324 ejercicios**, que es justo lo que se busca. Pero su `LICENSE`
+lo excluye de la licencia MIT, con estas palabras:
+
+> «It DOES NOT cover the exercise media in the `images/` and `videos/` directories. That
+> media is © Gym visual (https://gymvisual.com/) and is included here with the rights
+> holder's written permission, at 180×180 resolution […] Cloning this repository does not
+> grant you any license to the media; obtain your own from Gym visual.»
+
+Consecuencias:
+
+- **No se importan esos GIFs.** Por eso `EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED` sigue en
+  `false`, y así debe quedarse hasta tener la licencia.
+- **La vía más corta a tener movimiento en los 1.324 es comprar la licencia a Gym Visual.**
+  Es el mismo contenido que el catálogo ya espera, con los mismos identificadores, así que el
+  importador existente lo cargaría sin trabajo nuevo: activar la confirmación y lanzar la
+  importación con `importMedia`.
+- Lo que hay que pedirles por escrito: derecho a **auto-hospedar** en nuestro MinIO, la
+  **resolución** que dan (la del repositorio es 180×180, pequeña para una ficha), si existe
+  **variante femenina**, y el precio por catálogo completo.
