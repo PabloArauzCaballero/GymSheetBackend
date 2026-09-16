@@ -598,7 +598,8 @@ services:
                 "arn:aws:s3:::$$MINIO_BUCKET/users/*/stories/*",
                 "arn:aws:s3:::$$MINIO_BUCKET/users/*/publicaciones/*",
                 "arn:aws:s3:::$$MINIO_BUCKET/users/*/chats/*",
-                "arn:aws:s3:::$$MINIO_BUCKET/catalog/*"
+                "arn:aws:s3:::$$MINIO_BUCKET/catalog/*",
+                "arn:aws:s3:::$$MINIO_BUCKET/ejercicios/*"
               ]
             }
           ]
