@@ -129,8 +129,29 @@ export class ExercisesDatasetRepository {
       byName.set(key, byName.has(key) ? null : record);
     }
 
+    /**
+     * Segundo índice, por conjunto de palabras **y** equipamiento.
+     *
+     * El primero exige el nombre idéntico carácter a carácter y solo casaba 134
+     * de 1.324 ejercicios: los dos catálogos escriben lo mismo en otro orden
+     * («Standing Barbell Calf Raise» y «barbell standing calf raise») o con
+     * paréntesis. Comparando el conjunto de palabras sube a 165, y exigir
+     * además el mismo equipamiento es lo que evita colgar la lámina de un
+     * ejercicio con banda en uno con mancuerna. Una clave ambigua —dos
+     * ejercicios distintos con las mismas palabras— se anula en vez de elegir
+     * al azar.
+     */
+    const byTokens = new Map<string, OpenExerciseMediaRecord | null>();
+    for (const record of records) {
+      const equipment = normalizeEquipmentName(
+        typeof record.equipment === "string" ? record.equipment : null,
+      );
+      const key = `${exerciseNameKey(record.name)}|${equipment}`;
+      byTokens.set(key, byTokens.has(key) ? null : record);
+    }
+
     const exercises = await this.exerciseModel.findAll({
-      attributes: ["id", "name"],
+      attributes: ["id", "name", "requiredEquipment"],
       where: { dataSource: ExerciseDataSource.EXERCISES_DATASET },
       transaction,
     });
@@ -145,7 +166,13 @@ export class ExercisesDatasetRepository {
     const counters = { matched: 0, created: 0, updated: 0, unchanged: 0 };
 
     for (const exercise of exercises) {
-      const record = byName.get(normalizeExerciseName(exercise.name));
+      const record =
+        byName.get(normalizeExerciseName(exercise.name)) ??
+        byTokens.get(
+          `${exerciseNameKey(exercise.name)}|${normalizeEquipmentName(
+            exercise.requiredEquipment,
+          )}`,
+        );
       if (!record) continue;
       const relativePath = record.images[0];
       const externalId = `free-exercise-db:${record.id}:0`.slice(0, 180);
@@ -296,6 +323,86 @@ export class ExercisesDatasetRepository {
 
     return { created };
   }
+}
+
+/**
+ * Palabras que no distinguen un ejercicio de otro: se ignoran al comparar
+ * nombres entre catálogos. «standing» y «seated» NO están aquí a propósito —
+ * medido contra los catálogos reales, tolerarlas emparejaba «barbell standing
+ * twist» con «Seated Barbell Twist», que es otro ejercicio.
+ */
+const NAME_STOP_WORDS = new Set([
+  "with",
+  "the",
+  "on",
+  "a",
+  "an",
+  "and",
+  "of",
+  "to",
+  "in",
+  "using",
+]);
+
+/** Sinónimos de catálogo que significan lo mismo escrito distinto. */
+const NAME_SYNONYMS: Readonly<Record<string, string>> = {
+  bodyweight: "body",
+  db: "dumbbell",
+  bb: "barbell",
+};
+
+/**
+ * Conjunto de palabras significativas de un nombre de ejercicio.
+ *
+ * Ignora el orden, los plurales simples, la puntuación y lo que va entre
+ * paréntesis —«(male)», «(v-bar)»—, que es donde los dos catálogos difieren sin
+ * querer decir cosas distintas.
+ */
+export function exerciseNameTokens(value: string): ReadonlySet<string> {
+  const plain = value
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\(.*?\)/g, " ");
+  const tokens = new Set<string>();
+  for (const raw of plain.split(/[^a-z0-9]+/)) {
+    if (!raw || NAME_STOP_WORDS.has(raw)) continue;
+    const synonym = NAME_SYNONYMS[raw] ?? raw;
+    tokens.add(
+      synonym.endsWith("s") && synonym.length > 3
+        ? synonym.slice(0, -1)
+        : synonym,
+    );
+  }
+  return tokens;
+}
+
+/** Clave estable de un conjunto de palabras, para usarlo como índice. */
+export function exerciseNameKey(value: string): string {
+  return [...exerciseNameTokens(value)].sort().join(" ");
+}
+
+/**
+ * Equipamiento normalizado a un vocabulario común. Los dos catálogos nombran lo
+ * mismo de formas distintas («leverage machine» y «machine», «band» y «bands»),
+ * y sin esta tabla el emparejamiento por equipo descartaría parejas correctas.
+ */
+const EQUIPMENT_ALIASES: Readonly<Record<string, string>> = {
+  "body weight": "body only",
+  "leverage machine": "machine",
+  "smith machine": "machine",
+  "sled machine": "machine",
+  "olympic barbell": "barbell",
+  "trap bar": "barbell",
+  "ez barbell": "e-z curl bar",
+  band: "bands",
+  "resistance band": "bands",
+  "stability ball": "exercise ball",
+};
+
+export function normalizeEquipmentName(value: string | null): string {
+  const plain = (value ?? "").trim().toLowerCase();
+  return EQUIPMENT_ALIASES[plain] ?? plain;
 }
 
 export function normalizeExerciseName(value: string): string {
