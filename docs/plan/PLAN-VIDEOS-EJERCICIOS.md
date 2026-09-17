@@ -529,3 +529,31 @@ Consecuencias:
 - Lo que hay que pedirles por escrito: derecho a **auto-hospedar** en nuestro MinIO, la
   **resolución** que dan (la del repositorio es 180×180, pequeña para una ficha), si existe
   **variante femenina**, y el precio por catálogo completo.
+
+
+## 15. Tres intentos de fabricar el movimiento con material libre, y por qué no bastan
+
+Probado el 2026-09-16 sobre las fotos de `free-exercise-db` (dominio público), que traen
+**dos posturas por ejercicio**: inicio y final.
+
+| Intento | Técnica | Resultado |
+|---|---|---|
+| 1 | Fundido cruzado largo (0,75 s) entre ambas posturas | **Rechazado.** La mitad del tiempo se ven dos cuerpos superpuestos: efecto fantasma |
+| 2 | Corte limpio (0,1 s) + acercamiento de cámara del 3 % | Nítido y digno, pero **sigue siendo dos fotos**: no hay recorrido intermedio |
+| 3 | Fotogramas intermedios reales por flujo óptico (Farneback y DIS, OpenCV) | **Rechazado.** El torso rota unos 40° entre fotos; el flujo no lo sigue y deja doble torso y estelas |
+
+Por qué el 3 falla, con números: el desplazamiento medio entre las dos fotos es de 9,6 px y
+el máximo de 73 px sobre una imagen de 750×500. Eso no es un movimiento pequeño que se pueda
+interpolar, es un cambio de postura con rotación y oclusión (un brazo tapa el torso en una y
+no en la otra). Ningún método de flujo óptico inventa lo que no se ve en ninguna de las dos
+imágenes.
+
+También se revisó material libre alternativo: las ilustraciones de Everkinetic
+(CC BY-SA 3.0, preservadas en `chaosbastler/opentraining-exercises`) son dibujos de línea en
+blanco y negro, con dos posturas y **sin resaltado muscular**, y cubren unos pocos cientos de
+ejercicios. Sirven como lámina, no como demostración animada de calidad.
+
+**Conclusión, sin rodeos**: con material de dominio público se puede llegar a una lámina
+correcta o a una animación de dos posturas. **No** se puede llegar a lo que pide §1 —recorrido
+real, dos variantes, músculos resaltados— sin comprar una licencia o producir el 3D. Toda la
+tubería técnica ya está lista y verificada para recibir ese material el día que exista.
