@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
+import { Audited } from '../../common/decorators/audited.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -20,7 +21,10 @@ export class AdminAccessController {
 
   @Get('me')
   async getMine(@CurrentUser() user: AuthenticatedUser) {
-    const permissionKeys = await this.adminPermissionsService.getPermissionKeysForUser(user.id);
+    const permissionKeys = await this.adminPermissionsService.getEffectivePermissionKeys(
+      user.id,
+      user.role,
+    );
     return { permissionKeys };
   }
 
@@ -41,6 +45,12 @@ export class AdminAccessController {
 
   @Post(':userId')
   @RequirePermission(AdminPermissionKey.ADMIN_ACCESS_MANAGE)
+  @Audited({
+    domain: 'admin-access',
+    action: 'grant',
+    targetKind: 'user',
+    targetParam: 'userId',
+  })
   grant(
     @Param('userId', UuidParamPipe) userId: string,
     @Body(new ZodValidationPipe(grantPermissionSchema)) input: GrantPermissionInput,
@@ -56,6 +66,12 @@ export class AdminAccessController {
 
   @Delete(':userId/:permissionKey')
   @RequirePermission(AdminPermissionKey.ADMIN_ACCESS_MANAGE)
+  @Audited({
+    domain: 'admin-access',
+    action: 'revoke',
+    targetKind: 'user',
+    targetParam: 'userId',
+  })
   async revoke(
     @Param('userId', UuidParamPipe) userId: string,
     @Param('permissionKey') permissionKey: string,

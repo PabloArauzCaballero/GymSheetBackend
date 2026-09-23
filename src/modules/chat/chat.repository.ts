@@ -242,6 +242,7 @@ export class ChatRepository {
          LEFT JOIN LATERAL (
            SELECT url FROM profile.photos p
             WHERE p.user_id = other.user_id
+              AND p.hidden_at IS NULL
             ORDER BY p.position ASC LIMIT 1
          ) other_photo ON true
          LEFT JOIN LATERAL (

@@ -206,6 +206,9 @@ export class StoriesRepository {
               WHERE st.user_id = a.user_id
                 AND st.tenant_id = :tenantId
                 AND st.expires_at > now()
+                -- Moderación: una story retirada deja de servirse al instante,
+                -- aunque su binario siga en el almacén (ADR-0010).
+                AND st.hidden_at IS NULL
               ORDER BY st.created_at DESC, st.id DESC
               LIMIT :storiesPerAuthor
            ) s
@@ -244,6 +247,7 @@ export class StoriesRepository {
          LEFT JOIN LATERAL (
            SELECT url FROM profile.photos p
             WHERE p.user_id = a.user_id
+              AND p.hidden_at IS NULL
             ORDER BY p.position ASC LIMIT 1
          ) photo ON true
         ORDER BY (s.user_id = CAST(:viewerId AS uuid)) DESC,
@@ -289,6 +293,7 @@ export class StoriesRepository {
          LEFT JOIN LATERAL (
            SELECT url FROM profile.photos p
             WHERE p.user_id = v.viewer_id
+              AND p.hidden_at IS NULL
             ORDER BY p.position ASC LIMIT 1
          ) photo ON true
         WHERE v.story_id = :storyId

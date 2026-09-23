@@ -131,6 +131,15 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas.');
     }
 
+    // Después de comprobar la contraseña, nunca antes: avisar de la suspensión
+    // a quien no ha demostrado ser el dueño de la cuenta convertiría el login
+    // en un detector de cuentas sancionadas para cualquiera que pruebe correos.
+    if (activeUser.suspendedUntil && activeUser.suspendedUntil.getTime() > Date.now()) {
+      throw new UnauthorizedException(
+        `Tu cuenta está suspendida hasta el ${activeUser.suspendedUntil.toLocaleDateString('es')} por incumplir las normas de la comunidad.`,
+      );
+    }
+
     return {
       ...this.buildAuthResponse(
         activeUser.id,

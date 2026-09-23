@@ -1,6 +1,9 @@
 import { AdminPermissionModel } from "../../modules/admin-access/admin-permission.model";
 import { TenantModel } from "../../modules/tenants/tenant.model";
 import { AdminUserPermissionModel } from "../../modules/admin-access/admin-user-permission.model";
+import { AdminAuditLogModel } from "../../modules/admin-access/audit-log.model";
+import { ModerationReportModel } from "../../modules/moderation/report.model";
+import { UserStrikeModel } from "../../modules/moderation/user-strike.model";
 import { AccessCredentialModel } from "../../modules/access-control/access-credential.model";
 import { AccessDecisionModel } from "../../modules/access-control/access-decision.model";
 import { AccessDeviceEventModel } from "../../modules/access-control/access-device-event.model";
@@ -141,5 +144,8 @@ export const databaseModels = [
   RestDayPreferenceModel,
   AdminPermissionModel,
   AdminUserPermissionModel,
+  AdminAuditLogModel,
+  ModerationReportModel,
+  UserStrikeModel,
   TenantModel,
 ];

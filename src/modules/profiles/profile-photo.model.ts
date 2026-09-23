@@ -44,4 +44,18 @@ export class ProfilePhotoModel extends Model {
   @CreatedAt
   @Column({ field: "created_at" })
   declare createdAt: Date;
+
+  /**
+   * Moderación: la fila deja de servirse, el binario nunca se borra (ADR-0010).
+   * Nulo es lo normal; una fecha significa retirada y revisable.
+   */
+  @Column({ type: DataType.DATE, allowNull: true, field: "hidden_at" })
+  declare hiddenAt: Date | null;
+
+  /** Nulo cuando la retiró el umbral automático y no una persona. */
+  @Column({ type: DataType.UUID, allowNull: true, field: "hidden_by_user_id" })
+  declare hiddenByUserId: string | null;
+
+  @Column({ type: DataType.STRING(30), allowNull: true, field: "hidden_reason" })
+  declare hiddenReason: string | null;
 }

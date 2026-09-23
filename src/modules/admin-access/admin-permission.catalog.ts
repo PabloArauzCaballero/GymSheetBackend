@@ -7,6 +7,15 @@ export const AdminPermissionKey = {
   QA_ADMIN: 'qa:admin',
   DATA_LOADER_RUN: 'data-loader:run',
   DATA_LOADER_ADMIN: 'data-loader:admin',
+  FILES_READ: 'files:read',
+  FILES_DOWNLOAD: 'files:download',
+  MODERATION_READ: 'moderation:read',
+  MODERATION_ACT: 'moderation:act',
+  SUPPORT_READ: 'support:read',
+  SUPPORT_RESPOND: 'support:respond',
+  USERS_READ: 'users:read',
+  USERS_MANAGE: 'users:manage',
+  USERS_DANGER: 'users:danger',
   ANALYTICS_READ: 'analytics:read',
   ANALYTICS_ADMIN: 'analytics:admin',
   ARTIFACTS_READ: 'artifacts:read',
@@ -20,6 +29,10 @@ export type AdminPermissionDomain =
   | 'catalog'
   | 'qa'
   | 'data-loader'
+  | 'files'
+  | 'moderation'
+  | 'support'
+  | 'users'
   | 'analytics'
   | 'artifacts'
   | 'admin-access';
@@ -97,6 +110,69 @@ export const ADMIN_PERMISSION_CATALOG: readonly AdminPermissionDefinition[] = [
     label: 'Administrar artefactos',
     description: 'Confirmar/anotar eventos del feed de artefactos.',
     domain: 'artifacts',
+  },
+  {
+    key: AdminPermissionKey.FILES_READ,
+    label: 'Ver archivos',
+    description:
+      'Explorar los archivos almacenados, sus metadatos y desde dónde se referencian.',
+    domain: 'files',
+  },
+  {
+    // Separado de `files:read` porque son dos riesgos distintos: mirar el árbol
+    // es administrar; sacar el binario de una story privada fuera del sistema,
+    // no. Quien necesita lo primero rara vez necesita lo segundo.
+    key: AdminPermissionKey.FILES_DOWNLOAD,
+    label: 'Descargar archivos',
+    description: 'Descargar el binario original de un archivo almacenado.',
+    domain: 'files',
+  },
+  {
+    key: AdminPermissionKey.MODERATION_READ,
+    label: 'Ver moderación',
+    description: 'Consultar la cola de reportes y el historial de sanciones.',
+    domain: 'moderation',
+  },
+  {
+    key: AdminPermissionKey.MODERATION_ACT,
+    label: 'Resolver moderación',
+    description:
+      'Resolver reportes: ocultar contenido, advertir y suspender cuentas.',
+    domain: 'moderation',
+  },
+  {
+    key: AdminPermissionKey.SUPPORT_READ,
+    label: 'Ver soporte',
+    description: 'Consultar la bandeja de tickets de soporte y sus conversaciones.',
+    domain: 'support',
+  },
+  {
+    key: AdminPermissionKey.SUPPORT_RESPOND,
+    label: 'Atender soporte',
+    description: 'Responder, asignar, priorizar y cerrar tickets de soporte.',
+    domain: 'support',
+  },
+  {
+    key: AdminPermissionKey.USERS_READ,
+    label: 'Ver ficha de usuario',
+    description: 'Consultar la ficha completa de una cuenta y su actividad.',
+    domain: 'users',
+  },
+  {
+    key: AdminPermissionKey.USERS_MANAGE,
+    label: 'Gestionar usuarios',
+    description:
+      'Activar y desactivar cuentas, emitir restablecimientos de contraseña y revocar sesiones.',
+    domain: 'users',
+  },
+  {
+    // Tercer escalón y no parte de `users:manage`: cambiar el rol de una cuenta
+    // o anonimizarla no se deshace, y quien atiende el mostrador no necesita
+    // poder hacerlo para hacer su trabajo.
+    key: AdminPermissionKey.USERS_DANGER,
+    label: 'Acciones irreversibles sobre usuarios',
+    description: 'Cambiar el rol de una cuenta y anonimizarla.',
+    domain: 'users',
   },
   {
     key: AdminPermissionKey.ADMIN_ACCESS_MANAGE,

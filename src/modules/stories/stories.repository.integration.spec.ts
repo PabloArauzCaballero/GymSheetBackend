@@ -178,6 +178,19 @@ afterAll(async () => {
 beforeEach(async () => {
   if (unavailable) return;
   await raw("BEGIN");
+  // Los dos gimnasios tienen que existir antes que sus socios: `usuarios.tenant_id`
+  // es clave foránea contra `tenants` desde la migración 202608290001, y esta
+  // prueba daba por hecho que alguien los había sembrado. En una base recién
+  // migrada sólo existe `default`, así que el caso de otro gimnasio fallaba al
+  // insertar el fixture y no por lo que pretendía comprobar.
+  //
+  // Va dentro de la transacción como todo lo demás: el ROLLBACK de `afterEach`
+  // también lo deshace, así que la base de desarrollo sigue intacta.
+  await raw(
+    `INSERT INTO tenants (id, nombre) VALUES (:tenant, :tenant), (:otherTenant, :otherTenant)
+     ON CONFLICT (id) DO NOTHING`,
+    { tenant, otherTenant },
+  );
   await insertUser(viewerId, "Viewer");
 });
 

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { UserRole } from '../../common/enums/domain.enums';
 import { isAccountInScope } from '../../common/tenancy/tenant-scope';
 import { UsersRepository } from '../users/users.repository';
 import { ADMIN_PERMISSION_CATALOG } from './admin-permission.catalog';
@@ -20,6 +21,22 @@ export class AdminPermissionsService {
   async getPermissionKeysForUser(userId: string): Promise<string[]> {
     const grants = await this.repository.findActiveGrantsForUser(userId);
     return grants.map((grant) => grant.permissionKey);
+  }
+
+  /**
+   * Lo que esta cuenta puede hacer AHORA, no lo que tiene concedido.
+   *
+   * Para `SYSTEM_ADMIN` los dos números no coinciden: no depende de concesiones
+   * y `PermissionGuard` lo deja pasar por rol, así que su tabla de concesiones
+   * está vacía. Devolver esa lista vacía haría que el cliente escondiera
+   * exactamente los botones que la API sí le habría permitido usar — backend y
+   * portal contestando distinto a la misma pregunta.
+   */
+  async getEffectivePermissionKeys(userId: string, role: UserRole): Promise<string[]> {
+    if (role === UserRole.SYSTEM_ADMIN) {
+      return [...this.knownPermissionKeys];
+    }
+    return this.getPermissionKeysForUser(userId);
   }
 
   listCatalog() {

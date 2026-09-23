@@ -13,6 +13,20 @@ import { Sequelize } from 'sequelize-typescript';
  * Todo se acota a una ventana de días. Un panel sin límite temporal contesta
  * «cuánto se ha usado esto desde siempre», que no es una pregunta que ayude a
  * decidir nada; «este mes» sí.
+ *
+ * ## Alcance por gimnasio
+ *
+ * Cada consulta recibe `tenantScope` y lo aplica. El endurecimiento H-02 cerró
+ * este agujero en `MembershipRepository` (socios, membresías, personal) pero no
+ * llegó hasta aquí, así que estos cuatro informes seguían contestando sobre la
+ * plataforma entera a cualquier `ADMIN`: la lista de usuarios devolvía las
+ * cuentas de todos los gimnasios, y los paneles mezclaban su actividad.
+ *
+ * El convenio es el mismo que en el resto del backend: `null` significa «sin
+ * filtro» y sólo lo alcanza un `SYSTEM_ADMIN` que no está suplantando. Se
+ * expresa como `(:tenantScope IS NULL OR u.tenant_id = :tenantScope)` para que
+ * la consulta sea una sola y el caso sin filtro no viva en una rama aparte que
+ * nadie prueba.
  */
 @Injectable()
 export class GymInsightsService {
@@ -28,7 +42,7 @@ export class GymInsightsService {
    * día. Un panel que exige configuración previa para decir algo es un panel
    * que nadie abre dos veces.
    */
-  async equipmentUsage(days: number) {
+  async equipmentUsage(days: number, tenantScope: string | null) {
     return this.sequelize.query<{
       equipoId: string | null;
       nombre: string;
@@ -46,6 +60,10 @@ export class GymInsightsService {
          FROM series_entrenamiento s
          JOIN sesiones_ejercicios se ON se.id = s.sesion_ejercicio_id
          JOIN sesiones_entrenamiento ses ON ses.id = se.sesion_id
+         -- El gimnasio de un entrenamiento es el de quien lo hizo: la sesión no
+         -- lo guarda, y el equipo tampoco sirve de filtro porque el informe
+         -- agrupa también por ejercicio cuando no hay máquina registrada.
+         JOIN usuarios u ON u.id = ses.usuario_id
          JOIN ejercicios ej ON ej.id = se.ejercicio_id
          -- La relación es de varios a varios: un ejercicio puede necesitar una
          -- prensa y su barra. Una serie cuenta para cada equipo implicado, que
@@ -53,10 +71,11 @@ export class GymInsightsService {
          LEFT JOIN ejercicios_equipos ee ON ee.ejercicio_id = ej.id
          LEFT JOIN equipos_gym eq ON eq.id = ee.equipo_gym_id
         WHERE ses.fecha_inicio >= NOW() - (:days * INTERVAL '1 day')
+          AND (:tenantScope IS NULL OR u.tenant_id = :tenantScope)
         GROUP BY eq.id, eq.nombre, eq.tipo, ej.nombre
         ORDER BY "series" DESC
         LIMIT 20`,
-      { type: QueryTypes.SELECT, replacements: { days } },
+      { type: QueryTypes.SELECT, replacements: { days, tenantScope } },
     );
   }
 
@@ -70,7 +89,7 @@ export class GymInsightsService {
    * entrenos sin entradas apunta a un lector estropeado. La comparación es el
    * dato.
    */
-  async peopleFlow(days: number) {
+  async peopleFlow(days: number, tenantScope: string | null) {
     return this.sequelize.query<{
       dia: string;
       sesionesApp: number;
@@ -90,7 +109,9 @@ export class GymInsightsService {
                  COUNT(*)::int AS sesiones,
                  COUNT(DISTINCT ses.usuario_id)::int AS personas
             FROM sesiones_entrenamiento ses
+            JOIN usuarios u ON u.id = ses.usuario_id
            WHERE ses.fecha_inicio >= CURRENT_DATE - (:days - 1) * INTERVAL '1 day'
+             AND (:tenantScope IS NULL OR u.tenant_id = :tenantScope)
            GROUP BY 1
         ),
         puerta AS (
@@ -98,8 +119,10 @@ export class GymInsightsService {
                  COUNT(*)::int AS entradas,
                  COUNT(DISTINCT d.user_id)::int AS personas
             FROM access_control.decisions d
+            JOIN usuarios u ON u.id = d.user_id
            WHERE d.outcome = 'GRANTED'
              AND d.decided_at >= CURRENT_DATE - (:days - 1) * INTERVAL '1 day'
+             AND (:tenantScope IS NULL OR u.tenant_id = :tenantScope)
            GROUP BY 1
         )
         SELECT to_char(dias.dia, 'YYYY-MM-DD')        AS "dia",
@@ -111,7 +134,7 @@ export class GymInsightsService {
           LEFT JOIN app ON app.dia = dias.dia
           LEFT JOIN puerta ON puerta.dia = dias.dia
          ORDER BY dias.dia`,
-      { type: QueryTypes.SELECT, replacements: { days } },
+      { type: QueryTypes.SELECT, replacements: { days, tenantScope } },
     );
   }
 
@@ -127,8 +150,18 @@ export class GymInsightsService {
    * escritos a medias, porque quien busca en recepción teclea «gonzalez» con el
    * cliente delante.
    */
-  async listUsers(limit: number, filtro: string | null) {
-    return this.sequelize.query<{
+  async listUsers(
+    input: {
+      page: number;
+      pageSize: number;
+      filtro: string | null;
+      /** Roles separados por comas, o `null` para no filtrar por rol. */
+      roles: string | null;
+    },
+    tenantScope: string | null,
+  ) {
+    const { page, pageSize, filtro, roles } = input;
+    const rows = await this.sequelize.query<{
       id: string;
       nombreCompleto: string;
       email: string;
@@ -140,6 +173,7 @@ export class GymInsightsService {
       venceEl: string | null;
       vigente: boolean;
       ultimaSesion: string | null;
+      total: string;
     }>(
       `WITH ultima AS (
           SELECT DISTINCT ON (m.user_id)
@@ -163,18 +197,53 @@ export class GymInsightsService {
                ultima.plan                                 AS "plan",
                to_char(ultima.ends_on, 'YYYY-MM-DD')       AS "venceEl",
                COALESCE(ultima.ends_on >= CURRENT_DATE, false) AS "vigente",
-               to_char(actividad.ultima, 'YYYY-MM-DD')     AS "ultimaSesion"
+               to_char(actividad.ultima, 'YYYY-MM-DD')     AS "ultimaSesion",
+               -- El total viaja en cada fila en vez de en una segunda consulta:
+               -- así el conteo y la página salen de la MISMA lectura y no puede
+               -- ocurrir que la interfaz anuncie 41 resultados y pinte 40
+               -- porque alguien se dio de alta entre las dos consultas.
+               COUNT(*) OVER ()                            AS "total"
           FROM usuarios u
           LEFT JOIN ultima ON ultima.user_id = u.id
           LEFT JOIN membership.customer_profiles c ON c.user_id = u.id
           LEFT JOIN actividad ON actividad.usuario_id = u.id
-         WHERE (:filtro IS NULL
+         WHERE (:tenantScope IS NULL OR u.tenant_id = :tenantScope)
+           -- Los roles viajan como UNA cadena y se parten aquí: expandir un
+           -- array por replacements produce una tupla ('A','B'), que no es lo
+           -- que ANY espera, y obligaría a componer la lista a mano dentro del
+           -- texto de la consulta.
+           AND (:roles IS NULL OR u.rol = ANY(string_to_array(:roles, ',')))
+           AND (:filtro IS NULL
                 OR u.email ILIKE '%' || :filtro || '%'
                 OR u.nombre_completo ILIKE '%' || :filtro || '%')
-         ORDER BY u.nombre_completo
-         LIMIT :limit`,
-      { type: QueryTypes.SELECT, replacements: { limit, filtro } },
+         -- El desempate por id evita que dos personas homónimas se intercambien
+         -- de sitio entre dos páginas y una de las dos no aparezca nunca.
+         ORDER BY u.nombre_completo, u.id
+         LIMIT :limit OFFSET :offset`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: {
+          limit: pageSize,
+          offset: (page - 1) * pageSize,
+          filtro,
+          roles,
+          tenantScope,
+        },
+      },
     );
+
+    // `COUNT(*) OVER ()` no devuelve fila cuando no hay resultados, así que el
+    // total de una búsqueda sin coincidencias es cero por ausencia, no por
+    // lectura.
+    const total = rows.length > 0 ? Number(rows[0].total) : 0;
+
+    return {
+      items: rows.map(({ total: _total, ...user }) => user),
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+    };
   }
 
   /**
@@ -187,7 +256,7 @@ export class GymInsightsService {
    * `DISTINCT ON` toma la membresía más reciente de cada persona; sin eso,
    * quien lleva tres años renovando aparecería tres veces.
    */
-  async lapsedMembers(limit: number) {
+  async lapsedMembers(limit: number, tenantScope: string | null) {
     return this.sequelize.query<{
       usuarioId: string;
       nombreCompleto: string;
@@ -218,10 +287,11 @@ export class GymInsightsService {
           LEFT JOIN membership.customer_profiles c ON c.user_id = u.id
          WHERE u.rol = 'CLIENTE'
            AND u.estado = 'ACTIVO'
+           AND (:tenantScope IS NULL OR u.tenant_id = :tenantScope)
            AND (ultima.vence_el IS NULL OR ultima.vence_el < CURRENT_DATE)
          ORDER BY ultima.vence_el DESC NULLS LAST
          LIMIT :limit`,
-      { type: QueryTypes.SELECT, replacements: { limit } },
+      { type: QueryTypes.SELECT, replacements: { limit, tenantScope } },
     );
   }
 }
