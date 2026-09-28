@@ -17,4 +17,11 @@ describe("updateMyAccountSchema", () => {
   it("rejects an empty update", () => {
     expect(updateMyAccountSchema.safeParse({}).success).toBe(false);
   });
+
+  it("accepts a branch uuid and rejects anything else", () => {
+    expect(
+      updateMyAccountSchema.safeParse({ sedeId: "3f1c2b7e-8a4d-4c1e-9b2a-5d6e7f8a9b0c" }).success,
+    ).toBe(true);
+    expect(updateMyAccountSchema.safeParse({ sedeId: "sede-1" }).success).toBe(false);
+  });
 });

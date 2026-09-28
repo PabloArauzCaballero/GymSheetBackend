@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Transaction } from 'sequelize';
-import { UserGender, UserRole, UserStatus } from '../../common/enums/domain.enums';
+import { FacilityStatus, UserGender, UserRole, UserStatus } from '../../common/enums/domain.enums';
+import { BranchModel } from '../facilities/branch.model';
 import { UserModel } from './user.model';
 
 export type CreateClientUserInput = {
@@ -25,7 +26,18 @@ export type CreateStaffUserInput = CreateClientUserInput & {
 
 @Injectable()
 export class UsersRepository {
-  constructor(@InjectModel(UserModel) private readonly userModel: typeof UserModel) {}
+  constructor(
+    @InjectModel(UserModel) private readonly userModel: typeof UserModel,
+    @InjectModel(BranchModel) private readonly branchModel: typeof BranchModel,
+  ) {}
+
+  /** ¿Existe esta sede, activa y dentro del gimnasio indicado? */
+  async isActiveBranchInTenant(branchId: string, tenantId: string): Promise<boolean> {
+    const count = await this.branchModel.count({
+      where: { id: branchId, tenantId, status: FacilityStatus.ACTIVE },
+    });
+    return count > 0;
+  }
 
   findById(userId: string, transaction?: Transaction): Promise<UserModel | null> {
     return this.userModel.findByPk(userId, { transaction });
