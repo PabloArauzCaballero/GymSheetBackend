@@ -430,7 +430,13 @@ services:
     # de levantar nada. Comprobado en este VPS: redis:7-alpine baja sin
     # problema, minio/minio no, quay.io/minio/minio sí. Es además el registro
     # que ya usa el stack de Atlas en esta misma máquina.
-    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    # MinIO retiró sus imágenes públicas de quay.io (HEAD → 401 Unauthorized, también
+    # sin credenciales y para este tag), así que `compose pull` ya no puede bajarla.
+    # La misma versión está en el daemon de este VPS como `datacenter-minio` (es la que
+    # ya sirve el media): se usa local y `pull_policy: never` evita el pull. Si el daemon
+    # se limpia, hay que reconstruirla o mudar a un mirror propio.
+    image: datacenter-minio:RELEASE.2025-04-22T22-12-26Z
+    pull_policy: never
     profiles: ['media']
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
@@ -492,7 +498,13 @@ services:
     # de levantar nada. Comprobado en este VPS: redis:7-alpine baja sin
     # problema, minio/minio no, quay.io/minio/minio sí. Es además el registro
     # que ya usa el stack de Atlas en esta misma máquina.
-    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    # MinIO retiró sus imágenes públicas de quay.io (HEAD → 401 Unauthorized, también
+    # sin credenciales y para este tag), así que `compose pull` ya no puede bajarla.
+    # La misma versión está en el daemon de este VPS como `datacenter-minio` (es la que
+    # ya sirve el media): se usa local y `pull_policy: never` evita el pull. Si el daemon
+    # se limpia, hay que reconstruirla o mudar a un mirror propio.
+    image: datacenter-minio:RELEASE.2025-04-22T22-12-26Z
+    pull_policy: never
     profiles: ['media']
     depends_on:
       minio:
