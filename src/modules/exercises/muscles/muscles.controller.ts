@@ -50,14 +50,21 @@ export class MusclesCatalogController {
     return this.musclesService.listMuscles();
   }
 
+  @Get(":code")
+  getMuscle(@Param("code") code: string) {
+    return this.musclesService.getMuscle(code);
+  }
+
   @Get(":code/exercises")
   listExercisesByMuscle(
     @Param("code") code: string,
     @Query("limit", new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query("offset", new DefaultValuePipe(0), ParseIntPipe) offset: number,
   ) {
     return this.musclesService.listExercisesByMuscle(
       code,
       Math.min(Math.max(limit, 1), 100),
+      Math.max(offset, 0),
     );
   }
 }

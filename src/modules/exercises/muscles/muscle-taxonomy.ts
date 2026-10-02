@@ -88,6 +88,33 @@ export const muscles: readonly MuscleSeed[] = [
   { code: "CARDIOVASCULAR", name: "Sistema cardiovascular", latinName: "Systema cardiovasculare", groupCode: "CARDIO", description: "Demanda aeróbica/anaeróbica sistémica." },
 ];
 
+/**
+ * Músculo cuyos ejercicios se enseñan cuando el pedido no tiene ninguno propio.
+ *
+ * El dataset etiqueta por regiones («delts», «glutes», «forearms»), no por
+ * fascículo, así que `DELTOID_ANTERIOR` o `GLUTEUS_MEDIUS` existen en la figura
+ * y en la taxonomía pero ningún ejercicio apunta a ellos de forma exclusiva.
+ * Sin esto, tocar el hombro en la figura llevaba a «Sin ejercicios» aunque el
+ * deltoides tenga más de quinientos.
+ *
+ * Solo se usa cuando el músculo **no tiene ninguno propio** (decisión de
+ * `MusclesService`, no de esta tabla): si una futura carga de datos le asigna
+ * ejercicios, dejan de usarse solos. Cada entrada es el músculo del que forma
+ * parte o al que asiste, y la respuesta lo declara para que el cliente pueda
+ * decir «estos entrenan X» en vez de pasarlos por propios.
+ */
+export const exerciseFallbackMuscle: Readonly<Record<string, string>> = {
+  DELTOID_ANTERIOR: "DELTOID",
+  DELTOID_LATERAL: "DELTOID",
+  DELTOID_POSTERIOR: "DELTOID",
+  PECTORALIS_MINOR: "PECTORALIS_MAJOR",
+  TERES_MAJOR: "LATISSIMUS_DORSI",
+  INFRASPINATUS: "ROTATOR_CUFF",
+  BRACHIORADIALIS: "FOREARM_FLEXORS",
+  TRANSVERSE_ABDOMINIS: "RECTUS_ABDOMINIS",
+  GLUTEUS_MEDIUS: "GLUTEUS_MAXIMUS",
+};
+
 /** Alias observados en los datos → código de músculo canónico. */
 const muscleAliases: Readonly<Record<string, string>> = {
   // chest

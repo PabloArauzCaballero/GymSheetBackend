@@ -1,4 +1,5 @@
 import {
+  exerciseFallbackMuscle,
   groupOfMuscle,
   muscleGroups,
   muscles,
@@ -17,6 +18,24 @@ describe("muscle taxonomy", () => {
     expect(new Set(muscleGroups.map((g) => g.code)).size).toBe(
       muscleGroups.length,
     );
+  });
+
+  describe("exerciseFallbackMuscle", () => {
+    const codes = new Set(muscles.map((muscle) => muscle.code));
+
+    it("only relates muscles that exist", () => {
+      for (const [from, to] of Object.entries(exerciseFallbackMuscle)) {
+        expect(codes.has(from)).toBe(true);
+        expect(codes.has(to)).toBe(true);
+      }
+    });
+
+    it("never points a muscle at itself or at another fallback (no chains, no loops)", () => {
+      for (const [from, to] of Object.entries(exerciseFallbackMuscle)) {
+        expect(to).not.toBe(from);
+        expect(exerciseFallbackMuscle[to]).toBeUndefined();
+      }
+    });
   });
 
   describe("normalizeMuscleLabel", () => {
