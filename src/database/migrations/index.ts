@@ -58,6 +58,7 @@ import { deviceTokensMigration } from "./202609131200-device-tokens";
 import { adminAuditLogMigration } from "./202609150001-admin-audit-log";
 import { moderationMigration } from "./202609150002-moderation";
 import { webPushDeviceTokensMigration } from "./202609160001-web-push-device-tokens";
+import { profileBirthDateMigration } from "./202609160002-profile-birth-date";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -116,5 +117,6 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   adminAuditLogMigration,
   moderationMigration,
   webPushDeviceTokensMigration,
+  profileBirthDateMigration,
   exerciseMediaPlainHttpMigration,
 ];
