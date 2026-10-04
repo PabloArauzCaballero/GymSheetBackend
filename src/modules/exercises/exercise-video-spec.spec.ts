@@ -1,5 +1,6 @@
 import {
   EXERCISE_VIDEO_SPEC,
+  LIBRARY_VIDEO_PROFILE,
   parseFrameRate,
   validateExerciseVideo,
 } from "./exercise-video-spec";
@@ -185,5 +186,53 @@ describe("validateExerciseVideo", () => {
       format: { duration: "6.150000", size: "336533" },
     });
     expect(check.valid).toBe(true);
+  });
+});
+
+describe("validateExerciseVideo con el perfil de la biblioteca", () => {
+  it("acepta el clip de 720×720 que el perfil de renders propios rechaza", () => {
+    expect(validateExerciseVideo(REPORT_720).valid).toBe(false);
+    expect(validateExerciseVideo(REPORT_720, LIBRARY_VIDEO_PROFILE).valid).toBe(true);
+  });
+
+  it("acepta un bucle de 9 s, que es lo que dura el GIF de origen", () => {
+    const check = validateExerciseVideo(
+      { ...VALID_REPORT, format: { duration: "9.300000", size: "900000" } },
+      LIBRARY_VIDEO_PROFILE,
+    );
+    expect(check.valid).toBe(true);
+  });
+
+  it("rechaza un clip demasiado corto para verse como demostración", () => {
+    const check = validateExerciseVideo(
+      { ...VALID_REPORT, format: { duration: "2.000000", size: "90000" } },
+      LIBRARY_VIDEO_PROFILE,
+    );
+    expect(check.valid).toBe(false);
+    expect(check.problems.join(" ")).toContain("entre 3 y 15 s");
+  });
+
+  it("rechaza una pieza que no es cuadrada aunque un lado coincida", () => {
+    const check = validateExerciseVideo(
+      {
+        ...VALID_REPORT,
+        streams: [{ ...VALID_REPORT.streams[0], width: 720, height: 1280 }],
+      },
+      LIBRARY_VIDEO_PROFILE,
+    );
+    expect(check.valid).toBe(false);
+    expect(check.problems.join(" ")).toContain("720×1280");
+  });
+
+  it("sigue exigiendo 30 fps y ninguna pista de audio", () => {
+    expect(validateExerciseVideo(REPORT_24_FPS, LIBRARY_VIDEO_PROFILE).valid).toBe(false);
+    const withAudio = validateExerciseVideo(
+      {
+        ...VALID_REPORT,
+        streams: [...VALID_REPORT.streams, { codec_type: "audio", codec_name: "aac" }],
+      },
+      LIBRARY_VIDEO_PROFILE,
+    );
+    expect(withAudio.valid).toBe(false);
   });
 });

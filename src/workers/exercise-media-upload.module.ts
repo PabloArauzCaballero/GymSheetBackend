@@ -8,15 +8,17 @@ import { ExerciseMediaRepository } from "../modules/exercises/exercise-media.rep
 import { ExerciseMediaService } from "../modules/exercises/exercise-media.service";
 import { ExerciseModel } from "../modules/exercises/exercise.model";
 import { ExercisesRepository } from "../modules/exercises/exercises.repository";
+import { ExerciseLibraryRepository } from "../modules/exercises/import/exercise-library.repository";
 import { UserExerciseModel } from "../modules/exercises/user-exercise.model";
 import { createMediaStorageProvider } from "../modules/media/media-storage.factory";
 import { MEDIA_STORAGE_PROVIDER } from "../modules/media/media-storage.port";
 import { UsersModule } from "../modules/users/users.module";
 
 /**
- * Contexto mínimo para la carga por lotes de demostraciones: base de datos,
- * catálogo de ejercicios, media y el proveedor de almacenamiento configurado.
- * Sin superficie HTTP.
+ * Contexto mínimo para la carga por lotes de demostraciones
+ * (`db:media:ejercicios` y `db:import:biblioteca`): base de datos, catálogo de
+ * ejercicios, media y el proveedor de almacenamiento configurado. Sin
+ * superficie HTTP.
  *
  * Reutiliza `ExerciseMediaService` en vez de escribir filas por su cuenta: la
  * validación, el límite de medios activos y la invariante del principal viven
@@ -36,6 +38,7 @@ import { UsersModule } from "../modules/users/users.module";
   ],
   providers: [
     ExercisesRepository,
+    ExerciseLibraryRepository,
     ExerciseMediaRepository,
     ExerciseMediaService,
     {

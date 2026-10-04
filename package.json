@@ -33,6 +33,8 @@
     "db:snapshot:exercises": "ts-node src/workers/exercises-snapshot.command.ts",
     "db:media:ejercicios": "ts-node src/workers/exercise-media-upload.command.ts",
     "db:media:ejercicios:prod": "node dist/workers/exercise-media-upload.command.js",
+    "db:import:biblioteca": "ts-node src/workers/exercise-library-import.command.ts",
+    "db:import:biblioteca:prod": "node dist/workers/exercise-library-import.command.js",
     "worker:access:prod": "node dist/workers/access-event.worker.js",
     "worker:reminders:prod": "node dist/workers/membership-reminder.worker.js",
     "worker:notifications:prod": "node dist/workers/notification-delivery.worker.js",
