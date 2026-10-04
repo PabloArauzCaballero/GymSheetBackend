@@ -131,6 +131,12 @@ export class ExerciseMediaService {
     exerciseId: string,
     file: UploadedExerciseMedia | undefined,
     input: UploadExerciseMediaInput,
+    /**
+     * Metadatos de procedencia que solo pone un proceso interno (la carga de la
+     * biblioteca: origen, licencia de la pieza, marca visible). No viaja por
+     * HTTP: el formulario no puede escribir en `metadata` lo que quiera.
+     */
+    extraMetadata: Record<string, unknown> = {},
   ): Promise<ExerciseMediaResponse> {
     const exercise = await this.findVisibleExerciseOrFail(
       exerciseId,
@@ -225,7 +231,13 @@ export class ExerciseMediaService {
       );
     }
     if (existing) {
-      const updated = await this.reactivate(existing, input, mimeType, stored);
+      const updated = await this.reactivate(
+        existing,
+        input,
+        mimeType,
+        stored,
+        extraMetadata,
+      );
       return mapExerciseMediaToResponse(updated);
     }
 
@@ -254,7 +266,7 @@ export class ExerciseMediaService {
         license: input.license ?? null,
         isPrimary: input.isPrimary,
         sortOrder: input.sortOrder,
-        metadata: this.buildMetadata(input, stored, variant),
+        metadata: this.buildMetadata(input, stored, variant, {}, extraMetadata),
       },
       input.isPrimary || activeMediaCount === 0,
       authenticatedUser.id,
@@ -273,6 +285,7 @@ export class ExerciseMediaService {
     input: UploadExerciseMediaInput,
     mimeType: string,
     stored: StoredAsset,
+    extraMetadata: Record<string, unknown> = {},
   ): Promise<ExerciseMediaModel> {
     return this.sequelize.transaction(async (transaction) => {
       const shouldBePrimary = input.isPrimary || media.isPrimary;
@@ -301,7 +314,13 @@ export class ExerciseMediaService {
           // El póster solo se pisa si llega uno nuevo: una recarga sin póster no
           // debe dejar sin miniatura una fila que ya la tenía.
           thumbnailUrl: input.thumbnailUrl ?? media.thumbnailUrl,
-          metadata: this.buildMetadata(input, stored, variant, previous),
+          metadata: this.buildMetadata(
+            input,
+            stored,
+            variant,
+            previous,
+            extraMetadata,
+          ),
         },
         { transaction },
       );
@@ -349,9 +368,11 @@ export class ExerciseMediaService {
     stored: StoredAsset,
     variant: string,
     previous: Record<string, unknown> = {},
+    extraMetadata: Record<string, unknown> = {},
   ): Record<string, unknown> {
     return {
       ...previous,
+      ...extraMetadata,
       variant,
       renderVersion: input.renderVersion,
       ...(input.reps === undefined ? {} : { reps: input.reps }),

@@ -1,13 +1,8 @@
 import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
-import { spawnSync } from "child_process";
-import { createHash } from "crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { basename, join, resolve } from "path";
-import {
-  ExerciseMediaStatus,
-  UserRole,
-} from "../common/enums/domain.enums";
+import { ExerciseMediaStatus } from "../common/enums/domain.enums";
 import { AuthenticatedUser } from "../common/types/auth-context.types";
 import { env } from "../config/env";
 import {
@@ -27,6 +22,13 @@ import {
   MediaStorageProvider,
 } from "../modules/media/media-storage.port";
 import { UsersRepository } from "../modules/users/users.repository";
+import {
+  hasFfprobe,
+  probeVideo,
+  readFlag,
+  resolveAdministratorActor,
+  sha256File,
+} from "./exercise-media-command.shared";
 import { ExerciseMediaUploadModule } from "./exercise-media-upload.module";
 
 /**
@@ -98,17 +100,6 @@ interface ExerciseOutcome {
   reasons: string[];
 }
 
-/** `--flag=valor` o `--flag valor`, como el resto de comandos del repo. */
-function readFlag(argv: readonly string[], name: string): string | undefined {
-  const withEquals = argv.find((argument) => argument.startsWith(`--${name}=`));
-  if (withEquals) return withEquals.slice(name.length + 3);
-  const index = argv.indexOf(`--${name}`);
-  if (index >= 0 && argv[index + 1] && !argv[index + 1].startsWith("--")) {
-    return argv[index + 1];
-  }
-  return undefined;
-}
-
 export function parseCommandOptions(argv: readonly string[]): CommandOptions {
   const attribution = readFlag(argv, "attribution")?.trim();
   if (!attribution) {
@@ -127,40 +118,6 @@ export function parseCommandOptions(argv: readonly string[]): CommandOptions {
     deliveriesRoot: readFlag(argv, "dir") ?? "entregas",
     renderVersion,
   };
-}
-
-/** ¿Está `ffprobe` disponible? Sin él no se puede garantizar la especificación. */
-function hasFfprobe(): boolean {
-  const probe = spawnSync("ffprobe", ["-version"], { encoding: "utf8" });
-  return !probe.error && probe.status === 0;
-}
-
-function probeVideo(filePath: string): unknown {
-  const probe = spawnSync(
-    "ffprobe",
-    [
-      "-v",
-      "error",
-      "-show_entries",
-      "stream=codec_type,codec_name,width,height,r_frame_rate,nb_frames",
-      "-show_entries",
-      "format=duration,size",
-      "-of",
-      "json",
-      filePath,
-    ],
-    { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 },
-  );
-  if (probe.status !== 0) {
-    throw new Error(
-      `ffprobe falló sobre ${basename(filePath)}: ${probe.stderr.trim()}`,
-    );
-  }
-  return JSON.parse(probe.stdout) as unknown;
-}
-
-function sha256(filePath: string): string {
-  return createHash("sha256").update(readFileSync(filePath)).digest("hex");
 }
 
 interface Piece {
@@ -312,7 +269,7 @@ async function processExercise(params: {
       mimeType: piece.mimeType,
       renderVersion: options.renderVersion,
     });
-    const checksum = sha256(piece.filePath);
+    const checksum = sha256File(piece.filePath);
     const existing = await mediaRepository.findByExternalIdentity(
       exerciseId,
       provider,
@@ -408,30 +365,9 @@ async function run(): Promise<void> {
   );
 
   try {
-    const usersRepository = application.get(UsersRepository);
-    const administratorEmail = env.SEED_ADMIN_EMAIL;
-    if (!administratorEmail) {
-      throw new Error(
-        "Falta SEED_ADMIN_EMAIL: el comando necesita saber con qué cuenta " +
-          "administradora se registran las demostraciones.",
-      );
-    }
-    const administrator =
-      await usersRepository.findActiveByEmail(administratorEmail);
-    if (!administrator || administrator.role !== UserRole.ADMIN) {
-      throw new Error(
-        `No hay un administrador activo con el correo ${administratorEmail}; ` +
-          "el catálogo global solo lo puede gestionar un ADMIN.",
-      );
-    }
-    const actor: AuthenticatedUser = {
-      id: administrator.id,
-      email: administrator.email,
-      role: administrator.role,
-      tenantId: administrator.tenantId ?? env.DEFAULT_TENANT_ID,
-      tenantScope: administrator.tenantId ?? env.DEFAULT_TENANT_ID,
-      impersonating: false,
-    };
+    const actor = await resolveAdministratorActor(
+      application.get(UsersRepository),
+    );
 
     const directories = readdirSync(root, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())

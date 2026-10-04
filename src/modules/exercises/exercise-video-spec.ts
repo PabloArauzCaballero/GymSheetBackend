@@ -23,6 +23,48 @@ export const EXERCISE_VIDEO_SPEC = {
   durationToleranceSeconds: 0.2,
 } as const;
 
+/**
+ * Lo que se comprueba de una pieza, de forma general. Los renders propios
+ * (§1 del plan) son el caso estricto; una biblioteca comprada trae duraciones y
+ * tamaños que no controlamos, y se valida con su propio perfil en vez de
+ * relajar el de los renders.
+ */
+export interface ExerciseVideoProfile {
+  /** Lados admitidos. La pieza tiene que ser cuadrada y medir uno de ellos. */
+  squareSides: readonly number[];
+  framesPerSecond: number;
+  minDurationSeconds: number;
+  maxDurationSeconds: number;
+  /** Cómo se describe la duración esperada en el mensaje de rechazo. */
+  durationLabel: string;
+}
+
+export const OWN_RENDER_VIDEO_PROFILE: ExerciseVideoProfile = {
+  squareSides: [EXERCISE_VIDEO_SPEC.width],
+  framesPerSecond: EXERCISE_VIDEO_SPEC.framesPerSecond,
+  minDurationSeconds:
+    EXERCISE_VIDEO_SPEC.durationSeconds -
+    EXERCISE_VIDEO_SPEC.durationToleranceSeconds,
+  maxDurationSeconds:
+    EXERCISE_VIDEO_SPEC.durationSeconds +
+    EXERCISE_VIDEO_SPEC.durationToleranceSeconds,
+  durationLabel: `${EXERCISE_VIDEO_SPEC.durationSeconds} s ±${EXERCISE_VIDEO_SPEC.durationToleranceSeconds}`,
+};
+
+/**
+ * Biblioteca comprada (plan de la biblioteca 2026-10): los GIF de origen son
+ * 1080×1080 y los clips recortados de los vídeos verticales quedan en 720×720
+ * nativos —reescalarlos solo añadiría peso—. Duran lo que dura el bucle del
+ * original, de 5 a 9 s en la práctica.
+ */
+export const LIBRARY_VIDEO_PROFILE: ExerciseVideoProfile = {
+  squareSides: [720, 1080],
+  framesPerSecond: 30,
+  minDurationSeconds: 3,
+  maxDurationSeconds: 15,
+  durationLabel: "entre 3 y 15 s",
+};
+
 const ffprobeStreamSchema = z.object({
   codec_type: z.string().optional(),
   codec_name: z.string().optional(),
@@ -80,7 +122,10 @@ export interface ExerciseVideoCheck {
  * los motivos en vez de parar en el primero: quien recodifica prefiere una
  * lista completa a tres viajes de ida y vuelta.
  */
-export function validateExerciseVideo(rawReport: unknown): ExerciseVideoCheck {
+export function validateExerciseVideo(
+  rawReport: unknown,
+  profile: ExerciseVideoProfile = OWN_RENDER_VIDEO_PROFILE,
+): ExerciseVideoCheck {
   const parsed = ffprobeReportSchema.safeParse(rawReport);
   if (!parsed.success) {
     return {
@@ -111,20 +156,23 @@ export function validateExerciseVideo(rawReport: unknown): ExerciseVideoCheck {
     problems.push("El archivo no tiene pista de vídeo.");
   } else {
     if (
-      video.width !== EXERCISE_VIDEO_SPEC.width ||
-      video.height !== EXERCISE_VIDEO_SPEC.height
+      video.width !== video.height ||
+      !profile.squareSides.includes(video.width ?? -1)
     ) {
+      const expected = profile.squareSides
+        .map((side) => `${side}×${side}`)
+        .join(" o ");
       problems.push(
-        `Resolución ${video.width ?? "?"}×${video.height ?? "?"}; se espera ${EXERCISE_VIDEO_SPEC.width}×${EXERCISE_VIDEO_SPEC.height}.`,
+        `Resolución ${video.width ?? "?"}×${video.height ?? "?"}; se espera ${expected}.`,
       );
     }
     if (framesPerSecond === null) {
       problems.push("No se pudo leer la cadencia de fotogramas.");
     } else if (
-      Math.abs(framesPerSecond - EXERCISE_VIDEO_SPEC.framesPerSecond) > 0.01
+      Math.abs(framesPerSecond - profile.framesPerSecond) > 0.01
     ) {
       problems.push(
-        `Cadencia ${framesPerSecond.toFixed(2)} fps; se esperan ${EXERCISE_VIDEO_SPEC.framesPerSecond} fps.`,
+        `Cadencia ${framesPerSecond.toFixed(2)} fps; se esperan ${profile.framesPerSecond} fps.`,
       );
     }
   }
@@ -132,11 +180,12 @@ export function validateExerciseVideo(rawReport: unknown): ExerciseVideoCheck {
   if (durationSeconds === null) {
     problems.push("No se pudo leer la duración.");
   } else if (
-    Math.abs(durationSeconds - EXERCISE_VIDEO_SPEC.durationSeconds) >
-    EXERCISE_VIDEO_SPEC.durationToleranceSeconds
+    // Un pelo de margen para el redondeo de coma flotante en los bordes.
+    durationSeconds < profile.minDurationSeconds - 1e-9 ||
+    durationSeconds > profile.maxDurationSeconds + 1e-9
   ) {
     problems.push(
-      `Duración ${durationSeconds.toFixed(2)} s; se esperan ${EXERCISE_VIDEO_SPEC.durationSeconds} s ±${EXERCISE_VIDEO_SPEC.durationToleranceSeconds}.`,
+      `Duración ${durationSeconds.toFixed(2)} s; se esperan ${profile.durationLabel}.`,
     );
   }
 

@@ -53,6 +53,10 @@ export class ExerciseEnrichmentService {
       await this.muscleGroupModel.bulkCreate(
         muscleGroups.map((group) => ({ ...group })),
         {
+          // La identidad es el código, no el id: sin esto Sequelize genera
+          // ON CONFLICT (id), los ids nuevos nunca chocan y la segunda pasada
+          // revienta contra `muscle_groups_code_key`.
+          conflictAttributes: ["code"],
           updateOnDuplicate: ["name", "region", "description"],
           transaction,
         },
@@ -72,6 +76,7 @@ export class ExerciseEnrichmentService {
           description: muscle.description,
         })),
         {
+          conflictAttributes: ["code"],
           updateOnDuplicate: [
             "name",
             "latinName",
