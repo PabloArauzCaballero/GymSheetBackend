@@ -276,9 +276,10 @@ export class ExerciseMediaService {
   }
 
   /**
-   * Actualiza y reactiva una demostración ya asociada: mismo objeto, datos
-   * nuevos. Cubre el caso de volver a subir el mismo archivo con otro texto
-   * alternativo o para marcarlo como principal.
+   * Actualiza y reactiva una demostración ya asociada. Cubre volver a subir
+   * el mismo archivo con otro texto alternativo o para marcarlo como
+   * principal, y también subir un contenido corregido con la misma identidad:
+   * la fila pasa a apuntar al objeto nuevo.
    */
   private reactivate(
     media: ExerciseMediaModel,
@@ -306,6 +307,11 @@ export class ExerciseMediaService {
           status: ExerciseMediaStatus.ACTIVE,
           mediaType: mediaTypeForMime(mimeType),
           mimeType,
+          // Si el contenido cambió (un recorte corregido con la misma
+          // identidad), la fila pasa al objeto nuevo; sin esto seguía
+          // sirviendo el vídeo viejo y el checksum nunca casaba.
+          url: stored.url,
+          checksumSha256: stored.checksumSha256,
           altText: input.altText,
           attribution: input.attribution ?? null,
           license: input.license ?? null,
