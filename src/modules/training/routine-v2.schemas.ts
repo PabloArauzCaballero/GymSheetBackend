@@ -95,3 +95,13 @@ export const invitationListQuerySchema = z.object({
 
 export type InviteInput = z.infer<typeof inviteSchema>;
 export type InvitationListQuery = z.infer<typeof invitationListQuerySchema>;
+
+export const adminRoutineListQuerySchema = z.object({
+  oficial: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+  estadoModeracion: z.enum(['VISIBLE', 'OCULTA_AUTO', 'OCULTA_MODERACION']).optional(),
+  autor: z.string().uuid().optional(),
+  q: z.string().trim().min(1).max(80).optional(),
+  cursor: z.string().max(64).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+export type AdminRoutineListQuery = z.infer<typeof adminRoutineListQuerySchema>;

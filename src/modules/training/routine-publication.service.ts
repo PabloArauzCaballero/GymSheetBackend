@@ -61,12 +61,13 @@ export class RoutinePublicationService {
 
   async unpublish(actor: Actor, routineId: string): Promise<RoutineResponse> {
     const routine = await this.load(routineId);
-    await this.access.assertCanEdit(actor, routine);
-    if (routine.isOfficial) {
+    if (routine.isOfficial && actor.role !== UserRole.SYSTEM_ADMIN) {
       throw new DomainException(403, 'OFFICIAL_FORBIDDEN', 'Una rutina oficial solo la gestiona REPP.');
     }
+    await this.access.assertCanEdit(actor, routine);
     if (routine.visibility === RoutineVisibility.PUBLIC) {
-      await routine.update({ visibility: RoutineVisibility.PRIVATE, publishedAt: null });
+      // Una rutina que deja de ser pública deja también de ser «Recomendada por REPP».
+      await routine.update({ visibility: RoutineVisibility.PRIVATE, publishedAt: null, isOfficial: false });
     }
     return this.respond(actor, routine.id);
   }

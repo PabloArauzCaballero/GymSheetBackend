@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { QueryTypes } from 'sequelize';
+import { exerciseVisibleSql } from '../../common/sql/content-visibility';
 import { ExerciseLikeModel } from '../community/exercise-like.model';
 import { ExerciseModel } from './exercise.model';
 import { UserExercisePreferenceModel } from './muscles/user-exercise-preference.model';
@@ -54,20 +55,8 @@ export class ExerciseCommunityRepository {
    */
   async isReachableViaRoutine(exerciseId: string, userId: string): Promise<boolean> {
     const rows = await this.exerciseModel.sequelize!.query<{ ok: number }>(
-      `SELECT 1 AS ok
-         FROM training.routine_exercises re
-         JOIN training.routines r ON r.id = re.routine_id
-         JOIN public.ejercicios e ON e.id = re.ejercicio_id
-        WHERE re.ejercicio_id = :exerciseId
-          AND e.estado = 'ACTIVO' AND e.estado_moderacion = 'VISIBLE'
-          AND r.estado = 'ACTIVE' AND r.estado_moderacion = 'VISIBLE'
-          AND ( r.visibilidad = 'PUBLIC'
-             OR r.created_by_user_id = :userId
-             OR EXISTS (SELECT 1 FROM training.routine_shares s
-                         WHERE s.routine_id = r.id AND s.invitado_id = :userId AND s.estado = 'ACCEPTED')
-             OR EXISTS (SELECT 1 FROM training.routine_assignments a
-                         WHERE a.routine_id = r.id AND a.cliente_user_id = :userId AND a.estado = 'ACTIVE') )
-        LIMIT 1`,
+      `SELECT 1 AS ok FROM public.ejercicios e
+        WHERE e.id = :exerciseId AND ${exerciseVisibleSql('e', ':userId')} LIMIT 1`,
       { replacements: { exerciseId, userId }, type: QueryTypes.SELECT },
     );
     return rows.length > 0;

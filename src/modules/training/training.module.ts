@@ -17,6 +17,8 @@ import { RoutinePublicationService } from './routine-publication.service';
 import { RoutineSharesRepository } from './routine-shares.repository';
 import { RoutineSharingController } from './routine-sharing.controller';
 import { RoutineSharingService } from './routine-sharing.service';
+import { RoutineAdminController } from './routine-admin.controller';
+import { RoutineAdminService } from './routine-admin.service';
 import { RoutineAccessService } from './routine-access.service';
 import { RoutineDaysRepository } from './routine-days.repository';
 import { RoutineCatalogRepository } from './routine-catalog.repository';
@@ -42,7 +44,12 @@ import { TrainingService } from './training.service';
     WorkoutsModule,
     NotificationsModule,
   ],
-  controllers: [TrainingController, RoutinePublicationController, RoutineSharingController],
+  controllers: [
+    TrainingController,
+    RoutinePublicationController,
+    RoutineSharingController,
+    RoutineAdminController,
+  ],
   providers: [
     TrainingRepository,
     TrainingService,
@@ -51,11 +58,12 @@ import { TrainingService } from './training.service';
     RoutineStructureService,
     RoutineCatalogRepository,
     RoutineCatalogService,
+    RoutineAdminService,
     RoutineNotifier,
     RoutinePublicationService,
     RoutineSharesRepository,
     RoutineSharingService,
   ],
-  exports: [TrainingService, TrainingRepository, RoutineAccessService],
+  exports: [TrainingService, TrainingRepository, RoutineAccessService, RoutineNotifier],
 })
 export class TrainingModule {}
