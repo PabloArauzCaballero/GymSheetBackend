@@ -5,6 +5,9 @@ import { ExercisesModule } from '../exercises/exercises.module';
 import { UserModel } from '../users/user.model';
 import { WorkoutsModule } from '../workouts/workouts.module';
 import { RoutineAssignmentModel } from './routine-assignment.model';
+import { RoutineDayModel } from './routine-day.model';
+import { RoutineShareModel } from './routine-share.model';
+import { RoutineWeekOverrideModel } from './routine-week-override.model';
 import { RoutineExerciseModel } from './routine-exercise.model';
 import { RoutineModel } from './routine.model';
 import { TrainingController } from './training.controller';
@@ -17,6 +20,9 @@ import { TrainingService } from './training.service';
       RoutineModel,
       RoutineExerciseModel,
       RoutineAssignmentModel,
+      RoutineDayModel,
+      RoutineShareModel,
+      RoutineWeekOverrideModel,
       ExerciseModel,
       UserModel,
     ]),

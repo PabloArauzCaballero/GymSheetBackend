@@ -17,7 +17,15 @@ import {
   TrainingGoal,
 } from '../../common/enums/domain.enums';
 import { UserModel } from '../users/user.model';
+import { RoutineDayModel } from './routine-day.model';
 import { RoutineExerciseModel } from './routine-exercise.model';
+
+/** Autoría congelada al copiar una rutina (sobrevive aunque el original desaparezca). */
+export type RoutineAttribution = {
+  routineName: string;
+  authorId: string | null;
+  authorName: string;
+};
 
 /**
  * A reusable training plan (rutina). Owned by the user that created it — a coach
@@ -72,6 +80,61 @@ export class RoutineModel extends Model {
   @Default({})
   @Column({ type: DataType.JSONB, allowNull: false, field: 'metadata' })
   declare metadata: Record<string, unknown>;
+
+  @Column({ type: DataType.SMALLINT, allowNull: true, field: 'duracion_semanas' })
+  declare durationWeeks: number | null;
+
+  @Default(false)
+  @Column({ type: DataType.BOOLEAN, allowNull: false, field: 'es_oficial' })
+  declare isOfficial: boolean;
+
+  @Column({ type: DataType.UUID, allowNull: true, field: 'basada_en_rutina_id' })
+  declare basedOnRoutineId: string | null;
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'basada_en_version' })
+  declare basedOnVersion: number | null;
+
+  @Column({ type: DataType.JSONB, allowNull: true, field: 'atribucion' })
+  declare attribution: RoutineAttribution | null;
+
+  @Default(1)
+  @Column({ type: DataType.INTEGER, allowNull: false, field: 'version' })
+  declare version: number;
+
+  @Column({ type: DataType.CHAR(64), allowNull: true, field: 'huella' })
+  declare fingerprint: string | null;
+
+  @Column({ type: DataType.DATE, allowNull: true, field: 'publicada_en' })
+  declare publishedAt: Date | null;
+
+  @Default('VISIBLE')
+  @Column({ type: DataType.STRING(20), allowNull: false, field: 'estado_moderacion' })
+  declare moderationState: 'VISIBLE' | 'OCULTA_AUTO' | 'OCULTA_MODERACION';
+
+  @Default({})
+  @Column({ type: DataType.JSONB, allowNull: false, field: 'progresion_config' })
+  declare progressionConfig: Record<string, unknown>;
+
+  @Column({ type: DataType.STRING(60), allowNull: true, field: 'tenant_id_autor' })
+  declare authorTenantId: string | null;
+
+  @Column({ type: DataType.DECIMAL(3, 2), allowNull: true, field: 'valoracion_promedio' })
+  declare ratingAverage: string | null;
+
+  @Default(0)
+  @Column({ type: DataType.INTEGER, allowNull: false, field: 'valoracion_total' })
+  declare ratingCount: number;
+
+  @Default(0)
+  @Column({ type: DataType.INTEGER, allowNull: false, field: 'copias_total' })
+  declare copiesCount: number;
+
+  @Default(0)
+  @Column({ type: DataType.INTEGER, allowNull: false, field: 'activaciones_total' })
+  declare activationsCount: number;
+
+  @HasMany(() => RoutineDayModel)
+  declare days?: RoutineDayModel[];
 
   @BelongsTo(() => UserModel)
   declare createdBy?: UserModel;
