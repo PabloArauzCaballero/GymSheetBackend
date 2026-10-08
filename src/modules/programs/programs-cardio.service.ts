@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import { Sequelize } from 'sequelize-typescript';
 import { DomainException } from '../../common/errors/domain.exception';
 import { BusinessDateService } from '../../common/time/business-date.service';
+import { ProductEvents } from '../../common/tracking/product-events';
 import { SessionFinishedContext, SessionHooksRegistry } from '../workouts/session-hooks';
 import { WorkoutsRepository } from '../workouts/workouts.repository';
 import { CardioPlansService } from './cardio-plans.service';
@@ -26,6 +27,7 @@ export class ProgramsCardioService implements OnModuleInit {
     private readonly workouts: WorkoutsRepository,
     private readonly dates: BusinessDateService,
     private readonly sequelize: Sequelize,
+    private readonly events: ProductEvents,
   ) {}
 
   onModuleInit(): void {
@@ -122,6 +124,7 @@ export class ProgramsCardioService implements OnModuleInit {
     if (week && qualifies) {
       await week.update({ cardioMinutes: before + Math.round(counted), sessionsDone: week.sessionsDone + 1 });
     }
+    this.events.emit('cardio_session_logged', { modalidad: plan.modality, min: Math.round(totalMinutes), cuentan: Math.round(counted) });
     const perSession = targetMinutesForWeek(plan.targetMinutes, plan.weeklyProgressionPct, weekNumber ?? 1);
     return {
       cardio: {

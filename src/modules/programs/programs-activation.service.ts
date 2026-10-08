@@ -3,6 +3,7 @@ import { Sequelize } from 'sequelize-typescript';
 import { RoutineAssignmentStatus, UserRole } from '../../common/enums/domain.enums';
 import { DomainException } from '../../common/errors/domain.exception';
 import { BusinessDateService } from '../../common/time/business-date.service';
+import { ProductEvents } from '../../common/tracking/product-events';
 import { RoutineAccessService } from '../training/routine-access.service';
 import { RoutinePublicationService } from '../training/routine-publication.service';
 import { TrainingRepository } from '../training/training.repository';
@@ -34,6 +35,7 @@ export class ProgramsActivationService {
     private readonly query: ProgramsQueryService,
     private readonly dates: BusinessDateService,
     private readonly sequelize: Sequelize,
+    private readonly events: ProductEvents,
   ) {}
 
   async activateStrength(actor: Actor, input: ActivateStrengthInput): Promise<ProgramView> {
@@ -102,6 +104,12 @@ export class ProgramsActivationService {
         );
         await routine.increment('activationsCount', { transaction });
         return program.id;
+      });
+      this.events.emit('program_activated', {
+        program_id: programId,
+        carril: 'STRENGTH',
+        modo: input.mode,
+        desde_copia: source.createdByUserId !== actor.id,
       });
       return this.query.viewById(programId);
     } catch (error: unknown) {

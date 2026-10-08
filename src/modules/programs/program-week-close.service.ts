@@ -4,6 +4,7 @@ import { QueryTypes, Transaction } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { RoutineAssignmentStatus } from '../../common/enums/domain.enums';
 import { BusinessDateService } from '../../common/time/business-date.service';
+import { ProductEvents } from '../../common/tracking/product-events';
 import { RoutineNotifier } from '../training/routine-notifier';
 import { TrainingRepository } from '../training/training.repository';
 import { CardioPlanModel } from './cardio-plan.model';
@@ -40,6 +41,7 @@ export class ProgramWeekCloseService {
     private readonly routines: TrainingRepository,
     private readonly notifier: RoutineNotifier,
     private readonly dates: BusinessDateService,
+    private readonly events: ProductEvents,
     private readonly sequelize: Sequelize,
     @InjectModel(CardioPlanModel) private readonly cardioPlans: typeof CardioPlanModel,
   ) {}
@@ -129,6 +131,7 @@ export class ProgramWeekCloseService {
         })
         .catch(() => false);
     }
+    this.events.emit('program_week_closed', { program_id: programId, semana: weekNumber, cumplida: fulfilled, multiplicador: multiplier, bonus });
     return { programId, weekNumber, fulfilled, multiplier, bonus };
   }
 

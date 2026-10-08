@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Sequelize } from 'sequelize-typescript';
 import { RoutineStatus, RoutineVisibility, UserRole } from '../../common/enums/domain.enums';
 import { DomainException } from '../../common/errors/domain.exception';
+import { ProductEvents } from '../../common/tracking/product-events';
 import { RoutineAccessService } from './routine-access.service';
 import { RoutineDaysRepository } from './routine-days.repository';
 import { RoutineStructureService } from './routine-structure.service';
@@ -21,6 +22,7 @@ export class RoutinePublicationService {
     private readonly access: RoutineAccessService,
     private readonly structure: RoutineStructureService,
     private readonly sequelize: Sequelize,
+    private readonly events: ProductEvents,
   ) {}
 
   /**
@@ -53,9 +55,17 @@ export class RoutinePublicationService {
           );
         });
       } catch (error: unknown) {
-        throw await this.structure.translateDuplicate(error, fingerprint);
+        const translated = await this.structure.translateDuplicate(error, fingerprint);
+        if (translated instanceof DomainException && translated.code === 'ROUTINE_DUPLICATE') {
+          this.events.emit('routine_publish_blocked_duplicate', {
+            routine_id: routine.id,
+            existing_routine_id: (translated.details?.existingRoutineId as string | null | undefined) ?? null,
+          });
+        }
+        throw translated;
       }
     }
+    this.events.emit('routine_published', { routine_id: routine.id, version: routine.version });
     return this.respond(actor, routine.id);
   }
 
@@ -114,6 +124,7 @@ export class RoutinePublicationService {
       await source.increment('copiesCount', { transaction });
       return copy.id;
     });
+    this.events.emit('routine_copied', { source_id: source.id, copy_id: copyId, source_es_oficial: source.isOfficial });
     return this.respond(actor, copyId);
   }
 

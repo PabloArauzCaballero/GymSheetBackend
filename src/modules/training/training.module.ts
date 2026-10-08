@@ -19,6 +19,7 @@ import { RoutineSharingController } from './routine-sharing.controller';
 import { RoutineSharingService } from './routine-sharing.service';
 import { RoutineAdminController } from './routine-admin.controller';
 import { RoutineAdminService } from './routine-admin.service';
+import { ProductEvents } from '../../common/tracking/product-events';
 import { RoutineAccessService } from './routine-access.service';
 import { RoutineDaysRepository } from './routine-days.repository';
 import { RoutineCatalogRepository } from './routine-catalog.repository';
@@ -59,6 +60,7 @@ import { TrainingService } from './training.service';
     RoutineCatalogRepository,
     RoutineCatalogService,
     RoutineAdminService,
+    ProductEvents,
     RoutineNotifier,
     RoutinePublicationService,
     RoutineSharesRepository,
@@ -72,6 +74,7 @@ import { TrainingService } from './training.service';
     RoutinePublicationService,
     RoutineStructureService,
     RoutineDaysRepository,
+    ProductEvents,
   ],
 })
 export class TrainingModule {}

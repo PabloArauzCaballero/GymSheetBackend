@@ -13,6 +13,7 @@ import { weekNumberOn } from './engine/program-calendar';
 import { diffAgainstRoutine, hasChanges, sessionBasePoints } from './engine/session-diff';
 import { bestE1rm, isGoalReached } from './engine/strength-goals';
 import { BONUS_GOAL_REACHED, isSuspiciousSet, sessionQualifies } from './engine/week-close';
+import { ProductEvents } from '../../common/tracking/product-events';
 import { ProgramsRepository } from './programs.repository';
 import { RewardLedgerRepository } from './reward-ledger.repository';
 
@@ -28,6 +29,7 @@ export class ProgramSessionService implements OnModuleInit {
     private readonly routines: TrainingRepository,
     private readonly notifier: RoutineNotifier,
     private readonly ledger: RewardLedgerRepository,
+    private readonly events: ProductEvents,
     private readonly dates: BusinessDateService,
     private readonly sequelize: Sequelize,
   ) {}
@@ -88,6 +90,13 @@ export class ProgramSessionService implements OnModuleInit {
             { suggestedKg: outcome.suggestedKg.toFixed(2), consecutiveFails: outcome.consecutiveFails },
             { transaction },
           );
+          if (outcome.action === 'RAISE' || outcome.action === 'LOWER') {
+            this.events.emit('overload_load_changed', {
+              ejercicio_id: lift.exerciseId,
+              de_kg: Number(lift.suggestedKg),
+              a_kg: outcome.suggestedKg,
+            });
+          }
           suggestions.push({
             ejercicioId: lift.exerciseId,
             ejercicioNombre: names.get(lift.exerciseId) ?? null,
@@ -117,6 +126,7 @@ export class ProgramSessionService implements OnModuleInit {
 
     for (const goal of suggestions.filter((s) => s.accion === 'GOAL_REACHED')) {
       // +300 por meta (D8). Un motivo por levantamiento: no se paga dos veces la misma.
+      this.events.emit('strength_goal_reached', { program_id: program.id, ejercicio_id: String(goal.ejercicioId) });
       await this.ledger
         .append({
           userId,

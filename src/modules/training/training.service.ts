@@ -15,6 +15,7 @@ import {
 import { ExercisesService } from '../exercises/exercises.service';
 import { WorkoutSessionResponse } from '../workouts/workout.mapper';
 import { WorkoutsService } from '../workouts/workouts.service';
+import { ProductEvents } from '../../common/tracking/product-events';
 import { canEditRoutine } from './routine-access.policy';
 import { RoutineDaysRepository } from './routine-days.repository';
 import { RoutineAccessService } from './routine-access.service';
@@ -61,6 +62,7 @@ export class TrainingService {
     private readonly days: RoutineDaysRepository,
     private readonly access: RoutineAccessService,
     private readonly structure: RoutineStructureService,
+    private readonly events: ProductEvents,
   ) {}
 
   async createRoutine(
@@ -81,6 +83,13 @@ export class TrainingService {
       );
       await this.seedStructure(routine, input.days, transaction);
       return routine.id;
+    });
+    this.events.emit('routine_created', {
+      routine_id: routineId,
+      dias: input.days?.length ?? 0,
+      semanas: input.durationWeeks,
+      n_ejercicios: input.days?.reduce((sum, d) => sum + d.exercises.length, 0) ?? 0,
+      objetivo: input.goal,
     });
     return this.getRoutineOrFail(routineId, user);
   }

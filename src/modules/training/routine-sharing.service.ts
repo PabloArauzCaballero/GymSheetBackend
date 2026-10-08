@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { RoutineStatus, RoutineVisibility } from '../../common/enums/domain.enums';
 import { UserModel } from '../users/user.model';
+import { ProductEvents } from '../../common/tracking/product-events';
 import { RoutineAccessService } from './routine-access.service';
 import { RoutineNotifier } from './routine-notifier';
 import { RoutineShareModel } from './routine-share.model';
@@ -33,6 +34,7 @@ export class RoutineSharingService {
     private readonly routines: TrainingRepository,
     private readonly access: RoutineAccessService,
     private readonly notifier: RoutineNotifier,
+    private readonly events: ProductEvents,
   ) {}
 
   async invite(owner: Actor, routineId: string, userIds: readonly string[]): Promise<InviteResult> {
@@ -59,6 +61,7 @@ export class RoutineSharingService {
       } else {
         const share = await this.shares.createInvitation(routineId, owner.id, id);
         creados.push(this.toResponse(share, invitee));
+        this.events.emit('routine_share_invited', { share_id: share.id, routine_id: routineId });
         await this.notifier.notify({
           to: id,
           type: 'ROUTINE_SHARE_INVITE',
@@ -129,6 +132,10 @@ export class RoutineSharingService {
     if (!share || share.inviteeId !== userId) throw new NotFoundException('Invitación no encontrada.');
     if (share.status !== 'PENDING') return this.toResponse(share, null);
     await share.update({ status: next, respondedAt: new Date() });
+    this.events.emit(next === 'ACCEPTED' ? 'routine_share_accepted' : 'routine_share_declined', {
+      share_id: share.id,
+      ms_hasta_respuesta: Date.now() - share.createdAt.getTime(),
+    });
     const routine = await this.routines.findRoutineById(share.routineId);
     const [invitee] = await this.shares.findUsers([userId]);
     await this.notifier.notify({
