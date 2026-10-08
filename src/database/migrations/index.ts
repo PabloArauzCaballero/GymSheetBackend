@@ -59,6 +59,9 @@ import { adminAuditLogMigration } from "./202609150001-admin-audit-log";
 import { moderationMigration } from "./202609150002-moderation";
 import { webPushDeviceTokensMigration } from "./202609160001-web-push-device-tokens";
 import { profileBirthDateMigration } from "./202609160002-profile-birth-date";
+import { routinesV2StructureMigration } from "./202610080001-routines-v2-structure";
+import { routineSharingMigration } from "./202610080002-routine-sharing";
+import { communityMigration } from "./202610080003-community";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -119,4 +122,7 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   webPushDeviceTokensMigration,
   profileBirthDateMigration,
   exerciseMediaPlainHttpMigration,
+  routinesV2StructureMigration,
+  routineSharingMigration,
+  communityMigration,
 ];
