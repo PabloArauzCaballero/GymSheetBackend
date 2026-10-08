@@ -59,7 +59,11 @@ export type BadgeCriterionType =
   | "EARLY_SESSIONS"
   | "NIGHT_SESSIONS"
   | "WEEKEND_SESSIONS"
-  | "PERSONAL_RECORDS";
+  | "PERSONAL_RECORDS"
+  | "OVERLOAD_WEEKS_STREAK"
+  | "MODE_MULTIPLIER_MAX"
+  | "STRENGTH_GOAL_REACHED"
+  | "CARDIO_WEEKLY_MINUTES";
 
 export type BadgeCategory =
   | "CONSTANCIA"
@@ -67,7 +71,8 @@ export type BadgeCategory =
   | "FUERZA"
   | "VARIEDAD"
   | "HITO"
-  | "SECRETA";
+  | "SECRETA"
+  | "MODO";
 
 export type BadgeRarity = "COMUN" | "RARA" | "EPICA" | "LEGENDARIA";
 
@@ -835,5 +840,118 @@ export const badgeSeeds: readonly BadgeSeed[] = [
     pointsReward: 180,
     secret: true,
     sortOrder: 320,
+  },
+  // ───────────────────────────────────────────────────────────────── MODO
+  {
+    code: "MODO_SOBRECARGA_4",
+    audience: "ANY",
+    name: "Cuatro semanas de sobrecarga",
+    description: "Cumple 4 semanas seguidas en modo sobrecarga progresiva.",
+    flavorText: "Cada semana un poquito más. Así se construye.",
+    category: "MODO",
+    rarity: "COMUN",
+    icon: "trending-up-outline",
+    color: "#3ddc97",
+    criterionType: "OVERLOAD_WEEKS_STREAK",
+    criterionThreshold: 4,
+    pointsReward: 120,
+    secret: false,
+    sortOrder: 500,
+  },
+  {
+    code: "MODO_SOBRECARGA_8",
+    audience: "ANY",
+    name: "Ocho semanas subiendo",
+    description: "Cumple 8 semanas seguidas en modo sobrecarga progresiva.",
+    flavorText: "Dos meses sin soltar el hilo.",
+    category: "MODO",
+    rarity: "RARA",
+    icon: "trending-up-outline",
+    color: "#5aa9e6",
+    criterionType: "OVERLOAD_WEEKS_STREAK",
+    criterionThreshold: 8,
+    pointsReward: 250,
+    secret: false,
+    sortOrder: 510,
+  },
+  {
+    code: "MODO_SOBRECARGA_12",
+    audience: "ANY",
+    name: "Un trimestre de progreso",
+    description: "Cumple 12 semanas seguidas en modo sobrecarga progresiva.",
+    flavorText: "Tres meses de constancia con carga creciente.",
+    category: "MODO",
+    rarity: "EPICA",
+    icon: "trending-up-outline",
+    color: "#ffb020",
+    criterionType: "OVERLOAD_WEEKS_STREAK",
+    criterionThreshold: 12,
+    pointsReward: 500,
+    secret: false,
+    sortOrder: 520,
+  },
+  {
+    code: "MODO_MULTIPLICADOR_MAXIMO",
+    audience: "ANY",
+    name: "Multiplicador x2,0",
+    description: "Llega al multiplicador máximo de un programa.",
+    flavorText: "Diez semanas cumplidas sin fallar una.",
+    category: "MODO",
+    rarity: "LEGENDARIA",
+    icon: "flash-outline",
+    color: "#e0308c",
+    criterionType: "MODE_MULTIPLIER_MAX",
+    criterionThreshold: 2,
+    pointsReward: 600,
+    secret: false,
+    sortOrder: 530,
+  },
+  {
+    code: "MODO_PRIMERA_META",
+    audience: "ANY",
+    name: "Meta alcanzada",
+    description: "Alcanza la marca que te propusiste en un levantamiento.",
+    flavorText: "Lo planeaste, lo hiciste.",
+    category: "MODO",
+    rarity: "RARA",
+    icon: "trophy-outline",
+    color: "#c3f400",
+    criterionType: "STRENGTH_GOAL_REACHED",
+    criterionThreshold: 1,
+    pointsReward: 300,
+    secret: false,
+    sortOrder: 540,
+  },
+  {
+    code: "MODO_CINCO_METAS",
+    audience: "ANY",
+    name: "Cinco metas",
+    description: "Alcanza cinco marcas que te propusiste.",
+    flavorText: "Ya sabes cómo se hace.",
+    category: "MODO",
+    rarity: "EPICA",
+    icon: "trophy-outline",
+    color: "#ff6b35",
+    criterionType: "STRENGTH_GOAL_REACHED",
+    criterionThreshold: 5,
+    pointsReward: 600,
+    secret: false,
+    sortOrder: 550,
+  },
+  {
+    code: "MODO_CARDIO_150",
+    audience: "ANY",
+    name: "150 minutos, cuatro semanas",
+    description: "Suma 150 minutos de cardio por semana durante 4 semanas seguidas.",
+    flavorText: "La recomendación de la OMS, cumplida.",
+    category: "MODO",
+    rarity: "RARA",
+    icon: "heart-outline",
+    color: "#ff6b35",
+    criterionType: "CARDIO_WEEKLY_MINUTES",
+    criterionThreshold: 4,
+    pointsReward: 300,
+    secret: false,
+    sortOrder: 560,
   },
 ];

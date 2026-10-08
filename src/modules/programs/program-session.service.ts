@@ -1,3 +1,4 @@
+import { env } from '../../config/env';
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
@@ -11,8 +12,9 @@ import { applyDoubleProgression } from './engine/double-progression';
 import { weekNumberOn } from './engine/program-calendar';
 import { diffAgainstRoutine, hasChanges, sessionBasePoints } from './engine/session-diff';
 import { bestE1rm, isGoalReached } from './engine/strength-goals';
-import { isSuspiciousSet, sessionQualifies } from './engine/week-close';
+import { BONUS_GOAL_REACHED, isSuspiciousSet, sessionQualifies } from './engine/week-close';
 import { ProgramsRepository } from './programs.repository';
+import { RewardLedgerRepository } from './reward-ledger.repository';
 
 type PerformedSet = { exerciseId: string; reps: number; weightKg: number; rir: number | null };
 
@@ -25,6 +27,7 @@ export class ProgramSessionService implements OnModuleInit {
     private readonly workouts: WorkoutsRepository,
     private readonly routines: TrainingRepository,
     private readonly notifier: RoutineNotifier,
+    private readonly ledger: RewardLedgerRepository,
     private readonly dates: BusinessDateService,
     private readonly sequelize: Sequelize,
   ) {}
@@ -113,6 +116,18 @@ export class ProgramSessionService implements OnModuleInit {
     });
 
     for (const goal of suggestions.filter((s) => s.accion === 'GOAL_REACHED')) {
+      // +300 por meta (D8). Un motivo por levantamiento: no se paga dos veces la misma.
+      await this.ledger
+        .append({
+          userId,
+          programId: program.id,
+          weekNumber: weekNumber ?? 0,
+          multiplier: Number(program.multiplier),
+          basePoints: 0,
+          bonusPoints: BONUS_GOAL_REACHED,
+          reason: `META_ALCANZADA:${String(goal.ejercicioId).replace(/-/gu, '').slice(0, 24)}`,
+        })
+        .catch(() => false);
       await this.notifier.notify({
         to: userId,
         type: 'GOAL_REACHED',
@@ -157,13 +172,16 @@ export class ProgramSessionService implements OnModuleInit {
   }
 
   private collectSets(session: NonNullable<Awaited<ReturnType<WorkoutsRepository['findSessionByIdForUser']>>>): PerformedSet[] {
+    // Solo series de fuerza: las de cardio no tienen peso ni repeticiones.
     return (session.sessionExercises ?? []).flatMap((se) =>
-      (se.sets ?? []).map((set) => ({
-        exerciseId: se.exerciseId,
-        reps: set.repetitions,
-        weightKg: Number(set.weightKg),
-        rir: set.rir,
-      })),
+      (se.sets ?? [])
+        .filter((set) => set.type !== 'CARDIO' && set.repetitions != null && set.weightKg != null)
+        .map((set) => ({
+          exerciseId: se.exerciseId,
+          reps: set.repetitions ?? 0,
+          weightKg: Number(set.weightKg),
+          rir: set.rir,
+        })),
     );
   }
 
@@ -178,7 +196,7 @@ export class ProgramSessionService implements OnModuleInit {
                 WHERE se.sesion_id = s.id) >= 3`,
       {
         type: QueryTypes.SELECT,
-        replacements: { programId, sessionId, today, tz: process.env.BUSINESS_TIME_ZONE ?? 'UTC' },
+        replacements: { programId, sessionId, today, tz: env.BUSINESS_TIME_ZONE },
       },
     );
     return (row?.n ?? 0) > 0;

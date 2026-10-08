@@ -1,6 +1,12 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { BusinessDateService } from '../../common/time/business-date.service';
+import { CardioController } from './cardio.controller';
+import { CardioPlanModel } from './cardio-plan.model';
+import { CardioPlansService } from './cardio-plans.service';
+import { ProgramWeekCloseService } from './program-week-close.service';
+import { ProgramsCardioService } from './programs-cardio.service';
+import { RewardLedgerRepository } from './reward-ledger.repository';
 import { ExercisesModule } from '../exercises/exercises.module';
 import { WorkoutsModule } from '../workouts/workouts.module';
 import { ProgramRoutineChangesService } from './program-routine-changes.service';
@@ -20,12 +26,17 @@ import { ProgramsRepository } from './programs.repository';
 
 @Module({
   imports: [
-    SequelizeModule.forFeature([TrainingProgramModel, ProgramLiftTargetModel, ProgramWeekModel]),
+    SequelizeModule.forFeature([
+      TrainingProgramModel,
+      ProgramLiftTargetModel,
+      ProgramWeekModel,
+      CardioPlanModel,
+    ]),
     TrainingModule,
     WorkoutsModule,
     ExercisesModule,
   ],
-  controllers: [ProgramsController, ProgramSessionController],
+  controllers: [ProgramsController, ProgramSessionController, CardioController],
   providers: [
     BusinessDateService,
     ProgramsRepository,
@@ -34,7 +45,11 @@ import { ProgramsRepository } from './programs.repository';
     ProgramsLifecycleService,
     ProgramSessionService,
     ProgramRoutineChangesService,
+    CardioPlansService,
+    ProgramsCardioService,
+    RewardLedgerRepository,
+    ProgramWeekCloseService,
   ],
-  exports: [ProgramsRepository, ProgramsQueryService],
+  exports: [ProgramsRepository, ProgramsQueryService, ProgramWeekCloseService, RewardLedgerRepository],
 })
 export class ProgramsModule {}

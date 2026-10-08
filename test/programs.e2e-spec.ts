@@ -12,13 +12,16 @@ describe('Programs (e2e)', () => {
     return d === 0 ? 7 : d;
   })();
 
+  // Huella aleatoria: la base de pruebas se comparte entre corridas y archivos.
+  const SETS = 1 + Math.floor(Math.random() * 90);
+
   const routineBody = (nombre: string, exercises: string[]) => ({
     nombre,
     objetivo: 'FUERZA',
     duracionSemanas: 4,
     progresion: { activa: true, descargaCada: 4 },
     dias: [
-      { diaSemana: todayIso, ejercicios: exercises.map((id) => ({ ejercicioId: id, seriesObjetivo: 3, repsMin: 6, repsMax: 8, pesoObjetivoKg: 60 })) },
+      { diaSemana: todayIso, ejercicios: exercises.map((id) => ({ ejercicioId: id, seriesObjetivo: SETS, repsMin: 6, repsMax: 8, pesoObjetivoKg: 60 })) },
       { diaSemana: todayIso === 7 ? 3 : todayIso + 1 > 7 ? 1 : todayIso + 1, ejercicios: [{ ejercicioId: exercises[0], seriesObjetivo: 3 }] },
     ],
   });

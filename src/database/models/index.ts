@@ -64,6 +64,7 @@ import {
   ProgramWeekModel,
   TrainingProgramModel,
 } from "../../modules/programs/program.models";
+import { CardioPlanModel } from "../../modules/programs/cardio-plan.model";
 import { ContentRatingModel } from "../../modules/community/content-rating.model";
 import { ContentCommentModel } from "../../modules/community/content-comment.model";
 import { ExerciseLikeModel } from "../../modules/community/exercise-like.model";
@@ -123,6 +124,7 @@ export const databaseModels = [
   RoutineShareModel,
   ContentRatingModel,
   TrainingProgramModel,
+  CardioPlanModel,
   ProgramLiftTargetModel,
   ProgramWeekModel,
   ContentCommentModel,

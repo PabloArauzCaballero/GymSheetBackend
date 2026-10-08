@@ -75,3 +75,31 @@ describe('programa completado y antifraude', () => {
     expect(isSuspiciousSet(500, null)).toBe(false);
   });
 });
+
+describe('los puntos de modo nunca bajan (D8, propiedad)', () => {
+  // Generador determinista: la prueba debe reproducirse igual en cualquier máquina.
+  const seeded = (seed: number) => () => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    return seed / 4294967296;
+  };
+
+  it('en 1000 secuencias aleatorias de semanas cumplidas e incumplidas el total acumulado es monótono', () => {
+    for (let run = 0; run < 1000; run += 1) {
+      const random = seeded(run + 1);
+      let multiplier = 1;
+      let total = 0;
+      for (let week = 0; week < 52; week += 1) {
+        const fulfilled = random() < 0.6;
+        const base = Math.floor(random() * 800);
+        multiplier = nextMultiplier(multiplier, fulfilled);
+        const bonus = fulfilled ? weekBonus(base, multiplier) : 0;
+        expect(bonus).toBeGreaterThanOrEqual(0);
+        const previous = total;
+        total += bonus;
+        expect(total).toBeGreaterThanOrEqual(previous);
+        expect(multiplier).toBeGreaterThanOrEqual(1);
+        expect(multiplier).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+});

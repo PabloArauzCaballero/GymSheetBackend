@@ -187,10 +187,23 @@ describe("computePoints", () => {
     };
     const badges = [{ pointsReward: 25 }];
     const breakdown = computePointsBreakdown(metrics, badges);
-    expect(breakdown).toEqual({ session: 100, sets: 40, volume: 50, streak: 20, badges: 25 });
+    expect(breakdown).toEqual({ session: 100, sets: 40, volume: 50, streak: 20, badges: 25, modes: 0 });
     const sum =
-      breakdown.session + breakdown.sets + breakdown.volume + breakdown.streak + breakdown.badges;
+      breakdown.session +
+      breakdown.sets +
+      breakdown.volume +
+      breakdown.streak +
+      breakdown.badges +
+      breakdown.modes;
     expect(sum).toBe(computePoints(metrics, badges));
+  });
+
+  it("adds the mode bonuses as their own line, and they only ever add", () => {
+    const base = { ...NO_TRAINING, totalSessions: 1 };
+    expect(computePoints(base, [])).toBe(50);
+    expect(computePoints({ ...base, modeBonusPoints: 300 }, [])).toBe(350);
+    expect(computePointsBreakdown({ ...base, modeBonusPoints: 300 }, []).modes).toBe(300);
+    expect(computePoints({ ...base, modeBonusPoints: 0 }, [])).toBe(50);
   });
 
   it("adds the reward of every satisfied badge", () => {

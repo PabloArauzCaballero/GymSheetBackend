@@ -8,11 +8,14 @@ describe('Routines v2 · publish and copy (e2e)', () => {
   let a: string;
   let b: string;
 
+  // Las pruebas comparten base: una huella aleatoria evita chocar con rutinas públicas de corridas anteriores.
+  const SETS = 1 + Math.floor(Math.random() * 90);
+
   const routine = (nombre: string, ids: string[]) => ({
     nombre,
     objetivo: 'FUERZA',
     duracionSemanas: 6,
-    dias: [{ diaSemana: 1, ejercicios: ids.map((ejercicioId) => ({ ejercicioId, seriesObjetivo: 3, repsMin: 5, repsMax: 5 })) }],
+    dias: [{ diaSemana: 1, ejercicios: ids.map((ejercicioId) => ({ ejercicioId, seriesObjetivo: SETS, repsMin: 5, repsMax: 5 })) }],
   });
 
   beforeAll(async () => {
@@ -61,7 +64,7 @@ describe('Routines v2 · publish and copy (e2e)', () => {
     await e2e
       .as(leo.token)
       .put(`/routines/${twin.body.data.id}/structure`)
-      .send({ dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: g1, repsMin: 5, repsMax: 5 }, { ejercicioId: g2, repsMin: 8, repsMax: 8 }] }] })
+      .send({ dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: g1, seriesObjetivo: SETS, repsMin: 5, repsMax: 5 }, { ejercicioId: g2, seriesObjetivo: SETS, repsMin: 8, repsMax: 8 }] }] })
       .expect(200);
     await e2e.as(leo.token).post(`/routines/${twin.body.data.id}/publish`).expect(201);
   }, 20000);
@@ -122,7 +125,7 @@ describe('Routines v2 · publish and copy (e2e)', () => {
     const edit = await e2e
       .as(ana.token)
       .put(`/routines/${y.body.data.id}/structure`)
-      .send({ dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: g1, seriesObjetivo: 3, repsMin: 5, repsMax: 5 }] }] })
+      .send({ dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: g1, seriesObjetivo: SETS, repsMin: 5, repsMax: 5 }] }] })
       .expect(409);
     expect(edit.body.code).toBe('ROUTINE_DUPLICATE');
     const after = (await e2e.as(ana.token).get(`/routines/${y.body.data.id}`).expect(200)).body.data;
