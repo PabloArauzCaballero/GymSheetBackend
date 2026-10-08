@@ -137,11 +137,13 @@ export class ModerationRepository {
               -- JOIN que no casó devuelve false, no NULL, así que un COALESCE
               -- se quedaría siempre con la primera rama y las fotos ocultas se
               -- reportarían como visibles.
-              (bool_or(st.hidden_at IS NOT NULL)
-               OR bool_or(ph.hidden_at IS NOT NULL)
-               OR bool_or(rt.estado_moderacion <> 'VISIBLE')
-               OR bool_or(ex.estado_moderacion <> 'VISIBLE')
-               OR bool_or(cm.estado IN ('OCULTO_AUTO','OCULTO_MODERACION'))) AS content_hidden
+              -- COALESCE: bool_or sobre un LEFT JOIN sin casar es NULL en los tipos nuevos,
+              -- y un NULL aquí rompía la validación de la cola en la consola.
+              COALESCE(bool_or(st.hidden_at IS NOT NULL), false)
+               OR COALESCE(bool_or(ph.hidden_at IS NOT NULL), false)
+               OR COALESCE(bool_or(rt.estado_moderacion <> 'VISIBLE'), false)
+               OR COALESCE(bool_or(ex.estado_moderacion <> 'VISIBLE'), false)
+               OR COALESCE(bool_or(cm.estado IN ('OCULTO_AUTO','OCULTO_MODERACION')), false) AS content_hidden
          FROM moderation.reports r
          JOIN public.usuarios u ON u.id = r.reported_user_id
          LEFT JOIN public.usuarios claimer ON claimer.id = r.claimed_by_user_id
@@ -432,6 +434,16 @@ export class ModerationRepository {
       replacements: { targetId, userId: reporterId },
     });
     return rows.length > 0;
+  }
+
+  /** Texto del comentario y su origen, para la vista previa del caso (el moderador ve lo denunciado). */
+  async commentPreview(commentId: string) {
+    const [row] = await this.sequelize.query<{ text: string; targetKind: string; targetId: string }>(
+      `SELECT texto AS text, target_kind AS "targetKind", target_id AS "targetId"
+         FROM community.content_comments WHERE id = :commentId`,
+      { type: QueryTypes.SELECT, replacements: { commentId } },
+    );
+    return row ?? null;
   }
 
   /** ¿Está oculto? Cada tipo guarda su estado en su propia tabla. */

@@ -45,6 +45,7 @@ export interface CasePreview {
   /** Qué sanción tocaría, calculada antes de aplicarla. */
   pendingSanction: { kind: string; days: number | null };
   contentHidden: boolean;
+  preview: { text: string; targetKind: string; targetId: string } | null;
 }
 
 @Injectable()
@@ -275,6 +276,10 @@ export class ModerationService {
       activeStrikes,
       pendingSanction: { kind: sanction.kind, days: sanction.days },
       contentHidden,
+      preview:
+        targetKind === ModerationTargetKind.COMMENT
+          ? await this.repository.commentPreview(targetId)
+          : null,
     };
   }
 
