@@ -63,6 +63,7 @@ import { routinesV2StructureMigration } from "./202610080001-routines-v2-structu
 import { routineSharingMigration } from "./202610080002-routine-sharing";
 import { communityMigration } from "./202610080003-community";
 import { moderationRoutineKindsMigration } from "./202610080004-moderation-routine-kinds";
+import { programsMigration } from "./202610080005-programs";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -127,4 +128,5 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   routineSharingMigration,
   communityMigration,
   moderationRoutineKindsMigration,
+  programsMigration,
 ];

@@ -335,6 +335,12 @@ export class TrainingService {
       observation: `Plan: ${routine.name}${day?.name ? ` · ${day.name}` : ''}`,
     });
 
+    await this.workoutsService.linkSession(user.id, session.id, {
+      routineId: routine.id,
+      routineDayId: day?.id ?? null,
+      programId: await this.repository.findActiveProgramIdForRoutine(user.id, routine.id),
+    });
+
     const exercises = [...(routine.exercises ?? [])]
       .filter((e) => !day || e.routineDayId === day.id)
       .sort((a, b) => a.order - b.order);

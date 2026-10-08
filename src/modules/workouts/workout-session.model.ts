@@ -56,6 +56,16 @@ export class WorkoutSessionModel extends Model {
   @Column({ type: DataType.UUID, allowNull: true, field: 'verified_branch_id' })
   declare verifiedBranchId: string | null;
 
+  /** Rutina, día y programa que originaron la sesión (nulos en sesiones libres). */
+  @Column({ type: DataType.UUID, allowNull: true, field: 'routine_id' })
+  declare routineId: string | null;
+
+  @Column({ type: DataType.UUID, allowNull: true, field: 'routine_day_id' })
+  declare routineDayId: string | null;
+
+  @Column({ type: DataType.UUID, allowNull: true, field: 'program_id' })
+  declare programId: string | null;
+
   @BelongsTo(() => UserModel)
   declare user?: UserModel;
 

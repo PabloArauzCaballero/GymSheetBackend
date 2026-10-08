@@ -32,6 +32,7 @@ import { ProfileViewsModule } from './modules/profile-views/profile-views.module
 import { SocialModule } from './modules/social/social.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { StoriesModule } from './modules/stories/stories.module';
+import { ProgramsModule } from './modules/programs/programs.module';
 import { CommunityModule } from './modules/community/community.module';
 import { TrainingModule } from './modules/training/training.module';
 import { ProgressionModule } from './modules/progression/progression.module';
@@ -106,6 +107,7 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
     WorkoutsModule,
     TrainingModule,
     CommunityModule,
+    ProgramsModule,
     ProgressionModule,
     ExportModule,
     MediaModule,

@@ -64,6 +64,14 @@ import { TrainingService } from './training.service';
     RoutineSharesRepository,
     RoutineSharingService,
   ],
-  exports: [TrainingService, TrainingRepository, RoutineAccessService, RoutineNotifier],
+  exports: [
+    TrainingService,
+    TrainingRepository,
+    RoutineAccessService,
+    RoutineNotifier,
+    RoutinePublicationService,
+    RoutineStructureService,
+    RoutineDaysRepository,
+  ],
 })
 export class TrainingModule {}

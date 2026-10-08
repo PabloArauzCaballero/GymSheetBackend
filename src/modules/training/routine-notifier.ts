@@ -8,7 +8,10 @@ export type RoutineNotificationType =
   | 'ROUTINE_SHARE_DECLINED'
   | 'ROUTINE_NEW_VERSION'
   | 'ROUTINE_COMMENT'
-  | 'CONTENT_HIDDEN';
+  | 'CONTENT_HIDDEN'
+  | 'GOAL_REACHED'
+  | 'PROGRAM_WEEK_CLOSED'
+  | 'PROGRAM_FINISHED';
 
 /**
  * Avisos del dominio de rutinas por la bandeja interna (con empujón al móvil).

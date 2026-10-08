@@ -18,6 +18,8 @@ export type E2eApp = {
   register: (label: string) => Promise<{ token: string; id: string }>;
   /** Cambia el rol en la base (la sesión se revalida contra la base en cada petición). */
   promote: (userId: string, role: 'ADMIN' | 'SYSTEM_ADMIN' | 'COACH') => Promise<void>;
+  /** SQL de apoyo para preparar o inspeccionar estado que la API no expone. */
+  sql: (statement: string, replacements?: Record<string, unknown>) => Promise<void>;
   as: (token: string) => {
     get: (path: string) => request.Test;
     post: (path: string) => request.Test;
@@ -66,6 +68,9 @@ export async function bootE2eApp(): Promise<E2eApp> {
       await app.get(Sequelize).query('UPDATE public.usuarios SET rol = :role WHERE id = :userId', {
         replacements: { role, userId },
       });
+    },
+    sql: async (statement, replacements = {}) => {
+      await app.get(Sequelize).query(statement, { replacements });
     },
     as: (token) => {
       const auth = (test: request.Test) => test.set('Authorization', `Bearer ${token}`);

@@ -8,6 +8,7 @@ import { ProgressionService } from '../progression/progression.service';
 import { WorkoutSessionModel } from './workout-session.model';
 import { WorkoutSetModel } from './workout-set.model';
 import { WorkoutsRepository } from './workouts.repository';
+import { SessionHooksRegistry } from './session-hooks';
 import { WorkoutsService } from './workouts.service';
 
 const ownerId = '00000000-0000-4000-8000-000000000001';
@@ -30,6 +31,7 @@ function createService(
     {
       snapshot: jest.fn().mockRejectedValue(new Error('sin senda en este test')),
     } as unknown as ProgressionService,
+    new SessionHooksRegistry(),
   );
 }
 

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Op, Transaction, WhereOptions } from 'sequelize';
+import { Op, QueryTypes, Transaction, WhereOptions } from 'sequelize';
 import {
   ExerciseStatus,
   ExerciseType,
@@ -106,6 +106,17 @@ export class TrainingRepository {
         moderationState: 'VISIBLE',
       },
     });
+  }
+
+  /** Programa de fuerza activo del usuario que usa esa rutina, si lo hay (para vincular la sesión). */
+  async findActiveProgramIdForRoutine(userId: string, routineId: string): Promise<string | null> {
+    const [row] = await this.routineModel.sequelize!.query<{ id: string }>(
+      `SELECT id FROM training.training_programs
+        WHERE usuario_id = :userId AND routine_id = :routineId AND estado = 'ACTIVE' AND carril = 'STRENGTH'
+        LIMIT 1`,
+      { type: QueryTypes.SELECT, replacements: { userId, routineId } },
+    );
+    return row?.id ?? null;
   }
 
   async findAuthorName(userId: string): Promise<string | null> {
@@ -231,30 +242,46 @@ export class TrainingRepository {
       repeatsFrom: string | null;
       repeatsUntil: string | null;
     },
+    transaction?: Transaction,
   ) {
     const existing = await this.assignmentModel.findOne({
       where: { routineId, clientUserId: userId },
+      transaction,
     });
     if (existing) {
-      return existing.update({
+      return existing.update(
+        {
+          weekdays: values.weekdays,
+          repeatsFrom: values.repeatsFrom,
+          repeatsUntil: values.repeatsUntil,
+          status: RoutineAssignmentStatus.ACTIVE,
+        },
+        { transaction },
+      );
+    }
+    return this.assignmentModel.create(
+      {
+        routineId,
+        clientUserId: userId,
+        // Nadie se la asignó: el propio usuario es el origen.
+        assignedByUserId: userId,
+        status: RoutineAssignmentStatus.ACTIVE,
         weekdays: values.weekdays,
         repeatsFrom: values.repeatsFrom,
         repeatsUntil: values.repeatsUntil,
-        status: RoutineAssignmentStatus.ACTIVE,
-      });
-    }
-    return this.assignmentModel.create({
-      routineId,
-      clientUserId: userId,
-      // Nadie se la asignó: el propio usuario es el origen.
-      assignedByUserId: userId,
-      status: RoutineAssignmentStatus.ACTIVE,
-      weekdays: values.weekdays,
-      repeatsFrom: values.repeatsFrom,
-      repeatsUntil: values.repeatsUntil,
-      scheduledFor: null,
-      note: null,
-    });
+        scheduledFor: null,
+        note: null,
+      },
+      { transaction },
+    );
+  }
+
+  async setAssignmentStatus(
+    id: string,
+    status: RoutineAssignmentStatus,
+    transaction?: Transaction,
+  ): Promise<void> {
+    await this.assignmentModel.update({ status }, { where: { id }, transaction });
   }
 
   createAssignment(

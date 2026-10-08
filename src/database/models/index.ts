@@ -59,6 +59,11 @@ import { RoutineAssignmentModel } from "../../modules/training/routine-assignmen
 import { RoutineDayModel } from "../../modules/training/routine-day.model";
 import { RoutineWeekOverrideModel } from "../../modules/training/routine-week-override.model";
 import { RoutineShareModel } from "../../modules/training/routine-share.model";
+import {
+  ProgramLiftTargetModel,
+  ProgramWeekModel,
+  TrainingProgramModel,
+} from "../../modules/programs/program.models";
 import { ContentRatingModel } from "../../modules/community/content-rating.model";
 import { ContentCommentModel } from "../../modules/community/content-comment.model";
 import { ExerciseLikeModel } from "../../modules/community/exercise-like.model";
@@ -117,6 +122,9 @@ export const databaseModels = [
   RoutineWeekOverrideModel,
   RoutineShareModel,
   ContentRatingModel,
+  TrainingProgramModel,
+  ProgramLiftTargetModel,
+  ProgramWeekModel,
   ContentCommentModel,
   ExerciseLikeModel,
   BranchModel,
