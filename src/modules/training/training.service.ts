@@ -1,12 +1,13 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Transaction } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import {
+  RoutineStatus,
   RoutineVisibility,
   UserRole,
   UserStatus,
@@ -14,6 +15,10 @@ import {
 import { ExercisesService } from '../exercises/exercises.service';
 import { WorkoutSessionResponse } from '../workouts/workout.mapper';
 import { WorkoutsService } from '../workouts/workouts.service';
+import { canEditRoutine } from './routine-access.policy';
+import { RoutineDaysRepository } from './routine-days.repository';
+import { RoutineAccessService } from './routine-access.service';
+import { RoutineStructureService } from './routine-structure.service';
 import { RoutineExerciseModel } from './routine-exercise.model';
 import { RoutineModel } from './routine.model';
 import {
@@ -35,7 +40,7 @@ import {
   UpdateRoutineInput,
 } from './training.schemas';
 
-const STAFF_ROLES = new Set<UserRole>([UserRole.ADMIN, UserRole.COACH]);
+type Actor = { id: string; role: UserRole; tenantId?: string };
 
 /** Result of a bulk import: one row per submitted routine. */
 export type ImportRoutineResult = {
@@ -53,15 +58,44 @@ export class TrainingService {
     private readonly exercisesService: ExercisesService,
     private readonly workoutsService: WorkoutsService,
     private readonly sequelize: Sequelize,
+    private readonly days: RoutineDaysRepository,
+    private readonly access: RoutineAccessService,
+    private readonly structure: RoutineStructureService,
   ) {}
 
   async createRoutine(
-    user: { id: string; role: UserRole },
+    user: Actor,
     input: CreateRoutineInput,
   ): Promise<RoutineResponse> {
-    this.assertVisibilityAllowed(user.role, input.visibility);
-    const routine = await this.repository.createRoutine(user.id, input);
-    return this.getRoutineOrFail(routine.id);
+    const visibility = this.normalizeVisibility(user.role, input.visibility);
+    if (input.days) {
+      this.structure.assertComplete(input.days);
+      await this.structure.assertExercisesUsable(user.id, input.days);
+    }
+    const routineId = await this.sequelize.transaction(async (transaction) => {
+      const routine = await this.repository.createRoutine(
+        user.id,
+        { ...input, visibility },
+        user.tenantId ?? null,
+        transaction,
+      );
+      await this.seedStructure(routine, input.days, transaction);
+      return routine.id;
+    });
+    return this.getRoutineOrFail(routineId, user);
+  }
+
+  private async seedStructure(
+    routine: RoutineModel,
+    days: CreateRoutineInput['days'],
+    transaction: Transaction,
+  ): Promise<void> {
+    if (days) {
+      await this.days.replaceStructure(routine.id, days, transaction);
+    } else {
+      await this.days.firstDayId(routine.id, transaction);
+    }
+    await this.structure.afterStructureChange(routine, transaction);
   }
 
   async listRoutines(
@@ -71,7 +105,9 @@ export class TrainingService {
     const where = routineWhereForScope(input.scope, userId);
     const result = await this.repository.listRoutines(where, input.page, input.pageSize);
     return {
-      items: result.rows.map(mapRoutineToResponse),
+      items: result.rows.map((routine) =>
+        mapRoutineToResponse(routine, { id: userId, canEdit: routine.createdByUserId === userId }),
+      ),
       page: input.page,
       pageSize: input.pageSize,
       total: result.count,
@@ -79,78 +115,83 @@ export class TrainingService {
     };
   }
 
-  async getRoutineForUser(
-    user: { id: string; role: UserRole },
-    routineId: string,
-  ): Promise<RoutineResponse> {
+  async getRoutineForUser(user: Actor, routineId: string): Promise<RoutineResponse> {
     const routine = await this.getRoutineModelOrFail(routineId);
-    await this.assertCanViewRoutine(user, routine);
-    return mapRoutineToResponse(routine);
+    await this.access.assertFullView(user, routine);
+    return mapRoutineToResponse(routine, this.viewerOf(user, routine));
   }
 
   async updateRoutine(
-    user: { id: string; role: UserRole },
+    user: Actor,
     routineId: string,
     input: UpdateRoutineInput,
   ): Promise<RoutineResponse> {
     const routine = await this.getRoutineModelOrFail(routineId);
-    this.assertCanEditRoutine(user, routine);
-    if (input.visibility) this.assertVisibilityAllowed(user.role, input.visibility);
-    await this.repository.updateRoutine(routine, input);
-    return this.getRoutineOrFail(routineId);
+    await this.access.assertCanEdit(user, routine);
+    const changes = { ...input };
+    if (input.visibility) {
+      changes.visibility = this.normalizeVisibility(user.role, input.visibility);
+    }
+    await this.repository.updateRoutine(routine, changes);
+    return this.getRoutineOrFail(routineId, user);
   }
 
-  async deleteRoutine(
-    user: { id: string; role: UserRole },
-    routineId: string,
-  ): Promise<{ deleted: true }> {
+  /** Archiva (soft): las copias conservan su atribución y los programas su historial. */
+  async deleteRoutine(user: Actor, routineId: string): Promise<{ deleted: true }> {
     const routine = await this.getRoutineModelOrFail(routineId);
-    this.assertCanEditRoutine(user, routine);
-    await this.repository.deleteRoutine(routineId);
+    await this.access.assertCanEdit(user, routine);
+    await this.repository.updateRoutine(routine, { status: RoutineStatus.ARCHIVED });
     return { deleted: true };
   }
 
   async addExercise(
-    user: { id: string; role: UserRole },
+    user: Actor,
     routineId: string,
     input: RoutineExerciseInput,
   ): Promise<RoutineResponse> {
     const routine = await this.getRoutineModelOrFail(routineId);
-    this.assertCanEditRoutine(user, routine);
+    await this.access.assertCanEdit(user, routine);
     const exerciseId = await this.resolveExerciseId(input, user.id);
     try {
-      await this.repository.addExercise(routineId, exerciseId, input);
+      await this.sequelize.transaction(async (transaction) => {
+        const dayId = await this.days.firstDayId(routineId, transaction);
+        await this.repository.addExercise(routineId, exerciseId, input, dayId, transaction);
+        await this.structure.afterStructureChange(routine, transaction);
+      });
     } catch (error: unknown) {
       throw this.translateConflict(error, 'El orden ya existe en esta rutina.');
     }
-    return this.getRoutineOrFail(routineId);
+    return this.getRoutineOrFail(routineId, user);
   }
 
   async updateExercise(
-    user: { id: string; role: UserRole },
+    user: Actor,
     routineExerciseId: string,
     input: UpdateRoutineExerciseInput,
   ): Promise<RoutineResponse> {
     const routineExercise = await this.getRoutineExerciseOrFail(routineExerciseId);
     const routine = await this.getRoutineModelOrFail(routineExercise.routineId);
-    this.assertCanEditRoutine(user, routine);
+    await this.access.assertCanEdit(user, routine);
     try {
-      await this.repository.updateRoutineExercise(routineExercise, input);
+      await this.sequelize.transaction(async (transaction) => {
+        await this.repository.updateRoutineExercise(routineExercise, input, transaction);
+        await this.structure.afterStructureChange(routine, transaction);
+      });
     } catch (error: unknown) {
       throw this.translateConflict(error, 'El orden ya existe en esta rutina.');
     }
-    return this.getRoutineOrFail(routine.id);
+    return this.getRoutineOrFail(routine.id, user);
   }
 
-  async deleteExercise(
-    user: { id: string; role: UserRole },
-    routineExerciseId: string,
-  ): Promise<RoutineResponse> {
+  async deleteExercise(user: Actor, routineExerciseId: string): Promise<RoutineResponse> {
     const routineExercise = await this.getRoutineExerciseOrFail(routineExerciseId);
     const routine = await this.getRoutineModelOrFail(routineExercise.routineId);
-    this.assertCanEditRoutine(user, routine);
-    await this.repository.deleteRoutineExercise(routineExerciseId);
-    return this.getRoutineOrFail(routine.id);
+    await this.access.assertCanEdit(user, routine);
+    await this.sequelize.transaction(async (transaction) => {
+      await this.repository.deleteRoutineExercise(routineExerciseId, transaction);
+      await this.structure.afterStructureChange(routine, transaction);
+    });
+    return this.getRoutineOrFail(routine.id, user);
   }
 
   /**
@@ -159,21 +200,16 @@ export class TrainingService {
    * otro, pero sí planificar cualquiera del catálogo compartido.
    */
   async selfScheduleRoutine(
-    userId: string,
+    user: Actor,
     routineId: string,
     input: SelfScheduleRoutineInput,
   ): Promise<RoutineAssignmentResponse> {
     const routine = await this.getRoutineModelOrFail(routineId);
-    if (
-      routine.visibility === RoutineVisibility.PRIVATE &&
-      routine.createdByUserId !== userId
-    ) {
-      throw new NotFoundException('Rutina no encontrada.');
-    }
+    await this.access.assertFullView(user, routine);
 
     const assignment = await this.repository.upsertSelfAssignment(
       routineId,
-      userId,
+      user.id,
       input,
     );
     const hydrated = await this.repository.findAssignmentById(assignment.id);
@@ -181,12 +217,12 @@ export class TrainingService {
   }
 
   async assignRoutine(
-    coach: { id: string; role: UserRole },
+    coach: Actor,
     routineId: string,
     input: AssignRoutineInput,
   ): Promise<RoutineAssignmentResponse> {
     const routine = await this.getRoutineModelOrFail(routineId);
-    this.assertCanEditRoutine(coach, routine);
+    await this.access.assertCanEdit(coach, routine);
 
     const client = await this.repository.findClientById(input.clientUserId);
     if (!client || client.status !== UserStatus.ACTIVE) {
@@ -196,13 +232,13 @@ export class TrainingService {
       throw new BadRequestException('No puedes asignarte una rutina a ti mismo como coach.');
     }
 
-    // Make the routine visible to the assignee.
-    if (routine.visibility === RoutineVisibility.PRIVATE) {
-      await this.repository.updateRoutine(routine, { visibility: RoutineVisibility.SHARED });
-    }
-
     try {
-      const assignment = await this.repository.createAssignment(routineId, coach.id, input);
+      const assignment = await this.sequelize.transaction(async (transaction) => {
+        const created = await this.repository.createAssignment(routineId, coach.id, input, transaction);
+        // D15: la asignación del entrenador aparece como compartida ya aceptada.
+        await this.repository.ensureCoachShare(routineId, coach.id, client.id, transaction);
+        return created;
+      });
       const hydrated = await this.repository.findAssignmentById(assignment.id);
       return mapAssignmentToResponse(hydrated ?? assignment);
     } catch (error: unknown) {
@@ -224,13 +260,13 @@ export class TrainingService {
   }
 
   async importRoutines(
-    user: { id: string; role: UserRole },
+    user: Actor,
     input: ImportRoutinesInput,
   ): Promise<{ resultados: ImportRoutineResult[]; creadas: number }> {
     const results: ImportRoutineResult[] = [];
 
     for (const [index, routineInput] of input.routines.entries()) {
-      this.assertVisibilityAllowed(user.role, routineInput.visibility);
+      const visibility = this.normalizeVisibility(user.role, routineInput.visibility);
       try {
         const routineId = await this.sequelize.transaction(async (transaction) => {
           const routine = await this.repository.createRoutine(
@@ -238,15 +274,20 @@ export class TrainingService {
             {
               name: routineInput.name,
               description: routineInput.description,
-              visibility: routineInput.visibility,
+              visibility,
               goal: routineInput.goal,
+              durationWeeks: null,
+              progression: null,
             },
+            user.tenantId ?? null,
             transaction,
           );
+          const dayId = await this.days.firstDayId(routine.id, transaction);
           for (const exercise of routineInput.exercises) {
             const exerciseId = await this.resolveExerciseId(exercise, user.id);
-            await this.repository.addExercise(routine.id, exerciseId, exercise, transaction);
+            await this.repository.addExercise(routine.id, exerciseId, exercise, dayId, transaction);
           }
+          await this.structure.afterStructureChange(routine, transaction);
           return routine.id;
         });
         results.push({
@@ -270,29 +311,49 @@ export class TrainingService {
     return { resultados: results, creadas: results.filter((r) => r.creada).length };
   }
 
-  /** Starts a live workout session pre-loaded with the routine's ordered exercises. */
+  /**
+   * Empieza una sesión con los ejercicios de UN día: el pedido, el que toca hoy
+   * según el día de la semana, o el primero. Una rutina de varios días no debe
+   * volcar toda la semana en una sola sesión.
+   */
   async startSessionFromRoutine(
-    user: { id: string; role: UserRole },
+    user: Actor,
     routineId: string,
+    routineDayId?: string,
   ): Promise<WorkoutSessionResponse> {
     const routine = await this.getRoutineModelOrFail(routineId);
-    await this.assertCanViewRoutine(user, routine);
+    await this.access.assertFullView(user, routine);
+    const day = await this.pickDay(routine, routineDayId);
 
     const session = await this.workoutsService.startSession(user.id, {
-      observation: `Plan: ${routine.name}`,
+      observation: `Plan: ${routine.name}${day?.name ? ` · ${day.name}` : ''}`,
     });
 
-    const exercises = [...(routine.exercises ?? [])].sort((a, b) => a.order - b.order);
-    for (const exercise of exercises) {
+    const exercises = [...(routine.exercises ?? [])]
+      .filter((e) => !day || e.routineDayId === day.id)
+      .sort((a, b) => a.order - b.order);
+    for (const [index, exercise] of exercises.entries()) {
       await this.workoutsService.addExerciseToSession(user.id, session.id, {
         exerciseId: exercise.exerciseId,
-        order: exercise.order,
+        order: index + 1,
         isEmphasis: false,
         note: exercise.note,
       });
     }
 
     return this.workoutsService.getMySession(user.id, session.id);
+  }
+
+  private async pickDay(routine: RoutineModel, requested?: string) {
+    const days = [...(routine.days ?? [])].sort((a, b) => a.order - b.order);
+    if (requested) {
+      const found = days.find((d) => d.id === requested);
+      if (!found) throw new NotFoundException('Día de la rutina no encontrado.');
+      return found;
+    }
+    const jsDay = new Date().getDay();
+    const isoToday = jsDay === 0 ? 7 : jsDay;
+    return days.find((d) => d.weekday === isoToday) ?? days[0] ?? null;
   }
 
   private async resolveExerciseId(
@@ -327,8 +388,13 @@ export class TrainingService {
     return routine;
   }
 
-  private async getRoutineOrFail(routineId: string): Promise<RoutineResponse> {
-    return mapRoutineToResponse(await this.getRoutineModelOrFail(routineId));
+  private async getRoutineOrFail(routineId: string, viewer: Actor): Promise<RoutineResponse> {
+    const routine = await this.getRoutineModelOrFail(routineId);
+    return mapRoutineToResponse(routine, this.viewerOf(viewer, routine));
+  }
+
+  private viewerOf(user: Actor, routine: RoutineModel) {
+    return { id: user.id, canEdit: canEditRoutine(user, routine) };
   }
 
   private async getRoutineExerciseOrFail(id: string): Promise<RoutineExerciseModel> {
@@ -337,35 +403,17 @@ export class TrainingService {
     return routineExercise;
   }
 
-  private assertVisibilityAllowed(role: UserRole, visibility: RoutineVisibility): void {
-    if (visibility === RoutineVisibility.TEMPLATE && !STAFF_ROLES.has(role)) {
-      throw new ForbiddenException('Solo staff puede publicar rutinas como plantilla.');
+  /**
+   * Al crear o editar solo se admite PRIVATE (o SHARED por compatibilidad).
+   * PUBLIC se alcanza únicamente publicando (valida y comprueba duplicados) y
+   * TEMPLATE, que ya no existe, se trata como PRIVATE para no romper a las
+   * apps instaladas que todavía lo envían.
+   */
+  private normalizeVisibility(_role: UserRole, visibility: RoutineVisibility): RoutineVisibility {
+    if (visibility === RoutineVisibility.PUBLIC) {
+      throw new BadRequestException('Para hacer pública una rutina usa «Publicar».');
     }
-  }
-
-  private assertCanEditRoutine(
-    user: { id: string; role: UserRole },
-    routine: RoutineModel,
-  ): void {
-    if (routine.createdByUserId !== user.id && user.role !== UserRole.ADMIN) {
-      throw new ForbiddenException('No puedes modificar esta rutina.');
-    }
-  }
-
-  private async assertCanViewRoutine(
-    user: { id: string; role: UserRole },
-    routine: RoutineModel,
-  ): Promise<void> {
-    if (
-      routine.createdByUserId === user.id ||
-      routine.visibility === RoutineVisibility.TEMPLATE ||
-      user.role === UserRole.ADMIN
-    ) {
-      return;
-    }
-    const assignments = await this.repository.listAssignmentsForClient(user.id);
-    if (assignments.some((assignment) => assignment.routineId === routine.id)) return;
-    throw new ForbiddenException('No tienes acceso a esta rutina.');
+    return visibility === RoutineVisibility.TEMPLATE ? RoutineVisibility.PRIVATE : visibility;
   }
 
   private translateConflict(error: unknown, message: string): unknown {

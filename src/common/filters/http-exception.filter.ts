@@ -14,6 +14,9 @@ type PublicErrorPayload = {
   issues?: unknown;
   /** URI que identifica la CLASE de error, cuando distinguirla importa al cliente. */
   type?: string;
+  /** Código estable de dominio (ROUTINE_DUPLICATE…), si la excepción lo declara. */
+  code?: string;
+  details?: Record<string, unknown>;
 };
 
 type ErrorWithHttpStatus = {
@@ -55,6 +58,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
         requestId,
         timestamp: new Date().toISOString(),
         ...(publicError.issues === undefined ? {} : { issues: publicError.issues }),
+        ...(publicError.code === undefined ? {} : { code: publicError.code }),
+        ...(publicError.details === undefined ? {} : { details: publicError.details }),
 
         // Compatibility fields retained for existing v1 clients.
         ok: false,
@@ -109,11 +114,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const message = this.readPublicMessage(responseRecord.message, exception.message);
     const issues = responseRecord.issues;
     const type = typeof responseRecord.type === 'string' ? responseRecord.type : undefined;
+    const code = typeof responseRecord.code === 'string' ? responseRecord.code : undefined;
+    const details =
+      typeof responseRecord.details === 'object' && responseRecord.details !== null
+        ? (responseRecord.details as Record<string, unknown>)
+        : undefined;
 
     return {
       message,
       ...(issues === undefined ? {} : { issues }),
       ...(type === undefined ? {} : { type }),
+      ...(code === undefined ? {} : { code }),
+      ...(details === undefined ? {} : { details }),
     };
   }
 

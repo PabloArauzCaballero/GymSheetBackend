@@ -10,6 +10,9 @@ import { RoutineShareModel } from './routine-share.model';
 import { RoutineWeekOverrideModel } from './routine-week-override.model';
 import { RoutineExerciseModel } from './routine-exercise.model';
 import { RoutineModel } from './routine.model';
+import { RoutineAccessService } from './routine-access.service';
+import { RoutineDaysRepository } from './routine-days.repository';
+import { RoutineStructureService } from './routine-structure.service';
 import { TrainingController } from './training.controller';
 import { TrainingRepository } from './training.repository';
 import { TrainingService } from './training.service';
@@ -30,7 +33,13 @@ import { TrainingService } from './training.service';
     WorkoutsModule,
   ],
   controllers: [TrainingController],
-  providers: [TrainingRepository, TrainingService],
-  exports: [TrainingService, TrainingRepository],
+  providers: [
+    TrainingRepository,
+    TrainingService,
+    RoutineDaysRepository,
+    RoutineAccessService,
+    RoutineStructureService,
+  ],
+  exports: [TrainingService, TrainingRepository, RoutineAccessService],
 })
 export class TrainingModule {}

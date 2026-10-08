@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -14,6 +15,16 @@ import { UserRole } from '../../common/enums/domain.enums';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
+import { ParseIntPipe } from '@nestjs/common';
+import {
+  CalendarQueryInput,
+  RoutineStructureInput,
+  WeekOverrideInput,
+  calendarQuerySchema,
+  routineStructureSchema,
+  weekOverrideSchema,
+} from './routine-v2.schemas';
+import { RoutineStructureService } from './routine-structure.service';
 import { TrainingService } from './training.service';
 import {
   RoutineExerciseInput,
@@ -36,7 +47,10 @@ import {
 
 @Controller('routines')
 export class TrainingController {
-  constructor(private readonly trainingService: TrainingService) {}
+  constructor(
+    private readonly trainingService: TrainingService,
+    private readonly structureService: RoutineStructureService,
+  ) {}
 
   @Post()
   create(
@@ -146,14 +160,54 @@ export class TrainingController {
     @Body(new ZodValidationPipe(selfScheduleRoutineSchema))
     input: SelfScheduleRoutineInput,
   ) {
-    return this.trainingService.selfScheduleRoutine(user.id, routineId, input);
+    return this.trainingService.selfScheduleRoutine(user, routineId, input);
   }
 
   @Post(':id/start')
   start(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', UuidParamPipe) routineId: string,
+    @Body() body: { routineDayId?: string } | undefined,
   ) {
-    return this.trainingService.startSessionFromRoutine(user, routineId);
+    const dayId = typeof body?.routineDayId === 'string' ? body.routineDayId : undefined;
+    return this.trainingService.startSessionFromRoutine(user, routineId, dayId);
+  }
+
+  @Put(':id/structure')
+  async replaceStructure(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', UuidParamPipe) routineId: string,
+    @Body(new ZodValidationPipe(routineStructureSchema)) input: RoutineStructureInput,
+  ) {
+    await this.structureService.replace(user, routineId, input.days);
+    return this.trainingService.getRoutineForUser(user, routineId);
+  }
+
+  @Get(':id/calendar')
+  calendar(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', UuidParamPipe) routineId: string,
+    @Query(new ZodValidationPipe(calendarQuerySchema)) query: CalendarQueryInput,
+  ) {
+    return this.structureService.calendar(user, routineId, query.semanas);
+  }
+
+  @Put(':id/weeks/:week')
+  setWeek(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', UuidParamPipe) routineId: string,
+    @Param('week', ParseIntPipe) week: number,
+    @Body(new ZodValidationPipe(weekOverrideSchema)) input: WeekOverrideInput,
+  ) {
+    return this.structureService.setWeekOverride(user, routineId, week, input);
+  }
+
+  @Delete(':id/weeks/:week')
+  clearWeek(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', UuidParamPipe) routineId: string,
+    @Param('week', ParseIntPipe) week: number,
+  ) {
+    return this.structureService.clearWeekOverride(user, routineId, week);
   }
 }
