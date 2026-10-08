@@ -13,7 +13,19 @@ export function mapNotification(message: NotificationModel) {
     leidoEn: message.readAt,
     enviadoEn: message.sentAt,
     creadoEn: message.createdAt,
+    ...mapNotificationRouting(message.metadata),
   };
+}
+
+/**
+ * Tipo y referencias para que el cliente sepa a dónde abrir el aviso. Solo se
+ * exponen estos dos campos de `metadata`: el resto es interno.
+ */
+function mapNotificationRouting(metadata: Record<string, unknown> | null | undefined) {
+  const type = typeof metadata?.type === 'string' ? metadata.type : null;
+  const refs =
+    metadata?.refs && typeof metadata.refs === 'object' ? (metadata.refs as Record<string, unknown>) : {};
+  return { tipo: type, referencias: refs };
 }
 
 export function mapNotificationPreference(preference: NotificationPreferenceModel | null) {

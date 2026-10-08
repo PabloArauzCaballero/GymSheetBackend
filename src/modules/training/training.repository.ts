@@ -108,6 +108,22 @@ export class TrainingRepository {
     });
   }
 
+  async findAuthorName(userId: string): Promise<string | null> {
+    return (await this.userModel.findByPk(userId))?.fullName ?? null;
+  }
+
+  async findVersionOf(routineId: string): Promise<number | null> {
+    const row = await this.routineModel.findByPk(routineId, { attributes: ['version', 'status'] });
+    return row && row.status === RoutineStatus.ACTIVE ? row.version : null;
+  }
+
+  /** Copias vivas de una rutina (para avisar de una versión nueva). */
+  listCopiesOf(routineId: string): Promise<RoutineModel[]> {
+    return this.routineModel.findAll({
+      where: { basedOnRoutineId: routineId, status: RoutineStatus.ACTIVE },
+    });
+  }
+
   listRoutines(
     where: WhereOptions,
     page: number,

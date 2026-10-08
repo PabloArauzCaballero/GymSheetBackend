@@ -84,3 +84,14 @@ export type ProgressionInput = z.infer<typeof progressionSchema>;
 export type WeekOverrideInput = z.infer<typeof weekOverrideSchema>;
 export type CalendarQueryInput = z.infer<typeof calendarQuerySchema>;
 export { uniqueWeekdays };
+
+export const inviteSchema = z
+  .object({ usuarioIds: z.array(z.string().uuid()).min(1).max(20) })
+  .transform((v) => ({ userIds: v.usuarioIds }));
+
+export const invitationListQuerySchema = z.object({
+  estado: z.enum(['PENDING', 'ACCEPTED']).optional(),
+});
+
+export type InviteInput = z.infer<typeof inviteSchema>;
+export type InvitationListQuery = z.infer<typeof invitationListQuerySchema>;

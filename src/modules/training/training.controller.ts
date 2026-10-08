@@ -24,6 +24,8 @@ import {
   routineStructureSchema,
   weekOverrideSchema,
 } from './routine-v2.schemas';
+import { RoutineCatalogService } from './routine-catalog.service';
+import { RoutineCatalogQuery, routineCatalogQuerySchema } from './routine-catalog.schemas';
 import { RoutineStructureService } from './routine-structure.service';
 import { TrainingService } from './training.service';
 import {
@@ -50,6 +52,7 @@ export class TrainingController {
   constructor(
     private readonly trainingService: TrainingService,
     private readonly structureService: RoutineStructureService,
+    private readonly catalogService: RoutineCatalogService,
   ) {}
 
   @Post()
@@ -60,12 +63,22 @@ export class TrainingController {
     return this.trainingService.createRoutine(user, input);
   }
 
+  /**
+   * Catálogo por pestañas (RF-01) o, para las apps ya instaladas, el listado
+   * paginado de siempre: `mine`/`templates` sin `limit` ni `cursor`.
+   */
   @Get()
-  list(
-    @CurrentUser() user: AuthenticatedUser,
-    @Query(new ZodValidationPipe(listRoutinesSchema)) query: ListRoutinesInput,
-  ) {
-    return this.trainingService.listRoutines(user.id, query);
+  list(@CurrentUser() user: AuthenticatedUser, @Query() rawQuery: Record<string, unknown>) {
+    const legacy =
+      (rawQuery.scope === undefined || rawQuery.scope === 'mine' || rawQuery.scope === 'templates') &&
+      rawQuery.limit === undefined &&
+      rawQuery.cursor === undefined;
+    if (legacy) {
+      const query = new ZodValidationPipe(listRoutinesSchema).transform(rawQuery, { type: 'query' }) as ListRoutinesInput;
+      return this.trainingService.listRoutines(user.id, query);
+    }
+    const query = new ZodValidationPipe(routineCatalogQuerySchema).transform(rawQuery, { type: 'query' }) as RoutineCatalogQuery;
+    return this.catalogService.list(user, query);
   }
 
   @Get('assignments/me')

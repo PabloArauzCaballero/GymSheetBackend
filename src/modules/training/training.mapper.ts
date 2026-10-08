@@ -47,6 +47,7 @@ export type RoutineResponse = {
   basadaEnRutinaId: string | null;
   basadaEnVersion: number | null;
   version: number;
+  hayVersionNueva: boolean;
   huellaCorta: string | null;
   valoracion: { promedio: number | null; total: number };
   copias: number;
@@ -136,6 +137,7 @@ export function mapRoutineToResponse(
     basadaEnRutinaId: routine.basedOnRoutineId,
     basadaEnVersion: routine.basedOnVersion,
     version: routine.version,
+    hayVersionNueva: false,
     huellaCorta: routine.fingerprint ? routine.fingerprint.slice(0, 8) : null,
     valoracion: {
       promedio: routine.ratingAverage == null ? null : Number(routine.ratingAverage),

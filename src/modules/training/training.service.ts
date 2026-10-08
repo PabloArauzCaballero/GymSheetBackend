@@ -118,7 +118,12 @@ export class TrainingService {
   async getRoutineForUser(user: Actor, routineId: string): Promise<RoutineResponse> {
     const routine = await this.getRoutineModelOrFail(routineId);
     await this.access.assertFullView(user, routine);
-    return mapRoutineToResponse(routine, this.viewerOf(user, routine));
+    const response = mapRoutineToResponse(routine, this.viewerOf(user, routine));
+    if (routine.basedOnRoutineId && routine.basedOnVersion != null) {
+      const sourceVersion = await this.repository.findVersionOf(routine.basedOnRoutineId);
+      response.hayVersionNueva = sourceVersion != null && sourceVersion > routine.basedOnVersion;
+    }
+    return response;
   }
 
   async updateRoutine(
@@ -158,6 +163,7 @@ export class TrainingService {
         await this.repository.addExercise(routineId, exerciseId, input, dayId, transaction);
         await this.structure.afterStructureChange(routine, transaction);
       });
+      await this.structure.announceNewVersion(routine);
     } catch (error: unknown) {
       throw this.translateConflict(error, 'El orden ya existe en esta rutina.');
     }

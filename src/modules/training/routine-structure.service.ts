@@ -5,6 +5,7 @@ import { RoutineVisibility, UserRole } from '../../common/enums/domain.enums';
 import { DomainException } from '../../common/errors/domain.exception';
 import { generateWeeks } from '../programs/engine/week-generation';
 import { ExercisesService } from '../exercises/exercises.service';
+import { RoutineNotifier } from './routine-notifier';
 import { RoutineAccessService } from './routine-access.service';
 import { RoutineDaysRepository } from './routine-days.repository';
 import { RoutineDayInput, WeekOverrideInput } from './routine-v2.schemas';
@@ -22,6 +23,7 @@ export class RoutineStructureService {
     private readonly access: RoutineAccessService,
     private readonly exercises: ExercisesService,
     private readonly sequelize: Sequelize,
+    private readonly notifier: RoutineNotifier,
   ) {}
 
   /** ROUTINE_HAS_NO_DAYS: al menos un día y todos con ejercicios. */
@@ -36,9 +38,16 @@ export class RoutineStructureService {
   }
 
   /** Todos los ejercicios deben existir y ser visibles para quien edita (propios o globales). */
-  async assertExercisesUsable(userId: string, days: readonly RoutineDayInput[]): Promise<void> {
+  async assertExercisesUsable(
+    userId: string,
+    days: readonly RoutineDayInput[],
+    alreadyInRoutine: ReadonlySet<string> = new Set(),
+  ): Promise<void> {
     const ids = new Set(days.flatMap((d) => d.exercises.map((e) => e.exerciseId)));
-    for (const id of ids) await this.exercises.getVisibleExerciseOrFail(id, userId);
+    for (const id of ids) {
+      // Una copia puede traer ejercicios privados de otra persona: ya forman parte de la rutina.
+      if (!alreadyInRoutine.has(id)) await this.exercises.getVisibleExerciseOrFail(id, userId);
+    }
   }
 
   async replace(
@@ -49,11 +58,32 @@ export class RoutineStructureService {
     const routine = await this.loadRoutine(routineId);
     await this.access.assertCanEdit(actor, routine);
     this.assertComplete(days);
-    await this.assertExercisesUsable(actor.id, days);
+    await this.assertExercisesUsable(
+      actor.id,
+      days,
+      new Set((routine.exercises ?? []).map((e) => e.exerciseId)),
+    );
     await this.sequelize.transaction(async (transaction) => {
       await this.days.replaceStructure(routineId, days, transaction);
       await this.afterStructureChange(routine, transaction);
     });
+    await this.announceNewVersion(routine);
+  }
+
+  /** Avisa (una vez al día por copia) a quien tiene una copia de una pública que cambió. */
+  async announceNewVersion(routine: RoutineModel): Promise<void> {
+    if (routine.visibility !== RoutineVisibility.PUBLIC) return;
+    const day = new Date().toISOString().slice(0, 10);
+    for (const copy of await this.repository.listCopiesOf(routine.id)) {
+      await this.notifier.notify({
+        to: copy.createdByUserId,
+        type: 'ROUTINE_NEW_VERSION',
+        subject: 'Hay una versión nueva',
+        body: `Hay una versión nueva de "${routine.name}"`,
+        dedupeKey: `${copy.id}:${day}`,
+        refs: { routineId: copy.id, sourceId: routine.id },
+      });
+    }
   }
 
   /**

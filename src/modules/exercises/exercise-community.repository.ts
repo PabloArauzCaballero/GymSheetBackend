@@ -62,6 +62,7 @@ export class ExerciseCommunityRepository {
           AND e.estado = 'ACTIVO' AND e.estado_moderacion = 'VISIBLE'
           AND r.estado = 'ACTIVE' AND r.estado_moderacion = 'VISIBLE'
           AND ( r.visibilidad = 'PUBLIC'
+             OR r.created_by_user_id = :userId
              OR EXISTS (SELECT 1 FROM training.routine_shares s
                          WHERE s.routine_id = r.id AND s.invitado_id = :userId AND s.estado = 'ACCEPTED')
              OR EXISTS (SELECT 1 FROM training.routine_assignments a

@@ -81,7 +81,7 @@ export class RoutineDaysRepository {
   }
 
   /** Calcula la huella con el estado actual de la base (dentro de la transacción). */
-  async computeFingerprint(routineId: string, transaction: Transaction): Promise<string> {
+  async computeFingerprint(routineId: string, transaction?: Transaction): Promise<string> {
     const days = await this.dayModel.findAll({
       where: { routineId },
       order: [['order', 'ASC']],
