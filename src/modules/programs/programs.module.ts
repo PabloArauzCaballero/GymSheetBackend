@@ -7,6 +7,8 @@ import { CardioPlansService } from './cardio-plans.service';
 import { ProgramWeekCloseService } from './program-week-close.service';
 import { ProgramsCardioService } from './programs-cardio.service';
 import { RewardLedgerRepository } from './reward-ledger.repository';
+import { SupportTrainingController } from './support-training.controller';
+import { SupportTrainingService } from './support-training.service';
 import { ExercisesModule } from '../exercises/exercises.module';
 import { WorkoutsModule } from '../workouts/workouts.module';
 import { ProgramRoutineChangesService } from './program-routine-changes.service';
@@ -36,7 +38,7 @@ import { ProgramsRepository } from './programs.repository';
     WorkoutsModule,
     ExercisesModule,
   ],
-  controllers: [ProgramsController, ProgramSessionController, CardioController],
+  controllers: [ProgramsController, ProgramSessionController, CardioController, SupportTrainingController],
   providers: [
     BusinessDateService,
     ProgramsRepository,
@@ -49,6 +51,7 @@ import { ProgramsRepository } from './programs.repository';
     ProgramsCardioService,
     RewardLedgerRepository,
     ProgramWeekCloseService,
+    SupportTrainingService,
   ],
   exports: [ProgramsRepository, ProgramsQueryService, ProgramWeekCloseService, RewardLedgerRepository],
 })

@@ -132,6 +132,43 @@ export class ProgramWeekCloseService {
     return { programId, weekNumber, fulfilled, multiplier, bonus };
   }
 
+  /**
+   * Soporte: reevalúa una semana ya cerrada. Solo puede AÑADIR el bono que
+   * faltaba (nunca quita puntos ni cambia otras semanas) y es idempotente.
+   */
+  async recomputeWeek(programId: string, weekNumber: number, today: string) {
+    return this.sequelize.transaction(async (transaction) => {
+      const program = await TrainingProgramModel.findByPk(programId, { transaction, lock: transaction.LOCK.UPDATE });
+      const week = await ProgramWeekModel.findOne({ where: { programId, weekNumber }, transaction, lock: transaction.LOCK.UPDATE });
+      if (!program || !week) return { recalculada: false, motivo: 'SEMANA_NO_ENCONTRADA' as const };
+      if (week.weekStart >= mondayOf(today)) return { recalculada: false, motivo: 'SEMANA_ABIERTA' as const };
+      if (week.fulfilled === true) return { recalculada: false, motivo: 'YA_CUMPLIDA' as const };
+
+      const stats = await this.weekStats(programId, week.weekStart, addDays(week.weekStart, 6), transaction);
+      const fulfilled =
+        program.lane === 'CARDIO'
+          ? await this.cardioFulfilled(program, week)
+          : isWeekFulfilled({
+              sessionsPlan: week.sessionsPlan,
+              sessionsDone: Math.max(week.sessionsDone, stats.sessions),
+              workRatio: await this.workRatio(programId, week.weekStart, addDays(week.weekStart, 6), transaction),
+            });
+      if (!fulfilled) return { recalculada: false, motivo: 'SIGUE_SIN_CUMPLIR' as const };
+
+      const previous = await ProgramWeekModel.findOne({ where: { programId, weekNumber: weekNumber - 1 }, transaction });
+      const multiplier = nextMultiplier(previous?.multiplier == null ? 1 : Number(previous.multiplier), true);
+      const bonus = program.mode === 'NONE' ? 0 : weekBonus(stats.basePoints, multiplier);
+      if (program.mode !== 'NONE') {
+        await this.ledger.append(
+          { userId: program.userId, programId, weekNumber, multiplier, basePoints: stats.basePoints, bonusPoints: bonus, reason: 'SEMANA_CUMPLIDA' },
+          transaction,
+        );
+      }
+      await week.update({ fulfilled: true, multiplier: multiplier.toFixed(2), sessionsDone: Math.max(week.sessionsDone, stats.sessions) }, { transaction });
+      return { recalculada: true, motivo: 'CUMPLIDA' as const, multiplicador: multiplier, bono: bonus };
+    });
+  }
+
   /** Si ya pasó el fin y todas las semanas están cerradas, el programa termina (+500 si ≥ 75 % cumplidas). */
   private async finishIfOver(programId: string, today: string): Promise<void> {
     const program = await this.programs.findById(programId);
