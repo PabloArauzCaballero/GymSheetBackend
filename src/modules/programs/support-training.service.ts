@@ -94,6 +94,19 @@ export class SupportTrainingService {
     return this.close.recomputeWeek(programId, weekNumber, today);
   }
 
+  /**
+   * Ejecuta el cierre semanal de UN programa a mano (el mismo código que el
+   * trabajo del lunes). `until` permite probar con una fecha futura; sin él
+   * usa hoy. Idempotente: el libro rechaza el doble pago.
+   */
+  async closeWeeksNow(programId: string, tenantScope: string | null, until?: string) {
+    const program = await this.programs.findById(programId);
+    if (!program) throw new NotFoundException('Programa no encontrado.');
+    await this.assertInScope(program.userId, tenantScope);
+    const closed = await this.close.closeProgram(programId, until ?? this.dates.today());
+    return { cerradas: closed };
+  }
+
   private async assertInScope(userId: string, tenantScope: string | null): Promise<void> {
     const [row] = await this.sequelize.query<{ tenant: string }>(
       `SELECT tenant_id AS tenant FROM public.usuarios WHERE id = :userId`,

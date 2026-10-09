@@ -99,4 +99,13 @@ describe('Support training view (e2e)', () => {
     expect(again).toMatchObject({ recalculada: false, motivo: 'YA_CUMPLIDA' });
     expect((await api.get('/me/progression').expect(200)).body.data.points).toBe(after);
   });
+
+  it('close-weeks cierra las semanas vencidas a mano, es idempotente y exige permiso', async () => {
+    await e2e.as(member.token).post(`/admin/support/programs/${programId}/close-weeks`).send({}).expect(403);
+    const first = await e2e.as(sys.token).post(`/admin/support/programs/${programId}/close-weeks`).send({ hasta: dayOffset(60) }).expect(201);
+    expect(Array.isArray(first.body.data.cerradas)).toBe(true);
+    const again = await e2e.as(sys.token).post(`/admin/support/programs/${programId}/close-weeks`).send({ hasta: dayOffset(60) }).expect(201);
+    expect(again.body.data.cerradas).toEqual([]);
+    await e2e.as(sys.token).post(`/admin/support/programs/${programId}/close-weeks`).send({ hasta: 'ayer' }).expect(400);
+  });
 });

@@ -11,6 +11,7 @@ import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { AdminPermissionKey } from '../admin-access/admin-permission.catalog';
 import { SupportTrainingService } from './support-training.service';
 
+const closeWeeksSchema = z.object({ hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional() });
 const recomputeSchema = z.object({ semana: z.number().int().min(1).max(60) });
 
 @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
@@ -33,5 +34,16 @@ export class SupportTrainingController {
     @Body(new ZodValidationPipe(recomputeSchema)) body: { semana: number },
   ) {
     return this.support.recomputeWeek(id, body.semana, actor.tenantScope);
+  }
+
+  @Post('programs/:id/close-weeks')
+  @RequirePermission(AdminPermissionKey.SUPPORT_RESPOND)
+  @Audited({ domain: 'support', action: 'close-weeks', targetKind: 'program', targetParam: 'id' })
+  closeWeeks(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id', UuidParamPipe) id: string,
+    @Body(new ZodValidationPipe(closeWeeksSchema)) body: { hasta?: string },
+  ) {
+    return this.support.closeWeeksNow(id, actor.tenantScope, body.hasta);
   }
 }
