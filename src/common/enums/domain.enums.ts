@@ -99,6 +99,7 @@ export enum RoutineVisibility {
   PRIVATE = "PRIVATE",
   SHARED = "SHARED",
   TEMPLATE = "TEMPLATE",
+  PUBLIC = "PUBLIC",
 }
 
 export enum RoutineStatus {

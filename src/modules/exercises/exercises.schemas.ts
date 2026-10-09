@@ -176,6 +176,11 @@ export const exerciseFilterSchema = z
     bodyPart: z.string().trim().max(100).optional(),
     targetMuscle: z.string().trim().max(120).optional(),
     dataSource: z.nativeEnum(ExerciseDataSource).optional(),
+    /** Solo los favoritos de quien pregunta (favorito privado, D7). */
+    favoritos: z
+      .enum(['true', 'false'])
+      .transform((value) => value === 'true')
+      .optional(),
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(25),
   })

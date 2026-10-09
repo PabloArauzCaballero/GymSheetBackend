@@ -12,6 +12,9 @@ export const ModerationTargetKind = {
   PROFILE_PHOTO: 'PROFILE_PHOTO',
   CHAT_MESSAGE: 'CHAT_MESSAGE',
   USER: 'USER',
+  ROUTINE: 'ROUTINE',
+  EXERCISE: 'EXERCISE',
+  COMMENT: 'COMMENT',
 } as const;
 export type ModerationTargetKindValue =
   (typeof ModerationTargetKind)[keyof typeof ModerationTargetKind];
@@ -26,6 +29,9 @@ export const ModerationReason = {
   PERFIL_FALSO: 'PERFIL_FALSO',
   MENOR_DE_EDAD: 'MENOR_DE_EDAD',
   DROGAS: 'DROGAS',
+  EJERCICIO_PELIGROSO: 'EJERCICIO_PELIGROSO',
+  INFORMACION_ENGANOSA: 'INFORMACION_ENGANOSA',
+  PLAGIO: 'PLAGIO',
   OTRO: 'OTRO',
 } as const;
 export type ModerationReasonValue =
@@ -80,10 +86,14 @@ const SEVERITY_BY_REASON: Record<ModerationReasonValue, number> = {
   [ModerationReason.ACOSO]: ReasonSeverity.ALTA,
   [ModerationReason.DISCURSO_DE_ODIO]: ReasonSeverity.ALTA,
   [ModerationReason.CONTENIDO_SEXUAL]: ReasonSeverity.ALTA,
+  // Una técnica que puede lesionar a quien la sigue: sube como un daño real.
+  [ModerationReason.EJERCICIO_PELIGROSO]: ReasonSeverity.ALTA,
   // Molesto o tramposo, pero nadie sale herido esta tarde.
   [ModerationReason.PERFIL_FALSO]: ReasonSeverity.NORMAL,
   [ModerationReason.DROGAS]: ReasonSeverity.NORMAL,
   [ModerationReason.SPAM]: ReasonSeverity.NORMAL,
+  [ModerationReason.INFORMACION_ENGANOSA]: ReasonSeverity.NORMAL,
+  [ModerationReason.PLAGIO]: ReasonSeverity.NORMAL,
   [ModerationReason.OTRO]: ReasonSeverity.NORMAL,
 };
 
@@ -187,9 +197,7 @@ export function strikeExpiryFrom(now: Date = new Date()): Date {
   return new Date(now.getTime() + STRIKE_LIFETIME_DAYS * DAY_MS);
 }
 
-/** Sólo el contenido con fila propia se puede ocultar; a una persona se la sanciona. */
+/** Sólo el contenido con fila propia se puede ocultar; a una persona se la sanciona (y un mensaje de chat no se oculta). */
 export function isHideableTarget(kind: ModerationTargetKindValue): boolean {
-  return (
-    kind === ModerationTargetKind.STORY || kind === ModerationTargetKind.PROFILE_PHOTO
-  );
+  return kind !== ModerationTargetKind.CHAT_MESSAGE && kind !== ModerationTargetKind.USER;
 }

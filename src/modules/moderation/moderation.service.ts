@@ -45,6 +45,7 @@ export interface CasePreview {
   /** Qué sanción tocaría, calculada antes de aplicarla. */
   pendingSanction: { kind: string; days: number | null };
   contentHidden: boolean;
+  preview: { text: string; targetKind: string; targetId: string } | null;
 }
 
 @Injectable()
@@ -92,6 +93,9 @@ export class ModerationService {
     }
     if (owner.userId === reporter.id) {
       throw new ConflictException('No puedes reportar tu propio contenido.');
+    }
+    if (!(await this.repository.canReporterSee(input.targetKind, input.targetId, reporter.id))) {
+      throw new NotFoundException('No encontramos ese contenido.');
     }
 
     const report = await this.sequelize
@@ -272,6 +276,10 @@ export class ModerationService {
       activeStrikes,
       pendingSanction: { kind: sanction.kind, days: sanction.days },
       contentHidden,
+      preview:
+        targetKind === ModerationTargetKind.COMMENT
+          ? await this.repository.commentPreview(targetId)
+          : null,
     };
   }
 
@@ -289,18 +297,12 @@ export class ModerationService {
     return row ?? { name: 'Cuenta eliminada', suspendedUntil: null };
   }
 
-  private async isContentHidden(
+  private isContentHidden(
     targetKind: ModerationTargetKindValue,
     targetId: string,
   ): Promise<boolean> {
-    if (!isHideableTarget(targetKind)) return false;
-    const table =
-      targetKind === ModerationTargetKind.STORY ? 'profile.stories' : 'profile.photos';
-    const [row] = await this.sequelize.query<{ hidden: boolean }>(
-      `SELECT (hidden_at IS NOT NULL) AS hidden FROM ${table} WHERE id = :targetId`,
-      { type: QueryTypes.SELECT, replacements: { targetId } },
-    );
-    return row?.hidden ?? false;
+    if (!isHideableTarget(targetKind)) return Promise.resolve(false);
+    return this.repository.isContentHidden(targetKind, targetId);
   }
 
   async claim(
@@ -443,6 +445,7 @@ export class ModerationService {
     });
 
     await this.notifyOutcome(openReports, reportedUserId, sanction, input);
+    await this.notifyAuthorIfHidden(targetKind, targetId, reportedUserId, input);
 
     return {
       resolved: true,
@@ -514,6 +517,39 @@ export class ModerationService {
         ModerationService.name,
       );
     }
+  }
+
+  /** CONTENT_HIDDEN: el autor de una rutina, ejercicio o comentario sabe qué pasó y a dónde ir. */
+  private async notifyAuthorIfHidden(
+    targetKind: ModerationTargetKindValue,
+    targetId: string,
+    authorId: string,
+    input: ResolveCaseInput,
+  ): Promise<void> {
+    if (!input.hideContent) return;
+    if (
+      targetKind !== ModerationTargetKind.ROUTINE &&
+      targetKind !== ModerationTargetKind.EXERCISE &&
+      targetKind !== ModerationTargetKind.COMMENT
+    ) {
+      return;
+    }
+    const what = { ROUTINE: 'tu rutina', EXERCISE: 'tu ejercicio', COMMENT: 'tu comentario' }[targetKind];
+    await this.notifications
+      .enqueueDirectMessage({
+        recipientUserId: authorId,
+        channel: NotificationChannel.IN_APP,
+        subject: 'Ocultamos tu contenido',
+        body: `Ocultamos ${what} mientras lo revisamos.`,
+        deduplicationKey: `CONTENT_HIDDEN:${targetKind}:${targetId}`,
+        metadata: { type: 'CONTENT_HIDDEN', refs: { targetKind, targetId } },
+      })
+      .catch((error: unknown) => {
+        this.logger.warn(
+          { event: 'moderation.notify_failed', errorMessage: error instanceof Error ? error.message : String(error) },
+          ModerationService.name,
+        );
+      });
   }
 
   private sanctionSubject(sanction: Sanction): string {

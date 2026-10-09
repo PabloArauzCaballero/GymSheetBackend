@@ -61,6 +61,13 @@ export type ExerciseResponse = {
   metadata: Record<string, unknown>;
   equipment: EquipmentResponse[];
   media: ExerciseMediaResponse[];
+  /** Comunidad (público): contadores del ejercicio. */
+  meGustaTotal: number;
+  valoracion: { promedio: number | null; total: number };
+  estadoModeracion: string;
+  /** Lo que sabe quien mira; las rellena `ExercisesService` en las respuestas de lectura. */
+  meGusta?: boolean;
+  esFavorito?: boolean;
 };
 
 export type ExercisePageResponse = {
@@ -131,6 +138,12 @@ export function mapExerciseToResponse(exercise: ExerciseModel): ExerciseResponse
     metadata: exercise.metadata,
     equipment,
     media: (exercise.media ?? []).map(mapExerciseMediaToResponse),
+    meGustaTotal: exercise.likesCount ?? 0,
+    valoracion: {
+      promedio: exercise.ratingAverage == null ? null : Number(exercise.ratingAverage),
+      total: exercise.ratingCount ?? 0,
+    },
+    estadoModeracion: exercise.moderationState ?? 'VISIBLE',
   };
 }
 

@@ -33,6 +33,7 @@ describe('ModerationService', () => {
       findContentOwner: jest
         .fn()
         .mockResolvedValue({ userId: 'author-1', tenantId: 'topfitness' }),
+      canReporterSee: jest.fn().mockResolvedValue(true),
       createReport: jest.fn().mockResolvedValue({ id: 'report-1', status: 'PENDIENTE' }),
       countDistinctReporters: jest.fn().mockResolvedValue(1),
       setContentHidden: jest.fn().mockResolvedValue(undefined),

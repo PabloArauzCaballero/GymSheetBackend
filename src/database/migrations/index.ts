@@ -59,6 +59,12 @@ import { adminAuditLogMigration } from "./202609150001-admin-audit-log";
 import { moderationMigration } from "./202609150002-moderation";
 import { webPushDeviceTokensMigration } from "./202609160001-web-push-device-tokens";
 import { profileBirthDateMigration } from "./202609160002-profile-birth-date";
+import { routinesV2StructureMigration } from "./202610080001-routines-v2-structure";
+import { routineSharingMigration } from "./202610080002-routine-sharing";
+import { communityMigration } from "./202610080003-community";
+import { moderationRoutineKindsMigration } from "./202610080004-moderation-routine-kinds";
+import { programsMigration } from "./202610080005-programs";
+import { cardioAndRewardsMigration } from "./202610080006-cardio-and-rewards";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -119,4 +125,10 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   webPushDeviceTokensMigration,
   profileBirthDateMigration,
   exerciseMediaPlainHttpMigration,
+  routinesV2StructureMigration,
+  routineSharingMigration,
+  communityMigration,
+  moderationRoutineKindsMigration,
+  programsMigration,
+  cardioAndRewardsMigration,
 ];

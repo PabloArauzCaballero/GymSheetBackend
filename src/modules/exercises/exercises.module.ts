@@ -37,6 +37,10 @@ import {
   MusclesCatalogController,
 } from './muscles/muscles.controller';
 
+import { ExerciseLikeModel } from '../community/exercise-like.model';
+import { ExerciseCommunityRepository } from './exercise-community.repository';
+import { ExerciseCommunityService } from './exercise-community.service';
+
 @Module({
   imports: [
     EquipmentModule,
@@ -53,6 +57,7 @@ import {
       ExerciseMuscleModel,
       ExerciseRatingModel,
       UserExercisePreferenceModel,
+      ExerciseLikeModel,
     ]),
   ],
   controllers: [
@@ -69,6 +74,8 @@ import {
   ],
   providers: [
     ExercisesRepository,
+    ExerciseCommunityRepository,
+    ExerciseCommunityService,
     ExercisesService,
     EquipmentInferenceService,
     ExerciseMediaRepository,
@@ -79,6 +86,7 @@ import {
     MusclesService,
   ],
   exports: [
+    ExerciseCommunityService,
     ExercisesService,
     ExercisesRepository,
     ExerciseMediaRepository,

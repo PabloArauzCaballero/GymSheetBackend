@@ -57,21 +57,58 @@ export const updateSessionExerciseSchema = z
     ...(nota !== undefined ? { note: nota } : {}),
   }));
 
+const strengthSetShape = z.object({
+  tipoSerie: z.literal('FUERZA'),
+  numeroSerie: z.number().int().min(1).max(100),
+  repeticiones: z.number().int().min(1).max(1000),
+  pesoKg: z.number().min(0).max(2000),
+  rir: z.number().int().min(0).max(10),
+  descansoSegAnterior: z.number().int().min(0).max(7200),
+});
+
+/** Serie de cardio (RF-17): lo único obligatorio es cuánto duró. */
+const cardioSetShape = z.object({
+  tipoSerie: z.literal('CARDIO'),
+  numeroSerie: z.number().int().min(1).max(100),
+  duracionSeg: z.number().int().min(1).max(86400),
+  distanciaM: z.number().int().min(0).max(500000).optional(),
+  fcMedia: z.number().int().min(30).max(230).optional(),
+  rpe: z.number().int().min(1).max(10).optional(),
+  descansoSegAnterior: z.number().int().min(0).max(7200).default(0),
+});
+
+/**
+ * `tipoSerie` es opcional en la entrada para no romper a las apps instaladas,
+ * que no lo envían: sin él la serie es de fuerza, como siempre.
+ */
 export const createWorkoutSetSchema = z
-  .object({
-    numeroSerie: z.number().int().min(1).max(100),
-    repeticiones: z.number().int().min(1).max(1000),
-    pesoKg: z.number().min(0).max(2000),
-    rir: z.number().int().min(0).max(10),
-    descansoSegAnterior: z.number().int().min(0).max(7200),
-  })
-  .transform(({ numeroSerie, repeticiones, pesoKg, rir, descansoSegAnterior }) => ({
-    setNumber: numeroSerie,
-    repetitions: repeticiones,
-    weightKg: pesoKg,
-    rir,
-    previousRestSeconds: descansoSegAnterior,
-  }));
+  .preprocess(
+    (raw) =>
+      typeof raw === 'object' && raw !== null && !('tipoSerie' in raw)
+        ? { ...(raw as Record<string, unknown>), tipoSerie: 'FUERZA' }
+        : raw,
+    z.discriminatedUnion('tipoSerie', [strengthSetShape, cardioSetShape]),
+  )
+  .transform((input) =>
+    input.tipoSerie === 'FUERZA'
+      ? {
+          type: 'FUERZA' as const,
+          setNumber: input.numeroSerie,
+          repetitions: input.repeticiones,
+          weightKg: input.pesoKg,
+          rir: input.rir,
+          previousRestSeconds: input.descansoSegAnterior,
+        }
+      : {
+          type: 'CARDIO' as const,
+          setNumber: input.numeroSerie,
+          durationSeconds: input.duracionSeg,
+          distanceM: input.distanciaM ?? null,
+          avgHeartRate: input.fcMedia ?? null,
+          rpe: input.rpe ?? null,
+          previousRestSeconds: input.descansoSegAnterior,
+        },
+  );
 
 export const updateWorkoutSetSchema = z
   .object({

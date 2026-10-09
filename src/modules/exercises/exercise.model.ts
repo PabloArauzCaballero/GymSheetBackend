@@ -113,6 +113,21 @@ export class ExerciseModel extends Model {
   @Column({ type: DataType.JSONB, allowNull: false, field: 'metadata' })
   declare metadata: Record<string, unknown>;
 
+  @Default(0)
+  @Column({ type: DataType.INTEGER, allowNull: false, field: 'me_gusta_total' })
+  declare likesCount: number;
+
+  @Default('VISIBLE')
+  @Column({ type: DataType.STRING(20), allowNull: false, field: 'estado_moderacion' })
+  declare moderationState: 'VISIBLE' | 'OCULTO_AUTO' | 'OCULTO_MODERACION';
+
+  @Column({ type: DataType.DECIMAL(3, 2), allowNull: true, field: 'valoracion_promedio' })
+  declare ratingAverage: string | null;
+
+  @Default(0)
+  @Column({ type: DataType.INTEGER, allowNull: false, field: 'valoracion_total' })
+  declare ratingCount: number;
+
   @Column({ type: DataType.DATE, allowNull: true, field: 'imported_at' })
   declare importedAt: Date | null;
 

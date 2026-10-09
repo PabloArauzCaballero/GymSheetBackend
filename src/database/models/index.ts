@@ -56,6 +56,18 @@ import { ProfileViewModel } from "../../modules/profile-views/profile-view.model
 import { RoutineModel } from "../../modules/training/routine.model";
 import { RoutineExerciseModel } from "../../modules/training/routine-exercise.model";
 import { RoutineAssignmentModel } from "../../modules/training/routine-assignment.model";
+import { RoutineDayModel } from "../../modules/training/routine-day.model";
+import { RoutineWeekOverrideModel } from "../../modules/training/routine-week-override.model";
+import { RoutineShareModel } from "../../modules/training/routine-share.model";
+import {
+  ProgramLiftTargetModel,
+  ProgramWeekModel,
+  TrainingProgramModel,
+} from "../../modules/programs/program.models";
+import { CardioPlanModel } from "../../modules/programs/cardio-plan.model";
+import { ContentRatingModel } from "../../modules/community/content-rating.model";
+import { ContentCommentModel } from "../../modules/community/content-comment.model";
+import { ExerciseLikeModel } from "../../modules/community/exercise-like.model";
 import { EntitlementModel } from "../../modules/membership/entitlement.model";
 import { MediaFileModel } from "../../modules/membership/media-file.model";
 import { MembershipExtensionModel } from "../../modules/membership/membership-extension.model";
@@ -107,6 +119,16 @@ export const databaseModels = [
   RoutineModel,
   RoutineExerciseModel,
   RoutineAssignmentModel,
+  RoutineDayModel,
+  RoutineWeekOverrideModel,
+  RoutineShareModel,
+  ContentRatingModel,
+  TrainingProgramModel,
+  CardioPlanModel,
+  ProgramLiftTargetModel,
+  ProgramWeekModel,
+  ContentCommentModel,
+  ExerciseLikeModel,
   BranchModel,
   RoomModel,
   AccessPointModel,

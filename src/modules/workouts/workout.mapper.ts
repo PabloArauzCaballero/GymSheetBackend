@@ -7,9 +7,15 @@ import { WorkoutSetModel } from './workout-set.model';
 export type WorkoutSetResponse = {
   id: string;
   numeroSerie: number;
-  repeticiones: number;
-  pesoKg: number;
-  rir: number;
+  tipoSerie: 'FUERZA' | 'CARDIO';
+  /** Nulos en las series de cardio. */
+  repeticiones: number | null;
+  pesoKg: number | null;
+  rir: number | null;
+  duracionSeg: number | null;
+  distanciaM: number | null;
+  fcMedia: number | null;
+  rpe: number | null;
   descansoSegAnterior: number;
   fechaRegistro: Date;
 };
@@ -46,9 +52,14 @@ export function mapWorkoutSetToResponse(set: WorkoutSetModel): WorkoutSetRespons
   return {
     id: set.id,
     numeroSerie: set.setNumber,
+    tipoSerie: set.type ?? 'FUERZA',
     repeticiones: set.repetitions,
-    pesoKg: Number(set.weightKg),
+    pesoKg: set.weightKg == null ? null : Number(set.weightKg),
     rir: set.rir,
+    duracionSeg: set.durationSeconds ?? null,
+    distanciaM: set.distanceM ?? null,
+    fcMedia: set.avgHeartRate ?? null,
+    rpe: set.rpe ?? null,
     descansoSegAnterior: set.previousRestSeconds,
     fechaRegistro: set.recordedAt,
   };
