@@ -358,7 +358,7 @@ export class ModerationRepository {
                    SET estado_moderacion = :state, updated_at = now()
                  WHERE id = :targetId`,
       EXERCISE: `UPDATE public.ejercicios
-                    SET estado_moderacion = :state, updated_at = now()
+                    SET estado_moderacion = :commentState, updated_at = now()
                   WHERE id = :targetId`,
       COMMENT: `UPDATE community.content_comments
                    SET estado = :commentState, updated_at = now()

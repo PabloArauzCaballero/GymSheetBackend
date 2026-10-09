@@ -1,3 +1,5 @@
+import { QueryTypes } from 'sequelize';
+import { Sequelize } from 'sequelize-typescript';
 import { bootE2eApp, createPersonalExercise, E2eApp } from './support/e2e-app';
 
 /** RF-11/RF-12/RF-B1 · valoraciones, comentarios, denuncias y ocultado de rutinas, ejercicios y comentarios. */
@@ -170,5 +172,35 @@ describe('Community and moderation of routines (e2e)', () => {
       const list = await e2e.as(people[2].token).get(`/comments/ROUTINE/${pub.body.data.id}`).expect(200);
       expect(list.body.data.items).toHaveLength(0);
     });
+  });
+});
+
+describe('Moderación de ejercicios privados (e2e)', () => {
+  let e2e: E2eApp;
+  beforeAll(async () => {
+    e2e = await bootE2eApp();
+  }, 60000);
+  afterAll(async () => {
+    await e2e.app?.close();
+  });
+
+  it('ocultar un ejercicio desde la cola responde 201 y lo deja OCULTO_MODERACION; restaurar lo devuelve a VISIBLE', async () => {
+    const owner = await e2e.register('exmod-owner');
+    const admin = await e2e.register('exmod-admin');
+    await e2e.promote(admin.id, 'SYSTEM_ADMIN');
+    const reporters = [await e2e.register('exmod-r1')];
+    const exerciseId = await createPersonalExercise(e2e.as(owner.token), `Mod ex ${Date.now()}`);
+    const routine = await e2e
+      .as(owner.token)
+      .post('/routines')
+      .send({ nombre: `Con ejercicio ${Date.now()}`, dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: exerciseId, seriesObjetivo: 1 + Math.floor(Math.random() * 90) }] }] })
+      .expect(201);
+    await e2e.as(owner.token).post(`/routines/${routine.body.data.id}/publish`).expect(201);
+    await e2e.as(reporters[0].token).post('/me/reports').send({ targetKind: 'EXERCISE', targetId: exerciseId, reason: 'EJERCICIO_PELIGROSO' }).expect(201);
+    await e2e.as(admin.token).post(`/admin/moderation/cases/EXERCISE/${exerciseId}/claim`).expect(201);
+    await e2e.as(admin.token).post(`/admin/moderation/cases/EXERCISE/${exerciseId}/resolve`).send({ hideContent: true, sanction: false }).expect(201);
+    const [hidden] = await e2e.app.get(Sequelize).query<{ s: string }>('SELECT estado_moderacion AS s FROM public.ejercicios WHERE id = :exerciseId', { type: QueryTypes.SELECT, replacements: { exerciseId } });
+    expect(hidden.s).toBe('OCULTO_MODERACION');
+    await e2e.as(reporters[0].token).post('/me/reports').send({ targetKind: 'EXERCISE', targetId: exerciseId, reason: 'SPAM' }).expect(404);
   });
 });
