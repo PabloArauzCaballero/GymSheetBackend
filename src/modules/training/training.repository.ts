@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op, QueryTypes, Transaction, WhereOptions } from 'sequelize';
 import {
+  ExerciseMediaStatus,
   ExerciseStatus,
   ExerciseType,
   RoutineAssignmentStatus,
   RoutineStatus,
   RoutineVisibility,
 } from '../../common/enums/domain.enums';
+import { ExerciseMediaModel } from '../exercises/exercise-media.model';
 import { ExerciseModel } from '../exercises/exercise.model';
 import { UserModel } from '../users/user.model';
 import { RoutineAssignmentModel } from './routine-assignment.model';
@@ -27,10 +29,23 @@ export type RoutinePage = { rows: RoutineModel[]; count: number };
 
 const daysInclude = { model: RoutineDayModel, as: 'days' };
 
+/**
+ * Miniatura del ejercicio en el payload de la rutina (C3.a): solo el medio
+ * principal activo (imagen/GIF, o el vídeo con su póster en `thumbnailUrl`).
+ * Va en el mismo JOIN —sin `separate`— para no hacer una consulta por ejercicio;
+ * `uq_exercise_media_primary_active` garantiza como mucho una fila por ejercicio.
+ */
+const primaryMediaInclude = {
+  model: ExerciseMediaModel,
+  as: 'media',
+  required: false,
+  where: { isPrimary: true, status: ExerciseMediaStatus.ACTIVE },
+};
+
 const exercisesInclude = {
   model: RoutineExerciseModel,
   as: 'exercises',
-  include: [{ model: ExerciseModel, as: 'exercise' }],
+  include: [{ model: ExerciseModel, as: 'exercise', include: [primaryMediaInclude] }],
 };
 
 const clientInclude = { model: UserModel, as: 'client' };
@@ -135,6 +150,21 @@ export class TrainingRepository {
     });
   }
 
+  /**
+   * Cuántas copias de `sourceId` hizo `userId`, archivadas incluidas (C2: el
+   * número de la copia nueva nunca repite uno ya usado). Devuelve el mayor
+   * entre el conteo y el `numero_copia` más alto, por si alguna se borró.
+   * Dos pulsaciones simultáneas podrían dar el mismo N: es solo un nombre.
+   */
+  async countCopiesBy(userId: string, sourceId: string, transaction?: Transaction): Promise<number> {
+    const [row] = await this.routineModel.sequelize!.query<{ n: string | number; max: number | null }>(
+      `SELECT count(*) AS n, max(numero_copia) AS max FROM training.routines
+        WHERE created_by_user_id = :userId AND basada_en_rutina_id = :sourceId`,
+      { type: QueryTypes.SELECT, replacements: { userId, sourceId }, transaction },
+    );
+    return Math.max(Number(row?.n ?? 0), row?.max ?? 0);
+  }
+
   listRoutines(
     where: WhereOptions,
     page: number,
@@ -185,6 +215,7 @@ export class TrainingRepository {
         targetRir: input.targetRir,
         restSeconds: input.restSeconds,
         note: input.note,
+        durationSeconds: input.durationSeconds,
       },
       { transaction },
     );
