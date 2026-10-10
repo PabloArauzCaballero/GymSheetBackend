@@ -34,6 +34,20 @@ export interface TrainingMetrics {
   readonly weeklyStreak: number;
   readonly lastSessionOn: string | null;
   readonly firstSessionOn: string | null;
+  /** Programas con modo (RF-18). Opcionales: una base sin programas no los tiene. */
+  readonly modeBonusPoints?: number;
+  readonly overloadWeeksStreak?: number;
+  readonly modeMultiplierMax?: number;
+  readonly strengthGoalsReached?: number;
+  readonly cardioWeeklyStreak?: number;
+}
+
+interface ModeMetricsRow {
+  bonus: string;
+  overload_streak: string;
+  multiplier_max: string;
+  goals: string;
+  cardio_streak: string;
 }
 
 interface AggregateRow {
@@ -324,6 +338,7 @@ export class ProgressionRepository {
           FROM public.sesiones_ejercicios se
           JOIN sesion ON sesion.id = se.sesion_id
           JOIN public.series_entrenamiento st ON st.sesion_ejercicio_id = se.id
+                                             AND st.tipo_serie = 'FUERZA'
       ),
       por_sesion AS (
         SELECT sesion_id, SUM(volumen) AS volumen FROM serie GROUP BY sesion_id
@@ -387,6 +402,7 @@ export class ProgressionRepository {
       },
     );
 
+    const mode = await this.computeModeMetrics(userId);
     const trainingDays = days.map((row) => row.day);
     const restWeekdays = await this.getRestWeekdays(userId);
     const streaks = computeStreaks(trainingDays, businessToday(timeZone), restWeekdays);
@@ -408,6 +424,42 @@ export class ProgressionRepository {
       weeklyStreak: streaks.weeks,
       lastSessionOn: trainingDays.at(-1) ?? null,
       firstSessionOn: trainingDays[0] ?? null,
+      ...mode,
+    };
+  }
+
+  /**
+   * Métricas de los programas con modo. El libro solo suma (D8): los puntos de
+   * modo nunca bajan. Las rachas son la mayor tanda de semanas CONSECUTIVAS
+   * cumplidas (islas: número de semana − posición dentro de las cumplidas).
+   */
+  private async computeModeMetrics(userId: string) {
+    const [row] = await this.sequelize.query<ModeMetricsRow>(
+      `SELECT
+         COALESCE((SELECT SUM(puntos_bonus) FROM training.mode_reward_ledger WHERE usuario_id = :userId), 0) AS bonus,
+         COALESCE((SELECT MAX(run) FROM (
+            SELECT count(*) AS run FROM (
+              SELECT w.program_id, w.semana_numero - row_number() OVER (PARTITION BY w.program_id ORDER BY w.semana_numero) AS grp
+                FROM training.program_weeks w JOIN training.training_programs p ON p.id = w.program_id
+               WHERE p.usuario_id = :userId AND p.modo = 'PROGRESSIVE_OVERLOAD' AND w.cumplida IS TRUE) t
+             GROUP BY program_id, grp) r), 0) AS overload_streak,
+         COALESCE((SELECT MAX(multiplicador) FROM training.mode_reward_ledger WHERE usuario_id = :userId), 0) AS multiplier_max,
+         COALESCE((SELECT count(*) FROM training.program_lift_targets t JOIN training.training_programs p ON p.id = t.program_id
+                    WHERE p.usuario_id = :userId AND t.alcanzada_en IS NOT NULL), 0) AS goals,
+         COALESCE((SELECT MAX(run) FROM (
+            SELECT count(*) AS run FROM (
+              SELECT w.program_id, w.semana_numero - row_number() OVER (PARTITION BY w.program_id ORDER BY w.semana_numero) AS grp
+                FROM training.program_weeks w JOIN training.training_programs p ON p.id = w.program_id
+               WHERE p.usuario_id = :userId AND p.carril = 'CARDIO' AND w.minutos_cardio >= 150) t
+             GROUP BY program_id, grp) r), 0) AS cardio_streak`,
+      { type: QueryTypes.SELECT, replacements: { userId } },
+    );
+    return {
+      modeBonusPoints: Number(row?.bonus ?? 0),
+      overloadWeeksStreak: Number(row?.overload_streak ?? 0),
+      modeMultiplierMax: Number(row?.multiplier_max ?? 0),
+      strengthGoalsReached: Number(row?.goals ?? 0),
+      cardioWeeklyStreak: Number(row?.cardio_streak ?? 0),
     };
   }
 

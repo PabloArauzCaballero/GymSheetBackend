@@ -133,6 +133,14 @@ export class ExercisesRepository {
     });
   }
 
+  /** Para la ficha de un ejercicio privado ajeno ya autorizado por `ExerciseCommunityService`. */
+  findByIdAnyOwner(exerciseId: string): Promise<ExerciseModel | null> {
+    return this.exerciseModel.findOne({
+      where: { id: exerciseId, status: ExerciseStatus.ACTIVE },
+      include: this.buildIncludes(undefined, false),
+    });
+  }
+
   findGlobalById(exerciseId: string): Promise<ExerciseModel | null> {
     return this.exerciseModel.findOne({
       where: {
@@ -259,6 +267,17 @@ export class ExercisesRepository {
           { name: { [Op.iLike]: `%${filters.search}%` } },
           { description: { [Op.iLike]: `%${filters.search}%` } },
         ],
+      });
+    }
+
+    if (filters.favoritos) {
+      conditions.push({
+        id: {
+          [Op.in]: this.exerciseModel.sequelize!.literal(
+            `(SELECT ejercicio_id FROM training.user_exercise_preferences
+               WHERE usuario_id = ${this.exerciseModel.sequelize!.escape(userId)} AND is_favorite = true)`,
+          ),
+        },
       });
     }
 

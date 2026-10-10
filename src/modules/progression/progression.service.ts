@@ -39,6 +39,8 @@ export interface PointsBreakdown {
   volume: number;
   streak: number;
   badges: number;
+  /** Bonos de los programas con modo (multiplicador semanal y metas). Nunca bajan. */
+  modes: number;
 }
 
 /**
@@ -310,6 +312,7 @@ export class ProgressionService {
         volume: delta("volume"),
         streak: delta("streak"),
         badges: delta("badges"),
+        modes: delta("modes"),
       },
       levelBefore: before.level,
       levelAfter: after.level,
@@ -410,12 +413,18 @@ export function computePointsBreakdown(
     volume: Math.floor(metrics.totalVolumeKg / POINTS.perVolumeUnitKg),
     streak: metrics.longestStreakDays * POINTS.perLongestStreakDay,
     badges: earnedBadges.reduce((total, badge) => total + badge.pointsReward, 0),
+    modes: metrics.modeBonusPoints ?? 0,
   };
 }
 
 function sumBreakdown(breakdown: PointsBreakdown): number {
   return (
-    breakdown.session + breakdown.sets + breakdown.volume + breakdown.streak + breakdown.badges
+    breakdown.session +
+    breakdown.sets +
+    breakdown.volume +
+    breakdown.streak +
+    breakdown.badges +
+    breakdown.modes
   );
 }
 
@@ -455,6 +464,14 @@ export function measure(metrics: TrainingMetrics, criterion: BadgeCriterionType)
       return metrics.weekendSessions;
     case "PERSONAL_RECORDS":
       return metrics.personalRecords;
+    case "OVERLOAD_WEEKS_STREAK":
+      return metrics.overloadWeeksStreak ?? 0;
+    case "MODE_MULTIPLIER_MAX":
+      return metrics.modeMultiplierMax ?? 0;
+    case "STRENGTH_GOAL_REACHED":
+      return metrics.strengthGoalsReached ?? 0;
+    case "CARDIO_WEEKLY_MINUTES":
+      return metrics.cardioWeeklyStreak ?? 0;
   }
 }
 

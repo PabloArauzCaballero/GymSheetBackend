@@ -78,7 +78,7 @@ export class ExportService {
       for (const sessionExercise of session.ejercicios) {
         for (const set of sessionExercise.series) {
           totalSets += 1;
-          totalVolume += set.pesoKg * set.repeticiones;
+          totalVolume += (set.pesoKg ?? 0) * (set.repeticiones ?? 0);
         }
       }
     }
@@ -254,7 +254,7 @@ export class ExportService {
         (sum, item) =>
           sum +
           item.series.reduce(
-            (acc, set) => acc + set.pesoKg * set.repeticiones,
+            (acc, set) => acc + (set.pesoKg ?? 0) * (set.repeticiones ?? 0),
             0,
           ),
         0,
@@ -352,9 +352,9 @@ export class ExportService {
               session.estado,
               sessionExercise.ejercicio?.nombre ?? '',
               set.numeroSerie,
-              set.repeticiones,
-              set.pesoKg,
-              set.rir,
+              set.repeticiones ?? '',
+              set.pesoKg ?? '',
+              set.rir ?? '',
               set.descansoSegAnterior,
               sessionExercise.esEnfasis,
             ]

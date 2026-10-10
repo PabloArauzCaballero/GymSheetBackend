@@ -7,7 +7,7 @@ import {
 import { ExerciseResponse, mapExerciseToResponse } from '../exercises/exercise.mapper';
 import { RoutineAssignmentModel } from './routine-assignment.model';
 import { RoutineExerciseModel } from './routine-exercise.model';
-import { RoutineModel } from './routine.model';
+import { RoutineAttribution, RoutineModel } from './routine.model';
 
 export type RoutineExerciseResponse = {
   id: string;
@@ -22,6 +22,14 @@ export type RoutineExerciseResponse = {
   ejercicio: ExerciseResponse | null;
 };
 
+export type RoutineDayResponse = {
+  id: string;
+  diaSemana: number | null;
+  nombre: string | null;
+  orden: number;
+  ejercicios: RoutineExerciseResponse[];
+};
+
 export type RoutineResponse = {
   id: string;
   nombre: string;
@@ -31,6 +39,22 @@ export type RoutineResponse = {
   objetivo: TrainingGoal | null;
   estado: RoutineStatus;
   ejercicios: RoutineExerciseResponse[];
+  dias: RoutineDayResponse[];
+  duracionSemanas: number | null;
+  progresion: Record<string, unknown>;
+  esOficial: boolean;
+  atribucion: RoutineAttribution | null;
+  basadaEnRutinaId: string | null;
+  basadaEnVersion: number | null;
+  version: number;
+  hayVersionNueva: boolean;
+  huellaCorta: string | null;
+  valoracion: { promedio: number | null; total: number };
+  copias: number;
+  publicadaEn: Date | null;
+  estadoModeracion: string;
+  esMia: boolean;
+  puedoEditar: boolean;
   fechaCreacion: Date;
   fechaActualizacion: Date;
 };
@@ -80,7 +104,16 @@ export function mapRoutineExerciseToResponse(
   };
 }
 
-export function mapRoutineToResponse(routine: RoutineModel): RoutineResponse {
+/**
+ * `viewer` es opcional por compatibilidad con los llamadores antiguos: sin él
+ * `esMia` y `puedoEditar` son false (no se puede saber sin conocer a quien mira).
+ */
+export function mapRoutineToResponse(
+  routine: RoutineModel,
+  viewer?: { id: string; canEdit: boolean },
+): RoutineResponse {
+  const flat = [...(routine.exercises ?? [])].sort((a, b) => a.order - b.order);
+  const days = [...(routine.days ?? [])].sort((a, b) => a.order - b.order);
   return {
     id: routine.id,
     nombre: routine.name,
@@ -89,7 +122,32 @@ export function mapRoutineToResponse(routine: RoutineModel): RoutineResponse {
     visibilidad: routine.visibility,
     objetivo: routine.goal,
     estado: routine.status,
-    ejercicios: (routine.exercises ?? []).map(mapRoutineExerciseToResponse),
+    ejercicios: flat.map(mapRoutineExerciseToResponse),
+    dias: days.map((day) => ({
+      id: day.id,
+      diaSemana: day.weekday,
+      nombre: day.name,
+      orden: day.order,
+      ejercicios: flat.filter((e) => e.routineDayId === day.id).map(mapRoutineExerciseToResponse),
+    })),
+    duracionSemanas: routine.durationWeeks,
+    progresion: routine.progressionConfig ?? {},
+    esOficial: routine.isOfficial,
+    atribucion: routine.attribution,
+    basadaEnRutinaId: routine.basedOnRoutineId,
+    basadaEnVersion: routine.basedOnVersion,
+    version: routine.version,
+    hayVersionNueva: false,
+    huellaCorta: routine.fingerprint ? routine.fingerprint.slice(0, 8) : null,
+    valoracion: {
+      promedio: routine.ratingAverage == null ? null : Number(routine.ratingAverage),
+      total: routine.ratingCount,
+    },
+    copias: routine.copiesCount,
+    publicadaEn: routine.publishedAt,
+    estadoModeracion: routine.moderationState,
+    esMia: viewer ? viewer.id === routine.createdByUserId : false,
+    puedoEditar: viewer?.canEdit ?? false,
     fechaCreacion: routine.createdAt,
     fechaActualizacion: routine.updatedAt,
   };

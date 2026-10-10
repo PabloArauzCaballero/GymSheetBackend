@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { effectiveTenantOf } from '../../common/tenancy/tenant-scope';
 import { UsersRepository } from './users.repository';
 import { UpdateMyAccountInput } from './users.schemas';
 import { UserModel } from './user.model';
@@ -27,6 +28,18 @@ export class UsersService {
     }
     if (input.pesoIncrementoKg !== undefined) {
       await user.update({ weightIncrementKg: String(input.pesoIncrementoKg) });
+    }
+    if (input.sedeId !== undefined) {
+      // La sede se valida contra el gimnasio de la cuenta: elegir una de otro
+      // gimnasio sería colarse en su directorio, no escoger dónde entrenas.
+      const valid = await this.usersRepository.isActiveBranchInTenant(
+        input.sedeId,
+        effectiveTenantOf(user),
+      );
+      if (!valid) {
+        throw new UnprocessableEntityException('La sede no pertenece a tu gimnasio.');
+      }
+      await user.update({ branchId: input.sedeId });
     }
     return user;
   }

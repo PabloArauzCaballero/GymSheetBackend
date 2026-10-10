@@ -51,4 +51,27 @@ describe('PermissionGuard', () => {
       guard.canActivate(buildContext({ id: 'user-1', role: UserRole.ADMIN })),
     ).resolves.toBe(true);
   });
+
+  /**
+   * El super-admin satisface el piso de permisos igual que satisface el de rol
+   * en `RolesGuard`. Sin esto pasaba el primer filtro y chocaba con el segundo
+   * en la misma ruta, así que la consola de sistema sólo funcionaba si alguien
+   * le concedía a mano el catálogo entero.
+   */
+  it('allows SYSTEM_ADMIN without consulting the grant table', async () => {
+    const guard = buildGuard([AdminPermissionKey.USERS_DANGER], []);
+    const adminPermissionsService = (
+      guard as unknown as {
+        adminPermissionsService: { getPermissionKeysForUser: jest.Mock };
+      }
+    ).adminPermissionsService;
+
+    await expect(
+      guard.canActivate(buildContext({ id: 'root-1', role: UserRole.SYSTEM_ADMIN })),
+    ).resolves.toBe(true);
+    // No basta con que pase: si consultara las concesiones, un super-admin sin
+    // filas seguiría entrando por la rama equivocada y el día que alguien
+    // borrara el atajo nadie se enteraría hasta producción.
+    expect(adminPermissionsService.getPermissionKeysForUser).not.toHaveBeenCalled();
+  });
 });

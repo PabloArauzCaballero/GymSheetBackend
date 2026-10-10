@@ -114,3 +114,25 @@ describe('HttpExceptionFilter', () => {
     expect(captured.body.requestId).toBe('trace-abcdef123456');
   });
 });
+
+describe('HttpExceptionFilter · errores de dominio', () => {
+  it('copia code y details a la respuesta', () => {
+    const json = jest.fn();
+    const response = { type: jest.fn().mockReturnThis(), status: jest.fn().mockReturnThis(), json };
+    const request = { header: () => 'rid', originalUrl: '/routines/x/publish', url: '/x' };
+    const host = {
+      switchToHttp: () => ({ getResponse: () => response, getRequest: () => request }),
+    } as unknown as import('@nestjs/common').ArgumentsHost;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { DomainException } = require('../errors/domain.exception');
+    new HttpExceptionFilter().catch(
+      new DomainException(409, 'ROUTINE_DUPLICATE', 'Ya existe una rutina igual.', { existingRoutineId: 'abc' }),
+      host,
+    );
+    const body = json.mock.calls[0][0];
+    expect(body.status).toBe(409);
+    expect(body.code).toBe('ROUTINE_DUPLICATE');
+    expect(body.details).toEqual({ existingRoutineId: 'abc' });
+    expect(body.error.code).toBe('ROUTINE_DUPLICATE');
+  });
+});

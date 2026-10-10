@@ -4,6 +4,13 @@ import {
   TrainingGoal,
 } from '../../common/enums/domain.enums';
 
+import {
+  durationWeeksSchema,
+  progressionSchema,
+  routineDaySchema,
+  uniqueWeekdays,
+} from './routine-v2.schemas';
+
 const nullableNote = z.string().trim().max(1000).nullable();
 const routineName = z.string().trim().min(2).max(160);
 const visibility = z.nativeEnum(RoutineVisibility);
@@ -50,12 +57,22 @@ export const createRoutineSchema = z
     descripcion: z.string().trim().max(4000).nullable().optional(),
     visibilidad: visibility.default(RoutineVisibility.PRIVATE),
     objetivo: goal.nullable().optional(),
+    duracionSemanas: durationWeeksSchema.nullable().optional(),
+    progresion: progressionSchema.optional(),
+    dias: z.array(routineDaySchema).max(7).optional(),
+  })
+  .refine((v) => !v.dias || uniqueWeekdays(v.dias), {
+    message: 'No puede haber dos días con el mismo día de la semana.',
+    path: ['dias'],
   })
   .transform((value) => ({
     name: value.nombre,
     description: value.descripcion ?? null,
     visibility: value.visibilidad,
     goal: value.objetivo ?? null,
+    durationWeeks: value.duracionSemanas ?? null,
+    progression: value.progresion ?? null,
+    days: value.dias ?? null,
   }));
 
 export const updateRoutineSchema = z
@@ -65,6 +82,8 @@ export const updateRoutineSchema = z
     visibilidad: visibility.optional(),
     objetivo: goal.nullable().optional(),
     estado: z.enum(['ACTIVE', 'ARCHIVED']).optional(),
+    duracionSemanas: durationWeeksSchema.nullable().optional(),
+    progresion: progressionSchema.optional(),
   })
   .refine((value) => Object.values(value).some((entry) => entry !== undefined), {
     message: 'Debe enviar al menos un campo para actualizar.',
@@ -75,6 +94,8 @@ export const updateRoutineSchema = z
     ...(value.visibilidad !== undefined ? { visibility: value.visibilidad } : {}),
     ...(value.objetivo !== undefined ? { goal: value.objetivo } : {}),
     ...(value.estado !== undefined ? { status: value.estado } : {}),
+    ...(value.duracionSemanas !== undefined ? { durationWeeks: value.duracionSemanas } : {}),
+    ...(value.progresion !== undefined ? { progressionConfig: value.progresion } : {}),
   }));
 
 export const addRoutineExerciseSchema = routineExerciseInput;

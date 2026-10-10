@@ -300,6 +300,25 @@ services:
           memory: 128m
     stop_grace_period: 45s
 
+  worker-programs-week-close:
+    <<: [*app-image, *app-security, *worker-runtime]
+    command: ["node", "dist/workers/program-week-close.worker.js"]
+    environment:
+      <<: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+          cpus: "0.5"
+        reservations:
+          memory: 128m
+    stop_grace_period: 45s
+
   worker-notifications:
     <<: [*app-image, *app-security, *worker-runtime]
     command: ["node", "dist/workers/notification-delivery.worker.js"]

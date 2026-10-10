@@ -15,6 +15,8 @@ export type UserResponse = {
   genero: UserGender | null;
   /** Cuánto suma cada chip rápido al registrar una serie. */
   pesoIncrementoKg: number;
+  /** Sede habitual. Nula = todavía no la ha elegido. */
+  sedeId: string | null;
 };
 
 /**
@@ -34,5 +36,6 @@ export function mapUserToResponse(user: UserModel): UserResponse {
     tenantId: user.tenantId ?? env.DEFAULT_TENANT_ID ?? null,
     genero: user.gender,
     pesoIncrementoKg: Number(user.weightIncrementKg),
+    sedeId: user.branchId,
   };
 }

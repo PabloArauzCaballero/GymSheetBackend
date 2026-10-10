@@ -21,6 +21,7 @@ import {
   mapExerciseToResponse,
   mapFavoriteToResponse,
 } from './exercise.mapper';
+import { ExerciseCommunityService } from './exercise-community.service';
 import { ExerciseModel } from './exercise.model';
 import { ExercisesRepository } from './exercises.repository';
 import {
@@ -53,6 +54,7 @@ export class ExercisesService {
     private readonly equipmentRepository: EquipmentRepository,
     private readonly equipmentInference: EquipmentInferenceService,
     private readonly sequelize: Sequelize,
+    private readonly community: ExerciseCommunityService,
   ) {}
 
   /** Qué máquina corresponde a un músculo, según el catálogo. */
@@ -119,14 +121,26 @@ export class ExercisesService {
     filters: ExerciseFilterInput,
   ): Promise<ExercisePageResponse> {
     const result = await this.exercisesRepository.listVisibleForUser(userId, filters);
+    const items = await this.community.decorate(result.rows.map(mapExerciseToResponse), userId);
 
     return {
-      items: result.rows.map(mapExerciseToResponse),
+      items,
       page: filters.page,
       pageSize: filters.pageSize,
       total: result.count,
       totalPages: Math.ceil(result.count / filters.pageSize),
     };
+  }
+
+  /** Ficha para quien mira: añade me gusta/favorito y admite ejercicios privados alcanzables por una rutina visible (D3). */
+  async getExerciseDetail(exerciseId: string, userId: string): Promise<ExerciseResponse> {
+    await this.community.assertReadable(exerciseId, userId);
+    const model =
+      (await this.exercisesRepository.findVisibleById(exerciseId, userId)) ??
+      (await this.exercisesRepository.findByIdAnyOwner(exerciseId));
+    if (!model) throw new NotFoundException('Ejercicio no encontrado.');
+    const [decorated] = await this.community.decorate([mapExerciseToResponse(model)], userId);
+    return decorated;
   }
 
   async getVisibleExerciseOrFail(

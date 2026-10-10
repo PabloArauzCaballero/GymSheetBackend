@@ -5,6 +5,7 @@ import { UserRole } from '../../common/enums/domain.enums';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
+import { ExerciseCommunityService } from './exercise-community.service';
 import { ExercisesService } from './exercises.service';
 import {
   CreateGlobalExerciseInput,
@@ -21,7 +22,10 @@ import {
 
 @Controller('exercises')
 export class ExercisesController {
-  constructor(private readonly exercisesService: ExercisesService) {}
+  constructor(
+    private readonly exercisesService: ExercisesService,
+    private readonly communityService: ExerciseCommunityService,
+  ) {}
 
   @Get()
   listExercises(
@@ -57,7 +61,24 @@ export class ExercisesController {
     @CurrentUser() authenticatedUser: AuthenticatedUser,
     @Param('id', UuidParamPipe) exerciseId: string,
   ) {
-    return this.exercisesService.getVisibleExerciseOrFail(exerciseId, authenticatedUser.id);
+    return this.exercisesService.getExerciseDetail(exerciseId, authenticatedUser.id);
+  }
+
+  /** Me gusta público (D7). Idempotente: repetirlo no cuenta dos veces. */
+  @Post(':id/like')
+  like(
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('id', UuidParamPipe) exerciseId: string,
+  ) {
+    return this.communityService.setLike(authenticatedUser.id, exerciseId, true);
+  }
+
+  @Delete(':id/like')
+  unlike(
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('id', UuidParamPipe) exerciseId: string,
+  ) {
+    return this.communityService.setLike(authenticatedUser.id, exerciseId, false);
   }
 
   @Post('personal')

@@ -1,6 +1,9 @@
 import { AdminPermissionModel } from "../../modules/admin-access/admin-permission.model";
 import { TenantModel } from "../../modules/tenants/tenant.model";
 import { AdminUserPermissionModel } from "../../modules/admin-access/admin-user-permission.model";
+import { AdminAuditLogModel } from "../../modules/admin-access/audit-log.model";
+import { ModerationReportModel } from "../../modules/moderation/report.model";
+import { UserStrikeModel } from "../../modules/moderation/user-strike.model";
 import { AccessCredentialModel } from "../../modules/access-control/access-credential.model";
 import { AccessDecisionModel } from "../../modules/access-control/access-decision.model";
 import { AccessDeviceEventModel } from "../../modules/access-control/access-device-event.model";
@@ -53,6 +56,18 @@ import { ProfileViewModel } from "../../modules/profile-views/profile-view.model
 import { RoutineModel } from "../../modules/training/routine.model";
 import { RoutineExerciseModel } from "../../modules/training/routine-exercise.model";
 import { RoutineAssignmentModel } from "../../modules/training/routine-assignment.model";
+import { RoutineDayModel } from "../../modules/training/routine-day.model";
+import { RoutineWeekOverrideModel } from "../../modules/training/routine-week-override.model";
+import { RoutineShareModel } from "../../modules/training/routine-share.model";
+import {
+  ProgramLiftTargetModel,
+  ProgramWeekModel,
+  TrainingProgramModel,
+} from "../../modules/programs/program.models";
+import { CardioPlanModel } from "../../modules/programs/cardio-plan.model";
+import { ContentRatingModel } from "../../modules/community/content-rating.model";
+import { ContentCommentModel } from "../../modules/community/content-comment.model";
+import { ExerciseLikeModel } from "../../modules/community/exercise-like.model";
 import { EntitlementModel } from "../../modules/membership/entitlement.model";
 import { MediaFileModel } from "../../modules/membership/media-file.model";
 import { MembershipExtensionModel } from "../../modules/membership/membership-extension.model";
@@ -104,6 +119,16 @@ export const databaseModels = [
   RoutineModel,
   RoutineExerciseModel,
   RoutineAssignmentModel,
+  RoutineDayModel,
+  RoutineWeekOverrideModel,
+  RoutineShareModel,
+  ContentRatingModel,
+  TrainingProgramModel,
+  CardioPlanModel,
+  ProgramLiftTargetModel,
+  ProgramWeekModel,
+  ContentCommentModel,
+  ExerciseLikeModel,
   BranchModel,
   RoomModel,
   AccessPointModel,
@@ -141,5 +166,8 @@ export const databaseModels = [
   RestDayPreferenceModel,
   AdminPermissionModel,
   AdminUserPermissionModel,
+  AdminAuditLogModel,
+  ModerationReportModel,
+  UserStrikeModel,
   TenantModel,
 ];

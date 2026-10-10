@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Op, Transaction, WhereOptions } from 'sequelize';
+import { Op, QueryTypes, Transaction, WhereOptions } from 'sequelize';
 import {
   ExerciseStatus,
   ExerciseType,
@@ -11,6 +11,8 @@ import {
 import { ExerciseModel } from '../exercises/exercise.model';
 import { UserModel } from '../users/user.model';
 import { RoutineAssignmentModel } from './routine-assignment.model';
+import { RoutineShareModel } from './routine-share.model';
+import { RoutineDayModel } from './routine-day.model';
 import { RoutineExerciseModel } from './routine-exercise.model';
 import { RoutineModel } from './routine.model';
 import {
@@ -23,6 +25,8 @@ import {
 
 export type RoutinePage = { rows: RoutineModel[]; count: number };
 
+const daysInclude = { model: RoutineDayModel, as: 'days' };
+
 const exercisesInclude = {
   model: RoutineExerciseModel,
   as: 'exercises',
@@ -30,16 +34,25 @@ const exercisesInclude = {
 };
 
 const clientInclude = { model: UserModel, as: 'client' };
-const routineInclude = { model: RoutineModel, as: 'routine', include: [exercisesInclude] };
+const routineInclude = {
+  model: RoutineModel,
+  as: 'routine',
+  include: [exercisesInclude, daysInclude],
+};
 
 export function routineWhereForScope(
   scope: 'mine' | 'templates',
   userId: string,
 ): WhereOptions {
   if (scope === 'templates') {
-    return { visibility: RoutineVisibility.TEMPLATE, status: RoutineStatus.ACTIVE };
+    // Compatibilidad: lo que antes eran «plantillas» ahora son las públicas.
+    return {
+      visibility: { [Op.in]: [RoutineVisibility.PUBLIC, RoutineVisibility.TEMPLATE] },
+      status: RoutineStatus.ACTIVE,
+      moderationState: 'VISIBLE',
+    };
   }
-  return { createdByUserId: userId };
+  return { createdByUserId: userId, status: RoutineStatus.ACTIVE };
 }
 
 @Injectable()
@@ -50,13 +63,15 @@ export class TrainingRepository {
     private readonly routineExerciseModel: typeof RoutineExerciseModel,
     @InjectModel(RoutineAssignmentModel)
     private readonly assignmentModel: typeof RoutineAssignmentModel,
+    @InjectModel(RoutineShareModel) private readonly shareModel: typeof RoutineShareModel,
     @InjectModel(ExerciseModel) private readonly exerciseModel: typeof ExerciseModel,
     @InjectModel(UserModel) private readonly userModel: typeof UserModel,
   ) {}
 
   createRoutine(
     ownerId: string,
-    input: CreateRoutineInput,
+    input: Omit<CreateRoutineInput, 'days'>,
+    authorTenantId: string | null,
     transaction?: Transaction,
   ): Promise<RoutineModel> {
     return this.routineModel.create(
@@ -66,6 +81,9 @@ export class TrainingRepository {
         createdByUserId: ownerId,
         visibility: input.visibility,
         goal: input.goal,
+        durationWeeks: input.durationWeeks,
+        progressionConfig: input.progression ?? {},
+        authorTenantId,
       },
       { transaction },
     );
@@ -73,8 +91,47 @@ export class TrainingRepository {
 
   findRoutineById(routineId: string): Promise<RoutineModel | null> {
     return this.routineModel.findByPk(routineId, {
-      include: [exercisesInclude],
+      include: [exercisesInclude, daysInclude],
       order: [[{ model: RoutineExerciseModel, as: 'exercises' }, 'order', 'ASC']],
+    });
+  }
+
+  /** La única rutina pública, activa y visible con esa huella (índice único parcial). */
+  findPublicByFingerprint(fingerprint: string): Promise<RoutineModel | null> {
+    return this.routineModel.findOne({
+      where: {
+        fingerprint,
+        visibility: RoutineVisibility.PUBLIC,
+        status: RoutineStatus.ACTIVE,
+        moderationState: 'VISIBLE',
+      },
+    });
+  }
+
+  /** Programa de fuerza activo del usuario que usa esa rutina, si lo hay (para vincular la sesión). */
+  async findActiveProgramIdForRoutine(userId: string, routineId: string): Promise<string | null> {
+    const [row] = await this.routineModel.sequelize!.query<{ id: string }>(
+      `SELECT id FROM training.training_programs
+        WHERE usuario_id = :userId AND routine_id = :routineId AND estado = 'ACTIVE' AND carril = 'STRENGTH'
+        LIMIT 1`,
+      { type: QueryTypes.SELECT, replacements: { userId, routineId } },
+    );
+    return row?.id ?? null;
+  }
+
+  async findAuthorName(userId: string): Promise<string | null> {
+    return (await this.userModel.findByPk(userId))?.fullName ?? null;
+  }
+
+  async findVersionOf(routineId: string): Promise<number | null> {
+    const row = await this.routineModel.findByPk(routineId, { attributes: ['version', 'status'] });
+    return row && row.status === RoutineStatus.ACTIVE ? row.version : null;
+  }
+
+  /** Copias vivas de una rutina (para avisar de una versión nueva). */
+  listCopiesOf(routineId: string): Promise<RoutineModel[]> {
+    return this.routineModel.findAll({
+      where: { basedOnRoutineId: routineId, status: RoutineStatus.ACTIVE },
     });
   }
 
@@ -88,7 +145,7 @@ export class TrainingRepository {
       distinct: true,
       limit: pageSize,
       offset: (page - 1) * pageSize,
-      include: [exercisesInclude],
+      include: [exercisesInclude, daysInclude],
       order: [
         ['updatedAt', 'DESC'],
         [{ model: RoutineExerciseModel, as: 'exercises' }, 'order', 'ASC'],
@@ -112,11 +169,13 @@ export class TrainingRepository {
     routineId: string,
     exerciseId: string,
     input: RoutineExerciseInput,
+    dayId: string | null,
     transaction?: Transaction,
   ): Promise<RoutineExerciseModel> {
     return this.routineExerciseModel.create(
       {
         routineId,
+        routineDayId: dayId,
         exerciseId,
         order: input.order,
         targetSets: input.targetSets,
@@ -140,6 +199,7 @@ export class TrainingRepository {
   async updateRoutineExercise(
     routineExercise: RoutineExerciseModel,
     input: UpdateRoutineExerciseInput,
+    transaction?: Transaction,
   ): Promise<RoutineExerciseModel> {
     const changes = {
       ...input,
@@ -150,12 +210,12 @@ export class TrainingRepository {
           }
         : {}),
     };
-    await routineExercise.update(changes);
+    await routineExercise.update(changes, { transaction });
     return routineExercise;
   }
 
-  deleteRoutineExercise(id: string): Promise<number> {
-    return this.routineExerciseModel.destroy({ where: { id } });
+  deleteRoutineExercise(id: string, transaction?: Transaction): Promise<number> {
+    return this.routineExerciseModel.destroy({ where: { id }, transaction });
   }
 
   /** Resolves a visible exercise by exact name (case-insensitive) for bulk import. */
@@ -182,45 +242,88 @@ export class TrainingRepository {
       repeatsFrom: string | null;
       repeatsUntil: string | null;
     },
+    transaction?: Transaction,
   ) {
     const existing = await this.assignmentModel.findOne({
       where: { routineId, clientUserId: userId },
+      transaction,
     });
     if (existing) {
-      return existing.update({
+      return existing.update(
+        {
+          weekdays: values.weekdays,
+          repeatsFrom: values.repeatsFrom,
+          repeatsUntil: values.repeatsUntil,
+          status: RoutineAssignmentStatus.ACTIVE,
+        },
+        { transaction },
+      );
+    }
+    return this.assignmentModel.create(
+      {
+        routineId,
+        clientUserId: userId,
+        // Nadie se la asignó: el propio usuario es el origen.
+        assignedByUserId: userId,
+        status: RoutineAssignmentStatus.ACTIVE,
         weekdays: values.weekdays,
         repeatsFrom: values.repeatsFrom,
         repeatsUntil: values.repeatsUntil,
-        status: RoutineAssignmentStatus.ACTIVE,
-      });
-    }
-    return this.assignmentModel.create({
-      routineId,
-      clientUserId: userId,
-      // Nadie se la asignó: el propio usuario es el origen.
-      assignedByUserId: userId,
-      status: RoutineAssignmentStatus.ACTIVE,
-      weekdays: values.weekdays,
-      repeatsFrom: values.repeatsFrom,
-      repeatsUntil: values.repeatsUntil,
-      scheduledFor: null,
-      note: null,
-    });
+        scheduledFor: null,
+        note: null,
+      },
+      { transaction },
+    );
+  }
+
+  async setAssignmentStatus(
+    id: string,
+    status: RoutineAssignmentStatus,
+    transaction?: Transaction,
+  ): Promise<void> {
+    await this.assignmentModel.update({ status }, { where: { id }, transaction });
   }
 
   createAssignment(
     routineId: string,
     assignedById: string,
     input: AssignRoutineInput,
+    transaction?: Transaction,
   ): Promise<RoutineAssignmentModel> {
-    return this.assignmentModel.create({
-      routineId,
-      clientUserId: input.clientUserId,
-      assignedByUserId: assignedById,
-      scheduledFor: input.scheduledFor,
-      weekdays: input.weekdays,
-      note: input.note,
+    return this.assignmentModel.create(
+      {
+        routineId,
+        clientUserId: input.clientUserId,
+        assignedByUserId: assignedById,
+        scheduledFor: input.scheduledFor,
+        weekdays: input.weekdays,
+        note: input.note,
+      },
+      { transaction },
+    );
+  }
+
+  /** D15: una asignación del entrenador queda como compartida aceptada (idempotente). */
+  async ensureCoachShare(
+    routineId: string,
+    ownerId: string,
+    inviteeId: string,
+    transaction?: Transaction,
+  ): Promise<void> {
+    const existing = await this.shareModel.findOne({
+      where: { routineId, inviteeId, status: { [Op.in]: ['PENDING', 'ACCEPTED'] } },
+      transaction,
     });
+    if (existing) {
+      if (existing.status === 'PENDING') {
+        await existing.update({ status: 'ACCEPTED', respondedAt: new Date() }, { transaction });
+      }
+      return;
+    }
+    await this.shareModel.create(
+      { routineId, ownerId, inviteeId, status: 'ACCEPTED', origin: 'ENTRENADOR', respondedAt: new Date() },
+      { transaction },
+    );
   }
 
   findAssignmentById(id: string): Promise<RoutineAssignmentModel | null> {
