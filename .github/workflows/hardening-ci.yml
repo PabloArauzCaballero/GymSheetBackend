@@ -105,7 +105,9 @@ jobs:
           cache: yarn
 
       - name: Install locked dependencies
-        run: yarn install --frozen-lockfile
+        # Yarn 1 deja el árbol a medias en la primera pasada en un clon limpio (ELOOP / ENOENT al
+        # enlazar) y la segunda termina bien. Mismo arreglo que el CI del frontend.
+        run: yarn install --frozen-lockfile || yarn install --frozen-lockfile
 
       - name: Verify production dependency audit
         run: |
