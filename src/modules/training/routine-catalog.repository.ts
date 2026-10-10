@@ -22,6 +22,8 @@ export type CatalogRow = {
   publicada_en: Date | null;
   atribucion: { routineName: string; authorId: string | null; authorName: string } | null;
   estado_moderacion: string;
+  basada_en_rutina_id: string | null;
+  numero_copia: number | null;
   ejercicios_total: number;
   dias: Array<{ diaSemana: number | null; nombre: string | null; ejerciciosTotal: number }>;
   share_id: string | null;
@@ -55,7 +57,7 @@ const ORDER_SQL: Record<RoutineCatalogQuery['orden'], string> = {
 /** Columnas de la tarjeta del catálogo (alias `r` = rutina, `u` = autor). */
 const CARD_COLUMNS = `r.id, r.nombre, r.descripcion, r.objetivo, r.duracion_semanas, r.visibilidad, r.es_oficial,
              r.created_by_user_id, u.nombre_completo AS autor_nombre, r.version, r.valoracion_promedio,
-             r.valoracion_total, r.copias_total, r.publicada_en, r.atribucion, r.estado_moderacion,
+             r.valoracion_total, r.copias_total, r.publicada_en, r.atribucion, r.estado_moderacion, r.basada_en_rutina_id, r.numero_copia,
              (SELECT count(*)::int FROM training.routine_exercises re WHERE re.routine_id = r.id) AS ejercicios_total,
              COALESCE((SELECT json_agg(json_build_object(
                          'diaSemana', d.dia_semana, 'nombre', d.nombre,

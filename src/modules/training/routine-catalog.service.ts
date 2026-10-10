@@ -29,6 +29,8 @@ export type RoutineCardResponse = {
   esMia: boolean;
   autor: { id: string; nombre: string };
   atribucion: CatalogRow['atribucion'];
+  basadaEnRutinaId: string | null;
+  numeroCopia: number | null;
   valoracion: { promedio: number | null; total: number };
   copias: number;
   publicadaEn: Date | null;
@@ -136,6 +138,8 @@ export class RoutineCatalogService {
       esMia: row.created_by_user_id === viewerId,
       autor: { id: row.created_by_user_id, nombre: row.autor_nombre },
       atribucion: row.atribucion,
+      basadaEnRutinaId: row.basada_en_rutina_id,
+      numeroCopia: row.numero_copia,
       valoracion: {
         promedio: row.valoracion_promedio == null ? null : Number(row.valoracion_promedio),
         total: row.valoracion_total,
