@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return --
-   supertest tipa las respuestas como `any`. */
 import request from 'supertest';
 import { RoutinesShowcaseSeeder } from '../src/database/seeders/showcase/routines-showcase.seed';
 import { bootE2eApp, E2eApp } from './support/e2e-app';
