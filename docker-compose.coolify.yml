@@ -159,6 +159,10 @@ x-app-environment: &app-environment
   SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
   SEED_ADMIN_FULL_NAME: ${SEED_ADMIN_FULL_NAME:-GymSheet Administrator}
   SEED_MOCK_PASSWORD: ${SEED_MOCK_PASSWORD:-}
+  # Datos demo de rutinas: solo con `yarn db:seed:showcase:prod` a mano, nunca al arrancar.
+  SEED_SHOWCASE_PASSWORD: ${SEED_SHOWCASE_PASSWORD:-}
+  # Rutinas de pruebas automáticas que el catálogo oculta (TEST: QA-AUTO).
+  CATALOG_HIDDEN_NAME_PREFIX: ${CATALOG_HIDDEN_NAME_PREFIX:-}
 
   MEDIA_STORAGE_PROVIDER: ${MEDIA_STORAGE_PROVIDER:-local}
   MEDIA_STORAGE_LOCAL_ROOT: ${MEDIA_STORAGE_LOCAL_ROOT:-storage/media}

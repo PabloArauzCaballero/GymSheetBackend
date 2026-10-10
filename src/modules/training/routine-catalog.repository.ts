@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
+import { env } from '../../config/env';
 import { QueryTypes } from 'sequelize';
 import { RoutineModel } from './routine.model';
 import { RoutineCatalogQuery } from './routine-catalog.schemas';
@@ -62,6 +63,9 @@ const CARD_COLUMNS = `r.id, r.nombre, r.descripcion, r.objetivo, r.duracion_sema
                          ORDER BY d.orden)
                        FROM training.routine_days d WHERE d.routine_id = r.id), '[]'::json) AS dias`;
 
+/** Rutinas de pruebas automáticas fuera de las pestañas públicas (§C6). */
+const HIDDEN_PREFIX_CONDITION = 'left(r.nombre, length(:hiddenPrefix)) <> :hiddenPrefix';
+
 /** Consulta del catálogo por pestaña. Siempre filtra visibilidad y moderación en SQL. */
 @Injectable()
 export class RoutineCatalogRepository {
@@ -77,9 +81,11 @@ export class RoutineCatalogRepository {
     switch (query.scope) {
       case 'public':
         where.push("r.visibilidad = 'PUBLIC'", "r.estado_moderacion = 'VISIBLE'", 'r.es_oficial = false');
+        if (env.CATALOG_HIDDEN_NAME_PREFIX) where.push(HIDDEN_PREFIX_CONDITION);
         break;
       case 'official':
         where.push("r.visibilidad = 'PUBLIC'", "r.estado_moderacion = 'VISIBLE'", 'r.es_oficial = true');
+        if (env.CATALOG_HIDDEN_NAME_PREFIX) where.push(HIDDEN_PREFIX_CONDITION);
         break;
       case 'mine':
         where.push('r.created_by_user_id = :userId');
@@ -122,6 +128,7 @@ export class RoutineCatalogRepository {
         diasPorSemana: query.diasPorSemana ?? null,
         limitPlusOne: query.limit + 1,
         offset,
+        hiddenPrefix: env.CATALOG_HIDDEN_NAME_PREFIX ?? null,
       },
     });
   }
@@ -140,9 +147,10 @@ export class RoutineCatalogRepository {
          JOIN public.usuarios u ON u.id = r.created_by_user_id
         WHERE r.estado = 'ACTIVE' AND r.visibilidad = 'PUBLIC' AND r.estado_moderacion = 'VISIBLE'
           AND r.es_oficial = true AND r.metadata->>'plantilla' IS NOT NULL
+          ${env.CATALOG_HIDDEN_NAME_PREFIX ? `AND ${HIDDEN_PREFIX_CONDITION}` : ''}
         ORDER BY r.id
         LIMIT 200`,
-      { type: QueryTypes.SELECT },
+      { type: QueryTypes.SELECT, replacements: { hiddenPrefix: env.CATALOG_HIDDEN_NAME_PREFIX ?? null } },
     );
   }
 
