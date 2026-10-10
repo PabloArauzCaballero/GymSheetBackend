@@ -24,7 +24,7 @@ import {
 import { WorkoutSessionExerciseModel } from './workout-session-exercise.model';
 import { WorkoutSessionModel } from './workout-session.model';
 import { WorkoutSetModel } from './workout-set.model';
-import { WorkoutsRepository } from './workouts.repository';
+import { SessionExerciseTargets, WorkoutsRepository } from './workouts.repository';
 import {
   AddSessionExerciseInput,
   CreateWorkoutSessionInput,
@@ -201,6 +201,7 @@ export class WorkoutsService {
     userId: string,
     sessionId: string,
     input: AddSessionExerciseInput,
+    targets?: SessionExerciseTargets,
   ): Promise<WorkoutSessionExerciseResponse> {
     const session = await this.getSessionModelOrFail(userId, sessionId);
     this.assertSessionInProgress(session.status);
@@ -210,12 +211,13 @@ export class WorkoutsService {
       const sessionExercise = await this.workoutsRepository.addExerciseToSession(
         sessionId,
         input,
+        targets,
       );
       return mapSessionExerciseToResponse(sessionExercise);
     } catch (error: unknown) {
       if (error instanceof UniqueConstraintError) {
         throw new ConflictException(
-          'El ejercicio u orden ya existe en esta sesión de entrenamiento.',
+          'El orden ya existe en esta sesión de entrenamiento.',
         );
       }
       throw error;
