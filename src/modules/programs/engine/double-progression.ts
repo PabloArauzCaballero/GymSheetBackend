@@ -102,6 +102,8 @@ export function applyDoubleProgression(
   return { suggestedKg: state.suggestedKg, consecutiveFails: 0, action: 'HOLD', message: 'Sigue sumando repeticiones con este peso.' };
 }
 
+/** «62,5 kg»: coma decimal como el resto de la app (el cliente muestra este texto tal cual). */
 export function formatKg(kg: number): string {
-  return `${Number.isInteger(kg) ? kg : kg.toFixed(2).replace(/0$/u, '')} kg`;
+  const rounded = Math.round(kg * 100) / 100;
+  return `${String(rounded).replace('.', ',')} kg`;
 }
