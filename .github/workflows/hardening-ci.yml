@@ -4,11 +4,9 @@ on:
   push:
     branches:
       - HARDENING
-      - test
   pull_request:
     branches:
       - main
-      - test
 
 permissions:
   contents: read
@@ -92,7 +90,6 @@ jobs:
       EXERCISES_DATASET_ENABLED: "false"
       EXERCISES_DATASET_IMPORT_MEDIA: "false"
       EXERCISES_DATASET_MEDIA_LICENSE_CONFIRMED: "false"
-      WHATSAPP_MEMBERSHIP_PHONE: "59170000000"
       PGPASSWORD: postgres
 
     steps:
@@ -106,16 +103,9 @@ jobs:
           cache: yarn
 
       - name: Install locked dependencies
-        # Yarn 1 deja el árbol a medias en la primera pasada en un clon limpio (ELOOP / ENOENT al
-        # enlazar) y la segunda termina bien. Mismo arreglo que el CI del frontend.
-        run: yarn install --frozen-lockfile || yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile
 
       - name: Verify production dependency audit
-        # En `main` bloquea. En `test` AVISA y no bloquea: hay 1 crítica y 8 altas abiertas
-        # (proxy-addr, multer, nodemailer, brace-expansion) que se arreglan subiendo versiones
-        # de Nest/Express/nodemailer, y eso exige un ADR (ver docs/decisions). Mientras tanto la
-        # auditoría no debe esconder el resto del CI (lint, tipos, pruebas, build).
-        continue-on-error: ${{ github.base_ref != 'main' && github.ref_name != 'main' }}
         run: |
           set +e
           yarn audit --groups dependencies --json > /tmp/yarn-audit.json
