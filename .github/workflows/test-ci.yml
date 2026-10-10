@@ -74,10 +74,8 @@ jobs:
         # Yarn 1 deja el árbol a medias en la primera pasada en un clon limpio y la segunda termina bien.
         run: yarn install --frozen-lockfile || yarn install --frozen-lockfile
 
-      - name: Production dependency audit (aviso, no bloquea)
-        # Hay avisos abiertos (proxy-addr, multer, nodemailer, brace-expansion) que se arreglan
-        # subiendo versiones de Nest/Express/nodemailer: exige un ADR. Se muestra, no se esconde.
-        continue-on-error: true
+      - name: Production dependency audit (bloquea altas y críticas)
+        # C9 / ADR-0012: 0 críticas y 0 altas. Las 4 moderadas de minio quedan documentadas.
         run: |
           set +e
           yarn audit --groups dependencies --json > /tmp/yarn-audit.json
