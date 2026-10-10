@@ -15,6 +15,7 @@ import { DatabaseModule } from './database/database.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { AccessControlModule } from './modules/access-control/access-control.module';
 import { AdminAccessModule } from './modules/admin-access/admin-access.module';
+import { AuditInterceptor } from './modules/admin-access/audit.interceptor';
 import { PermissionGuard } from './modules/admin-access/permission.guard';
 import { AuthModule } from './modules/auth/auth.module';
 import { EquipmentModule } from './modules/equipment/equipment.module';
@@ -24,12 +25,15 @@ import { FacilitiesModule } from './modules/facilities/facilities.module';
 import { HealthModule } from './modules/health/health.module';
 import { MediaModule } from './modules/media/media.module';
 import { MembershipModule } from './modules/membership/membership.module';
+import { ModerationModule } from './modules/moderation/moderation.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
 import { ProfileViewsModule } from './modules/profile-views/profile-views.module';
 import { SocialModule } from './modules/social/social.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { StoriesModule } from './modules/stories/stories.module';
+import { ProgramsModule } from './modules/programs/programs.module';
+import { CommunityModule } from './modules/community/community.module';
 import { TrainingModule } from './modules/training/training.module';
 import { ProgressionModule } from './modules/progression/progression.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
@@ -96,11 +100,14 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
     EquipmentModule,
     FacilitiesModule,
     MembershipModule,
+    ModerationModule,
     AccessControlModule,
     NotificationsModule,
     ExercisesModule,
     WorkoutsModule,
     TrainingModule,
+    CommunityModule,
+    ProgramsModule,
     ProgressionModule,
     ExportModule,
     MediaModule,
@@ -118,6 +125,10 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
     // Runs after RolesGuard: only tightens routes that opt in via @RequirePermission().
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: HttpMetricsInterceptor },
+    // Solo actua sobre las rutas marcadas con `@Audited()`, y solo cuando el
+    // handler respondio correctamente. Va despues de las metricas porque
+    // escribe en base de datos: no debe entrar en la medicion de latencia.
+    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
 })
 export class AppModule {}

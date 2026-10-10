@@ -115,6 +115,7 @@ export class ProfileViewsRepository {
            SELECT g.url
              FROM profile.photos g
             WHERE g.user_id = u.id
+              AND g.hidden_at IS NULL
             ORDER BY g.position ASC, g.created_at ASC
             LIMIT 1
          ) ph ON true

@@ -34,6 +34,9 @@ export class RoutineExerciseModel extends Model {
   @Column({ type: DataType.UUID, allowNull: false, field: 'routine_id' })
   declare routineId: string;
 
+  @Column({ type: DataType.UUID, allowNull: true, field: 'routine_day_id' })
+  declare routineDayId: string | null;
+
   @ForeignKey(() => ExerciseModel)
   @Column({ type: DataType.UUID, allowNull: false, field: 'ejercicio_id' })
   declare exerciseId: string;

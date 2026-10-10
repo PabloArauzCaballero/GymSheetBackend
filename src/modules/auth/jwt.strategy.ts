@@ -31,6 +31,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('La sesión ya no es válida.');
     }
 
+    // La suspensión se comprueba en CADA petición, no sólo al entrar: una
+    // sanción que espera a que caduque el token deja al sancionado dentro
+    // durante toda la vida del access token, que es justo cuando más falta hace
+    // que salga. Se compara contra el reloj y no se limpia la columna: la
+    // suspensión termina sola cuando pasa la fecha.
+    if (activeUser.suspendedUntil && activeUser.suspendedUntil.getTime() > Date.now()) {
+      throw new UnauthorizedException(
+        'Tu cuenta está suspendida temporalmente por incumplir las normas de la comunidad.',
+      );
+    }
+
     // Se lee de la cuenta y no del token: así un cambio de gimnasio surte
     // efecto en la siguiente petición, sin esperar a que caduque la sesión.
     // El respaldo agrupa a las cuentas sin tenant propio bajo el tenant por

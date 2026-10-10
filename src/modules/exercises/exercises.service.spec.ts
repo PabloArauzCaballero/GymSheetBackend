@@ -8,6 +8,7 @@ import { EquipmentRepository } from '../equipment/equipment.repository';
 import { ExerciseModel } from './exercise.model';
 import { ExercisesRepository } from './exercises.repository';
 import { EquipmentInferenceService } from './equipment-inference.service';
+import { ExerciseCommunityService } from './exercise-community.service';
 import { ExercisesService } from './exercises.service';
 
 /** Principal mínimo para las rutas personales; el gimnasio acota el equipo. */
@@ -43,6 +44,7 @@ function createService(
     equipmentRepository,
     equipmentInference,
     sequelize,
+    {} as ExerciseCommunityService,
   );
 }
 

@@ -259,6 +259,17 @@ export const environmentSchema = z
       .min(60000)
       .max(86400000)
       .default(3600000),
+    /**
+     * Cierre semanal de programas (`worker:programs-week-close`). El cierre es
+     * idempotente, así que la frecuencia solo decide cuánto tarda en
+     * reflejarse una semana vencida (el lunes, a la primera pasada).
+     */
+    PROGRAM_WEEK_CLOSE_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(60000)
+      .max(86400000)
+      .default(3600000),
     STORIES_PURGE_BATCH_SIZE: z.coerce
       .number()
       .int()

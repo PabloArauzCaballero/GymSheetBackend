@@ -29,6 +29,7 @@ import {
   MembershipIntentInput,
   MembershipListInput,
   MembershipStatusInput,
+  PortalUserListInput,
   ReplacePlanScopesInput,
   StaffListInput,
   UpdateFeatureInput,
@@ -45,6 +46,7 @@ import {
   membershipIntentSchema,
   membershipListSchema,
   membershipStatusSchema,
+  portalUserListSchema,
   replacePlanScopesSchema,
   staffListSchema,
   updateFeatureSchema,
@@ -180,34 +182,56 @@ export class AdminMembershipController {
    */
   @Get("insights/equipment-usage")
   @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
-  equipmentUsage(@Query("days") days?: string) {
-    return this.insights.equipmentUsage(readWindow(days));
+  equipmentUsage(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Query("days") days?: string,
+  ) {
+    return this.insights.equipmentUsage(readWindow(days), actor.tenantScope);
   }
 
   /** Actividad en la app y entradas físicas, día a día. */
   @Get("insights/people-flow")
   @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
-  peopleFlow(@Query("days") days?: string) {
-    return this.insights.peopleFlow(readWindow(days));
+  peopleFlow(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Query("days") days?: string,
+  ) {
+    return this.insights.peopleFlow(readWindow(days), actor.tenantScope);
   }
 
-  /** Todas las cuentas, con su membresía y su última actividad resueltas. */
+  /**
+   * Las cuentas del gimnasio, con su membresía y su última actividad resueltas.
+   *
+   * Acotado al gimnasio del actor: hasta este cambio devolvía las cuentas de
+   * TODOS los gimnasios a cualquier `ADMIN`, con su correo y su teléfono.
+   */
   @Get("users")
   @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
-  listUsers(@Query("q") q?: string, @Query("limit") limit?: string) {
-    const parsed = Number(limit);
-    const bounded = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 500) : 200;
-    const filtro = q?.trim() ? q.trim() : null;
-    return this.insights.listUsers(bounded, filtro);
+  listUsers(
+    @Query(new ZodValidationPipe(portalUserListSchema)) query: PortalUserListInput,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.insights.listUsers(
+      {
+        page: query.page,
+        pageSize: query.pageSize,
+        filtro: query.q,
+        roles: query.roles,
+      },
+      actor.tenantScope,
+    );
   }
 
   /** Personas cuya membresía venció o que nunca tuvieron una. */
   @Get("insights/lapsed")
   @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
-  lapsed(@Query("limit") limit?: string) {
+  lapsed(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Query("limit") limit?: string,
+  ) {
     const parsed = Number(limit);
     const bounded = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 200) : 50;
-    return this.insights.lapsedMembers(bounded);
+    return this.insights.lapsedMembers(bounded, actor.tenantScope);
   }
 
   @Get("features")

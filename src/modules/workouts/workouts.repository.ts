@@ -169,11 +169,26 @@ export class WorkoutsRepository {
     transaction?: Transaction,
   ): Promise<WorkoutSetModel> {
     return this.setModel.create(
-      {
-        sessionExerciseId,
-        ...input,
-        weightKg: input.weightKg.toString(),
-      },
+      input.type === 'FUERZA'
+        ? {
+            sessionExerciseId,
+            type: 'FUERZA',
+            setNumber: input.setNumber,
+            repetitions: input.repetitions,
+            weightKg: input.weightKg.toString(),
+            rir: input.rir,
+            previousRestSeconds: input.previousRestSeconds,
+          }
+        : {
+            sessionExerciseId,
+            type: 'CARDIO',
+            setNumber: input.setNumber,
+            durationSeconds: input.durationSeconds,
+            distanceM: input.distanceM,
+            avgHeartRate: input.avgHeartRate,
+            rpe: input.rpe,
+            previousRestSeconds: input.previousRestSeconds,
+          },
       { transaction },
     );
   }

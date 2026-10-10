@@ -400,3 +400,48 @@ export const activationConfirmSchema = z.object({
 
 export type ActivationRequestInput = z.infer<typeof activationRequestSchema>;
 export type ActivationConfirmInput = z.infer<typeof activationConfirmSchema>;
+
+/**
+ * Página del listado de cuentas del portal.
+ *
+ * El tope real es 100 y no los 500 que aceptaba el parámetro suelto anterior:
+ * la tabla se navega y se busca, no se vuelca. El valor por defecto de 200 que
+ * pedía el cliente web era además una paginación falsa — a partir del socio 201
+ * la lista simplemente dejaba de tener gente, sin decirlo.
+ */
+export const portalUserListSchema = z.object({
+  q: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .optional()
+    .transform((value) => value ?? null),
+  /**
+   * Roles a incluir, separados por comas (`?roles=ADMIN,COACH`).
+   *
+   * Existe porque filtrar en el cliente no funciona en cuanto la lista pagina:
+   * el panel de permisos pedía todas las cuentas y se quedaba con el personal,
+   * así que en un gimnasio con más socios que el tamaño de página el personal
+   * que cayera fuera de la primera página dejaba de ser encontrable. Quien sabe
+   * filtrar sin perder filas es la consulta, no el navegador.
+   */
+  roles: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .transform((value) =>
+      value
+        .split(',')
+        .map((part) => part.trim().toUpperCase())
+        .filter(Boolean),
+    )
+    .pipe(z.array(z.nativeEnum(UserRole)).min(1).max(6))
+    .optional()
+    .transform((value) => (value ? value.join(',') : null)),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+export type PortalUserListInput = z.infer<typeof portalUserListSchema>;

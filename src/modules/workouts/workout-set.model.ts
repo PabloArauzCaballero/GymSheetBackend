@@ -26,14 +26,30 @@ export class WorkoutSetModel extends Model {
   @Column({ type: DataType.INTEGER, allowNull: false, field: 'numero_serie' })
   declare setNumber: number;
 
-  @Column({ type: DataType.INTEGER, allowNull: false, field: 'repeticiones' })
-  declare repetitions: number;
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'repeticiones' })
+  declare repetitions: number | null;
 
-  @Column({ type: DataType.DECIMAL(7, 2), allowNull: false, field: 'peso_kg' })
-  declare weightKg: string;
+  @Column({ type: DataType.DECIMAL(7, 2), allowNull: true, field: 'peso_kg' })
+  declare weightKg: string | null;
 
-  @Column({ type: DataType.INTEGER, allowNull: false, field: 'rir' })
-  declare rir: number;
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'rir' })
+  declare rir: number | null;
+
+  @Default('FUERZA')
+  @Column({ type: DataType.STRING(8), allowNull: false, field: 'tipo_serie' })
+  declare type: 'FUERZA' | 'CARDIO';
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'duracion_seg' })
+  declare durationSeconds: number | null;
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'distancia_m' })
+  declare distanceM: number | null;
+
+  @Column({ type: DataType.SMALLINT, allowNull: true, field: 'fc_media' })
+  declare avgHeartRate: number | null;
+
+  @Column({ type: DataType.SMALLINT, allowNull: true, field: 'rpe' })
+  declare rpe: number | null;
 
   @Column({
     type: DataType.INTEGER,

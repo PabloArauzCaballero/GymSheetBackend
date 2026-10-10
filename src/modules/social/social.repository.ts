@@ -487,6 +487,9 @@ export class SocialRepository {
                SELECT ph.id, ph.url, ph.position, ph.created_at
                  FROM profile.photos ph
                 WHERE ph.user_id = u.id
+                  -- Una foto retirada por moderación no vuelve a la baraja: es
+                  -- justo la superficie donde más gente la vería.
+                  AND ph.hidden_at IS NULL
                 ORDER BY ph.position ASC, ph.created_at ASC
                 LIMIT 6
              ) g

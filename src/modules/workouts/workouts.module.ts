@@ -8,6 +8,7 @@ import { WorkoutsController } from './workouts.controller';
 import { WorkoutSessionExerciseModel } from './workout-session-exercise.model';
 import { WorkoutSessionModel } from './workout-session.model';
 import { WorkoutSetModel } from './workout-set.model';
+import { SessionHooksRegistry } from './session-hooks';
 import { WorkoutsRepository } from './workouts.repository';
 import { WorkoutsService } from './workouts.service';
 
@@ -19,7 +20,7 @@ import { WorkoutsService } from './workouts.service';
     ProgressionModule,
   ],
   controllers: [WorkoutsController],
-  providers: [WorkoutsRepository, WorkoutsService],
-  exports: [WorkoutsService, WorkoutsRepository],
+  providers: [WorkoutsRepository, WorkoutsService, SessionHooksRegistry],
+  exports: [WorkoutsService, WorkoutsRepository, SessionHooksRegistry],
 })
 export class WorkoutsModule {}

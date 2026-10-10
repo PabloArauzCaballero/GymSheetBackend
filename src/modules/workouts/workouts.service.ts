@@ -10,6 +10,7 @@ import { WorkoutSessionStatus } from '../../common/enums/domain.enums';
 import { ExercisesService } from '../exercises/exercises.service';
 import { FacilitiesRepository } from '../facilities/facilities.repository';
 import { ProgressionService, SessionRewardView } from '../progression/progression.service';
+import { SessionHooksRegistry } from './session-hooks';
 import { resolveVerifiedBranch } from './geo-verification.util';
 import {
   mapSessionExerciseToResponse,
@@ -42,7 +43,18 @@ export class WorkoutsService {
     private readonly facilitiesRepository: FacilitiesRepository,
     private readonly sequelize: Sequelize,
     private readonly progressionService: ProgressionService,
+    private readonly hooks: SessionHooksRegistry,
   ) {}
+
+  /** Vincula la sesión con la rutina, el día y el programa de los que nació. */
+  async linkSession(
+    userId: string,
+    sessionId: string,
+    link: { routineId: string; routineDayId: string | null; programId: string | null },
+  ): Promise<void> {
+    const session = await this.getSessionModelOrFail(userId, sessionId);
+    await session.update(link);
+  }
 
   async startSession(
     userId: string,
@@ -99,7 +111,9 @@ export class WorkoutsService {
     tenantId: string,
     sessionId: string,
     location: FinishSessionInput = {},
-  ): Promise<WorkoutSessionResponse & { progression: SessionRewardView | null }> {
+  ): Promise<
+    WorkoutSessionResponse & { progression: SessionRewardView | null } & Record<string, unknown>
+  > {
     const session = await this.getSessionModelOrFail(userId, sessionId);
     this.assertSessionInProgress(session.status);
     const verifiedBranch = await this.resolveGeoVerification(location, tenantId);
@@ -110,7 +124,8 @@ export class WorkoutsService {
       { geoVerified: verifiedBranch !== null, verifiedBranchId: verifiedBranch?.id ?? null },
     );
     const progression = before ? await this.progressionReward(userId, before) : null;
-    return { ...mapWorkoutSessionToResponse(completedSession), progression };
+    const extras = await this.hooks.runFinished({ session: completedSession, userId, tenantId });
+    return { ...mapWorkoutSessionToResponse(completedSession), progression, ...extras };
   }
 
   /**

@@ -17,6 +17,11 @@ export const updateMyAccountSchema = z
      * fijo del código, no una elección de nadie.
      */
     pesoIncrementoKg: z.number().positive().max(50),
+    /**
+     * Sede habitual del socio. Se elige tras registrarse y solo puede ser una
+     * sede activa de su propio gimnasio (lo comprueba el servicio).
+     */
+    sedeId: z.string().uuid(),
   })
   .partial()
   .refine((input) => Object.values(input).some((value) => value !== undefined), {

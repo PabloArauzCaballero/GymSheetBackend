@@ -33,6 +33,17 @@ export class UserModel extends Model {
   declare status: UserStatus;
 
   /**
+   * Fin de una suspensión por moderación. Nulo = no está suspendida.
+   *
+   * Es una fecha y no un valor de `estado` porque «suspendido hasta el martes»
+   * termina solo: con un estado haría falta un proceso que recorriera la tabla
+   * devolviendo cuentas a ACTIVO, y el día que ese proceso fallara la gente se
+   * quedaría fuera sin que nadie lo hubiera decidido.
+   */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'suspended_until' })
+  declare suspendedUntil: Date | null;
+
+  /**
    * Gimnasio al que pertenece la cuenta. Nulo en una instalación de un solo
    * gimnasio, donde el cliente usa la identidad de referencia: no es un dato
    * que falte, es uno que no aplica.

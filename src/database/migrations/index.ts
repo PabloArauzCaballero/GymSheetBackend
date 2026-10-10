@@ -55,8 +55,16 @@ import { mediaStorageKeyIndexesMigration } from "./202609080001-media-storage-ke
 import { socialInteractionsMigration } from "./202609110001-social-interactions";
 import { dropOrphanAuthPasswordResetTokensMigration } from "./202609110002-drop-orphan-auth-password-reset-tokens";
 import { deviceTokensMigration } from "./202609131200-device-tokens";
+import { adminAuditLogMigration } from "./202609150001-admin-audit-log";
+import { moderationMigration } from "./202609150002-moderation";
 import { webPushDeviceTokensMigration } from "./202609160001-web-push-device-tokens";
 import { profileBirthDateMigration } from "./202609160002-profile-birth-date";
+import { routinesV2StructureMigration } from "./202610080001-routines-v2-structure";
+import { routineSharingMigration } from "./202610080002-routine-sharing";
+import { communityMigration } from "./202610080003-community";
+import { moderationRoutineKindsMigration } from "./202610080004-moderation-routine-kinds";
+import { programsMigration } from "./202610080005-programs";
+import { cardioAndRewardsMigration } from "./202610080006-cardio-and-rewards";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -112,7 +120,15 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   socialInteractionsMigration,
   dropOrphanAuthPasswordResetTokensMigration,
   deviceTokensMigration,
+  adminAuditLogMigration,
+  moderationMigration,
   webPushDeviceTokensMigration,
   profileBirthDateMigration,
   exerciseMediaPlainHttpMigration,
+  routinesV2StructureMigration,
+  routineSharingMigration,
+  communityMigration,
+  moderationRoutineKindsMigration,
+  programsMigration,
+  cardioAndRewardsMigration,
 ];
