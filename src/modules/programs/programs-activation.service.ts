@@ -5,7 +5,6 @@ import { DomainException } from '../../common/errors/domain.exception';
 import { BusinessDateService } from '../../common/time/business-date.service';
 import { ProductEvents } from '../../common/tracking/product-events';
 import { RoutineAccessService } from '../training/routine-access.service';
-import { RoutinePublicationService } from '../training/routine-publication.service';
 import { TrainingRepository } from '../training/training.repository';
 import { generateWeeks } from './engine/week-generation';
 import { goalWeek } from './engine/strength-goals';
@@ -24,14 +23,13 @@ import { TrainingProgramModel } from './program.models';
 
 type Actor = { id: string; role: UserRole; tenantId: string };
 
-/** Activar un programa de fuerza: reemplazo atómico, copia privada de rutinas ajenas y agenda (RF-14). */
+/** Activar un programa de fuerza sobre una rutina propia: reemplazo atómico y agenda (RF-14, C1). */
 @Injectable()
 export class ProgramsActivationService {
   constructor(
     private readonly programs: ProgramsRepository,
     private readonly routines: TrainingRepository,
     private readonly access: RoutineAccessService,
-    private readonly publication: RoutinePublicationService,
     private readonly query: ProgramsQueryService,
     private readonly dates: BusinessDateService,
     private readonly sequelize: Sequelize,
@@ -39,14 +37,17 @@ export class ProgramsActivationService {
   ) {}
 
   async activateStrength(actor: Actor, input: ActivateStrengthInput): Promise<ProgramView> {
-    const source = await this.routines.findRoutineById(input.routineId);
-    if (!source) throw new NotFoundException('Rutina no encontrada.');
-    await this.access.assertFullView(actor, source);
-
-    // DD-1: nadie ejecuta la rutina de otra persona; se activa una copia suya.
-    const routineId = source.createdByUserId === actor.id ? source.id : (await this.publication.copy(actor, source.id)).id;
-    const routine = await this.routines.findRoutineById(routineId);
+    const routine = await this.routines.findRoutineById(input.routineId);
     if (!routine) throw new NotFoundException('Rutina no encontrada.');
+    // Una rutina que no se puede ver sigue siendo 404 (acceso horizontal).
+    await this.access.assertFullView(actor, routine);
+    // C1 (sustituye a DD-1): solo se activa una rutina propia. Para una ajena,
+    // primero «Guardar en mis rutinas» (copia «· vN») y luego activar esa copia.
+    if (routine.createdByUserId !== actor.id) {
+      throw new DomainException(403, 'ROUTINE_NOT_OWNED', 'Guarda la rutina en tus rutinas para activarla.', {
+        routineId: routine.id,
+      });
+    }
     this.assertHasWork(routine);
 
     const today = this.dates.today();
@@ -109,7 +110,7 @@ export class ProgramsActivationService {
         program_id: programId,
         carril: 'STRENGTH',
         modo: input.mode,
-        desde_copia: source.createdByUserId !== actor.id,
+        desde_copia: routine.basedOnRoutineId != null,
       });
       return this.query.viewById(programId);
     } catch (error: unknown) {
