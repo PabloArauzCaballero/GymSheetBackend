@@ -40,3 +40,27 @@ yarn db:snapshot:exercises
 
 Es determinista —ordena por identificador externo y no guarda ids ni fechas—, así
 que regenerarlo sin cambios en el catálogo no produce diferencias en git.
+
+## Datos de demostración de rutinas (`routines-showcase`)
+
+`src/database/seeders/showcase/` siembra lo que se enseña en TEST (10_CORRECCIONES
+§C6/§C7): las 20 rutinas oficiales «Recomendadas por REPP» (autor «Equipo REPP»,
+`metadata.plantilla`), el diccionario revisado de `nombre_es` (343 ejercicios), 8
+personas `@demo.repp.test` con onboarding completo, rutinas de comunidad, copias con
+atribución, valoraciones, comentarios (uno oculto por moderación), «me gusta» y
+favoritos, y 3 programas con semanas registradas cuyo libro de recompensas sale del
+cierre semanal real.
+
+```bash
+SEED_SHOWCASE_PASSWORD=… yarn db:seed:showcase        # ts-node (desarrollo)
+SEED_SHOWCASE_PASSWORD=… yarn db:seed:showcase:prod   # imagen construida (TEST)
+```
+
+- Requiere el catálogo base (`yarn db:seed:base`): si falta un ejercicio de una
+  plantilla, **falla** sin sembrar rutinas.
+- Usa los servicios reales (no INSERT), es idempotente por claves naturales y
+  **se niega a correr con `NODE_ENV=production`**.
+- **No corre al arrancar** ningún contenedor: se lanza a mano cuando se quiera
+  poblar TEST. La contraseña de las cuentas demo sale de `SEED_SHOWCASE_PASSWORD`
+  (o `SEED_MOCK_PASSWORD`); la cuenta de autoría de REPP recibe una aleatoria.
+- Para limpiar antes los datos de QA: `scripts/sql/limpieza-qa-test/` (01 → 05).

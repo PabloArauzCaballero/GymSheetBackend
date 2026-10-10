@@ -39,6 +39,8 @@ export type ExerciseMediaResponse = {
 export type ExerciseResponse = {
   id: string;
   nombre: string;
+  /** Nombre en español si el original está en inglés; la UI muestra `nombreEs ?? nombre`. */
+  nombreEs: string | null;
   grupoMuscular: string;
   descripcion: string | null;
   tipoEjercicio: ExerciseType;
@@ -116,6 +118,7 @@ export function mapExerciseToResponse(exercise: ExerciseModel): ExerciseResponse
   return {
     id: exercise.id,
     nombre: exercise.name,
+    nombreEs: exercise.nameEs ?? null,
     grupoMuscular: exercise.muscleGroup,
     descripcion: exercise.description,
     tipoEjercicio: exercise.type,

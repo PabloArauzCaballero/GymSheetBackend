@@ -1,32 +1,57 @@
 import { z } from 'zod';
+import type { RoutineGroupType } from './routine-exercise.model';
 
 const note = z.string().trim().max(1000).nullable();
+
+/**
+ * Topes de UX para rutinas nuevas o editadas (C3.a). La base sigue admitiendo
+ * hasta 100 series para no invalidar rutinas antiguas; las copias no pasan por aquí.
+ */
+export const MAX_SETS = 10;
+export const MAX_REPS = 50;
+export const sets = z.number().int().min(1).max(MAX_SETS);
+export const reps = z.number().int().min(1).max(MAX_REPS);
+/** Bloque (superserie/circuito) dentro del día: mismo número = mismo bloque. */
+export const group = z.number().int().min(1).max(30);
+export const restBetween = z.number().int().min(0).max(60);
+export const duration = z.number().int().min(1).max(3600);
 
 /** Un ejercicio dentro de un día. La posición la da el orden del arreglo. */
 const dayExerciseSchema = z
   .object({
     ejercicioId: z.string().uuid(),
-    seriesObjetivo: z.number().int().min(1).max(100).default(3),
-    repsMin: z.number().int().min(1).max(1000).nullable().optional(),
-    repsMax: z.number().int().min(1).max(1000).nullable().optional(),
+    seriesObjetivo: sets.default(3),
+    repsMin: reps.nullable().optional(),
+    repsMax: reps.nullable().optional(),
     pesoObjetivoKg: z.number().min(0).max(2000).nullable().optional(),
     rirObjetivo: z.number().int().min(0).max(10).nullable().optional(),
     descansoSeg: z.number().int().min(0).max(7200).nullable().optional(),
     nota: note.optional(),
+    grupo: group.nullable().optional(),
+    descansoEntreSeg: restBetween.nullable().optional(),
+    duracionSeg: duration.nullable().optional(),
   })
   .refine((v) => v.repsMin == null || v.repsMax == null || v.repsMax >= v.repsMin, {
     message: 'repsMax debe ser mayor o igual a repsMin.',
   })
-  .transform((v) => ({
-    exerciseId: v.ejercicioId,
-    targetSets: v.seriesObjetivo,
-    repsMin: v.repsMin ?? null,
-    repsMax: v.repsMax ?? null,
-    targetWeightKg: v.pesoObjetivoKg ?? null,
-    targetRir: v.rirObjetivo ?? null,
-    restSeconds: v.descansoSeg ?? null,
-    note: v.nota ?? null,
-  }));
+  .transform((v) => {
+    // Serie por tiempo: la duración manda y las reps quedan vacías.
+    const timed = v.duracionSeg != null;
+    return {
+      exerciseId: v.ejercicioId,
+      targetSets: v.seriesObjetivo,
+      repsMin: timed ? null : (v.repsMin ?? null),
+      repsMax: timed ? null : (v.repsMax ?? null),
+      targetWeightKg: v.pesoObjetivoKg ?? null,
+      targetRir: v.rirObjetivo ?? null,
+      restSeconds: v.descansoSeg ?? null,
+      note: v.nota ?? null,
+      group: v.grupo ?? null,
+      groupType: null as RoutineGroupType | null,
+      restBetweenSeconds: v.descansoEntreSeg ?? null,
+      durationSeconds: v.duracionSeg ?? null,
+    };
+  });
 
 export const routineDaySchema = z
   .object({

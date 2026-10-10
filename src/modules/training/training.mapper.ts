@@ -6,7 +6,7 @@ import {
 } from '../../common/enums/domain.enums';
 import { ExerciseResponse, mapExerciseToResponse } from '../exercises/exercise.mapper';
 import { RoutineAssignmentModel } from './routine-assignment.model';
-import { RoutineExerciseModel } from './routine-exercise.model';
+import { RoutineExerciseModel, RoutineGroupType } from './routine-exercise.model';
 import { RoutineAttribution, RoutineModel } from './routine.model';
 
 export type RoutineExerciseResponse = {
@@ -19,6 +19,13 @@ export type RoutineExerciseResponse = {
   rirObjetivo: number | null;
   descansoSeg: number | null;
   nota: string | null;
+  /** Bloque del día (superserie/circuito): mismo número = mismo bloque. */
+  grupo: number | null;
+  grupoTipo: RoutineGroupType | null;
+  /** Transición dentro del bloque (0–60 s); el descanso tras la vuelta es `descansoSeg` del último. */
+  descansoEntreSeg: number | null;
+  /** Serie por tiempo: con duración, `repsMin`/`repsMax` son null. */
+  duracionSeg: number | null;
   ejercicio: ExerciseResponse | null;
 };
 
@@ -46,6 +53,8 @@ export type RoutineResponse = {
   atribucion: RoutineAttribution | null;
   basadaEnRutinaId: string | null;
   basadaEnVersion: number | null;
+  /** «vN» de una copia propia (C2); null si no es una copia. */
+  numeroCopia: number | null;
   version: number;
   hayVersionNueva: boolean;
   huellaCorta: string | null;
@@ -98,6 +107,10 @@ export function mapRoutineExerciseToResponse(
     rirObjetivo: routineExercise.targetRir,
     descansoSeg: routineExercise.restSeconds,
     nota: routineExercise.note,
+    grupo: routineExercise.group ?? null,
+    grupoTipo: routineExercise.groupType ?? null,
+    descansoEntreSeg: routineExercise.restBetweenSeconds ?? null,
+    duracionSeg: routineExercise.durationSeconds ?? null,
     ejercicio: routineExercise.exercise
       ? mapExerciseToResponse(routineExercise.exercise)
       : null,
@@ -136,6 +149,7 @@ export function mapRoutineToResponse(
     atribucion: routine.attribution,
     basadaEnRutinaId: routine.basedOnRoutineId,
     basadaEnVersion: routine.basedOnVersion,
+    numeroCopia: routine.copyNumber ?? null,
     version: routine.version,
     hayVersionNueva: false,
     huellaCorta: routine.fingerprint ? routine.fingerprint.slice(0, 8) : null,

@@ -73,6 +73,10 @@ export class RoutineDaysRepository {
             targetRir: exercise.targetRir,
             restSeconds: exercise.restSeconds,
             note: exercise.note,
+            group: exercise.group,
+            groupType: exercise.groupType,
+            restBetweenSeconds: exercise.restBetweenSeconds,
+            durationSeconds: exercise.durationSeconds,
           },
           { transaction },
         );
@@ -103,6 +107,8 @@ export class RoutineDaysRepository {
             targetSets: e.targetSets,
             repsMin: e.repsMin,
             repsMax: e.repsMax,
+            group: e.group,
+            durationSeconds: e.durationSeconds,
           })),
       })),
     );

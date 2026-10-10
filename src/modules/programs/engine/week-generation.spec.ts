@@ -76,4 +76,26 @@ describe('generateWeeks', () => {
     expect(roundToPlate(59.4)).toBe(60);
     expect(roundToPlate(56.3)).toBe(56.25);
   });
+
+  it('conserva descanso, RIR, nota, bloque y duración en cada semana, también en la descarga (C3.a)', () => {
+    const grouped: BaseDay[] = [
+      {
+        dayId: 'd1',
+        weekday: 1,
+        name: 'Torso',
+        exercises: [
+          { ...days[0].exercises[0], restSeconds: 120, targetRir: 2, note: 'Codos pegados', group: 1, groupType: 'SUPERSERIE', restBetweenSeconds: 15 },
+          { ...days[0].exercises[1], restSeconds: 90, group: 1, groupType: 'SUPERSERIE', restBetweenSeconds: 15 },
+          { routineExerciseId: 'r3', exerciseId: 'e3', order: 3, targetSets: 3, repsMin: null, repsMax: null, targetWeightKg: null, durationSeconds: 45 },
+        ],
+      },
+    ];
+    const weeks = generateWeeks({ days: grouped, durationWeeks: 4, progression: { activa: true, descargaCada: 4 } });
+    for (const week of [weeks[0], weeks[3]]) {
+      const [a, b, plank] = week.dias[0].ejercicios;
+      expect(a).toMatchObject({ descansoSeg: 120, rirObjetivo: 2, nota: 'Codos pegados', grupo: 1, grupoTipo: 'SUPERSERIE', descansoEntreSeg: 15, duracionSeg: null });
+      expect(b).toMatchObject({ descansoSeg: 90, grupo: 1, grupoTipo: 'SUPERSERIE' });
+      expect(plank).toMatchObject({ grupo: null, grupoTipo: null, duracionSeg: 45, repsMin: null, repsMax: null, descansoSeg: null, rirObjetivo: null, nota: null });
+    }
+  });
 });

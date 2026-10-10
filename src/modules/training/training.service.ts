@@ -70,9 +70,10 @@ export class TrainingService {
     input: CreateRoutineInput,
   ): Promise<RoutineResponse> {
     const visibility = this.normalizeVisibility(user.role, input.visibility);
-    if (input.days) {
-      this.structure.assertComplete(input.days);
-      await this.structure.assertExercisesUsable(user.id, input.days);
+    const days = input.days ? this.structure.normalizeGroups(input.days) : null;
+    if (days) {
+      this.structure.assertComplete(days);
+      await this.structure.assertExercisesUsable(user.id, days);
     }
     const routineId = await this.sequelize.transaction(async (transaction) => {
       const routine = await this.repository.createRoutine(
@@ -81,7 +82,7 @@ export class TrainingService {
         user.tenantId ?? null,
         transaction,
       );
-      await this.seedStructure(routine, input.days, transaction);
+      await this.seedStructure(routine, days, transaction);
       return routine.id;
     });
     this.events.emit('routine_created', {
@@ -354,12 +355,24 @@ export class TrainingService {
       .filter((e) => !day || e.routineDayId === day.id)
       .sort((a, b) => a.order - b.order);
     for (const [index, exercise] of exercises.entries()) {
-      await this.workoutsService.addExerciseToSession(user.id, session.id, {
-        exerciseId: exercise.exerciseId,
-        order: index + 1,
-        isEmphasis: false,
-        note: exercise.note,
-      });
+      // C3.a: la sesión copia el objetivo y el bloque; así guía aunque la rutina cambie.
+      await this.workoutsService.addExerciseToSession(
+        user.id,
+        session.id,
+        { exerciseId: exercise.exerciseId, order: index + 1, isEmphasis: false, note: exercise.note },
+        {
+          targetSets: exercise.targetSets,
+          repsMin: exercise.repsMin,
+          repsMax: exercise.repsMax,
+          targetWeightKg: exercise.targetWeightKg,
+          targetRir: exercise.targetRir,
+          restSeconds: exercise.restSeconds,
+          restBetweenSeconds: exercise.restBetweenSeconds,
+          durationSeconds: exercise.durationSeconds,
+          group: exercise.group,
+          groupType: exercise.groupType,
+        },
+      );
     }
 
     return this.workoutsService.getMySession(user.id, session.id);

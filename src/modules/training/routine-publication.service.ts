@@ -13,6 +13,17 @@ import { canEditRoutine } from './routine-access.policy';
 
 type Actor = { id: string; role: UserRole; tenantId: string };
 
+/** Largo máximo del nombre de una copia (C2). */
+export const COPY_NAME_MAX = 120;
+
+/** «<nombre> · vN», recortando el nombre (nunca el sufijo) para no pasar de 120 caracteres. */
+export function copyName(sourceName: string, copyNumber: number): string {
+  const suffix = ` · v${copyNumber}`;
+  const room = COPY_NAME_MAX - suffix.length;
+  const base = sourceName.length > room ? `${sourceName.slice(0, room - 1).trimEnd()}…` : sourceName;
+  return `${base}${suffix}`;
+}
+
 /** Publicar, despublicar, copiar y sincronizar una copia con su original (RF-09, RF-10). */
 @Injectable()
 export class RoutinePublicationService {
@@ -86,6 +97,10 @@ export class RoutinePublicationService {
    * Copia privada con la atribución congelada del creador original. Si la
    * fuente ya es una copia, la marca de agua sigue apuntando al creador de la
    * base, no a quien la copió en medio.
+   *
+   * C2: la copia se llama «<nombre> · vN», con N = 1 + las copias que esta
+   * persona ya hizo de ESE original (archivadas incluidas, para no repetir
+   * número). N se guarda en `numero_copia`; el nombre no se vuelve a leer.
    */
   async copy(actor: Actor, routineId: string): Promise<RoutineResponse> {
     const source = await this.load(routineId);
@@ -97,10 +112,11 @@ export class RoutinePublicationService {
       (isOwn ? null : { routineName: source.name, authorId: source.createdByUserId, authorName: author });
 
     const copyId = await this.sequelize.transaction(async (transaction) => {
+      const copyNumber = 1 + (await this.routines.countCopiesBy(actor.id, source.id, transaction));
       const copy = await this.routines.createRoutine(
         actor.id,
         {
-          name: source.name,
+          name: copyName(source.name, copyNumber),
           description: source.description,
           visibility: RoutineVisibility.PRIVATE,
           goal: source.goal,
@@ -116,6 +132,7 @@ export class RoutinePublicationService {
           basedOnRoutineId: source.id,
           basedOnVersion: source.version,
           attribution,
+          copyNumber,
         },
         { transaction },
       );
@@ -169,6 +186,10 @@ export class RoutinePublicationService {
             targetRir: e.targetRir,
             restSeconds: e.restSeconds,
             note: e.note,
+            group: e.group,
+            groupType: e.groupType,
+            restBetweenSeconds: e.restBetweenSeconds,
+            durationSeconds: e.durationSeconds,
           })),
       }));
   }

@@ -25,7 +25,12 @@ import {
   weekOverrideSchema,
 } from './routine-v2.schemas';
 import { RoutineCatalogService } from './routine-catalog.service';
-import { RoutineCatalogQuery, routineCatalogQuerySchema } from './routine-catalog.schemas';
+import {
+  RecommendedQuery,
+  RoutineCatalogQuery,
+  recommendedQuerySchema,
+  routineCatalogQuerySchema,
+} from './routine-catalog.schemas';
 import { RoutineStructureService } from './routine-structure.service';
 import { TrainingService } from './training.service';
 import {
@@ -79,6 +84,15 @@ export class TrainingController {
     }
     const query = new ZodValidationPipe(routineCatalogQuerySchema).transform(rawQuery, { type: 'query' }) as RoutineCatalogQuery;
     return this.catalogService.list(user, query);
+  }
+
+  /** «Para ti» (§C7): plantillas oficiales elegidas por el objetivo, días, nivel y lugar de la persona. */
+  @Get('recommended')
+  recommended(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query(new ZodValidationPipe(recommendedQuerySchema)) query: RecommendedQuery,
+  ) {
+    return this.catalogService.recommended(user, query.limit);
   }
 
   @Get('assignments/me')

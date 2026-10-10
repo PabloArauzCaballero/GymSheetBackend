@@ -352,6 +352,9 @@ async function run(): Promise<void> {
             : await repository.upsertExercise(entry, manifest, created.get(entry.key));
       } else {
         exercise = targets.get(entry.linkExternalId);
+        if (exercise && (await repository.setSpanishName(exercise, entry.names.es))) {
+          logger.log({ event: "exercise.library.name_es_set", key: entry.key });
+        }
       }
       if (!exercise) {
         failed += 1;

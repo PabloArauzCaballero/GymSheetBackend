@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { reps, sets } from '../training/routine-v2.schemas';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, 'Fecha inválida (YYYY-MM-DD).');
 
@@ -58,9 +59,9 @@ export const applyToRoutineSchema = z
         z.object({
           routineExerciseId: z.string().uuid(),
           pesoObjetivoKg: z.number().min(0).max(2000).nullable().optional(),
-          seriesObjetivo: z.number().int().min(1).max(100).optional(),
-          repsMin: z.number().int().min(1).max(1000).nullable().optional(),
-          repsMax: z.number().int().min(1).max(1000).nullable().optional(),
+          seriesObjetivo: sets.optional(),
+          repsMin: reps.nullable().optional(),
+          repsMax: reps.nullable().optional(),
         }),
       )
       .max(60)
@@ -69,9 +70,9 @@ export const applyToRoutineSchema = z
       .array(
         z.object({
           ejercicioId: z.string().uuid(),
-          seriesObjetivo: z.number().int().min(1).max(100).default(3),
-          repsMin: z.number().int().min(1).max(1000).nullable().optional(),
-          repsMax: z.number().int().min(1).max(1000).nullable().optional(),
+          seriesObjetivo: sets.default(3),
+          repsMin: reps.nullable().optional(),
+          repsMax: reps.nullable().optional(),
           pesoObjetivoKg: z.number().min(0).max(2000).nullable().optional(),
         }),
       )
