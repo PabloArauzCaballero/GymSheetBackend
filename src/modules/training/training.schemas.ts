@@ -5,9 +5,12 @@ import {
 } from '../../common/enums/domain.enums';
 
 import {
+  duration,
   durationWeeksSchema,
   progressionSchema,
+  reps,
   routineDaySchema,
+  sets,
   uniqueWeekdays,
 } from './routine-v2.schemas';
 
@@ -22,13 +25,14 @@ const routineExerciseInput = z
     ejercicioId: z.string().uuid().optional(),
     ejercicioNombre: z.string().trim().min(1).max(160).optional(),
     orden: z.number().int().min(1).max(500),
-    seriesObjetivo: z.number().int().min(1).max(100).default(3),
-    repsMin: z.number().int().min(1).max(1000).nullable().optional(),
-    repsMax: z.number().int().min(1).max(1000).nullable().optional(),
+    seriesObjetivo: sets.default(3),
+    repsMin: reps.nullable().optional(),
+    repsMax: reps.nullable().optional(),
     pesoObjetivoKg: z.number().min(0).max(2000).nullable().optional(),
     rirObjetivo: z.number().int().min(0).max(10).nullable().optional(),
     descansoSeg: z.number().int().min(0).max(7200).nullable().optional(),
     nota: nullableNote.optional(),
+    duracionSeg: duration.nullable().optional(),
   })
   .refine((value) => Boolean(value.ejercicioId) || Boolean(value.ejercicioNombre), {
     message: 'Cada ejercicio requiere ejercicioId o ejercicioNombre.',
@@ -43,12 +47,14 @@ const routineExerciseInput = z
     exerciseName: value.ejercicioNombre ?? null,
     order: value.orden,
     targetSets: value.seriesObjetivo,
-    repsMin: value.repsMin ?? null,
-    repsMax: value.repsMax ?? null,
+    // Serie por tiempo: la duración manda y las reps quedan vacías.
+    repsMin: value.duracionSeg != null ? null : (value.repsMin ?? null),
+    repsMax: value.duracionSeg != null ? null : (value.repsMax ?? null),
     targetWeightKg: value.pesoObjetivoKg ?? null,
     targetRir: value.rirObjetivo ?? null,
     restSeconds: value.descansoSeg ?? null,
     note: value.nota ?? null,
+    durationSeconds: value.duracionSeg ?? null,
   }));
 
 export const createRoutineSchema = z
@@ -103,13 +109,14 @@ export const addRoutineExerciseSchema = routineExerciseInput;
 export const updateRoutineExerciseSchema = z
   .object({
     orden: z.number().int().min(1).max(500).optional(),
-    seriesObjetivo: z.number().int().min(1).max(100).optional(),
-    repsMin: z.number().int().min(1).max(1000).nullable().optional(),
-    repsMax: z.number().int().min(1).max(1000).nullable().optional(),
+    seriesObjetivo: sets.optional(),
+    repsMin: reps.nullable().optional(),
+    repsMax: reps.nullable().optional(),
     pesoObjetivoKg: z.number().min(0).max(2000).nullable().optional(),
     rirObjetivo: z.number().int().min(0).max(10).nullable().optional(),
     descansoSeg: z.number().int().min(0).max(7200).nullable().optional(),
     nota: nullableNote.optional(),
+    duracionSeg: duration.nullable().optional(),
   })
   .refine((value) => Object.values(value).some((entry) => entry !== undefined), {
     message: 'Debe enviar al menos un campo para actualizar.',
@@ -123,7 +130,19 @@ export const updateRoutineExerciseSchema = z
     ...(value.rirObjetivo !== undefined ? { targetRir: value.rirObjetivo } : {}),
     ...(value.descansoSeg !== undefined ? { restSeconds: value.descansoSeg } : {}),
     ...(value.nota !== undefined ? { note: value.nota } : {}),
+    ...durationChange(value),
   }));
+
+/**
+ * Pasar a «por tiempo» vacía las reps; poner reps vuelve a «por repeticiones».
+ * Así nunca se viola el CHECK `duracion_seg IS NULL OR reps IS NULL`.
+ */
+function durationChange(value: { duracionSeg?: number | null; repsMin?: number | null; repsMax?: number | null }) {
+  if (value.duracionSeg != null) return { durationSeconds: value.duracionSeg, repsMin: null, repsMax: null };
+  if (value.duracionSeg === null) return { durationSeconds: null };
+  if (value.repsMin != null || value.repsMax != null) return { durationSeconds: null };
+  return {};
+}
 
 export const assignRoutineSchema = z
   .object({

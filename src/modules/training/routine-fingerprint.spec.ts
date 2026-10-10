@@ -1,4 +1,4 @@
-import { FingerprintDay, FingerprintExercise, routineFingerprint } from './routine-fingerprint';
+import { canonicalRoutineText, FingerprintDay, FingerprintExercise, routineFingerprint } from './routine-fingerprint';
 
 const ex = (id: string, order: number, sets = 3, min: number | null = 8, max: number | null = 10): FingerprintExercise => ({
   exerciseId: id,
@@ -47,5 +47,27 @@ describe('routineFingerprint', () => {
   });
   it('trata reps nulas distinto de reps con valor', () => {
     expect(routineFingerprint([day(1, ex('a', 1, 3, null, null))])).not.toBe(routineFingerprint([day(1, ex('a', 1))]));
+  });
+});
+
+describe('routineFingerprint · bloques y duración (C3.a)', () => {
+  const plain = [day(1, ex('a', 1), ex('b', 2))];
+  const grouped = (g: number | null, d: number | null = null) => [
+    day(1, { ...ex('a', 1), group: g, durationSeconds: d }, { ...ex('b', 2), group: g, durationSeconds: null }),
+  ];
+
+  it('un ejercicio sin grupo ni duración da el MISMO texto que antes (las huellas viejas no cambian)', () => {
+    expect(canonicalRoutineText(grouped(null))).toBe('1|a:1:3:8:10,b:2:3:8:10');
+    expect(routineFingerprint(grouped(null))).toBe(routineFingerprint(plain));
+  });
+  it('añade «:grupo:duracion» solo cuando hay alguno', () => {
+    expect(canonicalRoutineText(grouped(1))).toBe('1|a:1:3:8:10:1:,b:2:3:8:10:1:');
+    expect(canonicalRoutineText([day(1, { ...ex('a', 1, 3, null, null), durationSeconds: 45 })])).toBe('1|a:1:3::::45');
+  });
+  it('cambia si dos ejercicios pasan a ser superserie', () => {
+    expect(routineFingerprint(grouped(1))).not.toBe(routineFingerprint(plain));
+  });
+  it('cambia si una serie pasa a ser por tiempo', () => {
+    expect(routineFingerprint(grouped(null, 30))).not.toBe(routineFingerprint(plain));
   });
 });

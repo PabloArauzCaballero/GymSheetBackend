@@ -54,6 +54,8 @@ export class ProgramRoutineChangesService {
             ...(change.repsMin !== undefined ? { repsMin: change.repsMin } : {}),
             ...(change.repsMax !== undefined ? { repsMax: change.repsMax } : {}),
             ...(change.pesoObjetivoKg !== undefined ? { targetWeightKg: change.pesoObjetivoKg } : {}),
+            // Poner reps a una serie por tiempo la devuelve a «por repeticiones» (CHECK de M-C3).
+            ...(change.repsMin != null || change.repsMax != null ? { durationSeconds: null } : {}),
           },
           transaction,
         );
@@ -78,6 +80,7 @@ export class ProgramRoutineChangesService {
             targetRir: null,
             restSeconds: null,
             note: null,
+            durationSeconds: null,
           },
           dayId,
           transaction,
