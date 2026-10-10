@@ -4,11 +4,9 @@ on:
   push:
     branches:
       - HARDENING
-      - test
   pull_request:
     branches:
       - main
-      - test
 
 permissions:
   contents: read
