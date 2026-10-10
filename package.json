@@ -57,7 +57,9 @@
     "db:seed": "yarn db:seed:base",
     "db:seed:base": "ts-node src/database/seeders/seed.ts base",
     "db:seed:mock": "ts-node src/database/seeders/seed.ts mock",
-    "db:seed:all:development": "ts-node src/database/seeders/seed.ts all"
+    "db:seed:all:development": "ts-node src/database/seeders/seed.ts all",
+    "db:seed:showcase": "ts-node src/workers/routines-showcase.command.ts",
+    "db:seed:showcase:prod": "node dist/workers/routines-showcase.command.js"
   },
   "dependencies": {
     "@nest-lab/throttler-storage-redis": "^1.2.0",
