@@ -129,6 +129,7 @@ export class TrainingService {
     const routine = await this.getRoutineModelOrFail(routineId);
     await this.access.assertFullView(user, routine);
     const response = mapRoutineToResponse(routine, this.viewerOf(user, routine));
+    response.autor = await this.repository.findAuthorCard(routine.createdByUserId);
     if (routine.basedOnRoutineId && routine.basedOnVersion != null) {
       const sourceVersion = await this.repository.findVersionOf(routine.basedOnRoutineId);
       response.hayVersionNueva = sourceVersion != null && sourceVersion > routine.basedOnVersion;

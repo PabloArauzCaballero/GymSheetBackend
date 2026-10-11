@@ -64,6 +64,8 @@ export type RoutineResponse = {
   estadoModeracion: string;
   esMia: boolean;
   puedoEditar: boolean;
+  /** Quién la creó; solo lo rellena el detalle (`GET /routines/:id`). */
+  autor?: RoutineAuthor | null;
   fechaCreacion: Date;
   fechaActualizacion: Date;
 };
@@ -116,6 +118,8 @@ export function mapRoutineExerciseToResponse(
       : null,
   };
 }
+
+export type RoutineAuthor = { id: string; nombre: string; fotoUrl: string | null };
 
 /**
  * `viewer` es opcional por compatibilidad con los llamadores antiguos: sin él
