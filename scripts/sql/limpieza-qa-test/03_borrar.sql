@@ -23,6 +23,13 @@ DELETE FROM moderation.reports
     OR (target_kind = 'COMMENT' AND target_id IN (SELECT id FROM qa_comments));
 DELETE FROM community.content_comments WHERE id IN (SELECT id FROM qa_comments);
 \echo '5 · rutinas (días, ejercicios, invitaciones, asignaciones y ajustes caen en cascada)'
+-- Las sesiones se sueltan antes: el SET NULL en cascada de routine_id revalida
+-- sesiones_entrenamiento_routine_day_id_fkey contra un día ya borrado y revierte todo.
+UPDATE public.sesiones_entrenamiento
+   SET routine_day_id = NULL, routine_assignment_id = NULL, routine_id = NULL
+ WHERE routine_id IN (SELECT id FROM qa_routines)
+    OR routine_day_id IN (SELECT d.id FROM training.routine_days d
+                           WHERE d.routine_id IN (SELECT id FROM qa_routines));
 DELETE FROM training.routines WHERE id IN (SELECT id FROM qa_routines);
 \echo '6 · planes de cardio'
 DELETE FROM training.cardio_plans WHERE id IN (SELECT id FROM qa_cardio);
