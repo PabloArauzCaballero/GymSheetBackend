@@ -69,12 +69,12 @@ export const authorPhotoSql = (userIdColumn: string): string => `(SELECT ph.url 
  * tenga una. Gana la lámina (foto o render a 2000 px) sobre el póster del vídeo
  * (ilustración sobre blanco), que se ve peor a todo el ancho.
  */
-const COVER_SQL = `(SELECT CASE WHEN m.media_type = 'IMAGE' THEN m.url ELSE m.thumbnail_url END
+export const coverSql = (routineIdColumn: string): string => `(SELECT CASE WHEN m.media_type = 'IMAGE' THEN m.url ELSE m.thumbnail_url END
                FROM training.routine_exercises ce
                LEFT JOIN training.routine_days cd ON cd.id = ce.routine_day_id
                JOIN training.exercise_media m ON m.ejercicio_id = ce.ejercicio_id AND m.status = 'ACTIVE'
                 AND (m.media_type = 'IMAGE' OR (m.media_type = 'VIDEO' AND m.thumbnail_url IS NOT NULL))
-              WHERE ce.routine_id = r.id
+              WHERE ce.routine_id = ${routineIdColumn}
               ORDER BY (m.media_type = 'IMAGE') DESC, cd.orden NULLS LAST, ce.orden, m.is_primary DESC, m.sort_order
               LIMIT 1)`;
 
@@ -82,7 +82,7 @@ const COVER_SQL = `(SELECT CASE WHEN m.media_type = 'IMAGE' THEN m.url ELSE m.th
 const CARD_COLUMNS = `r.id, r.nombre, r.descripcion, r.objetivo, r.duracion_semanas, r.visibilidad, r.es_oficial,
              r.created_by_user_id, u.nombre_completo AS autor_nombre,
              ${authorPhotoSql('r.created_by_user_id')} AS autor_foto_url,
-             ${COVER_SQL} AS portada_url, r.version, r.valoracion_promedio,
+             ${coverSql('r.id')} AS portada_url, r.version, r.valoracion_promedio,
              r.valoracion_total, r.copias_total, r.publicada_en, r.atribucion, r.estado_moderacion, r.basada_en_rutina_id, r.numero_copia,
              (SELECT count(*)::int FROM training.routine_exercises re WHERE re.routine_id = r.id) AS ejercicios_total,
              COALESCE((SELECT json_agg(json_build_object(

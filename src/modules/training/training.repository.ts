@@ -17,7 +17,7 @@ import { RoutineShareModel } from './routine-share.model';
 import { RoutineDayModel } from './routine-day.model';
 import { RoutineExerciseModel } from './routine-exercise.model';
 import { RoutineModel } from './routine.model';
-import { authorPhotoSql } from './routine-catalog.repository';
+import { authorPhotoSql, coverSql } from './routine-catalog.repository';
 import type { RoutineAuthor } from './training.mapper';
 import {
   AssignRoutineInput,
@@ -148,6 +148,15 @@ export class TrainingRepository {
       { type: QueryTypes.SELECT, replacements: { userId } },
     );
     return row ? { id: row.id, nombre: row.nombre, fotoUrl: row.foto_url } : null;
+  }
+
+  /** La misma portada que la tarjeta del catálogo, para que el detalle enseñe la misma imagen. */
+  async findCoverUrl(routineId: string): Promise<string | null> {
+    const [row] = await this.routineModel.sequelize!.query<{ portada_url: string | null }>(
+      `SELECT ${coverSql(':routineId')} AS portada_url`,
+      { type: QueryTypes.SELECT, replacements: { routineId } },
+    );
+    return row?.portada_url ?? null;
   }
 
   async findVersionOf(routineId: string): Promise<number | null> {

@@ -80,6 +80,7 @@ describe('Routines v2 · catalog (e2e)', () => {
     expect(after?.portadaUrl).toBe('https://media.e2e.test/poster.webp');
 
     const detail = await e2e.as(leo.token).get(`/routines/${ids.pub3}`).expect(200);
+    expect(detail.body.data.portadaUrl).toBe('https://media.e2e.test/poster.webp');
     expect(detail.body.data.autor).toEqual({ id: ana.id, nombre: 'E2E cat-ana', fotoUrl: 'https://media.e2e.test/ana.jpg' });
   });
 

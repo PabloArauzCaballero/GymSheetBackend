@@ -66,6 +66,8 @@ export type RoutineResponse = {
   puedoEditar: boolean;
   /** Quién la creó; solo lo rellena el detalle (`GET /routines/:id`). */
   autor?: RoutineAuthor | null;
+  /** Imagen de portada (la misma que la tarjeta del catálogo); solo en el detalle. */
+  portadaUrl?: string | null;
   fechaCreacion: Date;
   fechaActualizacion: Date;
 };
