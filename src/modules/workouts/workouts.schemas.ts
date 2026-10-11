@@ -57,14 +57,46 @@ export const updateSessionExerciseSchema = z
     ...(nota !== undefined ? { note: nota } : {}),
   }));
 
+/** Tope de una serie de fuerza por tiempo (CHECK `ck_serie_por_tipo`). */
+export const MAX_TIMED_SET_SECONDS = 3600;
+
+/**
+ * Serie de fuerza: por repeticiones (repeticiones, peso y RIR) o por tiempo
+ * (`duracionSeg`, p. ej. una plancha de 45 s; peso y RIR opcionales). Nunca
+ * las dos cosas a la vez. Que el ejercicio admita tiempo lo decide el servicio
+ * mirando el objetivo de la sesión.
+ */
 const strengthSetShape = z.object({
   tipoSerie: z.literal('FUERZA'),
   numeroSerie: z.number().int().min(1).max(100),
-  repeticiones: z.number().int().min(1).max(1000),
-  pesoKg: z.number().min(0).max(2000),
-  rir: z.number().int().min(0).max(10),
+  repeticiones: z.number().int().min(1).max(1000).optional(),
+  pesoKg: z.number().min(0).max(2000).optional(),
+  rir: z.number().int().min(0).max(10).optional(),
+  duracionSeg: z.number().int().min(1).max(MAX_TIMED_SET_SECONDS).optional(),
   descansoSegAnterior: z.number().int().min(0).max(7200),
 });
+
+function refineStrengthSet(
+  input: z.infer<typeof strengthSetShape> | z.infer<typeof cardioSetShape>,
+  ctx: z.RefinementCtx,
+): void {
+  if (input.tipoSerie !== 'FUERZA') return;
+  if (input.duracionSeg !== undefined) {
+    if (input.repeticiones !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['repeticiones'],
+        message: 'Una serie por tiempo no lleva repeticiones.',
+      });
+    }
+    return;
+  }
+  for (const field of ['repeticiones', 'pesoKg', 'rir'] as const) {
+    if (input[field] === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: 'Requerido.' });
+    }
+  }
+}
 
 /** Serie de cardio (RF-17): lo único obligatorio es cuánto duró. */
 const cardioSetShape = z.object({
@@ -87,16 +119,19 @@ export const createWorkoutSetSchema = z
       typeof raw === 'object' && raw !== null && !('tipoSerie' in raw)
         ? { ...(raw as Record<string, unknown>), tipoSerie: 'FUERZA' }
         : raw,
-    z.discriminatedUnion('tipoSerie', [strengthSetShape, cardioSetShape]),
+    z
+      .discriminatedUnion('tipoSerie', [strengthSetShape, cardioSetShape])
+      .superRefine(refineStrengthSet),
   )
   .transform((input) =>
     input.tipoSerie === 'FUERZA'
       ? {
           type: 'FUERZA' as const,
           setNumber: input.numeroSerie,
-          repetitions: input.repeticiones,
-          weightKg: input.pesoKg,
-          rir: input.rir,
+          repetitions: input.repeticiones ?? null,
+          weightKg: input.pesoKg ?? null,
+          rir: input.rir ?? null,
+          durationSeconds: input.duracionSeg ?? null,
           previousRestSeconds: input.descansoSegAnterior,
         }
       : {
@@ -116,14 +151,17 @@ export const updateWorkoutSetSchema = z
     repeticiones: z.number().int().min(1).max(1000).optional(),
     pesoKg: z.number().min(0).max(2000).optional(),
     rir: z.number().int().min(0).max(10).optional(),
+    /** Solo en una serie por tiempo (o de cardio): el servicio lo comprueba. */
+    duracionSeg: z.number().int().min(1).max(86400).optional(),
     descansoSegAnterior: z.number().int().min(0).max(7200).optional(),
   })
   .refine((input) => Object.values(input).some((value) => value !== undefined), {
     message: 'Debe enviar al menos un campo para actualizar.',
   })
-  .transform(({ numeroSerie, repeticiones, pesoKg, rir, descansoSegAnterior }) => ({
+  .transform(({ numeroSerie, repeticiones, pesoKg, rir, duracionSeg, descansoSegAnterior }) => ({
     ...(numeroSerie !== undefined ? { setNumber: numeroSerie } : {}),
     ...(repeticiones !== undefined ? { repetitions: repeticiones } : {}),
+    ...(duracionSeg !== undefined ? { durationSeconds: duracionSeg } : {}),
     ...(pesoKg !== undefined ? { weightKg: pesoKg } : {}),
     ...(rir !== undefined ? { rir } : {}),
     ...(descansoSegAnterior !== undefined
