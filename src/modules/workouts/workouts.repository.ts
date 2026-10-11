@@ -191,8 +191,9 @@ export class WorkoutsRepository {
             type: 'FUERZA',
             setNumber: input.setNumber,
             repetitions: input.repetitions,
-            weightKg: input.weightKg.toString(),
+            weightKg: input.weightKg == null ? null : input.weightKg.toString(),
             rir: input.rir,
+            durationSeconds: input.durationSeconds,
             previousRestSeconds: input.previousRestSeconds,
           }
         : {

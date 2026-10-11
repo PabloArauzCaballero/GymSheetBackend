@@ -45,7 +45,7 @@ que regenerarlo sin cambios en el catálogo no produce diferencias en git.
 
 `src/database/seeders/showcase/` siembra lo que se enseña en TEST (10_CORRECCIONES
 §C6/§C7): las 20 rutinas oficiales «Recomendadas por REPP» (autor «Equipo REPP»,
-`metadata.plantilla`), el diccionario revisado de `nombre_es` (343 ejercicios), 8
+`metadata.plantilla`), el diccionario revisado de `nombre_es` (343 ejercicios; el borrador de los 981 restantes no se aplica hasta marcarlo `revisado: true`, ver `docs/exercise-names-es-review.md`), 8
 personas `@demo.repp.test` con onboarding completo, rutinas de comunidad, copias con
 atribución, valoraciones, comentarios (uno oculto por moderación), «me gusta» y
 favoritos, y 3 programas con semanas registradas cuyo libro de recompensas sale del
