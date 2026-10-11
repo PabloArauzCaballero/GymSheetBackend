@@ -15,6 +15,8 @@ export type CatalogRow = {
   es_oficial: boolean;
   created_by_user_id: string;
   autor_nombre: string;
+  autor_foto_url: string | null;
+  portada_url: string | null;
   version: number;
   valoracion_promedio: string | null;
   valoracion_total: number;
@@ -54,9 +56,33 @@ const ORDER_SQL: Record<RoutineCatalogQuery['orden'], string> = {
               r.id`,
 };
 
+/**
+ * Primera foto de perfil visible de un usuario (la misma que enseña Comunidad).
+ * Una foto retirada por moderación no reaparece en la tarjeta de su rutina.
+ */
+export const authorPhotoSql = (userIdColumn: string): string => `(SELECT ph.url FROM profile.photos ph
+               WHERE ph.user_id = ${userIdColumn} AND ph.hidden_at IS NULL
+               ORDER BY ph.position ASC, ph.created_at ASC LIMIT 1)`;
+
+/**
+ * Portada de la tarjeta: la imagen del primer ejercicio (por día y orden) que
+ * tenga una. Gana la lámina (foto o render a 2000 px) sobre el póster del vídeo
+ * (ilustración sobre blanco), que se ve peor a todo el ancho.
+ */
+export const coverSql = (routineIdColumn: string): string => `(SELECT CASE WHEN m.media_type = 'IMAGE' THEN m.url ELSE m.thumbnail_url END
+               FROM training.routine_exercises ce
+               LEFT JOIN training.routine_days cd ON cd.id = ce.routine_day_id
+               JOIN training.exercise_media m ON m.ejercicio_id = ce.ejercicio_id AND m.status = 'ACTIVE'
+                AND (m.media_type = 'IMAGE' OR (m.media_type = 'VIDEO' AND m.thumbnail_url IS NOT NULL))
+              WHERE ce.routine_id = ${routineIdColumn}
+              ORDER BY (m.media_type = 'IMAGE') DESC, cd.orden NULLS LAST, ce.orden, m.is_primary DESC, m.sort_order
+              LIMIT 1)`;
+
 /** Columnas de la tarjeta del catálogo (alias `r` = rutina, `u` = autor). */
 const CARD_COLUMNS = `r.id, r.nombre, r.descripcion, r.objetivo, r.duracion_semanas, r.visibilidad, r.es_oficial,
-             r.created_by_user_id, u.nombre_completo AS autor_nombre, r.version, r.valoracion_promedio,
+             r.created_by_user_id, u.nombre_completo AS autor_nombre,
+             ${authorPhotoSql('r.created_by_user_id')} AS autor_foto_url,
+             ${coverSql('r.id')} AS portada_url, r.version, r.valoracion_promedio,
              r.valoracion_total, r.copias_total, r.publicada_en, r.atribucion, r.estado_moderacion, r.basada_en_rutina_id, r.numero_copia,
              (SELECT count(*)::int FROM training.routine_exercises re WHERE re.routine_id = r.id) AS ejercicios_total,
              COALESCE((SELECT json_agg(json_build_object(

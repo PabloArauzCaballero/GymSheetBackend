@@ -27,7 +27,9 @@ export type RoutineCardResponse = {
   visibilidad: string;
   esOficial: boolean;
   esMia: boolean;
-  autor: { id: string; nombre: string };
+  autor: { id: string; nombre: string; fotoUrl: string | null };
+  /** Imagen de un ejercicio de la rutina para la portada de la tarjeta; nula si ninguno tiene. */
+  portadaUrl: string | null;
   atribucion: CatalogRow['atribucion'];
   basadaEnRutinaId: string | null;
   numeroCopia: number | null;
@@ -136,7 +138,8 @@ export class RoutineCatalogService {
       visibilidad: row.visibilidad,
       esOficial: row.es_oficial,
       esMia: row.created_by_user_id === viewerId,
-      autor: { id: row.created_by_user_id, nombre: row.autor_nombre },
+      autor: { id: row.created_by_user_id, nombre: row.autor_nombre, fotoUrl: row.autor_foto_url },
+      portadaUrl: pending ? null : row.portada_url,
       atribucion: row.atribucion,
       basadaEnRutinaId: row.basada_en_rutina_id,
       numeroCopia: row.numero_copia,
