@@ -1,0 +1,440 @@
+0001	Abdominal tres cuartos
+0002	Flexión lateral de tronco a 45°
+0006	Toques alternos de talón
+0007	Jalón lateral alterno
+0010	Elevación de rodillas colgado asistido con lanzamiento
+0011	Elevación de rodillas colgado asistido
+0012	Elevación lateral de piernas tumbado asistido con lanzamiento
+0013	Elevación de piernas tumbado asistido con lanzamiento
+0014	Giros rusos asistidos
+0015	Dominadas asistidas con agarre paralelo cerrado
+0016	Curl femoral boca abajo asistido
+0018	Extensión de tríceps de pie asistida con toalla
+0020	Tabla de equilibrio
+0022	Pullover a press con barra
+0023	Curl de bíceps alterno con barra
+0024	Sentadilla frontal en banco con barra
+0028	Cargada y press con barra
+0029	Sentadilla frontal con agarre de cargada y barra
+0034	Pullover declinado con brazos flexionados y barra
+0035	Press declinado a frente agarre cerrado con barra
+0036	Press declinado agarre abierto con barra
+0037	Pullover declinado agarre abierto con barra
+0038	Curl de arrastre con barra
+0039	Sentadilla frontal al pecho con barra
+0040	Elevación frontal y pullover con barra
+0045	Press de banca guillotina con barra
+0048	Press inclinado agarre supino con barra
+0049	Remo en banco inclinado con barra
+0050	Elevación de hombros en banco inclinado con barra
+0051	Sentadilla Jefferson con barra
+0053	Sentadilla con salto y barra
+0055	Press tumbado agarre cerrado con barra
+0056	Extensión de tríceps tumbado agarre cerrado con barra
+0057	Extensión tumbado con barra
+0058	Elevación de barra tumbado desde la cadera
+0059	Curl predicador tumbado con barra
+0063	Sentadilla con postura estrecha y barra
+0064	Remo inclinado a un brazo con barra
+0065	Press en suelo a un brazo con barra
+0066	Peso muerto lateral a un brazo con barra
+0067	Arrancada a un brazo con barra
+0068	Sentadilla a una pierna con barra
+0069	Sentadilla con barra sobre la cabeza
+0071	Abdominal con press y barra
+0072	Curl boca abajo en banco inclinado con barra
+0075	Elevación de deltoides posterior con barra
+0076	Remo de deltoides posterior con barra
+0077	Zancada atrás con barra (variante 2)
+0079	Curl de muñeca invertido con barra (variante 2)
+0081	Curl predicador invertido con barra
+0083	Rueda abdominal con barra desde banco
+0084	Rueda abdominal con barra
+0087	Press Bradford Rocky sentado con barra
+0089	Curl concentrado sentado agarre cerrado con barra
+0092	Extensión de tríceps sobre la cabeza sentado con barra
+0094	Giro de tronco sentado con barra
+0096	Flexión lateral de tronco con barra (variante 2)
+0097	Sentadilla dividida lateral con barra (variante 2)
+0098	Sentadilla dividida lateral con barra
+0100	Esquiador con barra
+0101	Sentadilla rápida con barra
+0102	Sentadilla de rodillas con barra
+0103	Rueda abdominal de pie con barra
+0104	Curl de muñeca por detrás de pie con barra
+0105	Press Bradford de pie con barra
+0106	Curl de pie agarre cerrado con barra
+0107	Elevación frontal por encima de la cabeza de pie con barra
+0108	Elevación de talones de pie con barra
+0109	Extensión de tríceps sobre la cabeza de pie con barra
+0110	Curl invertido de pie con barra
+0111	Elevación de talones de pie con balanceo y barra
+0112	Giro de tronco de pie con barra
+0113	Curl de pie agarre abierto con barra
+0115	Buenos días con piernas rígidas y barra
+0119	Remo al mentón con barra (variante 2)
+0121	Remo al mentón con barra (variante 3)
+0123	Remo al mentón agarre abierto con barra
+0125	Curl de muñeca con barra (variante 2)
+0129	Fondos en banco con rodillas flexionadas
+0130	Extensión de cadera en banco
+0137	Elevación de cuerpo (body-up)
+0138	Dominadas invertidas (bottoms-up)
+0139	Dominadas supinas agarre estrecho
+0140	Dominadas para bíceps
+0148	Press de hombros alterno en polea
+0149	Extensión de tríceps alterna en polea
+0150	Jalón lateral con barra en polea
+0152	Extensión concentrada en polea apoyado en la rodilla
+0153	Jalón lateral cruzado en polea
+0158	Aperturas declinadas en polea
+0159	Remo sentado declinado agarre abierto en polea
+0160	Remo sentado en el suelo agarre abierto en polea
+0161	Elevación frontal en polea (variante)
+0164	Elevación frontal de hombro en polea
+0167	Remo alto arrodillado en polea
+0169	Press de banca inclinado en polea
+0170	Aperturas inclinadas en polea sobre balón de estabilidad
+0172	Extensión de tríceps inclinado en polea
+0173	Extensión de tríceps en banco inclinado en polea
+0174	Volteo de judo en polea
+0176	Extensión de tríceps arrodillado en polea
+0177	Jalón lateral en polea con cuerda
+0182	Curl tumbado agarre cerrado en polea
+0184	Pullover tumbado con extensión en polea con cuerda
+0185	Aperturas tumbado en polea
+0186	Extensión de tríceps tumbado en polea (variante 2)
+0189	Remo inclinado a un brazo en polea
+0191	Elevación lateral inclinado a un brazo en polea
+0193	Remo alto arrodillado con espalda recta a un brazo en polea
+0196	Tirón entre las piernas en polea con cuerda
+0197	Jalón al pecho en polea con barra de dorsales
+0199	Extensión de tríceps con brazos rectos en polea (variante 2)
+0202	Remo de deltoides posterior en polea con correas
+0203	Remo de deltoides posterior en polea con cuerda
+0204	Empuje hacia atrás en polea
+0205	Jalón posterior en polea
+0206	Curl invertido en polea
+0208	Remo alto sentado agarre supino con espalda recta en polea
+0209	Curl predicador invertido en polea
+0210	Curl de muñeca invertido en polea
+0211	Giros rusos sobre balón de estabilidad en polea
+0212	Crunch sentado en polea
+0213	Remo alto sentado en polea con barra en V
+0214	Remo sentado alterno a un brazo en polea
+0216	Rotación interna de hombro sentado en polea
+0221	Crunch lateral en polea sobre Bosu
+0223	Crunch lateral en polea
+0224	Curl de muñeca por detrás de pie en polea
+0225	Aperturas invertidas altas cruzadas de pie en polea
+0229	Curl interno de pie en polea
+0230	Elevación de pie en polea
+0231	Extensión de tríceps de pie a un brazo en polea
+0232	Jalón de pie en polea con cuerda
+0234	Remo de pie en polea con barra en V
+0236	Remo con giro de pie en polea con barra en V
+0237	Jalón con brazos rectos en polea con cuerda
+0239	Remo sentado con espalda recta en polea
+0240	Aperturas invertidas boca arriba en polea
+0242	Crunch invertido encogido en polea
+0244	Tirón con giro en polea
+0247	Curl de muñeca en polea
+0248	Remo tumbado con barra cambered
+0253	Dominadas supinas agarre paralelo estrecho
+0257	Estiramiento de rodilla en círculos
+0258	Flexiones de reloj
+0260	Capullos (cocoons)
+0267	Crunch con manos sobre la cabeza
+0271	Crunch sobre balón de estabilidad
+0272	Crunch sobre balón de estabilidad con brazos rectos
+0286	Press lateral alterno con mancuernas
+0287	Press Arnold con mancuernas (variante 2)
+0288	Pullover circular con mancuernas
+0290	Press sentado en banco con mancuernas
+0291	Sentadilla al banco con mancuernas
+0295	Cargada con mancuernas
+0296	Press agarre cerrado con mancuernas
+0299	Press cubano con mancuernas
+0304	Encogimientos declinados con mancuernas (variante 2)
+0305	Encogimientos declinados con mancuernas
+0306	Extensión de tríceps declinado con mancuernas
+0307	Aperturas declinadas con giro y mancuernas
+0309	Elevaciones frontales con mancuernas (variante 2)
+0311	Elevaciones laterales con pulgares arriba y mancuernas
+0312	Curl martillo con mancuernas (variante 2)
+0315	Curl de bíceps en banco inclinado con mancuernas (variante)
+0316	Curl en banco inclinado con mancuernas (cría)
+0317	Curl en banco inclinado con mancuernas (variante 2)
+0320	Curl martillo en banco inclinado con mancuernas
+0322	Curl de bíceps interno en banco inclinado con mancuernas
+0323	Elevación lateral en banco inclinado a un brazo con mancuerna
+0324	Press inclinado agarre neutro con mancuernas
+0325	Elevación en banco inclinado con mancuernas
+0328	Elevación de hombros en banco inclinado con mancuernas
+0329	Encogimientos en banco inclinado con mancuernas
+0330	Extensión de tríceps en banco inclinado con mancuernas
+0331	Aperturas inclinadas con giro y mancuernas
+0332	Cruz de hierro con mancuernas
+0335	Elevación de lateral a frontal con mancuernas
+0337	Extensión tumbado cruzando la cara con mancuerna
+0338	Press de codos tumbado con mancuernas
+0340	Press martillo tumbado con mancuernas
+0341	Deltoides posterior tumbado a un brazo con mancuerna
+0342	Press tumbado a un brazo con mancuerna (variante 2)
+0343	Press tumbado a un brazo con mancuerna
+0344	Extensión de tríceps tumbado a un brazo agarre prono con mancuerna
+0345	Elevación lateral posterior tumbado a un brazo con mancuerna
+0346	Extensión de tríceps tumbado a un brazo agarre supino con mancuerna
+0347	Pronación tumbado con mancuerna
+0348	Elevación lateral posterior tumbado con mancuernas
+0349	Supinación tumbado con mancuerna
+0350	Curl boca arriba tumbado con mancuernas
+0353	Curl concentrado a un brazo sobre balón de estabilidad con mancuerna
+0354	Patada de tríceps a un brazo con mancuerna
+0356	Elevación lateral a un brazo con apoyo y mancuerna
+0358	Curl de muñeca invertido a un brazo con mancuerna
+0359	Aperturas invertidas a un brazo con apoyo y mancuerna
+0360	Press de hombro a un brazo con mancuerna (variante 2)
+0362	Extensión de tríceps a un brazo en banco con mancuerna
+0363	Remo al mentón a un brazo con mancuerna
+0364	Curl de muñeca a un brazo con mancuerna
+0365	Curl de muñeca agarre neutro sobre banco con mancuernas
+0366	Curl de muñeca agarre neutro a un brazo sobre banco con mancuerna
+0367	Curl de muñeca a un brazo sobre banco con mancuerna
+0368	Curl de muñeca invertido sobre banco con mancuernas
+0369	Curl de muñeca sobre banco con mancuernas
+0370	Curl martillo predicador con mancuernas
+0371	Sentadilla pliométrica con mancuernas
+0373	Extensión de tríceps agarre prono con mancuernas
+0374	Curl boca abajo en banco inclinado con mancuernas
+0376	Elevación con mancuernas
+0377	Remo de deltoides posterior con mancuernas (hombro)
+0378	Aperturas invertidas con mancuernas (pájaros)
+0379	Elevación lateral posterior con apoyo de cabeza y mancuernas
+0382	Curl de bíceps agarre supino con mancuernas
+0384	Curl predicador invertido con mancuernas
+0385	Curl de muñeca invertido con mancuernas
+0386	Aperturas invertidas con rotación y mancuernas
+0387	Elevación frontal alterna sentado con mancuernas
+0388	Press alterno sentado con mancuernas
+0389	Extensión sentado en banco con mancuernas
+0390	Curl de bíceps sentado sobre balón de estabilidad con mancuernas
+0391	Curl sentado con mancuernas
+0392	Elevación frontal sentado con mancuernas
+0393	Curl de bíceps interno sentado con mancuernas
+0394	Patada de tríceps sentado con mancuernas
+0395	Elevaciones laterales sentado con mancuernas (variante 2)
+0397	Curl de muñeca agarre neutro sentado con mancuernas
+0398	Patada de tríceps sentado a un brazo con mancuerna
+0399	Rotación sentado a un brazo con mancuerna
+0400	Elevación de talón sentado a una pierna con mancuerna
+0401	Curl de muñeca agarre supino sentado con mancuernas
+0402	Curl predicador sentado con mancuernas
+0403	Curl concentrado agarre supino sentado con mancuernas
+0408	Elevación a una mano tumbado de lado con mancuerna
+0411	Sentadilla a una pierna con mancuerna
+0414	Press alterno sobre la cabeza de pie con mancuernas
+0415	Elevación alterna de pie con mancuernas
+0416	Curl de bíceps de pie con mancuernas
+0418	Curl concentrado de pie con mancuernas
+0419	Elevación frontal por encima de la cabeza de pie con mancuernas
+0420	Patada de tríceps de pie con mancuernas
+0421	Curl concentrado de pie a un brazo con mancuerna
+0422	Curl de pie a un brazo sobre banco inclinado con mancuerna
+0423	Extensión de pie a un brazo con mancuerna
+0424	Press de pie a un brazo agarre neutro con mancuerna
+0425	Curl invertido de pie a un brazo con mancuerna
+0427	Press de pie agarre neutro con mancuernas
+0428	Curl predicador de pie con mancuernas
+0429	Curl invertido de pie con mancuernas
+0433	Pullover con brazos rectos y mancuerna
+0434	Peso muerto con piernas rectas con mancuernas
+0438	Press en W con mancuernas
+0443	Codo a rodilla
+0445	Press antigravedad con barra Z
+0448	Press a la cara declinado agarre cerrado con barra Z
+0449	Extensión de tríceps en banco inclinado con barra Z
+0450	Press de banca JM con barra Z
+0451	Curl agarre supino con barra Z
+0452	Curl predicador agarre supino con barra Z
+0455	Curl de dedos
+0456	Abdominal con piernas flexionadas (rodillas dobladas)
+0457	Abdominal con piernas flexionadas (brazos rectos)
+0458	Aperturas en el suelo con barra
+0466	Dominadas al esternón (Gironda)
+0467	Dominadas gorila
+0469	Crunch de ingle
+0471	Flexiones en parada de manos
+0473	Pica colgado
+0474	Elevación de cadera colgado con piernas rectas
+0475	Elevación de piernas rectas colgado
+0476	Elevación de cadera con giro colgado y piernas rectas
+0484	Elevación de cadera con rodillas flexionadas
+0490	Flexiones inclinadas agarre cerrado
+0491	Elevación de cadera en banco inclinado con piernas rectas
+0492	Flexiones inclinadas con salto en profundidad
+0494	Flexiones inclinadas agarre supino
+0495	Abdominal inclinado con giro
+0497	Remo invertido (variante 2)
+0498	Remo invertido con correas
+0500	Limpiaparabrisas isométricos
+0501	Burpee con salto de gato
+0508	Abdominal Janda
+0513	Sentadilla con salto (variante 2)
+0517	Molino avanzado con kettlebell
+0518	Cargada colgante alterna con kettlebell
+0519	Press alterno en el suelo con kettlebell
+0520	Press alterno con kettlebell
+0521	Remo renegado alterno con kettlebell
+0522	Remo alterno con kettlebell
+0523	Press Arnold con kettlebell
+0524	Press doblado con kettlebell
+0525	Cargada con kettlebell invertida desde colgado
+0526	Cargada colgante alterna con dos kettlebells
+0527	Envión doble con kettlebells
+0528	Press de empuje doble con kettlebells
+0529	Arrancada doble con kettlebells
+0530	Molino doble con kettlebells
+0531	Press en el suelo a un brazo con mayor recorrido y kettlebell
+0532	Ocho con kettlebell
+0536	Zancada con paso de kettlebell entre las piernas
+0537	Cargada y envión a un brazo con kettlebell
+0538	Envión a un brazo con kettlebell
+0539	Press militar lateral a un brazo con kettlebell
+0540	Press de empuje a un brazo con kettlebell
+0543	Piernas de pirata con kettlebell
+0544	Sentadilla a una pierna (pistol) con kettlebell
+0545	Flexiones pliométricas con kettlebell
+0546	Press sentado con kettlebell
+0547	Press balancín con kettlebell
+0548	Tirón alto sumo con kettlebell
+0550	Thruster con kettlebell
+0552	Cargada a dos brazos con kettlebell
+0555	Sentadilla con patada atrás
+0558	Muscle up con impulso (kipping)
+0562	Landmine 180 giros
+0570	Retracción de piernas en banco plano
+0571	Remo sentado alterno agarre estrecho en máquina
+0574	Remo inclinado en máquina
+0577	Press de pecho en máquina (variante)
+0580	Encogimientos sin agarre en máquina
+0582	Curl femoral arrodillado en máquina
+0583	Giro de tronco arrodillado en máquina
+0589	Remo inclinado a un brazo en máquina
+0590	Press de hombro a un brazo en máquina
+0600	Crunch con elevación de piernas sentado en máquina
+0601	Aperturas invertidas sentado agarre neutro en máquina
+0609	Puente de Londres
+0613	Estiramiento de cuádriceps tumbado de lado
+0624	Abdominal sentado contra la pared
+0627	Dominadas supinas con agarre mixto
+0628	Caminata del monstruo con banda
+0631	Muscle up
+0634	Crunch negativo
+0636	Curl martillo con barra olímpica
+0637	Extensión de tríceps con barra olímpica
+0638	Dominada supina a un brazo
+0639	Fondo a un brazo
+0640	Lanzamiento a un brazo con balón medicinal
+0641	Otis up
+0642	Flexiones con patada lateral
+0643	Estiramiento de tríceps sobre la cabeza
+0650	Retracción de rodillas sobre balón de estabilidad
+0653	Flexiones sobre Bosu
+0655	Flexiones sobre balón de estabilidad
+0656	Flexiones sobre balón de estabilidad (variante 2)
+0658	Flexiones de brazos en la pared (variante 2)
+0660	Flexiones agarre cerrado sobre mancuerna
+0661	Flexiones con patada interna de pierna
+0663	Flexiones con balón medicinal
+0664	Flexiones a plancha lateral
+0666	Flexión a un brazo con elevación
+0668	Puente posterior declinado
+0669	Estiramiento de deltoides posterior
+0670	Dominadas tras nuca
+0672	Fondos inversos
+0673	Jalón al pecho agarre supino en máquina
+0674	Dominadas agarre supino
+0675	Hiperextensión inversa sobre balón de estabilidad
+0677	Fondos en anillas
+0678	Dominada y jalón Rocky
+0680	Trepa de cuerda
+0689	Elevación de piernas sentado
+0690	Estiramiento lumbar sentado
+0691	Crunch lateral sentado contra la pared
+0696	Curl nórdico autoasistido en el suelo
+0697	Curl nórdico autoasistido
+0699	Flexiones con toque de hombro
+0709	Elevación lateral de cadera en paralelas
+0716	Estiramiento de cuello empujando hacia un lado
+0717	Flexión lateral
+0720	Dominada de lado a lado
+0721	Estiramiento de muñeca tirando hacia el lado
+0725	Flexión a un brazo
+0727	Elevación de talón a una pierna sobre mancuerna
+0730	Deslizamiento a una pierna en plataforma
+0738	Elevación de talones en prensa 45°
+0740	Prensa de piernas 45° con piernas abiertas
+0741	Sentadilla hack cerrada en máquina
+0742	Elevación de talones inclinada hacia delante en máquina
+0744	Sentadilla tumbado en máquina
+0746	Encogimientos por detrás en máquina Smith
+0747	Press tras nuca en máquina Smith
+0749	Buenos días con rodillas flexionadas en máquina Smith
+0750	Sentadilla en silla en máquina Smith
+0754	Press declinado agarre supino en máquina Smith
+0756	Elevación de cadera en máquina Smith
+0758	Press inclinado agarre supino en máquina Smith
+0759	Elevaciones de hombro inclinado en máquina Smith
+0761	Remo agarre estrecho en máquina Smith
+0762	Remo de deltoides posterior en máquina Smith
+0763	Elevación inversa de talones en máquina Smith
+0764	Press agarre supino en máquina Smith
+0766	Press de hombros en máquina Smith
+0768	Sentadilla dividida a una pierna en máquina Smith
+0769	Zancada veloz en máquina Smith
+0771	Curl de muñeca por detrás de pie en máquina Smith
+0772	Press militar tras nuca de pie en máquina Smith
+0776	Tirón de arrancada
+0777	Lanzador de hechizos
+0778	Flexiones de araña
+0786	Envión con sentadilla
+0788	Press tras nuca de pie
+0794	Estiramiento lateral de pie
+0795	Curl femoral de pie a una pierna
+0796	Rueda abdominal de pie
+0803	Flexiones superman
+0805	Caída abdominal en suspensión (TRX)
+0806	Flexiones en suspensión (TRX)
+0807	Crunch invertido en suspensión (TRX)
+0808	Remo en suspensión (TRX)
+0809	Sentadilla dividida en suspensión (TRX)
+0813	Fondos de tríceps entre bancos
+0815	Fondos de tríceps en el suelo
+0816	Press de tríceps
+0817	Estiramiento de tríceps
+0830	Fondos en banco con lastre
+0833	Elevación de talones tipo burro con lastre
+0835	Hiperextensión con lastre sobre balón de estabilidad
+0840	Crunch con lastre sobre la cabeza en balón de estabilidad
+0844	Giro de brazo redondo con lastre
+0845	Giros rusos con lastre y piernas arriba
+0847	Curl de bíceps sentado con lastre sobre balón de estabilidad
+0849	Giro sentado con lastre sobre balón de estabilidad
+0850	Flexión lateral con lastre sobre balón de estabilidad
+0851	Sentadilla sissy con lastre
+0852	Sentadilla con lastre
+0853	Curl de pie con lastre
+0854	Apretón de mano de pie con lastre
+0856	Press Svend con lastre
+0858	Sprints de viento
+0859	Curl de muñeca con rodillo
+0862	Giro en polea de arriba abajo
+0863	Rotación externa de hombro tumbado con mancuerna
+0864	Rotación externa de hombro de pie con mancuerna
+0866	Elevación de piernas y cadera colgado con lastre
+0869	Press de hombros en máquina (variante 2)
+0870	Elevaciones de glúteo (butt-ups)
+0871	Crunch encogido
+0873	Crunch invertido en polea
+0874	Crunch de pie en polea con cuerda
