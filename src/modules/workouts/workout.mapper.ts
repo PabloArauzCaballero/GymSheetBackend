@@ -25,6 +25,17 @@ export type WorkoutSessionExerciseResponse = {
   orden: number;
   esEnfasis: boolean;
   nota: string | null;
+  /** Objetivo copiado de la rutina al empezar (C3.a); todo null si se añadió a mano. */
+  seriesObjetivo: number | null;
+  repsMin: number | null;
+  repsMax: number | null;
+  pesoObjetivoKg: number | null;
+  rirObjetivo: number | null;
+  descansoSeg: number | null;
+  descansoEntreSeg: number | null;
+  duracionSeg: number | null;
+  grupo: number | null;
+  grupoTipo: 'SUPERSERIE' | 'CIRCUITO' | null;
   ejercicio: ExerciseResponse | null;
   series: WorkoutSetResponse[];
 };
@@ -73,6 +84,16 @@ export function mapSessionExerciseToResponse(
     orden: sessionExercise.order,
     esEnfasis: sessionExercise.isEmphasis,
     nota: sessionExercise.note,
+    seriesObjetivo: sessionExercise.targetSets ?? null,
+    repsMin: sessionExercise.repsMin ?? null,
+    repsMax: sessionExercise.repsMax ?? null,
+    pesoObjetivoKg: sessionExercise.targetWeightKg == null ? null : Number(sessionExercise.targetWeightKg),
+    rirObjetivo: sessionExercise.targetRir ?? null,
+    descansoSeg: sessionExercise.restSeconds ?? null,
+    descansoEntreSeg: sessionExercise.restBetweenSeconds ?? null,
+    duracionSeg: sessionExercise.durationSeconds ?? null,
+    grupo: sessionExercise.group ?? null,
+    grupoTipo: sessionExercise.groupType ?? null,
     ejercicio: sessionExercise.exercise
       ? mapExerciseToResponse(sessionExercise.exercise)
       : null,

@@ -193,7 +193,7 @@ describe('Moderación de ejercicios privados (e2e)', () => {
     const routine = await e2e
       .as(owner.token)
       .post('/routines')
-      .send({ nombre: `Con ejercicio ${Date.now()}`, dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: exerciseId, seriesObjetivo: 1 + Math.floor(Math.random() * 90) }] }] })
+      .send({ nombre: `Con ejercicio ${Date.now()}`, dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: exerciseId, seriesObjetivo: 1 + Math.floor(Math.random() * 10) }] }] })
       .expect(201);
     await e2e.as(owner.token).post(`/routines/${routine.body.data.id}/publish`).expect(201);
     await e2e.as(reporters[0].token).post('/me/reports').send({ targetKind: 'EXERCISE', targetId: exerciseId, reason: 'EJERCICIO_PELIGROSO' }).expect(201);

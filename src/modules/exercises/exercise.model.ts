@@ -38,6 +38,10 @@ export class ExerciseModel extends Model {
   @Column({ type: DataType.STRING(160), allowNull: false, field: 'nombre' })
   declare name: string;
 
+  /** Nombre en español cuando `nombre` viene en inglés del dataset (C3.b). La UI muestra `nombre_es ?? nombre`. */
+  @Column({ type: DataType.STRING(160), allowNull: true, field: 'nombre_es' })
+  declare nameEs: string | null;
+
   @Column({ type: DataType.STRING(100), allowNull: false, field: 'grupo_muscular' })
   declare muscleGroup: string;
 

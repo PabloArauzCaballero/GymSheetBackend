@@ -13,7 +13,7 @@ describe('Programs (e2e)', () => {
   })();
 
   // Huella aleatoria: la base de pruebas se comparte entre corridas y archivos.
-  const SETS = 1 + Math.floor(Math.random() * 90);
+  const SETS = 1 + Math.floor(Math.random() * 10);
 
   const routineBody = (nombre: string, exercises: string[]) => ({
     nombre,
@@ -202,7 +202,7 @@ describe('Programs (e2e)', () => {
   });
 
   describe('rutina ajena', () => {
-    it('activar la rutina pública de otra persona crea una copia privada (DD-1)', async () => {
+    it('activar la rutina pública de otra persona responde 403 ROUTINE_NOT_OWNED y no crea copias (C1)', async () => {
       const page = 1 + Math.floor(Math.random() * 600);
       const list = await e2e.as(ana.token).get(`/exercises?pageSize=2&page=${page}`).expect(200);
       const [x1, x2] = [list.body.data.items[0].id, list.body.data.items[1].id];
@@ -210,12 +210,24 @@ describe('Programs (e2e)', () => {
       await e2e.as(ana.token).post(`/routines/${pub.body.data.id}/publish`).expect(201);
       const active = await e2e.as(leo.token).get('/programs/active').expect(200);
       if (active.body.data.fuerza) await e2e.as(leo.token).post(`/programs/${active.body.data.fuerza.id}/stop`).expect(201);
-      const res = await e2e.as(leo.token).post('/programs/strength/activate').send({ routineId: pub.body.data.id, modo: 'PROGRESSIVE_OVERLOAD' }).expect(201);
-      expect(res.body.data.rutinaId).not.toBe(pub.body.data.id);
-      const copy = await e2e.as(leo.token).get(`/routines/${res.body.data.rutinaId}`).expect(200);
-      expect(copy.body.data).toMatchObject({ visibilidad: 'PRIVATE', esMia: true, basadaEnRutinaId: pub.body.data.id });
+      const before = (await e2e.as(leo.token).get('/routines?scope=mine&pageSize=100').expect(200)).body.data.total;
+      for (let i = 0; i < 2; i += 1) {
+        const res = await e2e.as(leo.token).post('/programs/strength/activate').send({ routineId: pub.body.data.id, modo: 'PROGRESSIVE_OVERLOAD' }).expect(403);
+        expect(res.body).toMatchObject({ code: 'ROUTINE_NOT_OWNED', details: { routineId: pub.body.data.id } });
+      }
+      const after = (await e2e.as(leo.token).get('/routines?scope=mine&pageSize=100').expect(200)).body.data.total;
+      expect(after).toBe(before);
       const source = await e2e.as(ana.token).get(`/routines/${pub.body.data.id}`).expect(200);
-      expect(source.body.data.copias).toBe(1);
+      expect(source.body.data.copias).toBe(0);
+      expect((await e2e.as(leo.token).get('/programs/active').expect(200)).body.data.fuerza).toBeFalsy();
+    });
+
+    it('la propia (también oficial, sin puedoEditar) sí se activa', async () => {
+      const own = await e2e.as(leo.token).post('/routines').send(routineBody(`Propia ${Date.now()}`, [g1])).expect(201);
+      await e2e.sql(`UPDATE training.routines SET es_oficial = true WHERE id = :id`, { id: own.body.data.id });
+      const res = await e2e.as(leo.token).post('/programs/strength/activate').send({ routineId: own.body.data.id, modo: 'NONE', replace: true }).expect(201);
+      expect(res.body.data.rutinaId).toBe(own.body.data.id);
+      await e2e.as(leo.token).post(`/programs/${res.body.data.id}/stop`).expect(201);
     });
 
     it('una privada ajena no se puede activar (404)', async () => {

@@ -30,6 +30,20 @@ const workoutSetsAssociation = {
   as: 'sets',
 };
 
+/** Copia del objetivo de la rutina que guía la sesión (C3.a). */
+export type SessionExerciseTargets = {
+  targetSets: number | null;
+  repsMin: number | null;
+  repsMax: number | null;
+  targetWeightKg: string | null;
+  targetRir: number | null;
+  restSeconds: number | null;
+  restBetweenSeconds: number | null;
+  durationSeconds: number | null;
+  group: number | null;
+  groupType: 'SUPERSERIE' | 'CIRCUITO' | null;
+};
+
 @Injectable()
 export class WorkoutsRepository {
   constructor(
@@ -118,6 +132,7 @@ export class WorkoutsRepository {
   addExerciseToSession(
     sessionId: string,
     input: AddSessionExerciseInput,
+    targets?: SessionExerciseTargets,
   ): Promise<WorkoutSessionExerciseModel> {
     return this.sessionExerciseModel.create({
       sessionId,
@@ -125,6 +140,7 @@ export class WorkoutsRepository {
       order: input.order,
       isEmphasis: input.isEmphasis,
       note: input.note,
+      ...(targets ?? {}),
     });
   }
 
@@ -175,8 +191,9 @@ export class WorkoutsRepository {
             type: 'FUERZA',
             setNumber: input.setNumber,
             repetitions: input.repetitions,
-            weightKg: input.weightKg.toString(),
+            weightKg: input.weightKg == null ? null : input.weightKg.toString(),
             rir: input.rir,
+            durationSeconds: input.durationSeconds,
             previousRestSeconds: input.previousRestSeconds,
           }
         : {

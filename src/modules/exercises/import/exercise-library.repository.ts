@@ -106,6 +106,18 @@ export class ExerciseLibraryRepository {
     });
   }
 
+  /**
+   * C3.b: una entrada `LINK` trae el nombre en español (`names.es`) de un
+   * ejercicio del dataset que está en inglés. Solo se escribe si cambia y nunca
+   * se borra uno ya puesto con un valor vacío.
+   */
+  async setSpanishName(exercise: ExerciseModel, nameEs: string): Promise<boolean> {
+    const value = nameEs.trim();
+    if (value.length < 2 || value.length > 160 || exercise.nameEs === value) return false;
+    await exercise.update({ nameEs: value });
+    return true;
+  }
+
   /** Crea o actualiza el ejercicio de una entrada `CREATE`. */
   async upsertExercise(
     entry: LibraryCreateEntry,
@@ -115,6 +127,7 @@ export class ExerciseLibraryRepository {
     const { exercise } = entry;
     const attributes = {
       name: exercise.name,
+      nameEs: exercise.names.es,
       muscleGroup: exercise.muscleGroup,
       description: exercise.description,
       type: ExerciseType.GLOBAL,

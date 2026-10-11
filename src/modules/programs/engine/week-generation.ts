@@ -26,6 +26,14 @@ export type BaseExercise = {
   repsMin: number | null;
   repsMax: number | null;
   targetWeightKg: number | null;
+  // C3.a: lo que la pantalla del día y el entrenamiento guiado necesitan.
+  restSeconds?: number | null;
+  targetRir?: number | null;
+  note?: string | null;
+  group?: number | null;
+  groupType?: 'SUPERSERIE' | 'CIRCUITO' | null;
+  restBetweenSeconds?: number | null;
+  durationSeconds?: number | null;
 };
 
 export type BaseDay = {
@@ -53,6 +61,13 @@ export type GeneratedWeek = {
       repsMin: number | null;
       repsMax: number | null;
       pesoObjetivoKg: number | null;
+      descansoSeg: number | null;
+      rirObjetivo: number | null;
+      nota: string | null;
+      grupo: number | null;
+      grupoTipo: 'SUPERSERIE' | 'CIRCUITO' | null;
+      descansoEntreSeg: number | null;
+      duracionSeg: number | null;
     }>;
   }>;
 };
@@ -104,6 +119,13 @@ export function generateWeeks(input: {
           repsMax: e.repsMax,
           pesoObjetivoKg:
             e.targetWeightKg == null ? null : roundToPlate(e.targetWeightKg * loadFactor),
+          descansoSeg: e.restSeconds ?? null,
+          rirObjetivo: e.targetRir ?? null,
+          nota: e.note ?? null,
+          grupo: e.group ?? null,
+          grupoTipo: e.groupType ?? null,
+          descansoEntreSeg: e.restBetweenSeconds ?? null,
+          duracionSeg: e.durationSeconds ?? null,
         })),
       })),
     });

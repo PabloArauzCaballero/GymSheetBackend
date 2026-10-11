@@ -9,13 +9,15 @@ describe('Routines v2 · publish and copy (e2e)', () => {
   let b: string;
 
   // Las pruebas comparten base: una huella aleatoria evita chocar con rutinas públicas de corridas anteriores.
-  const SETS = 1 + Math.floor(Math.random() * 90);
+  // Topes C3.a: 1-10 series y 1-50 reps; la aleatoriedad va repartida entre ambas.
+  const SETS = 1 + Math.floor(Math.random() * 10);
+  const REPS = 1 + Math.floor(Math.random() * 40);
 
   const routine = (nombre: string, ids: string[]) => ({
     nombre,
     objetivo: 'FUERZA',
     duracionSemanas: 6,
-    dias: [{ diaSemana: 1, ejercicios: ids.map((ejercicioId) => ({ ejercicioId, seriesObjetivo: SETS, repsMin: 5, repsMax: 5 })) }],
+    dias: [{ diaSemana: 1, ejercicios: ids.map((ejercicioId) => ({ ejercicioId, seriesObjetivo: SETS, repsMin: REPS, repsMax: REPS })) }],
   });
 
   beforeAll(async () => {
@@ -64,7 +66,7 @@ describe('Routines v2 · publish and copy (e2e)', () => {
     await e2e
       .as(leo.token)
       .put(`/routines/${twin.body.data.id}/structure`)
-      .send({ dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: g1, seriesObjetivo: SETS, repsMin: 5, repsMax: 5 }, { ejercicioId: g2, seriesObjetivo: SETS, repsMin: 8, repsMax: 8 }] }] })
+      .send({ dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: g1, seriesObjetivo: SETS, repsMin: REPS, repsMax: REPS }, { ejercicioId: g2, seriesObjetivo: SETS, repsMin: REPS + 1, repsMax: REPS + 1 }] }] })
       .expect(200);
     await e2e.as(leo.token).post(`/routines/${twin.body.data.id}/publish`).expect(201);
   }, 20000);
@@ -74,11 +76,48 @@ describe('Routines v2 · publish and copy (e2e)', () => {
     const c = copy.body.data;
     expect(c.visibilidad).toBe('PRIVATE');
     expect(c.esMia).toBe(true);
+    expect(c.puedoEditar).toBe(true);
+    expect(c.nombre).toBe('Fuerza 5x5 · v1');
+    expect(c.numeroCopia).toBe(1);
     expect(c.basadaEnRutinaId).toBe(originalId);
     expect(c.atribucion).toMatchObject({ routineName: 'Fuerza 5x5', authorName: 'E2E pub-ana' });
     expect(c.dias[0].ejercicios).toHaveLength(2);
     const source = await e2e.as(ana.token).get(`/routines/${originalId}`).expect(200);
     expect(source.body.data.copias).toBe(1);
+  });
+
+  it('C2 · dos copias seguidas se llaman «· v1» y «· v2», son editables y la copia se puede activar', async () => {
+    const created = await e2e.as(ana.token).post('/routines').send(routine(`Torso-Pierna ${Date.now()}`, [b, a])).expect(201);
+    const sourceId = created.body.data.id as string;
+    const sourceName = created.body.data.nombre as string;
+    await e2e.as(ana.token).post(`/routines/${sourceId}/publish`).expect(201);
+
+    const first = (await e2e.as(leo.token).post(`/routines/${sourceId}/copy`).expect(201)).body.data;
+    expect(first).toMatchObject({ nombre: `${sourceName} · v1`, numeroCopia: 1, esMia: true, puedoEditar: true, visibilidad: 'PRIVATE' });
+    // Archivar la v1 no libera su número: la siguiente sigue siendo v2.
+    await e2e.as(leo.token).del(`/routines/${first.id}`).expect(200);
+    const second = (await e2e.as(leo.token).post(`/routines/${sourceId}/copy`).expect(201)).body.data;
+    expect(second).toMatchObject({ nombre: `${sourceName} · v2`, numeroCopia: 2, esMia: true, puedoEditar: true });
+    expect((await e2e.as(leo.token).get(`/routines/${second.id}`).expect(200)).body.data.numeroCopia).toBe(2);
+    // La numeración es por persona: la primera copia de Ana es su v1.
+    const own = (await e2e.as(ana.token).post(`/routines/${sourceId}/copy`).expect(201)).body.data;
+    expect(own.nombre).toBe(`${sourceName} · v1`);
+
+    // La copia es propia: se activa (C1). La pública ajena no (ROUTINE_NOT_OWNED).
+    const denied = await e2e.as(leo.token).post('/programs/strength/activate').send({ routineId: sourceId, modo: 'NONE', replace: true }).expect(403);
+    expect(denied.body).toMatchObject({ code: 'ROUTINE_NOT_OWNED', details: { routineId: sourceId } });
+    const program = await e2e.as(leo.token).post('/programs/strength/activate').send({ routineId: second.id, modo: 'NONE', replace: true }).expect(201);
+    expect(program.body.data.rutinaId).toBe(second.id);
+    await e2e.as(leo.token).post(`/programs/${program.body.data.id}/stop`).expect(201);
+  }, 20000);
+
+  it('C2 · un nombre largo se recorta a 120 caracteres sin cortar el sufijo', async () => {
+    const long = `${'Rutina larguísima '.repeat(8)}${Date.now()}`.slice(0, 160);
+    const created = await e2e.as(ana.token).post('/routines').send(routine(long, [a, a])).expect(201);
+    await e2e.as(ana.token).post(`/routines/${created.body.data.id}/publish`).expect(201);
+    const copy = (await e2e.as(leo.token).post(`/routines/${created.body.data.id}/copy`).expect(201)).body.data;
+    expect(copy.nombre.length).toBeLessThanOrEqual(120);
+    expect(copy.nombre.endsWith(' · v1')).toBe(true);
   });
 
   it('publicar una copia sin cambios choca con el original (ROUTINE_DUPLICATE)', async () => {
@@ -96,7 +135,7 @@ describe('Routines v2 · publish and copy (e2e)', () => {
     const edited = await e2e
       .as(ana.token)
       .put(`/routines/${originalId}/structure`)
-      .send({ dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: a, seriesObjetivo: 4, repsMin: 5, repsMax: 5 }] }] })
+      .send({ dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: a, seriesObjetivo: 4, repsMin: REPS, repsMax: REPS }] }] })
       .expect(200);
     expect(edited.body.data.version).toBe(2);
 
@@ -125,7 +164,7 @@ describe('Routines v2 · publish and copy (e2e)', () => {
     const edit = await e2e
       .as(ana.token)
       .put(`/routines/${y.body.data.id}/structure`)
-      .send({ dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: g1, seriesObjetivo: SETS, repsMin: 5, repsMax: 5 }] }] })
+      .send({ dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: g1, seriesObjetivo: SETS, repsMin: REPS, repsMax: REPS }] }] })
       .expect(409);
     expect(edit.body.code).toBe('ROUTINE_DUPLICATE');
     const after = (await e2e.as(ana.token).get(`/routines/${y.body.data.id}`).expect(200)).body.data;

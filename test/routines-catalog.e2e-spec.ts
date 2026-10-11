@@ -52,6 +52,38 @@ describe('Routines v2 · catalog (e2e)', () => {
     expect(card.dias.map((d: { diaSemana: number }) => d.diaSemana)).toEqual([1, 3, 5]);
   });
 
+  it('la tarjeta y el detalle traen la foto del autor y la portada; una foto moderada no sale', async () => {
+    type Card = { nombre: string; portadaUrl: string | null; autor: { fotoUrl: string | null } };
+    const card = async (): Promise<Card | undefined> => {
+      const res = await e2e.as(leo.token).get(`/routines?scope=public&q=${tag}&limit=5`).expect(200);
+      return (res.body.data.items as Card[]).find((c) => c.nombre.endsWith('3 días'));
+    };
+    const before = await card();
+    expect(before?.autor.fotoUrl).toBeNull();
+    expect(before?.portadaUrl).toBeNull();
+
+    await e2e.sql(
+      `INSERT INTO profile.photos (id, user_id, url, storage_provider, storage_key, position, created_at)
+       VALUES (gen_random_uuid(), :id, 'https://media.e2e.test/oculta.jpg', 'minio', :k1, 0, now()),
+              (gen_random_uuid(), :id, 'https://media.e2e.test/ana.jpg', 'minio', :k2, 1, now())`,
+      { id: ana.id, k1: `${tag}-a`, k2: `${tag}-b` },
+    );
+    await e2e.sql(`UPDATE profile.photos SET hidden_at = now() WHERE storage_key = :k`, { k: `${tag}-a` });
+    await e2e.sql(
+      `INSERT INTO training.exercise_media (id, ejercicio_id, media_type, provider, url, thumbnail_url, alt_text, is_primary, sort_order, status, created_at, updated_at)
+       SELECT gen_random_uuid(), re.ejercicio_id, 'VIDEO', 'e2e', 'https://media.e2e.test/v.mp4', 'https://media.e2e.test/poster.webp', 'e2e', true, 0, 'ACTIVE', now(), now()
+         FROM training.routine_exercises re WHERE re.routine_id = :r LIMIT 1`,
+      { r: ids.pub3 },
+    );
+    const after = await card();
+    expect(after?.autor.fotoUrl).toBe('https://media.e2e.test/ana.jpg');
+    expect(after?.portadaUrl).toBe('https://media.e2e.test/poster.webp');
+
+    const detail = await e2e.as(leo.token).get(`/routines/${ids.pub3}`).expect(200);
+    expect(detail.body.data.portadaUrl).toBe('https://media.e2e.test/poster.webp');
+    expect(detail.body.data.autor).toEqual({ id: ana.id, nombre: 'E2E cat-ana', fotoUrl: 'https://media.e2e.test/ana.jpg' });
+  });
+
   it('Mías incluye también las privadas propias', async () => {
     const res = await e2e.as(ana.token).get(`/routines?scope=mine&q=${tag}&limit=20`).expect(200);
     expect(names(res.body)).toHaveLength(3);

@@ -9,7 +9,11 @@ export type DomainErrorCode =
   | 'CANNOT_RATE_OWN'
   | 'OFFICIAL_FORBIDDEN'
   | 'ROUTINE_HAS_NO_DAYS'
-  | 'CONTENT_HIDDEN';
+  | 'CONTENT_HIDDEN'
+  | 'ROUTINE_NOT_OWNED'
+  | 'ROUTINE_GROUP_INVALID'
+  | 'SET_DURATION_NOT_ALLOWED'
+  | 'SET_KIND_MISMATCH';
 
 /**
  * Error de dominio con `code` estable y `details` opcional (por ejemplo

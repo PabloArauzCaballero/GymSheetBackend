@@ -7,6 +7,12 @@ import { performance } from 'node:perf_hooks';
  *
  * Uso: BASE_URL=http://127.0.0.1:3000/api/v1 node test/load/routines-v2-load.mjs
  * NUNCA contra el TEST compartido sin coordinar con Atlas (R11).
+ *
+ * No ensucia (10_CORRECCIONES §C6): 3 series fijas (nada de series al azar),
+ * todo lo que crea lleva el prefijo `QA-AUTO ` (que el catálogo de TEST oculta
+ * con CATALOG_HIDDEN_NAME_PREFIX) y al terminar —pase lo que pase— despublica,
+ * archiva sus rutinas, detiene el programa y borra sus comentarios. Las cuentas
+ * `@load.test` quedan; las desactiva scripts/sql/limpieza-qa-test/04.
  */
 const baseUrl = process.env.BASE_URL ?? 'http://127.0.0.1:3000/api/v1';
 const catalogRequests = Number(process.env.LOAD_CATALOG_REQUESTS ?? 200);
@@ -64,10 +70,18 @@ const check = (name, ok, detail) => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  (${detail})` : ''}`);
 };
 
+const PREFIX = 'QA-AUTO ';
+const SETS = 3;
+/** Lo que hay que deshacer al final: [token, ruta, método]. */
+const cleanup = [];
+
 const token = await register('load-a');
 const exercises = (await call(`/exercises?pageSize=6&page=${1 + Math.floor(Math.random() * 200)}`, { token })).data.items.map((e) => e.id);
-const sets = 1 + Math.floor(Math.random() * 90);
-const day = (ids) => [{ diaSemana: 1, ejercicios: ids.map((ejercicioId) => ({ ejercicioId, seriesObjetivo: sets, repsMin: 5, repsMax: 5 })) }];
+// Repeticiones distintas en cada ejecución: la huella no choca con una pasada anterior.
+const reps = 1 + Math.floor(Math.random() * 50);
+const day = (ids) => [{ diaSemana: 1, ejercicios: ids.map((ejercicioId) => ({ ejercicioId, seriesObjetivo: SETS, repsMin: reps, repsMax: reps })) }];
+
+async function runChecks() {
 
 // 1) Catálogo bajo carga.
 const durations = [];
@@ -88,8 +102,10 @@ const ids = [exercises[0], exercises[1]];
 const routineIds = [];
 for (let i = 0; i < 10; i += 1) {
   const t = await register(`load-pub-${i}`);
-  const created = await call('/routines', { token: t, method: 'POST', body: { nombre: `Carrera ${i}`, dias: day(ids) } });
+  const created = await call('/routines', { token: t, method: 'POST', body: { nombre: `${PREFIX}Carrera ${i}`, dias: day(ids) } });
   routineIds.push({ token: t, id: created.data.id });
+  // Se deshace en orden inverso: primero despublicar, después archivar.
+  cleanup.push([t, `/routines/${created.data.id}`, 'DELETE'], [t, `/routines/${created.data.id}/unpublish`, 'POST']);
 }
 const publishes = await Promise.all(routineIds.map((r) => call(`/routines/${r.id}/publish`, { token: r.token, method: 'POST' })));
 const won = publishes.filter((p) => p.status === 201).length;
@@ -99,20 +115,43 @@ check('10 publicaciones idénticas: exactamente una gana', won === 1 && dup === 
 // 3) Activaciones simultáneas del mismo usuario: gana una.
 const mine = [];
 for (let i = 0; i < 5; i += 1) {
-  const r = await call('/routines', { token, method: 'POST', body: { nombre: `Activar ${i}`, dias: day([exercises[2 + (i % 3)]]) } });
+  const r = await call('/routines', { token, method: 'POST', body: { nombre: `${PREFIX}Activar ${i}`, dias: day([exercises[2 + (i % 3)]]) } });
   if (r.status !== 201) console.log('crear rutina falló', r.status, JSON.stringify(r.data).slice(0, 200));
   mine.push(r.data?.id);
+  if (r.data?.id) cleanup.push([token, `/routines/${r.data.id}`, 'DELETE']);
 }
 const activations = await Promise.all(mine.map((routineId) => call('/programs/strength/activate', { token, method: 'POST', body: { routineId, modo: 'NONE' } })));
 const act201 = activations.filter((a) => a.status === 201).length;
 const act409 = activations.filter((a) => a.status === 409 && a.code === 'PROGRAM_ACTIVE_CONFLICT').length;
 check('5 activaciones simultáneas: exactamente una gana', act201 === 1 && act409 === 4, `201=${act201}, 409=${act409}, estados=${activations.map((a) => a.status).join(',')}`);
+const program = activations.find((a) => a.status === 201)?.data;
+// Detener el programa va ANTES que archivar sus rutinas: el orden de `cleanup` es inverso.
+if (program?.id) cleanup.push([token, `/programs/${program.id}/stop`, 'POST']);
 
 // 4) Ráfaga de comentarios: debe aparecer el límite.
 const publicRoutine = routineIds.find((_, i) => publishes[i].status === 201);
 const commenter = await register('load-commenter');
 const comments = await pool(25, 1, () => call(`/comments/ROUTINE/${publicRoutine.id}`, { token: commenter, method: 'POST', body: { texto: 'ráfaga' } }));
 check('límite de comentarios responde 429', comments.some((c) => c.status === 429), `ok=${comments.filter((c) => c.status === 201).length}`);
+for (const c of comments) if (c.status === 201 && c.data?.id) cleanup.push([commenter, `/comments/${c.data.id}`, 'DELETE']);
+}
+
+async function runCleanup() {
+  let failures = 0;
+  for (const [t, path, method] of cleanup.reverse()) {
+    const r = await call(path, { token: t, method });
+    if (r.status >= 400 && r.status !== 404) failures += 1;
+  }
+  const left = await call(`/routines?scope=public&q=${encodeURIComponent(PREFIX.trim())}&limit=50`, { token });
+  const visible = (left.data?.items ?? []).filter((r) => r.nombre.startsWith(PREFIX)).length;
+  check('limpieza: nada «QA-AUTO» queda en el catálogo público', visible === 0 && failures === 0, `visibles=${visible}, fallos=${failures}`);
+}
+
+try {
+  await runChecks();
+} finally {
+  await runCleanup();
+}
 
 const failed = checks.filter((c) => !c.ok);
 console.log(`\n${checks.length - failed.length}/${checks.length} comprobaciones superadas`);

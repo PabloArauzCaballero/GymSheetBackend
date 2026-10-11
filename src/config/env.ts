@@ -91,6 +91,15 @@ export const environmentSchema = z
         .max(60)
         .default("default"),
     ),
+    /**
+     * Prefijo de nombre de las rutinas de pruebas automáticas (smoke, carga).
+     * Si está definido, el catálogo público, el oficial y «Para ti» no muestran
+     * rutinas cuyo nombre empiece por él (10_CORRECCIONES §C6). Vacío = sin filtro.
+     */
+    CATALOG_HIDDEN_NAME_PREFIX: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().trim().min(2).max(40).optional(),
+    ),
     ACCESS_POLICY_VERSION: z
       .string()
       .trim()

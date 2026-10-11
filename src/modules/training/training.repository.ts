@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op, QueryTypes, Transaction, WhereOptions } from 'sequelize';
 import {
+  ExerciseMediaStatus,
   ExerciseStatus,
   ExerciseType,
   RoutineAssignmentStatus,
   RoutineStatus,
   RoutineVisibility,
 } from '../../common/enums/domain.enums';
+import { ExerciseMediaModel } from '../exercises/exercise-media.model';
 import { ExerciseModel } from '../exercises/exercise.model';
 import { UserModel } from '../users/user.model';
 import { RoutineAssignmentModel } from './routine-assignment.model';
@@ -15,6 +17,8 @@ import { RoutineShareModel } from './routine-share.model';
 import { RoutineDayModel } from './routine-day.model';
 import { RoutineExerciseModel } from './routine-exercise.model';
 import { RoutineModel } from './routine.model';
+import { authorPhotoSql, coverSql } from './routine-catalog.repository';
+import type { RoutineAuthor } from './training.mapper';
 import {
   AssignRoutineInput,
   CreateRoutineInput,
@@ -27,10 +31,23 @@ export type RoutinePage = { rows: RoutineModel[]; count: number };
 
 const daysInclude = { model: RoutineDayModel, as: 'days' };
 
+/**
+ * Miniatura del ejercicio en el payload de la rutina (C3.a): solo el medio
+ * principal activo (imagen/GIF, o el vídeo con su póster en `thumbnailUrl`).
+ * Va en el mismo JOIN —sin `separate`— para no hacer una consulta por ejercicio;
+ * `uq_exercise_media_primary_active` garantiza como mucho una fila por ejercicio.
+ */
+const primaryMediaInclude = {
+  model: ExerciseMediaModel,
+  as: 'media',
+  required: false,
+  where: { isPrimary: true, status: ExerciseMediaStatus.ACTIVE },
+};
+
 const exercisesInclude = {
   model: RoutineExerciseModel,
   as: 'exercises',
-  include: [{ model: ExerciseModel, as: 'exercise' }],
+  include: [{ model: ExerciseModel, as: 'exercise', include: [primaryMediaInclude] }],
 };
 
 const clientInclude = { model: UserModel, as: 'client' };
@@ -123,6 +140,25 @@ export class TrainingRepository {
     return (await this.userModel.findByPk(userId))?.fullName ?? null;
   }
 
+  /** Nombre y primera foto visible del autor, para la cabecera del detalle. */
+  async findAuthorCard(userId: string): Promise<RoutineAuthor | null> {
+    const [row] = await this.routineModel.sequelize!.query<{ id: string; nombre: string; foto_url: string | null }>(
+      `SELECT u.id, u.nombre_completo AS nombre, ${authorPhotoSql('u.id')} AS foto_url
+         FROM public.usuarios u WHERE u.id = :userId`,
+      { type: QueryTypes.SELECT, replacements: { userId } },
+    );
+    return row ? { id: row.id, nombre: row.nombre, fotoUrl: row.foto_url } : null;
+  }
+
+  /** La misma portada que la tarjeta del catálogo, para que el detalle enseñe la misma imagen. */
+  async findCoverUrl(routineId: string): Promise<string | null> {
+    const [row] = await this.routineModel.sequelize!.query<{ portada_url: string | null }>(
+      `SELECT ${coverSql(':routineId')} AS portada_url`,
+      { type: QueryTypes.SELECT, replacements: { routineId } },
+    );
+    return row?.portada_url ?? null;
+  }
+
   async findVersionOf(routineId: string): Promise<number | null> {
     const row = await this.routineModel.findByPk(routineId, { attributes: ['version', 'status'] });
     return row && row.status === RoutineStatus.ACTIVE ? row.version : null;
@@ -133,6 +169,21 @@ export class TrainingRepository {
     return this.routineModel.findAll({
       where: { basedOnRoutineId: routineId, status: RoutineStatus.ACTIVE },
     });
+  }
+
+  /**
+   * Cuántas copias de `sourceId` hizo `userId`, archivadas incluidas (C2: el
+   * número de la copia nueva nunca repite uno ya usado). Devuelve el mayor
+   * entre el conteo y el `numero_copia` más alto, por si alguna se borró.
+   * Dos pulsaciones simultáneas podrían dar el mismo N: es solo un nombre.
+   */
+  async countCopiesBy(userId: string, sourceId: string, transaction?: Transaction): Promise<number> {
+    const [row] = await this.routineModel.sequelize!.query<{ n: string | number; max: number | null }>(
+      `SELECT count(*) AS n, max(numero_copia) AS max FROM training.routines
+        WHERE created_by_user_id = :userId AND basada_en_rutina_id = :sourceId`,
+      { type: QueryTypes.SELECT, replacements: { userId, sourceId }, transaction },
+    );
+    return Math.max(Number(row?.n ?? 0), row?.max ?? 0);
   }
 
   listRoutines(
@@ -185,6 +236,7 @@ export class TrainingRepository {
         targetRir: input.targetRir,
         restSeconds: input.restSeconds,
         note: input.note,
+        durationSeconds: input.durationSeconds,
       },
       { transaction },
     );

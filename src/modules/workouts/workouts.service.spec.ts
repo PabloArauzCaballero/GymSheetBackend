@@ -1,4 +1,5 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { DomainException } from '../../common/errors/domain.exception';
 import { UniqueConstraintError } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { WorkoutSessionStatus } from '../../common/enums/domain.enums';
@@ -230,5 +231,77 @@ describe('WorkoutsService concurrent session creation', () => {
     });
 
     await expect(service.startSession(ownerId, { observation: null })).rejects.toThrow(unexpectedFailure);
+  });
+});
+
+describe('WorkoutsService timed strength sets', () => {
+  function inProgress(durationSeconds: number | null) {
+    return {
+      id: 'se-1',
+      durationSeconds,
+      session: { userId: ownerId, status: WorkoutSessionStatus.IN_PROGRESS },
+    };
+  }
+
+  const timedInput = {
+    type: 'FUERZA' as const,
+    setNumber: 1,
+    repetitions: null,
+    weightKg: null,
+    rir: null,
+    durationSeconds: 45,
+    previousRestSeconds: 0,
+  };
+
+  it('rechaza una serie por tiempo en un ejercicio por repeticiones', async () => {
+    const createSetMock = jest.fn();
+    const service = createService({
+      findSessionExerciseById: jest.fn().mockResolvedValue(inProgress(null)),
+      createSet: createSetMock,
+    });
+
+    const error: unknown = await service.addSet(ownerId, 'se-1', timedInput).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DomainException);
+    expect((error as DomainException).code).toBe('SET_DURATION_NOT_ALLOWED');
+    expect(createSetMock).not.toHaveBeenCalled();
+  });
+
+  function timedSet(repetitions: number | null) {
+    return {
+      id: setId,
+      type: 'FUERZA',
+      repetitions,
+      durationSeconds: repetitions == null ? 45 : null,
+      sessionExercise: inProgress(45),
+    } as unknown as WorkoutSetModel;
+  }
+
+  it('no deja poner repeticiones a una serie por tiempo', async () => {
+    const service = createService({ findSetById: jest.fn().mockResolvedValue(timedSet(null)) });
+    await expect(service.updateSet(ownerId, setId, { repetitions: 10 })).rejects.toMatchObject({
+      code: 'SET_KIND_MISMATCH',
+    });
+  });
+
+  it('no deja poner duración a una serie por repeticiones', async () => {
+    const service = createService({ findSetById: jest.fn().mockResolvedValue(timedSet(10)) });
+    await expect(service.updateSet(ownerId, setId, { durationSeconds: 30 })).rejects.toMatchObject({
+      code: 'SET_KIND_MISMATCH',
+    });
+  });
+
+  it('no deja una serie por tiempo de más de 3600 s', async () => {
+    const service = createService({ findSetById: jest.fn().mockResolvedValue(timedSet(null)) });
+    await expect(service.updateSet(ownerId, setId, { durationSeconds: 4000 })).rejects.toMatchObject({
+      code: 'SET_KIND_MISMATCH',
+    });
+  });
+
+  it('edita la duración de una serie por tiempo', async () => {
+    const set = timedSet(null);
+    const updateSet = jest.fn().mockResolvedValue({ ...set, durationSeconds: 50 });
+    const service = createService({ findSetById: jest.fn().mockResolvedValue(set), updateSet });
+    await service.updateSet(ownerId, setId, { durationSeconds: 50 });
+    expect(updateSet).toHaveBeenCalledWith(set, { durationSeconds: 50 });
   });
 });

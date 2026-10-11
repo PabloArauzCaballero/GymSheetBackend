@@ -103,7 +103,7 @@ const registration = await requestData('/auth/register', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    email: `load-${uniqueSuffix}@example.test`,
+    email: `load-${uniqueSuffix}@load.test`,
     password,
     nombreCompleto: 'Load Test User',
     acceptedTerms: true,
@@ -198,7 +198,7 @@ for (let attempt = 0; attempt < 12; attempt += 1) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      email: `missing-${uniqueSuffix}@example.test`,
+      email: `missing-${uniqueSuffix}@load.test`,
       password,
     }),
   });

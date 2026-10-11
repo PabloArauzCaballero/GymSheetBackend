@@ -122,8 +122,13 @@ describe('helpers', () => {
   it('validSets descarta reps 0 y cargas livianas', () => {
     expect(validSets([{ reps: 0, weightKg: 60, rir: null }, { reps: 5, weightKg: 47, rir: null }, { reps: 5, weightKg: 48, rir: null }], 60)).toHaveLength(1);
   });
-  it('formatKg', () => {
+  it('formatKg usa coma decimal', () => {
     expect(formatKg(60)).toBe('60 kg');
-    expect(formatKg(62.5)).toBe('62.5 kg');
+    expect(formatKg(62.5)).toBe('62,5 kg');
+    expect(formatKg(53.75)).toBe('53,75 kg');
+  });
+  it('el mensaje de subida sale con coma decimal', () => {
+    const out = applyDoubleProgression(lift(), sets([8, 8, 8]), { isDeload: false });
+    expect(out.message).toBe('¡Sube a 62,5 kg!');
   });
 });
