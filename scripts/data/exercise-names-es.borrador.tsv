@@ -90,7 +90,7 @@
 0158	Aperturas declinadas en polea
 0159	Remo sentado declinado agarre abierto en polea
 0160	Remo sentado en el suelo agarre abierto en polea
-0161	Elevación frontal en polea (variante)
+0161	Elevación hacia delante en polea
 0164	Elevación frontal de hombro en polea
 0167	Remo alto arrodillado en polea
 0169	Press de banca inclinado en polea
@@ -162,8 +162,8 @@
 0309	Elevaciones frontales con mancuernas (variante 2)
 0311	Elevaciones laterales con pulgares arriba y mancuernas
 0312	Curl martillo con mancuernas (variante 2)
-0315	Curl de bíceps en banco inclinado con mancuernas (variante)
-0316	Curl en banco inclinado con mancuernas (cría)
+0315	Curl de bíceps en banco inclinado con mancuernas (variante 3)
+0316	Elevación en banco inclinado con mancuernas (breeding)
 0317	Curl en banco inclinado con mancuernas (variante 2)
 0320	Curl martillo en banco inclinado con mancuernas
 0322	Curl de bíceps interno en banco inclinado con mancuernas
@@ -316,7 +316,7 @@
 0570	Retracción de piernas en banco plano
 0571	Remo sentado alterno agarre estrecho en máquina
 0574	Remo inclinado en máquina
-0577	Press de pecho en máquina (variante)
+0577	Press de pecho en máquina (variante 2)
 0580	Encogimientos sin agarre en máquina
 0582	Curl femoral arrodillado en máquina
 0583	Giro de tronco arrodillado en máquina
@@ -518,7 +518,7 @@
 1303	Empuje de pecho con balón medicinal desde postura de tres apoyos
 1304	Empuje de pecho con balón medicinal con respuesta múltiple
 1305	Empuje de pecho con balón medicinal con respuesta única
-1307	Flexiones sobre Bosu (con balón)
+1307	Flexiones sobre Bosu (variante 2)
 1308	Press de banca agarre abierto en máquina Smith
 1309	Press de banca declinado agarre abierto en máquina Smith
 1310	Flexiones con caída y lastre
@@ -570,7 +570,7 @@
 1367	Dominadas posteriores agarre abierto
 1368	Círculos de tobillo
 1370	Elevación de talones en el suelo con barra
-1371	Elevación de talones sentado con barra (variante)
+1371	Elevación de talones sentado con barra (variante 2)
 1374	Salto desde cajón con estabilización a una pierna
 1376	Elevación de talón de pie a una pierna en polea
 1377	Estiramiento de pantorrilla con manos contra la pared
@@ -588,7 +588,7 @@
 1390	Estiramiento de pantorrilla sentado
 1392	Elevación de talón en prensa a una pierna
 1393	Elevación de talón en el suelo a una pierna en máquina Smith
-1394	Elevación inversa de talones en máquina Smith (variante)
+1394	Elevación inversa de talones en máquina Smith (variante 2)
 1395	Elevación de talón sentado a una pierna en máquina Smith
 1396	Elevación de puntas en máquina Smith
 1397	Pantorrillas de pie
@@ -668,7 +668,7 @@
 1624	Press inverso en banco con mancuernas
 1625	Press de banca declinado agarre cerrado en máquina Smith
 1626	Press de banca declinado inverso agarre cerrado en máquina Smith
-1628	Curl araña con barra Z (variante)
+1628	Curl araña con barra Z (variante 2)
 1629	Curl de bíceps de pie agarre abierto con barra
 1630	Curl agarre cerrado en polea
 1632	Curl de arrastre en polea
@@ -717,7 +717,7 @@
 1675	Curl araña invertido con mancuernas
 1676	Curl martillo alterno sentado sobre balón de estabilidad con mancuernas
 1679	Curl de bíceps sentado a un brazo sobre balón con pierna elevada y mancuerna
-1680	Curl de pie a un brazo sobre banco inclinado con mancuerna (variante)
+1680	Curl de pie a un brazo sobre banco inclinado con mancuerna (variante 2)
 1682	Curl concentrado sentado agarre cerrado con barra Z
 1683	Curl de bíceps en máquina Smith
 1684	Subida al cajón a una pierna con equilibrio y curl de bíceps con mancuernas
@@ -748,7 +748,7 @@
 1728	Patada de tríceps a dos brazos en polea
 1729	Extensión alterna tumbado con mancuernas
 1730	Patada de tríceps alterna sentado e inclinado con mancuernas
-1731	Press agarre cerrado con mancuernas
+1731	Press agarre cerrado con mancuernas (variante 2)
 1732	Zancada frontal con extensión de tríceps y mancuernas
 1733	Extensión a dos brazos en banco inclinado con mancuernas
 1734	Patadas de tríceps sobre balón de estabilidad con mancuernas
@@ -843,3 +843,139 @@
 2464	Remo kayak Thibaudeau en polea
 2466	Puente con escaladores cruzados
 2470	Elevación de deltoides posterior tumbado en el suelo con mancuernas
+2567	Estiramiento de piriforme sentado
+2571	Estiramiento de rana con balanceo
+2705	Pronación tumbado en el suelo con mancuerna
+2706	Supinación tumbado en el suelo con mancuerna
+2736	Jalón lateral agarre supino en máquina
+2741	Curl de bíceps de pie agarre abierto con barra Z
+2796	Zancada con subida al cajón y mancuernas
+2798	Sentadilla con salto y zancada atrás con barra
+2799	Elevación alterna de piernas sentado con barra
+2800	Elevación alterna de piernas sentado con barra (mujer)
+2801	Elevación de piernas con giro (mujer)
+2802	Elevación de piernas con giro
+2803	Sentadilla con apoyo y mancuernas
+2805	Peso muerto a una pierna con apoyo en cajón y mancuerna
+2808	Tirón sumo entre las piernas con mancuerna
+2810	Sentadilla dividida con barra (variante 2)
+2812	Sentadilla dividida con subida al cajón y mancuernas
+2987	Dominadas supinas agarre cerrado con lastre en jaula
+3010	Pullover con brazos flexionados tumbado con barra Z
+3011	Flexiones escapulares inclinadas
+3012	Fondos escapulares
+3016	Curl-up abdominal
+3019	Dominadas en banco
+3021	Flexiones escapulares
+3116	Jalón supino con espalda fija y banda
+3117	Jalón agarre cerrado con espalda fija y banda
+3119	Sentadilla profunda en cuclillas
+3145	Flexiones con protracción escapular
+3147	Inclinación pélvica
+3156	Remo de pie a un brazo agarre cerrado con peso corporal
+3158	Remo de pie agarre cerrado con peso corporal
+3161	Remo de pie a un brazo con toalla y peso corporal
+3162	Remo de pie a un brazo con peso corporal
+3165	Remo de pie con toalla y peso corporal
+3167	Remo en cuclillas con toalla y peso corporal
+3168	Remo en cuclillas con peso corporal
+3193	Elevación de glúteo e isquiotibiales
+3194	Sentadilla Frankenstein
+3195	Curl femoral tumbado de dos a una pierna en máquina
+3200	Remo inclinado con barra en V en máquina
+3201	Abdominal de un cuarto
+3202	Abdominal de media subida (hombre)
+3203	Abdominal de media subida con manos cruzadas (hombre)
+3204	Abdominal completo con brazos sobre la cabeza (hombre)
+3212	Toque de punta básico (hombre)
+3213	Toque de punta de lado a lado (hombre)
+3214	Toque de punta circular con brazos separados (hombre)
+3215	Toque de punta circular con manos cruzadas invertidas (hombre)
+3216	Flexiones con toque de pecho (hombre)
+3217	Flexiones hindúes modificadas (hombre)
+3218	Toque de punta circular con manos entrelazadas (hombre)
+3219	Saltos de tijera (hombre)
+3220	Saltos con piernas abiertas (hombre)
+3221	Media flexión de rodillas (hombre)
+3222	Salto de media sentadilla (hombre)
+3223	Salto estrella (hombre)
+3231	Toque de ambas puntas (hombre)
+3234	Aperturas Hyght con mancuernas
+3235	Curl nórdico asistido en polea
+3236	Empuje de cadera de rodillas con banda de resistencia (mujer)
+3237	Elevación lateral con landmine
+3239	Plancha de rodillas con toque de hombro (hombre)
+3240	Elevación de talones contra la pared con balón (pelota de tenis entre las rodillas)
+3241	Elevación de talones contra la pared con balón (pelota de tenis entre los tobillos)
+3281	Sentadilla completa en máquina Smith
+3286	Muscle up con lastre
+3287	Fondos de codos
+3288	Fondos coreanos
+3289	Fondos imposibles
+3290	Dominada a una mano con lastre
+3291	Press Stalder
+3292	Elevador (elevator)
+3293	Dominadas arquero
+3294	Flexiones arquero
+3295	Repeticiones de front lever
+3296	Front lever
+3297	Back lever
+3298	Planche abierta (straddle)
+3299	Planche completa
+3300	Planche inclinada
+3301	Planche rana
+3302	Parada de manos
+3303	Bandera (flag)
+3304	Skin the cat
+3312	Muscle up con lastre en barra
+3313	Fondos en barra recta con lastre
+3314	Maltesa abierta (straddle)
+3315	Maltesa completa
+3318	Giro de 360° en barra
+3327	Flexiones en planche completa
+3418	Dominadas en L
+3419	Sentado en L en el suelo
+3420	Sentado en V en el suelo
+3433	Patadas de nadador (variante 2, hombre)
+3542	Elevación en T en banco inclinado con mancuernas
+3543	Sentadilla con salto en profundidad con peso corporal
+3544	Plancha lateral inclinada con peso corporal
+3545	Press alterno en banco inclinado con mancuernas
+3546	Press de hombros alterno sentado con mancuernas
+3547	Curl de bíceps a press de hombros sentado con mancuernas
+3548	Caminata con una mancuerna sobre la cabeza
+3552	Pies rápidos (variante 2)
+3560	Curl martillo alterno de pie con press y mancuernas
+3562	Puente de glúteo con dos piernas en banco y barra (hombre)
+3563	Jalón a un brazo en polea
+3582	Zancada con salto
+3635	Zancada frontal contralateral con mancuernas
+3636	Rodillas altas contra la pared
+3637	Carrera en rueda
+3638	Empuje a carrera
+3639	Giro tumbado con rodillas flexionadas (hombre)
+3640	Crunch con toque de rodilla
+3641	Paso arrodillado con balanceo y lastre
+3642	Zancada de estiramiento con lastre
+3643	Sentadillas cosaco con lastre (hombre)
+3644	Zancada con balanceo y lastre
+3655	Zancada caminando con rodillas altas
+3656	Carrera de zancada corta
+3662	Flexiones de pica a cobra
+3663	Plancha inversa con elevación de pierna
+3664	Plancha lateral con aperturas invertidas y mancuerna
+3665	Plancha power point
+3667	Aducción de cadera tumbado de lado (hombre)
+3669	Arquero de pie
+3670	Abdominal declinado con lastre
+3671	Paso de esquí
+3672	Paso de ida y vuelta
+3679	Abdominal con brazos sobre el pecho
+3697	Remo de deltoides posterior arrodillado en polea con cuerda (hombre)
+3698	Gusano (inchworm) (variante 2)
+3758	Press de pecho de pie en máquina
+3759	Buenos días sentado en máquina
+3760	Crunch sentado en máquina (variante 2)
+3785	Flexiones inclinadas sobre cajón
+3888	Arrancada a un brazo con mancuerna
+5201	Curl de bíceps de camarero con mancuerna
