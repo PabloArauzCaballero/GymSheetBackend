@@ -358,6 +358,8 @@ export class ProgressionRepository {
                      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
                    ) AS mejor_previo
               FROM serie
+             -- Una serie por tiempo (plancha con lastre) no es un récord de carga.
+             WHERE repeticiones IS NOT NULL
           ) historial
          WHERE mejor_previo IS NOT NULL AND peso_kg > mejor_previo
       )

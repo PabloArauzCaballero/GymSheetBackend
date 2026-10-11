@@ -2830,13 +2830,20 @@ components:
         nota: { type: string, nullable: true, maxLength: 1000 }
     WorkoutSetRequest:
       type: object
-      required: [numeroSerie, repeticiones, pesoKg, rir, descansoSegAnterior]
+      description: >-
+        Serie de fuerza por repeticiones (repeticiones, pesoKg y rir obligatorios) o por
+        tiempo (duracionSeg 1–3600, sin repeticiones; pesoKg y rir opcionales). La serie por
+        tiempo solo se admite si el ejercicio de la sesión tiene duracionSeg
+        (si no, 400 SET_DURATION_NOT_ALLOWED).
+      required: [numeroSerie, descansoSegAnterior]
       additionalProperties: false
       properties:
+        tipoSerie: { type: string, enum: [FUERZA, CARDIO], default: FUERZA }
         numeroSerie: { type: integer, minimum: 1, maximum: 100 }
         repeticiones: { type: integer, minimum: 1, maximum: 1000 }
         pesoKg: { type: number, minimum: 0, maximum: 2000 }
         rir: { type: integer, minimum: 0, maximum: 10 }
+        duracionSeg: { type: integer, minimum: 1, maximum: 3600 }
         descansoSegAnterior: { type: integer, minimum: 0, maximum: 7200 }
     UpdateWorkoutSetRequest:
       type: object
@@ -2847,6 +2854,11 @@ components:
         repeticiones: { type: integer, minimum: 1, maximum: 1000 }
         pesoKg: { type: number, minimum: 0, maximum: 2000 }
         rir: { type: integer, minimum: 0, maximum: 10 }
+        duracionSeg:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          description: Solo en series por tiempo (≤ 3600) o de cardio; si no, 400 SET_KIND_MISMATCH.
         descansoSegAnterior: { type: integer, minimum: 0, maximum: 7200 }
     Workout:
       type: object

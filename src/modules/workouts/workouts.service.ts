@@ -1,12 +1,14 @@
 import {
   ConflictException,
   ForbiddenException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { UniqueConstraintError } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { WorkoutSessionStatus } from '../../common/enums/domain.enums';
+import { DomainException } from '../../common/errors/domain.exception';
 import { ExercisesService } from '../exercises/exercises.service';
 import { FacilitiesRepository } from '../facilities/facilities.repository';
 import { ProgressionService, SessionRewardView } from '../progression/progression.service';
@@ -30,6 +32,7 @@ import {
   CreateWorkoutSessionInput,
   CreateWorkoutSetInput,
   FinishSessionInput,
+  MAX_TIMED_SET_SECONDS,
   UpdateSessionExerciseInput,
   UpdateWorkoutSetInput,
   WorkoutSessionListInput,
@@ -272,6 +275,7 @@ export class WorkoutsService {
       sessionExerciseId,
     );
     this.assertSessionInProgress(sessionExercise.session?.status);
+    assertDurationAllowed(sessionExercise, input);
 
     try {
       const set = await this.sequelize.transaction(async (transaction) => {
@@ -312,6 +316,7 @@ export class WorkoutsService {
   ): Promise<WorkoutSetResponse> {
     const set = await this.getSetOwnedByUserOrFail(userId, setId);
     this.assertSessionInProgress(set.sessionExercise?.session?.status);
+    assertSameSetKind(set, input);
     try {
       const updatedSet = await this.workoutsRepository.updateSet(set, input);
       return mapWorkoutSetToResponse(updatedSet);
@@ -381,4 +386,46 @@ export class WorkoutsService {
       throw new ForbiddenException('Solo se puede modificar una sesión en progreso.');
     }
   }
+}
+
+/**
+ * Una serie de fuerza por tiempo solo vale si el ejercicio de la sesión es por
+ * tiempo (`duracionSeg` copiado de la rutina). Sin objetivo de tiempo el
+ * ejercicio es por repeticiones, y una serie sin repeticiones lo rompería todo
+ * lo que suma kilos por repeticiones.
+ */
+function assertDurationAllowed(
+  sessionExercise: WorkoutSessionExerciseModel,
+  input: CreateWorkoutSetInput,
+): void {
+  if (input.type !== 'FUERZA' || input.durationSeconds == null) return;
+  if (sessionExercise.durationSeconds != null) return;
+  throw new DomainException(
+    HttpStatus.BAD_REQUEST,
+    'SET_DURATION_NOT_ALLOWED',
+    'Este ejercicio se registra por repeticiones, no por tiempo.',
+    { sessionExerciseId: sessionExercise.id },
+  );
+}
+
+/**
+ * Editar una serie no cambia su forma: una serie por repeticiones no acepta
+ * duración ni una por tiempo repeticiones (para cambiarla, se borra y se crea
+ * otra). Así el CHECK `ck_serie_por_tipo` nunca salta como un 500.
+ */
+function assertSameSetKind(set: WorkoutSetModel, input: UpdateWorkoutSetInput): void {
+  if (set.type !== 'FUERZA') return;
+  const timed = set.repetitions == null;
+  const mismatch = timed ? input.repetitions !== undefined : input.durationSeconds !== undefined;
+  const tooLong =
+    timed && input.durationSeconds !== undefined && input.durationSeconds > MAX_TIMED_SET_SECONDS;
+  if (!mismatch && !tooLong) return;
+  throw new DomainException(
+    HttpStatus.BAD_REQUEST,
+    'SET_KIND_MISMATCH',
+    timed
+      ? `Una serie por tiempo solo admite una duración de 1 a ${MAX_TIMED_SET_SECONDS} s.`
+      : 'Una serie por repeticiones no admite duración.',
+    { setId: set.id },
+  );
 }

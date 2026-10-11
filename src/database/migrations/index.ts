@@ -66,6 +66,7 @@ import { moderationRoutineKindsMigration } from "./202610080004-moderation-routi
 import { programsMigration } from "./202610080005-programs";
 import { cardioAndRewardsMigration } from "./202610080006-cardio-and-rewards";
 import { routineGroupsCopiesSessionTargetsMigration } from "./202610100001-routine-groups-copies-session-targets";
+import { timedStrengthSetsMigration } from "./202610110001-timed-strength-sets";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -133,4 +134,5 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   programsMigration,
   cardioAndRewardsMigration,
   routineGroupsCopiesSessionTargetsMigration,
+  timedStrengthSetsMigration,
 ];
