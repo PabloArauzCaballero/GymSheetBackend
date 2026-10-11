@@ -40,6 +40,7 @@ import { UserModel } from '../../../modules/users/user.model';
 import { createWorkoutSetSchema } from '../../../modules/workouts/workouts.schemas';
 import { WorkoutsService } from '../../../modules/workouts/workouts.service';
 import { EXERCISE_NAMES_ES } from './exercise-names-es.data';
+import { EXERCISE_NAMES_ES_CATALOG, reviewedSpanishNames } from './exercise-names-es.catalog';
 import { RECOMMENDED_TEMPLATES, RecommendedTemplate, TemplateDay } from './recommended-routines.data';
 import {
   COMMENTS,
@@ -183,11 +184,18 @@ export class RoutinesShowcaseSeeder {
   private async seedSpanishNames(): Promise<void> {
     // Mismo repositorio que usa la carga de la biblioteca; sus modelos son los de la app.
     const library = new ExerciseLibraryRepository(ExerciseModel, ExerciseMediaModel);
-    const rows = await ExerciseModel.findAll({ where: { id: { [Op.in]: [...this.exerciseIds.values()] } } });
-    const byId = new Map(rows.map((row) => [row.id, row]));
-    for (const [externalId, names] of Object.entries(EXERCISE_NAMES_ES)) {
-      const exercise = byId.get(this.exerciseId(externalId));
-      if (exercise && (await library.setSpanishName(exercise, names.es))) this.count('nombres_es_escritos');
+    // Solo entradas `revisado: true`: el borrador pendiente de revisión humana NO se publica.
+    const reviewed = reviewedSpanishNames(EXERCISE_NAMES_ES_CATALOG);
+    const rows = await ExerciseModel.findAll({
+      where: { externalId: { [Op.in]: reviewed.map(([id]) => id) }, dataSource: ExerciseDataSource.EXERCISES_DATASET },
+    });
+    const byExternal = new Map(rows.map((row) => [row.externalId ?? '', row]));
+    for (const [externalId, names] of reviewed) {
+      const exercise = byExternal.get(externalId);
+      // Si el nombre en inglés cambió en la base, no se pisa nada: la entrada ya no describe ese ejercicio.
+      if (exercise && exercise.name === names.en && (await library.setSpanishName(exercise, names.es))) {
+        this.count('nombres_es_escritos');
+      }
     }
   }
 
