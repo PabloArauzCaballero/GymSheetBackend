@@ -5,6 +5,7 @@ import {
   UnprocessableEntityException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import {
   FitnessGoal,
@@ -64,11 +65,16 @@ export class OnboardingService {
           transaction,
         );
       }
-      await this.advance(state, 2, {
-        weightUnit: input.weightUnit,
-        heightUnit: input.heightUnit,
-        heightValue: input.height,
-      });
+      await this.advance(
+        state,
+        2,
+        {
+          weightUnit: input.weightUnit,
+          heightUnit: input.heightUnit,
+          heightValue: input.height,
+        },
+        transaction,
+      );
     });
     return this.getState(userId);
   }
@@ -104,8 +110,9 @@ export class OnboardingService {
       const missing = this.missingFields(state, Boolean(measurement));
       if (missing.length)
         throw new UnprocessableEntityException({
-          message: "El onboarding todavía tiene datos obligatorios pendientes.",
-          missingFields: missing,
+          message: "Faltan datos obligatorios para completar el onboarding.",
+          code: "ONBOARDING_INCOMPLETE",
+          details: { missingFields: missing },
         });
       if (state.status === OnboardingStatus.COMPLETED) return state;
       const weightKg =
@@ -171,16 +178,23 @@ export class OnboardingService {
     state: Awaited<ReturnType<OnboardingRepository["getOrCreate"]>>,
     step: number,
     values: Record<string, unknown>,
+    transaction?: Transaction,
   ) {
     const completedSteps = [...new Set([...state.completedSteps, step])].sort();
-    await state.update({
-      ...values,
-      status: OnboardingStatus.IN_PROGRESS,
-      currentStep: Math.min(5, Math.max(state.currentStep, step + 1)),
-      completedSteps,
-      startedAt: state.startedAt ?? new Date(),
-      completedAt: null,
-    });
+    // Con `transaction` la fila recién creada por getOrCreate (aún sin confirmar)
+    // es visible; sin ella el UPDATE no afectaba ninguna fila y se perdían la
+    // altura y el paso 2, lo que dejaba `complete` en 422 para usuarios nuevos.
+    await state.update(
+      {
+        ...values,
+        status: OnboardingStatus.IN_PROGRESS,
+        currentStep: Math.min(5, Math.max(state.currentStep, step + 1)),
+        completedSteps,
+        startedAt: state.startedAt ?? new Date(),
+        completedAt: null,
+      },
+      { transaction },
+    );
     this.logger.log({
       event: "onboarding.step_completed",
       userId: state.userId,
