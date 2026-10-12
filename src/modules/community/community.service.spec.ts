@@ -82,3 +82,50 @@ describe('CommunityService · me gusta de comentarios', () => {
     expect(repository.listReplies).toHaveBeenCalledWith(['c1'], 'viewer');
   });
 });
+
+describe('CommunityService · valoraciones', () => {
+  const distribucion = { '5': 2, '4': 1, '3': 0, '2': 0, '1': 0 };
+  const repository = {
+    findVisibleTarget: jest.fn(),
+    summary: jest.fn(),
+    findMyRating: jest.fn(),
+    upsertRating: jest.fn(),
+    deleteRating: jest.fn(),
+  };
+  const service = new CommunityService(
+    repository as unknown as CommunityRepository,
+    { notify: jest.fn() } as unknown as RoutineNotifier,
+  );
+  const actor = { id: 'viewer' };
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    repository.findVisibleTarget.mockResolvedValue({ ownerId: 'u1', title: 'Rutina' });
+  });
+
+  it('el resumen trae la distribución por nota y mi valoración', async () => {
+    repository.summary.mockResolvedValue({ promedio: 4.67, total: 3, distribucion });
+    repository.findMyRating.mockResolvedValue(5);
+    await expect(service.summary(actor, 'ROUTINE', 'r1')).resolves.toEqual({
+      promedio: 4.67,
+      total: 3,
+      distribucion,
+      miValoracion: 5,
+    });
+  });
+
+  it('valorar y quitar la valoración devuelven la distribución recalculada', async () => {
+    repository.upsertRating.mockResolvedValue({ promedio: 4.67, total: 3, distribucion });
+    await expect(service.rate(actor, 'ROUTINE', 'r1', 4)).resolves.toEqual({
+      promedio: 4.67,
+      total: 3,
+      distribucion,
+      miValoracion: 4,
+    });
+    repository.deleteRating.mockResolvedValue({ promedio: 5, total: 2, distribucion: { ...distribucion, '4': 0 } });
+    await expect(service.removeRating(actor, 'ROUTINE', 'r1')).resolves.toMatchObject({
+      distribucion: { '5': 2, '4': 0, '3': 0, '2': 0, '1': 0 },
+      miValoracion: null,
+    });
+  });
+});

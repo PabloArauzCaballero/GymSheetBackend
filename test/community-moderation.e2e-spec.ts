@@ -42,6 +42,9 @@ describe('Community and moderation of routines (e2e)', () => {
       expect(second.body.data).toMatchObject({ promedio: 3.5, total: 2 });
       const changed = await e2e.as(people[1].token).put(`/ratings/ROUTINE/${routineId}`).send({ estrellas: 4 }).expect(200);
       expect(changed.body.data).toMatchObject({ promedio: 4.5, total: 2 });
+      // Siempre las cinco claves, también las que están a cero; cambiar de nota mueve la cuenta.
+      expect(second.body.data.distribucion).toEqual({ '5': 1, '4': 0, '3': 0, '2': 1, '1': 0 });
+      expect(changed.body.data.distribucion).toEqual({ '5': 1, '4': 1, '3': 0, '2': 0, '1': 0 });
       const own = await e2e.as(ana.token).put(`/ratings/ROUTINE/${routineId}`).send({ estrellas: 5 }).expect(400);
       expect(own.body.code).toBe('CANNOT_RATE_OWN');
       await e2e.as(people[0].token).put(`/ratings/ROUTINE/${routineId}`).send({ estrellas: 6 }).expect(400);
@@ -54,6 +57,8 @@ describe('Community and moderation of routines (e2e)', () => {
       expect(removed.body.data).toMatchObject({ promedio: 5, total: 1, miValoracion: null });
       const mine = await e2e.as(people[0].token).get(`/ratings/ROUTINE/${routineId}`).expect(200);
       expect(mine.body.data.miValoracion).toBe(5);
+      expect(removed.body.data.distribucion).toEqual({ '5': 1, '4': 0, '3': 0, '2': 0, '1': 0 });
+      expect(mine.body.data.distribucion).toEqual({ '5': 1, '4': 0, '3': 0, '2': 0, '1': 0 });
     });
 
     it('un ejercicio privado se valora desde una rutina pública, no su dueña', async () => {

@@ -36,7 +36,9 @@ import { weekOverrideSchema } from '../../../modules/training/routine-v2.schemas
 import { RoutineModel } from '../../../modules/training/routine.model';
 import { createRoutineSchema } from '../../../modules/training/training.schemas';
 import { TrainingService } from '../../../modules/training/training.service';
+import { ProfilePhotosService } from '../../../modules/profiles/profile-photos.service';
 import { UserModel } from '../../../modules/users/user.model';
+import { SHOWCASE_AVATARS, SHOWCASE_AVATAR_MIME } from './showcase-avatars.data';
 import { createWorkoutSetSchema } from '../../../modules/workouts/workouts.schemas';
 import { WorkoutsService } from '../../../modules/workouts/workouts.service';
 import { EXERCISE_NAMES_ES } from './exercise-names-es.data';
@@ -51,6 +53,7 @@ import {
   DemoUser,
   LIKED_EXERCISES,
   OFFICIAL_AUTHOR_EMAIL,
+  OFFICIAL_AUTHOR_AVATAR,
   OFFICIAL_AUTHOR_NAME,
   PROGRAMS,
   RATINGS,
@@ -218,14 +221,38 @@ export class RoutinesShowcaseSeeder {
     return { id: user.id, role: user.role, tenantId: user.tenantId ?? env.DEFAULT_TENANT_ID ?? '' };
   }
 
+  /**
+   * Foto de perfil de una cuenta de muestra: sin ella, tarjetas y comentarios
+   * de todo TEST enseñaban iniciales. Pasa por `ProfilePhotosService`, como una
+   * subida real (almacén, clave por contenido, posición). Idempotente: una
+   * cuenta que ya tiene alguna foto —la del seed o una que le hayan puesto a
+   * mano— no se toca.
+   */
+  private async ensureAvatar(userId: string, key: string): Promise<void> {
+    const encoded = SHOWCASE_AVATARS[key];
+    if (!encoded) return;
+    const photos = this.get(ProfilePhotosService);
+    if ((await photos.list(userId)).length > 0) return;
+    const buffer = Buffer.from(encoded, 'base64');
+    await photos.upload(userId, {
+      originalname: `${key}.webp`,
+      mimetype: SHOWCASE_AVATAR_MIME,
+      size: buffer.byteLength,
+      buffer,
+    });
+    this.count('avatares_subidos');
+  }
+
   private async ensureOfficialAuthor(): Promise<Actor> {
     // Cuenta de autoría, no de acceso: contraseña aleatoria que nadie conoce.
     const user = await this.ensureUser(OFFICIAL_AUTHOR_EMAIL, OFFICIAL_AUTHOR_NAME, null, randomBytes(24).toString('base64url'));
+    await this.ensureAvatar(user.id, OFFICIAL_AUTHOR_AVATAR);
     return this.actorOf(user);
   }
 
   private async ensureDemoUser(demo: DemoUser): Promise<void> {
     const user = await this.ensureUser(demo.email, demo.fullName, demo.gender, this.password);
+    await this.ensureAvatar(user.id, demo.key);
     if (demo.coach && user.role !== UserRole.COACH) await user.update({ role: UserRole.COACH });
     this.users.set(demo.key, { user, actor: this.actorOf(user) });
     await this.ensureOnboarding(user.id, demo);

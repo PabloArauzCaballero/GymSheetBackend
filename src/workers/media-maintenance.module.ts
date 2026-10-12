@@ -9,6 +9,7 @@ import {
   MediaMirrorService,
 } from "../modules/media/media-mirror.service";
 import { ExerciseMediaModel } from "../modules/exercises/exercise-media.model";
+import { HdImagesService } from "../modules/media/hd-images.service";
 import { MediaFileModel } from "../modules/membership/media-file.model";
 import { DatabaseModule } from "../database/database.module";
 
@@ -24,6 +25,7 @@ import { DatabaseModule } from "../database/database.module";
   ],
   providers: [
     MediaMirrorService,
+    HdImagesService,
     {
       provide: MEDIA_STORAGE_PROVIDER,
       useFactory: () =>

@@ -9,6 +9,9 @@ import { ContentKind } from './community.schemas';
 
 export type TargetInfo = { ownerId: string | null; title: string };
 
+/** Cuántas valoraciones hay de cada nota; siempre trae las cinco claves. */
+export type RatingDistribution = Record<'1' | '2' | '3' | '4' | '5', number>;
+
 const TABLE: Record<ContentKind, string> = {
   ROUTINE: 'training.routines',
   EXERCISE: 'public.ejercicios',
@@ -61,7 +64,22 @@ export class CommunityRepository {
         RETURNING t.valoracion_promedio AS promedio, t.valoracion_total AS total`,
       { type: QueryTypes.SELECT, replacements: { kind, id }, transaction },
     );
-    return { promedio: row?.promedio == null ? null : Number(row.promedio), total: row?.total ?? 0 };
+    return {
+      promedio: row?.promedio == null ? null : Number(row.promedio),
+      total: row?.total ?? 0,
+      distribucion: await this.distribution(kind, id, transaction),
+    };
+  }
+
+  private async distribution(kind: ContentKind, id: string, transaction?: Transaction): Promise<RatingDistribution> {
+    const rows = await this.ratings.sequelize!.query<{ estrellas: number; total: number }>(
+      `SELECT estrellas, count(*)::int AS total FROM community.content_ratings
+        WHERE target_kind = :kind AND target_id = :id GROUP BY estrellas`,
+      { type: QueryTypes.SELECT, replacements: { kind, id }, transaction },
+    );
+    const distribucion: RatingDistribution = { '5': 0, '4': 0, '3': 0, '2': 0, '1': 0 };
+    for (const row of rows) distribucion[String(row.estrellas) as keyof RatingDistribution] = row.total;
+    return distribucion;
   }
 
   async findMyRating(kind: ContentKind, id: string, userId: string): Promise<number | null> {
@@ -73,7 +91,11 @@ export class CommunityRepository {
       `SELECT valoracion_promedio AS promedio, valoracion_total AS total FROM ${TABLE[kind]} WHERE id = :id`,
       { type: QueryTypes.SELECT, replacements: { id } },
     );
-    return { promedio: row?.promedio == null ? null : Number(row.promedio), total: row?.total ?? 0 };
+    return {
+      promedio: row?.promedio == null ? null : Number(row.promedio),
+      total: row?.total ?? 0,
+      distribucion: await this.distribution(kind, id),
+    };
   }
 
   countRecentComments(authorId: string, sinceMs: number): Promise<number> {

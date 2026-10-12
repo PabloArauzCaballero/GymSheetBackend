@@ -11,6 +11,8 @@ import { block, r, t, TemplateDay } from './recommended-routines.data';
 export const DEMO_DOMAIN = '@demo.repp.test';
 export const OFFICIAL_AUTHOR_EMAIL = `equipo${DEMO_DOMAIN}`;
 export const OFFICIAL_AUTHOR_NAME = 'Equipo REPP';
+/** Clave de su avatar en `showcase-avatars.data.ts` (las personas usan su `key`). */
+export const OFFICIAL_AUTHOR_AVATAR = 'equipo';
 
 export type DemoUser = {
   key: string;
