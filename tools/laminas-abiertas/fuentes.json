@@ -523,6 +523,78 @@
       "n": 1,
       "coincidencia": "implemento",
       "nota": "Flexión de agarre cerrado sin la banda."
+    },
+    {
+      "ejercicio": "0514",
+      "en": "jump squat",
+      "fed": "Freehand_Jump_Squat",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": "Ya tenía el póster de su vídeo; la foto se ve mejor a todo el ancho."
+    },
+    {
+      "ejercicio": "3645",
+      "en": "single leg bridge with outstretched leg",
+      "fed": "Single_Leg_Glute_Bridge",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": "Ya tenía el póster de su vídeo; la foto se ve mejor a todo el ancho."
+    },
+    {
+      "ejercicio": "0293",
+      "en": "dumbbell bent over row",
+      "fed": "Bent_Over_Two-Dumbbell_Row",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": "Ya tenía el póster de su vídeo; la foto se ve mejor a todo el ancho."
+    },
+    {
+      "ejercicio": "0025",
+      "en": "barbell bench press",
+      "fed": "Barbell_Bench_Press_-_Medium_Grip",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": "Ya tenía el póster de su vídeo; la foto se ve mejor a todo el ancho."
+    },
+    {
+      "ejercicio": "0652",
+      "en": "pull-up",
+      "fed": "Pullups",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": "Ya tenía el póster de su vídeo; la foto se ve mejor a todo el ancho."
+    },
+    {
+      "ejercicio": "0314",
+      "en": "dumbbell incline bench press",
+      "fed": "Incline_Dumbbell_Press",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": "Ya tenía el póster de su vídeo; la foto se ve mejor a todo el ancho."
+    },
+    {
+      "ejercicio": "0585",
+      "en": "lever leg extension",
+      "fed": "Leg_Extensions",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": "Ya tenía el póster de su vídeo; la foto se ve mejor a todo el ancho."
+    },
+    {
+      "ejercicio": "0662",
+      "en": "push-up",
+      "fed": "Pushups",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": "Ya tenía el póster de su vídeo; la foto se ve mejor a todo el ancho."
+    },
+    {
+      "ejercicio": "0630",
+      "en": "mountain climber",
+      "fed": "Mountain_Climbers",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": "Ya tenía el póster de su vídeo; la foto se ve mejor a todo el ancho."
     }
   ]
 }
