@@ -1,0 +1,528 @@
+{
+  "fuente": "yuhonas/free-exercise-db",
+  "licencia": "Unlicense (public domain)",
+  "licenciaUrl": "https://github.com/yuhonas/free-exercise-db/blob/main/LICENSE.md",
+  "autor": "free-exercise-db contributors",
+  "laminas": [
+    {
+      "ejercicio": "0410",
+      "en": "dumbbell single leg split squat",
+      "fed": "Split_Squat_with_Dumbbells",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0431",
+      "en": "dumbbell step-up",
+      "fed": "Dumbbell_Step_Ups",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0292",
+      "en": "dumbbell one arm bent-over row",
+      "fed": "One-Arm_Dumbbell_Row",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "3013",
+      "en": "low glute bridge on floor",
+      "fed": "Butt_Lift_Bridge",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0405",
+      "en": "dumbbell seated shoulder press",
+      "fed": "Seated_Dumbbell_Press",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0432",
+      "en": "dumbbell stiff leg deadlift",
+      "fed": "Stiff-Legged_Dumbbell_Deadlift",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "1459",
+      "en": "dumbbell romanian deadlift",
+      "fed": "Stiff-Legged_Dumbbell_Deadlift",
+      "n": 1,
+      "coincidencia": "variante",
+      "nota": "Rumano y piernas rígidas: misma bisagra de cadera con mancuernas; cambia la flexión de rodilla."
+    },
+    {
+      "ejercicio": "0857",
+      "en": "wheel rollerout",
+      "fed": "Ab_Roller",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "3017",
+      "en": "barbell pendlay row",
+      "fed": "Bent_Over_Barbell_Row",
+      "n": 0,
+      "coincidencia": "variante",
+      "nota": "Pendlay arranca cada repetición desde el suelo; la postura de la foto es la misma."
+    },
+    {
+      "ejercicio": "0085",
+      "en": "barbell romanian deadlift",
+      "fed": "Romanian_Deadlift",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "1456",
+      "en": "barbell standing close grip military press",
+      "fed": "Standing_Military_Press",
+      "n": 1,
+      "coincidencia": "variante",
+      "nota": "La foto usa agarre medio, no cerrado."
+    },
+    {
+      "ejercicio": "0251",
+      "en": "chest dip",
+      "fed": "Dips_-_Chest_Version",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0233",
+      "en": "cable standing rear delt row (with rope)",
+      "fed": "Face_Pull",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0227",
+      "en": "cable standing fly",
+      "fed": "Cable_Crossover",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0602",
+      "en": "lever seated reverse fly",
+      "fed": "Reverse_Machine_Flyes",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0597",
+      "en": "lever seated hip abduction",
+      "fed": "Thigh_Abductor",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0743",
+      "en": "sled hack squat",
+      "fed": "Hack_Squat",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0201",
+      "en": "cable pushdown",
+      "fed": "Triceps_Pushdown",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0586",
+      "en": "lever lying leg curl",
+      "fed": "Lying_Leg_Curls",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0605",
+      "en": "lever standing calf raise",
+      "fed": "Standing_Calf_Raises",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0198",
+      "en": "cable pulldown",
+      "fed": "Wide-Grip_Lat_Pulldown",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0334",
+      "en": "dumbbell lateral raise",
+      "fed": "Side_Lateral_Raise",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0739",
+      "en": "sled 45в° leg press",
+      "fed": "Leg_Press",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0599",
+      "en": "lever seated leg curl",
+      "fed": "Seated_Leg_Curl",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0594",
+      "en": "lever seated calf raise",
+      "fed": "Seated_Calf_Raise",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0993",
+      "en": "band reverse fly",
+      "fed": "Back_Flyes_-_With_Bands",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "3533",
+      "en": "quads",
+      "fed": "Bodyweight_Squat",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0705",
+      "en": "side bridge v. 2",
+      "fed": "Side_Bridge",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "1354",
+      "en": "medicine ball overhead slam",
+      "fed": "Overhead_Slam",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "1369",
+      "en": "band two legs calf raise - (band under both legs) v. 2",
+      "fed": "Calf_Raises_-_With_Bands",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0576",
+      "en": "lever chest press",
+      "fed": "Leverage_Chest_Press",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0603",
+      "en": "lever shoulder press",
+      "fed": "Leverage_Shoulder_Press",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0175",
+      "en": "cable kneeling crunch",
+      "fed": "Cable_Crunch",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "1350",
+      "en": "lever seated row",
+      "fed": "Leverage_Iso_Row",
+      "n": 0,
+      "coincidencia": "variante",
+      "nota": "Remo sentado en máquina de palanca; la foto es el modelo de brazos independientes."
+    },
+    {
+      "ejercicio": "1299",
+      "en": "lever incline chest press",
+      "fed": "Leverage_Incline_Chest_Press",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "2311",
+      "en": "walking on stepmill",
+      "fed": "Stairmaster",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0380",
+      "en": "dumbbell rear lateral raise",
+      "fed": "Seated_Bent-Over_Rear_Delt_Raise",
+      "n": 0,
+      "coincidencia": "variante",
+      "nota": "La foto lo hace sentado; el del catálogo, de pie inclinado."
+    },
+    {
+      "ejercicio": "2188",
+      "en": "dumbbell seated triceps extension",
+      "fed": "Seated_Triceps_Press",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "1460",
+      "en": "walking lunge",
+      "fed": "Bodyweight_Walking_Lunge",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0868",
+      "en": "cable curl",
+      "fed": "Standing_Biceps_Cable_Curl",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "2138",
+      "en": "stationary bike run v. 3",
+      "fed": "Bicycling_Stationary",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0047",
+      "en": "barbell incline bench press",
+      "fed": "Barbell_Incline_Bench_Press_-_Medium_Grip",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0044",
+      "en": "barbell good morning",
+      "fed": "Good_Morning",
+      "n": 1,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0313",
+      "en": "dumbbell hammer curl",
+      "fed": "Hammer_Curls",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0194",
+      "en": "cable overhead triceps extension (rope attachment)",
+      "fed": "Cable_Rope_Overhead_Triceps_Extension",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0060",
+      "en": "barbell lying triceps extension skull crusher",
+      "fed": "Lying_Triceps_Press",
+      "n": 0,
+      "coincidencia": "variante",
+      "nota": "La foto usa barra EZ en lugar de barra recta."
+    },
+    {
+      "ejercicio": "0308",
+      "en": "dumbbell fly",
+      "fed": "Dumbbell_Flyes",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0333",
+      "en": "dumbbell kickback",
+      "fed": "Tricep_Dumbbell_Kickback",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0178",
+      "en": "cable lateral raise",
+      "fed": "Standing_Low-Pulley_Deltoid_Raise",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0200",
+      "en": "cable pushdown (with rope attachment)",
+      "fed": "Triceps_Pushdown_-_Rope_Attachment",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0372",
+      "en": "dumbbell preacher curl",
+      "fed": "One_Arm_Dumbbell_Preacher_Curl",
+      "n": 0,
+      "coincidencia": "exacta",
+      "nota": null
+    },
+    {
+      "ejercicio": "0496",
+      "en": "inverse leg curl (bench support)",
+      "fed": "Floor_Glute-Ham_Raise",
+      "n": 1,
+      "coincidencia": "variante",
+      "nota": "Curl nórdico con los pies sujetos por un compañero en vez de un banco."
+    },
+    {
+      "ejercicio": "2135",
+      "en": "weighted front plank",
+      "fed": "Plank",
+      "n": 1,
+      "coincidencia": "variante",
+      "nota": "Plancha frontal sin lastre (la plantilla la usa así: «Plancha frontal»)."
+    },
+    {
+      "ejercicio": "1700",
+      "en": "dumbbell push press",
+      "fed": "Standing_Dumbbell_Press",
+      "n": 1,
+      "coincidencia": "variante",
+      "nota": "Press de pie con mancuernas: el push press añade impulso de piernas."
+    },
+    {
+      "ejercicio": "0409",
+      "en": "dumbbell single leg calf raise",
+      "fed": "Standing_Dumbbell_Calf_Raise",
+      "n": 0,
+      "coincidencia": "variante",
+      "nota": "La foto es a dos piernas; el ejercicio es a una."
+    },
+    {
+      "ejercicio": "0549",
+      "en": "kettlebell swing",
+      "fed": "One-Arm_Kettlebell_Swings",
+      "n": 1,
+      "coincidencia": "variante",
+      "nota": "La foto es el swing a una mano; el ejercicio es a dos."
+    },
+    {
+      "ejercicio": "0659",
+      "en": "push-up (wall)",
+      "fed": "Incline_Push-Up",
+      "n": 0,
+      "coincidencia": "variante",
+      "nota": "Flexión inclinada sobre un banco; el ejercicio se apoya en la pared."
+    },
+    {
+      "ejercicio": "3124",
+      "en": "resistance band seated chest press",
+      "fed": "Bench_Press_-_With_Bands",
+      "n": 0,
+      "coincidencia": "variante",
+      "nota": "Press con banda tumbado; el ejercicio es sentado."
+    },
+    {
+      "ejercicio": "1760",
+      "en": "dumbbell goblet squat",
+      "fed": "Goblet_Squat",
+      "n": 1,
+      "coincidencia": "implemento",
+      "nota": "Misma sentadilla goblet con kettlebell en vez de mancuerna."
+    },
+    {
+      "ejercicio": "1757",
+      "en": "dumbbell single leg deadlift",
+      "fed": "Kettlebell_One-Legged_Deadlift",
+      "n": 1,
+      "coincidencia": "implemento",
+      "nota": "Mismo peso muerto a una pierna con kettlebell en vez de mancuerna."
+    },
+    {
+      "ejercicio": "0979",
+      "en": "band horizontal pallof press",
+      "fed": "Pallof_Press",
+      "n": 0,
+      "coincidencia": "implemento",
+      "nota": "Mismo press Pallof con polea en vez de banda."
+    },
+    {
+      "ejercicio": "0579",
+      "en": "lever front pulldown",
+      "fed": "Wide-Grip_Lat_Pulldown",
+      "n": 1,
+      "coincidencia": "implemento",
+      "nota": "Jalón al pecho en polea en vez de máquina de palanca."
+    },
+    {
+      "ejercicio": "0573",
+      "en": "lever back extension",
+      "fed": "Hyperextensions_Back_Extensions",
+      "n": 1,
+      "coincidencia": "implemento",
+      "nota": "Extensión lumbar en banco romano en vez de máquina."
+    },
+    {
+      "ejercicio": "0017",
+      "en": "assisted pull-up",
+      "fed": "Band_Assisted_Pull-Up",
+      "n": 0,
+      "coincidencia": "implemento",
+      "nota": "Dominada asistida con banda en vez de máquina."
+    },
+    {
+      "ejercicio": "0975",
+      "en": "band close-grip push-up",
+      "fed": "Push-Ups_-_Close_Triceps_Position",
+      "n": 1,
+      "coincidencia": "implemento",
+      "nota": "Flexión de agarre cerrado sin la banda."
+    }
+  ]
+}
