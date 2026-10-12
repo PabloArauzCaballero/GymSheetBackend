@@ -104,3 +104,20 @@ Successful refresh logs include source URL, version, SHA-256, fetched time, reco
 count and create/update/deactivation counters. Failures state that cached rows were
 preserved and include the retry delay. The checkpoint table is
 `integration.exercise_dataset_sync_state`.
+
+## Láminas en alta resolución
+
+Las láminas de `free-exercise-db` miden 850 × 567 px y no existe un original
+mayor (el archivo que espejamos es idéntico byte a byte al del repositorio de
+origen). A sangre en un teléfono a 3× (1.206 px) se ven ampliadas. El backend no
+procesa imágenes, así que el reescalado se hace fuera y aquí solo se carga:
+
+```txt
+yarn db:media:laminas-hd --pendientes=pendientes.json      # qué filas quedan por debajo de 1.200 px
+node tools/laminas-hd/reescalar.mjs --realesrgan=<bin> --pendientes=pendientes.json --out=entrega-hd
+yarn db:media:laminas-hd --dir=entrega-hd                  # simulación
+yarn db:media:laminas-hd --dir=entrega-hd --apply          # carga real, idempotente
+```
+
+La fila conserva `metadata.mirroredFrom`, así que la reconciliación diaria no la
+devuelve a la imagen de origen; la URL anterior queda en `metadata.hd.reemplaza`.

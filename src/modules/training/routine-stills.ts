@@ -1,3 +1,4 @@
+import { ExerciseMediaType } from '../../common/enums/domain.enums';
 import type { RoutineResponse } from './training.mapper';
 
 /** Mejor imagen fija de un ejercicio: su lámina o, si no tiene, el póster de su vídeo. */
@@ -25,7 +26,7 @@ export function applyRoutineStills(
     item.ejercicio.imagenUrl = still?.url ?? null;
     if (still) {
       for (const media of item.ejercicio.media) {
-        if (media.mediaType === 'VIDEO' && !media.thumbnailUrl) media.thumbnailUrl = still.url;
+        if (media.mediaType === ExerciseMediaType.VIDEO && !media.thumbnailUrl) media.thumbnailUrl = still.url;
       }
     }
     return still;
