@@ -39,6 +39,11 @@ export type ExerciseMediaResponse = {
 export type ExerciseResponse = {
   id: string;
   nombre: string;
+  /**
+   * Imagen fija para miniaturas y portadas (lámina o póster del vídeo). Solo la
+   * rellena el detalle de una rutina; en el resto de respuestas no viene.
+   */
+  imagenUrl?: string | null;
   /** Nombre en español si el original está en inglés; la UI muestra `nombreEs ?? nombre`. */
   nombreEs: string | null;
   grupoMuscular: string;
