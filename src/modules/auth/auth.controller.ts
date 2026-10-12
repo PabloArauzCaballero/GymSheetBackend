@@ -122,9 +122,14 @@ export class AuthController {
     return this.authService.impersonateTenant(actor, input);
   }
 
+  /**
+   * El principal de la sesión más `nombreCompleto` y `rol`, que es lo que ya
+   * devuelve el login en `user`: al restaurar la sesión el cliente solo tiene
+   * este endpoint, y sin el nombre saludaba con el correo.
+   */
   @Get('me')
   getMe(@CurrentUser() authenticatedUser: AuthenticatedUser) {
-    return authenticatedUser;
+    return this.authService.me(authenticatedUser);
   }
 
   // Boleto de un solo uso (30s) para abrir el socket de chat: el navegador

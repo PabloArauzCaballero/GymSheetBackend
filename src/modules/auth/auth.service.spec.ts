@@ -90,3 +90,30 @@ describe('AuthService login account enumeration resistance', () => {
     expect(compare).toHaveBeenCalledWith(submittedPassword, DECOY_HASH);
   });
 });
+
+describe('AuthService me', () => {
+  const principal = {
+    id: '00000000-0000-4000-8000-000000000001',
+    email: registeredEmail,
+    role: 'CLIENTE',
+    tenantId: 'gym',
+    tenantScope: 'gym',
+    impersonating: false,
+  } as unknown as Parameters<AuthService['me']>[0];
+
+  it('conserva el principal y añade nombreCompleto y rol como en el login', async () => {
+    const service = createService({ findActiveById: jest.fn().mockResolvedValue({ fullName: 'Registered User' }) });
+    await expect(service.me(principal)).resolves.toEqual({
+      ...principal,
+      rol: 'CLIENTE',
+      nombreCompleto: 'Registered User',
+    });
+  });
+
+  it('no expone nada más de la cuenta (ni el hash de la contraseña)', async () => {
+    const service = createService({
+      findActiveById: jest.fn().mockResolvedValue({ fullName: 'Registered User', passwordHash: STORED_HASH }),
+    });
+    expect(JSON.stringify(await service.me(principal))).not.toContain(STORED_HASH);
+  });
+});

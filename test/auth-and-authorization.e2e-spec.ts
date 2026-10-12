@@ -106,6 +106,10 @@ describe('Authentication and authorization (e2e)', () => {
 
       expect(response.body.data.email).toBe(uniqueEmail);
       expect(response.body.data.role).toBe('CLIENTE');
+      // Lo mismo que trae `user` en el login: al restaurar la sesión no hay otra fuente del nombre.
+      expect(response.body.data.rol).toBe('CLIENTE');
+      expect(typeof response.body.data.nombreCompleto).toBe('string');
+      expect(response.body.data.nombreCompleto.length).toBeGreaterThan(0);
     });
 
     it('never returns the password hash to the client', async () => {
