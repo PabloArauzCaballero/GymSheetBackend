@@ -229,6 +229,10 @@ export class ExercisesDatasetRepository {
             ...attributes,
             url: media.url,
             mimeType: media.mimeType,
+            // Las dimensiones son del archivo que servimos (puede ser la lámina
+            // reescalada de `db:media:laminas-hd`), no de la imagen de origen.
+            width: media.width,
+            height: media.height,
             checksumSha256: media.checksumSha256,
             metadata: { ...media.metadata, ...attributes.metadata },
           }
