@@ -17,11 +17,13 @@ type Actor = { id: string };
 
 export type CommentResponse = {
   id: string;
-  autor: { id: string; nombre: string };
+  autor: { id: string; nombre: string; fotoUrl: string | null };
   texto: string;
   respuestaA: string | null;
   creadoEn: Date;
   esMio: boolean;
+  likes: number;
+  meGusta: boolean;
   respuestas: CommentResponse[];
 };
 
@@ -58,9 +60,9 @@ export class CommunityService {
   async list(actor: Actor, kind: ContentKind, id: string, query: CommentListQuery) {
     await this.visibleTargetOrFail(kind, id, actor.id);
     const offset = decode(query.cursor);
-    const top = await this.repository.listTopLevel(kind, id, query.limit + 1, offset);
+    const top = await this.repository.listTopLevel(kind, id, actor.id, query.limit + 1, offset);
     const page = top.slice(0, query.limit);
-    const replies = await this.repository.listReplies(page.map((c) => c.id));
+    const replies = await this.repository.listReplies(page.map((c) => c.id), actor.id);
     return {
       items: page.map((row) =>
         this.toResponse(row, actor.id, replies.filter((r) => r.replyToId === row.id)),
@@ -102,11 +104,17 @@ export class CommunityService {
         refs: { routineId: id, commentId: comment.id },
       });
     }
-    return this.toResponse(
-      { id: comment.id, authorId: actor.id, authorName: '', text: comment.text, replyToId: comment.replyToId, createdAt: comment.createdAt },
-      actor.id,
-      [],
-    );
+    const row = await this.repository.findVisibleCommentRow(comment.id, actor.id);
+    if (!row) throw new NotFoundException('Comentario no encontrado.');
+    return this.toResponse(row, actor.id, []);
+  }
+
+  /** Da (`liked`) o quita el me gusta de un comentario visible de contenido que la persona puede ver. */
+  async setLike(actor: Actor, commentId: string, liked: boolean) {
+    const comment = await this.repository.findComment(commentId);
+    if (!comment || comment.status !== 'VISIBLE') throw new NotFoundException('Comentario no encontrado.');
+    await this.visibleTargetOrFail(comment.targetKind, comment.targetId, actor.id);
+    return { likes: await this.repository.setCommentLike(commentId, actor.id, liked), meGusta: liked };
   }
 
   /** El autor borra el suyo: queda como BORRADO_AUTOR y sin texto. */
@@ -126,11 +134,13 @@ export class CommunityService {
   private toResponse(row: CommentRow, viewerId: string, replies: CommentRow[]): CommentResponse {
     return {
       id: row.id,
-      autor: { id: row.authorId, nombre: row.authorName },
+      autor: { id: row.authorId, nombre: row.authorName, fotoUrl: row.authorPhotoUrl },
       texto: row.text,
       respuestaA: row.replyToId,
       creadoEn: row.createdAt,
       esMio: row.authorId === viewerId,
+      likes: row.likes,
+      meGusta: row.likedByViewer,
       respuestas: replies.map((r) => this.toResponse(r, viewerId, [])),
     };
   }

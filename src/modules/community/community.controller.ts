@@ -76,4 +76,20 @@ export class CommunityController {
   ) {
     return this.community.remove(user, commentId);
   }
+
+  @Put('comments/:commentId/like')
+  like(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('commentId', UuidParamPipe) commentId: string,
+  ) {
+    return this.community.setLike(user, commentId, true);
+  }
+
+  @Delete('comments/:commentId/like')
+  unlike(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('commentId', UuidParamPipe) commentId: string,
+  ) {
+    return this.community.setLike(user, commentId, false);
+  }
 }
