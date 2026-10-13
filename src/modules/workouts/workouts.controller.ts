@@ -9,6 +9,8 @@ import {
   CreateWorkoutSessionInput,
   CreateWorkoutSetInput,
   FinishSessionInput,
+  OmitSessionExerciseInput,
+  SkipSetInput,
   UpdateSessionExerciseInput,
   UpdateWorkoutSetInput,
   WorkoutSessionListInput,
@@ -16,6 +18,8 @@ import {
   createWorkoutSessionSchema,
   createWorkoutSetSchema,
   finishSessionSchema,
+  omitSessionExerciseSchema,
+  skipSetSchema,
   updateSessionExerciseSchema,
   updateWorkoutSetSchema,
   workoutSessionListSchema,
@@ -123,6 +127,42 @@ export class WorkoutsController {
       sessionExerciseId,
       input,
     );
+  }
+
+  /** D1: la serie no se hace. Idempotente por número de serie. */
+  @Post('session-exercises/:id/skipped-sets')
+  skipSet(
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('id', UuidParamPipe) sessionExerciseId: string,
+    @Body(new ZodValidationPipe(skipSetSchema)) input: SkipSetInput,
+  ) {
+    return this.workoutsService.skipSet(authenticatedUser.id, sessionExerciseId, input);
+  }
+
+  @Delete('skipped-sets/:id')
+  unskipSet(
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('id', UuidParamPipe) skippedSetId: string,
+  ) {
+    return this.workoutsService.unskipSet(authenticatedUser.id, skippedSetId);
+  }
+
+  /** D1: el ejercicio entero se omite esta sesión. */
+  @Post('session-exercises/:id/omit')
+  omitExercise(
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('id', UuidParamPipe) sessionExerciseId: string,
+    @Body(new ZodValidationPipe(omitSessionExerciseSchema)) input: OmitSessionExerciseInput,
+  ) {
+    return this.workoutsService.setExerciseOmitted(authenticatedUser.id, sessionExerciseId, input);
+  }
+
+  @Delete('session-exercises/:id/omit')
+  restoreExercise(
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Param('id', UuidParamPipe) sessionExerciseId: string,
+  ) {
+    return this.workoutsService.setExerciseOmitted(authenticatedUser.id, sessionExerciseId, null);
   }
 
   @Patch('sets/:id')

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { EntitlementSource, UserGender } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
 import { MembershipRepository } from "../membership/membership.repository";
+import { badgeIllustration, rarityRank } from "./badge-illustrations";
 import { UsersRepository } from "../users/users.repository";
 import { ProgressionBadgeModel } from "./progression-badge.model";
 import { ProgressionLevelModel } from "./progression-level.model";
@@ -104,9 +105,17 @@ export interface BadgeView {
   flavorText: string | null;
   category: string;
   rarity: string;
+  /** 1 común … 4 legendaria. */
+  rarityRank: number;
   icon: string;
+  /** Clave de la ilustración grande de la carta (ver `badge-illustrations.ts`). */
+  illustration: string;
   color: string;
   pointsReward: number;
+  secret: boolean;
+  /** Qué mide y cuánto pide, para que la carta pueda pintar la unidad. */
+  criterion: BadgeCriterionType;
+  threshold: number;
   earned: boolean;
   earnedAt: string | null;
   /** Novedad desde la última vez que se abrió la pantalla. */
@@ -198,7 +207,13 @@ export class ProgressionService {
 
     await this.grantStreakRewards(userId, metrics.longestStreakDays);
 
-    const points = computePoints(metrics, satisfied);
+    // Los puntos de una insignia ya conseguida no se devuelven: archivar una
+    // rutina o borrar un comentario puede dejar de cumplir la regla, pero los
+    // puntos son un historial y no deben bajar.
+    const points = computePoints(
+      metrics,
+      badges.filter((badge) => satisfied.includes(badge) || earnedByBadgeId.has(badge.id)),
+    );
     const path = buildPath(levels, points);
     // El rango vigente es el último desbloqueado. Se busca por índice y no con
     // `findLast` porque la librería de destino de este proyecto no lo incluye.
@@ -273,9 +288,12 @@ export class ProgressionService {
    * todavía sin recalcular se contarían como fruto de esta sesión.
    */
   async snapshot(userId: string): Promise<ProgressionSnapshot> {
-    const { metrics, levels, badges } = await this.loadContext(userId);
+    const { metrics, levels, badges, earned } = await this.loadContext(userId);
+    const earnedIds = new Set(earned.map((row) => row.badgeId));
     const satisfied = badges.filter(
-      (badge) => measure(metrics, badge.criterionType) >= Number(badge.criterionThreshold),
+      (badge) =>
+        earnedIds.has(badge.id) ||
+        measure(metrics, badge.criterionType) >= Number(badge.criterionThreshold),
     );
     const breakdown = computePointsBreakdown(metrics, satisfied);
     const points = sumBreakdown(breakdown);
@@ -472,6 +490,38 @@ export function measure(metrics: TrainingMetrics, criterion: BadgeCriterionType)
       return metrics.strengthGoalsReached ?? 0;
     case "CARDIO_WEEKLY_MINUTES":
       return metrics.cardioWeeklyStreak ?? 0;
+    case "TOTAL_TRAINING_MINUTES":
+      return metrics.totalTrainingMinutes ?? 0;
+    case "MAX_SET_WEIGHT_KG":
+      return metrics.maxSetWeightKg ?? 0;
+    case "TIMED_SECONDS_TOTAL":
+      return metrics.timedSecondsTotal ?? 0;
+    case "CARDIO_TOTAL_MINUTES":
+      return metrics.cardioTotalMinutes ?? 0;
+    case "CARDIO_TOTAL_KM":
+      return metrics.cardioTotalKm ?? 0;
+    case "MONDAY_SESSIONS":
+      return metrics.mondaySessions ?? 0;
+    case "DISTINCT_WEEKDAYS":
+      return metrics.distinctWeekdays ?? 0;
+    case "MAX_SESSIONS_IN_WEEK":
+      return metrics.maxSessionsInWeek ?? 0;
+    case "GEO_VERIFIED_SESSIONS":
+      return metrics.geoVerifiedSessions ?? 0;
+    case "SUPERSET_SESSIONS":
+      return metrics.supersetSessions ?? 0;
+    case "ROUTINES_CREATED":
+      return metrics.routinesCreated ?? 0;
+    case "ROUTINES_PUBLISHED":
+      return metrics.routinesPublished ?? 0;
+    case "ROUTINE_COPIES_RECEIVED":
+      return metrics.routineCopiesReceived ?? 0;
+    case "COMMENTS_WRITTEN":
+      return metrics.commentsWritten ?? 0;
+    case "RATINGS_GIVEN":
+      return metrics.ratingsGiven ?? 0;
+    case "COMMENT_LIKES_RECEIVED":
+      return metrics.commentLikesReceived ?? 0;
   }
 }
 
@@ -523,9 +573,14 @@ function toBadgeView(
     flavorText: badge.flavorText,
     category: badge.category,
     rarity: badge.rarity,
+    rarityRank: rarityRank(badge.rarity),
     icon: badge.icon,
+    illustration: badgeIllustration(badge.code, badge.criterionType),
     color: badge.color,
     pointsReward: badge.pointsReward,
+    secret: badge.secret,
+    criterion: badge.criterionType,
+    threshold,
     earned,
     earnedAt: award?.awardedAt.toISOString() ?? (isNewAward ? new Date().toISOString() : null),
     // Novedad = conseguida y todavía sin mostrar. Una insignia recién otorgada
@@ -540,11 +595,24 @@ function toBadgeView(
 }
 
 function formatMetric(value: number, criterion: BadgeCriterionType): string {
-  const isKilograms =
-    criterion === "TOTAL_VOLUME_KG" || criterion === "SINGLE_SESSION_VOLUME_KG";
   const rounded = Math.floor(value);
   const formatted = rounded.toLocaleString("es-ES");
-  return isKilograms ? `${formatted} kg` : formatted;
+  switch (criterion) {
+    case "TOTAL_VOLUME_KG":
+    case "SINGLE_SESSION_VOLUME_KG":
+    case "MAX_SET_WEIGHT_KG":
+      return `${formatted} kg`;
+    case "CARDIO_TOTAL_KM":
+      // Un decimal: «42,2 km» no puede quedarse en «42».
+      return `${(Math.floor(value * 10) / 10).toLocaleString("es-ES")} km`;
+    case "TOTAL_TRAINING_MINUTES":
+    case "CARDIO_TOTAL_MINUTES":
+      return rounded >= 120 ? `${Math.floor(rounded / 60).toLocaleString("es-ES")} h` : `${formatted} min`;
+    case "TIMED_SECONDS_TOTAL":
+      return rounded >= 120 ? `${Math.floor(rounded / 60).toLocaleString("es-ES")} min` : `${formatted} s`;
+    default:
+      return formatted;
+  }
 }
 
 /** «Ana María Pérez Soto» → «Ana P.» */

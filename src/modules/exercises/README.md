@@ -80,3 +80,18 @@ Exercise creation and equipment-link replacement run in a transaction. Equipment
 ## Safety boundary
 
 Exercise instructions are educational catalog content. This module does not diagnose conditions, prescribe rehabilitation, determine medical readiness, or guarantee that an exercise is appropriate for every person.
+
+## Search
+
+`GET /exercises?search=` is accent-insensitive and typo-tolerant (`pg_trgm` + `unaccent`, migration
+`202610130002`). The pieces:
+
+- `ejercicios.busqueda` / `busqueda_extra` are kept by a trigger (`repp_normalize` of names and aliases / of muscle
+  and equipment). `alias_busqueda` holds search-only names (the unreviewed Spanish draft), filled at boot by
+  `seeders/exercise-search-aliases.seed.ts`.
+- `exercise-search.ts` (pure): normalisation identical to `repp_normalize`, query plan with colloquial synonyms
+  (`exercise-search.synonyms.ts`, Spanish and English) and the “did you mean” correction against the catalogue
+  vocabulary (cached 10 minutes in `ExercisesService`).
+- `ExercisesRepository.searchVisibleForUser`: one CTE per word hits the GIN trigram index, scores only what passed,
+  keeps matches close to the best one, then loads that page with its relations.
+

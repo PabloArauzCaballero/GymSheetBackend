@@ -3,6 +3,7 @@ import { mapExerciseToResponse, ExerciseResponse } from '../exercises/exercise.m
 import { WorkoutSessionExerciseModel } from './workout-session-exercise.model';
 import { WorkoutSessionModel } from './workout-session.model';
 import { WorkoutSetModel } from './workout-set.model';
+import { SkipReason, WorkoutSkippedSetModel } from './workout-skipped-set.model';
 
 export type WorkoutSetResponse = {
   id: string;
@@ -17,6 +18,15 @@ export type WorkoutSetResponse = {
   fcMedia: number | null;
   rpe: number | null;
   descansoSegAnterior: number;
+  fechaRegistro: Date;
+};
+
+/** Serie que no se hizo (D1). No está en `series`: no cuenta para nada. */
+export type WorkoutSkippedSetResponse = {
+  id: string;
+  numeroSerie: number;
+  motivo: SkipReason;
+  nota: string | null;
   fechaRegistro: Date;
 };
 
@@ -38,6 +48,10 @@ export type WorkoutSessionExerciseResponse = {
   grupoTipo: 'SUPERSERIE' | 'CIRCUITO' | null;
   ejercicio: ExerciseResponse | null;
   series: WorkoutSetResponse[];
+  /** Series saltadas, por número. */
+  saltadas: WorkoutSkippedSetResponse[];
+  /** El ejercicio se omitió esta sesión; `null` si no. */
+  omitido: { motivo: SkipReason; nota: string | null; fecha: Date } | null;
 };
 
 export type WorkoutSessionResponse = {
@@ -48,6 +62,12 @@ export type WorkoutSessionResponse = {
   estado: WorkoutSessionStatus;
   observacion: string | null;
   geoVerificada: boolean;
+  /** De dónde nació la sesión; todo `null` si fue libre. */
+  rutinaId: string | null;
+  rutinaDiaId: string | null;
+  programaId: string | null;
+  seriesSaltadas: number;
+  ejerciciosOmitidos: number;
   ejercicios: WorkoutSessionExerciseResponse[];
 };
 
@@ -76,6 +96,16 @@ export function mapWorkoutSetToResponse(set: WorkoutSetModel): WorkoutSetRespons
   };
 }
 
+export function mapSkippedSetToResponse(skipped: WorkoutSkippedSetModel): WorkoutSkippedSetResponse {
+  return {
+    id: skipped.id,
+    numeroSerie: skipped.setNumber,
+    motivo: skipped.reason,
+    nota: skipped.note ?? null,
+    fechaRegistro: skipped.recordedAt,
+  };
+}
+
 export function mapSessionExerciseToResponse(
   sessionExercise: WorkoutSessionExerciseModel,
 ): WorkoutSessionExerciseResponse {
@@ -98,6 +128,17 @@ export function mapSessionExerciseToResponse(
       ? mapExerciseToResponse(sessionExercise.exercise)
       : null,
     series: (sessionExercise.sets ?? []).map(mapWorkoutSetToResponse),
+    saltadas: [...(sessionExercise.skippedSets ?? [])]
+      .sort((a, b) => a.setNumber - b.setNumber)
+      .map(mapSkippedSetToResponse),
+    omitido:
+      sessionExercise.omittedReason && sessionExercise.omittedAt
+        ? {
+            motivo: sessionExercise.omittedReason,
+            nota: sessionExercise.omittedNote ?? null,
+            fecha: sessionExercise.omittedAt,
+          }
+        : null,
   };
 }
 
@@ -112,6 +153,16 @@ export function mapWorkoutSessionToResponse(
     estado: session.status,
     observacion: session.observation,
     geoVerificada: session.geoVerified,
+    rutinaId: session.routineId ?? null,
+    rutinaDiaId: session.routineDayId ?? null,
+    programaId: session.programId ?? null,
+    seriesSaltadas: (session.sessionExercises ?? []).reduce(
+      (total, exercise) => total + (exercise.skippedSets?.length ?? 0),
+      0,
+    ),
+    ejerciciosOmitidos: (session.sessionExercises ?? []).filter(
+      (exercise) => exercise.omittedReason != null,
+    ).length,
     ejercicios: (session.sessionExercises ?? []).map(mapSessionExerciseToResponse),
   };
 }
