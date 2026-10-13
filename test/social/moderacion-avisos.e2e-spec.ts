@@ -10,7 +10,6 @@ import { HttpExceptionFilter } from "../../src/common/filters/http-exception.fil
 import { ResponseInterceptor } from "../../src/common/interceptors/response.interceptor";
 import { requestIdMiddleware } from "../../src/common/middleware/request-id.middleware";
 import { runMigrations } from "../../src/database/migrate";
-import { AppModule } from "../../src/app.module";
 import { env } from "../../src/config/env";
 import { OutboxService } from "../../src/modules/integration/outbox.service";
 import { DomainEventPublisher } from "../../src/modules/integration/domain-event.publisher";
@@ -59,10 +58,21 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
     env.DB_NAME = temporaryDatabase;
     await runMigrations("up");
 
+    const { AppModule } = await import("../../src/app.module");
     moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-    sequelize = moduleRef.get(Sequelize);
+    const testSequelize = moduleRef.get(Sequelize);
+    sequelize = testSequelize;
+    const connectedDatabase = await testSequelize.query<{ name: string }>(
+      "SELECT current_database() AS name",
+      { type: QueryTypes.SELECT },
+    );
+    if (connectedDatabase[0]?.name !== temporaryDatabase) {
+      throw new Error(
+        `H11 E2E connected to ${connectedDatabase[0]?.name ?? "unknown"}, expected its isolated database.`,
+      );
+    }
     worker = new NotificationDeliveryRunner(
       moduleRef.get(OutboxService, { strict: false }),
       moduleRef.get(NotificationDeliveryService, { strict: false }),
@@ -283,6 +293,133 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
       delivery_attempt_count: "1",
       notification_status: "SENT",
       job_status: "COMPLETED",
+    });
+  }, 60000);
+
+  it("H11.S2.M2 suppresses a queued connection notice after a block", async () => {
+    if (!application || !sequelize || !worker) {
+      throw new Error("H11 E2E setup did not finish.");
+    }
+    const suffix = randomUUID();
+    const register = async (label: string) => {
+      const registered = await request(application!.getHttpServer())
+        .post(url("/auth/register"))
+        .send({
+          email: `h11-s2-m2-${label}-${suffix}@example.test`,
+          password: "h11-notice-e2e-password",
+          nombreCompleto: `H11 Suppression ${label} ${suffix}`,
+          acceptedTerms: true,
+        })
+        .expect(201);
+      return {
+        userId: registered.body.data.user.id as string,
+        accessToken: registered.body.data.accessToken as string,
+      };
+    };
+    const requester = await register("requester");
+    const recipient = await register("recipient");
+    const sent = await request(application.getHttpServer())
+      .post(url("/me/connections"))
+      .set("Authorization", `Bearer ${requester.accessToken}`)
+      .send({ addresseeId: recipient.userId })
+      .expect(201);
+    const connectionId = sent.body.data.id as string;
+    const deduplicationKey = `connection.accepted:${connectionId}:${requester.userId}`;
+    await request(application.getHttpServer())
+      .patch(url(`/me/connections/${connectionId}`))
+      .set("Authorization", `Bearer ${recipient.accessToken}`)
+      .send({ action: "ACCEPT" })
+      .expect(200);
+
+    const queued = await sequelize.query<{ id: string; status: string }>(
+      `SELECT id, status FROM notifications.messages
+        WHERE deduplication_key = :deduplicationKey`,
+      { type: QueryTypes.SELECT, replacements: { deduplicationKey } },
+    );
+    expect(queued).toHaveLength(1);
+    expect(queued[0].status).toBe("PENDING");
+
+    await request(application.getHttpServer())
+      .post(url("/me/blocks"))
+      .set("Authorization", `Bearer ${requester.accessToken}`)
+      .send({ targetUserId: recipient.userId })
+      .expect(201);
+
+    const suppressionConstraint = await sequelize.query<{ definition: string }>(
+      `SELECT pg_get_constraintdef(oid) AS definition
+         FROM pg_constraint
+        WHERE conrelid = 'notifications.messages'::regclass
+          AND conname = 'ck_notification_status'`,
+      { type: QueryTypes.SELECT },
+    );
+    expect(suppressionConstraint[0]?.definition).toContain("'SUPPRESSED'");
+
+    const controller = new AbortController();
+    const workerRun = worker.run(controller.signal);
+    try {
+      const deadline = Date.now() + 15000;
+      let completed = false;
+      while (Date.now() < deadline) {
+        const rows = await sequelize.query<{
+          status: string;
+          jobStatus: string;
+        }>(
+          `SELECT m.status, j.status AS "jobStatus"
+             FROM notifications.messages m
+             JOIN integration.outbox_jobs j
+               ON j.deduplication_key = :jobKey
+            WHERE m.id = :notificationId`,
+          {
+            type: QueryTypes.SELECT,
+            replacements: {
+              notificationId: queued[0].id,
+              jobKey: `delivery:${deduplicationKey}`,
+            },
+          },
+        );
+        if (
+          rows[0]?.status === "SUPPRESSED" &&
+          rows[0]?.jobStatus === "COMPLETED"
+        ) {
+          completed = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(completed).toBe(true);
+    } finally {
+      controller.abort();
+      await workerRun;
+    }
+
+    const finalRows = await sequelize.query<{
+      notificationStatus: string;
+      jobStatus: string;
+      deliveryAttempts: string;
+      acceptedConnections: string;
+    }>(
+      `SELECT m.status AS "notificationStatus", j.status AS "jobStatus",
+              (SELECT count(*)::text FROM notifications.delivery_attempts a
+                WHERE a.notification_id = m.id) AS "deliveryAttempts",
+              (SELECT count(*)::text FROM social.connections c
+                WHERE c.id = :connectionId AND c.status = 'ACCEPTED') AS "acceptedConnections"
+         FROM notifications.messages m
+         JOIN integration.outbox_jobs j ON j.deduplication_key = :jobKey
+        WHERE m.id = :notificationId`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: {
+          connectionId,
+          notificationId: queued[0].id,
+          jobKey: `delivery:${deduplicationKey}`,
+        },
+      },
+    );
+    expect(finalRows[0]).toEqual({
+      notificationStatus: "SUPPRESSED",
+      jobStatus: "COMPLETED",
+      deliveryAttempts: "0",
+      acceptedConnections: "0",
     });
   }, 60000);
 });

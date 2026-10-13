@@ -92,6 +92,7 @@ import { chatAudioMessageMigration } from "./202610090010-chat-audio-message";
 import { chatStickerMessageMigration } from "./202610090011-chat-sticker-message";
 import { reelSocialInteractionsMigration } from "./202610130001-reel-social-interactions";
 import { reelModerationMigration } from "./202610130002-reel-moderation";
+import { notificationSuppressionMigration } from "./202610130003-notification-suppression";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -185,4 +186,5 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   trainingInviteDeclineMigration,
   reelSocialInteractionsMigration,
   reelModerationMigration,
+  notificationSuppressionMigration,
 ];

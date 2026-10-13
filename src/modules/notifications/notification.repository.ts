@@ -145,6 +145,30 @@ export class NotificationRepository {
     });
   }
 
+  async isConnectionNoticeActive(
+    connectionId: string,
+    recipientUserId: string,
+  ): Promise<boolean> {
+    const rows = await this.sequelize.query<{ active: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM social.connections c
+          WHERE c.id = CAST(:connectionId AS uuid)
+            AND c.status = 'ACCEPTED'
+            AND CAST(:recipientUserId AS uuid) IN (c.requester_id, c.addressee_id)
+            AND NOT EXISTS (
+              SELECT 1 FROM social.user_blocks b
+               WHERE (b.blocker_id = c.requester_id AND b.blocked_id = c.addressee_id)
+                  OR (b.blocker_id = c.addressee_id AND b.blocked_id = c.requester_id)
+            )
+       ) AS active`,
+      {
+        replacements: { connectionId, recipientUserId },
+        type: QueryTypes.SELECT,
+      },
+    );
+    return rows[0]?.active === true;
+  }
+
   createDeliveryAttempt(
     input: Record<string, unknown>,
     transaction: Transaction,

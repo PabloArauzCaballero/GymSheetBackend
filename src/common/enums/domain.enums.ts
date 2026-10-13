@@ -283,6 +283,7 @@ export enum NotificationStatus {
   FAILED = "FAILED",
   DEAD_LETTER = "DEAD_LETTER",
   READ = "READ",
+  SUPPRESSED = "SUPPRESSED",
 }
 
 export enum LegacyImportBatchStatus {
