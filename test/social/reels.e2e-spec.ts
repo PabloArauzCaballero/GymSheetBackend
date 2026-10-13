@@ -1200,6 +1200,53 @@ describe("reels publication and owner feed (e2e)", () => {
       .expect(200, { ok: true, data: { deleted: true } });
   });
 
+  it("H9.S3.M6 lets the reel owner remove one comment for both viewers", async () => {
+    const owner = await registerUser("comment-delete-owner");
+    const commenter = await registerUser("comment-delete-author");
+    const otherCommenter = await registerUser("comment-delete-other");
+    const reelId = await createReadyReel(owner.userId, "comment-delete");
+    await connectUsers(owner.userId, commenter.userId);
+    await connectUsers(owner.userId, otherCommenter.userId);
+
+    const target = await request(httpServer)
+      .post(url(`/me/reels/${reelId}/comments`))
+      .set("Authorization", `Bearer ${commenter.accessToken}`)
+      .send({ body: "Comentario que el autor del reel elimina" })
+      .expect(201);
+    const preserved = await request(httpServer)
+      .post(url(`/me/reels/${reelId}/comments`))
+      .set("Authorization", `Bearer ${otherCommenter.accessToken}`)
+      .send({ body: "Este comentario debe seguir visible" })
+      .expect(201);
+
+    await request(httpServer)
+      .delete(url(`/me/reels/${reelId}/comments/${preserved.body.data.id}`))
+      .set("Authorization", `Bearer ${commenter.accessToken}`)
+      .expect(404);
+    await request(httpServer)
+      .delete(url(`/me/reels/${reelId}/comments/${target.body.data.id}`))
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .expect(200, { ok: true, data: { deleted: true } });
+
+    for (const accessToken of [owner.accessToken, commenter.accessToken]) {
+      const comments = await request(httpServer)
+        .get(url(`/me/reels/${reelId}/comments`))
+        .set("Authorization", `Bearer ${accessToken}`)
+        .expect(200);
+      expect(comments.body.data).toHaveLength(1);
+      expect(comments.body.data[0]).toMatchObject({
+        id: preserved.body.data.id,
+        body: "Este comentario debe seguir visible",
+        deleted: false,
+      });
+      expect(comments.body.data).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: target.body.data.id }),
+        ]),
+      );
+    }
+  });
+
   it("H9.S2 keeps repeated likes idempotent and reversible", async () => {
     const owner = await registerUser("likes-owner");
     const viewer = await registerUser("likes-viewer");
