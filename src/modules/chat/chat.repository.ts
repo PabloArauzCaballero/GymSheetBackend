@@ -283,8 +283,8 @@ export class ChatRepository {
            FROM chat.conversation_events e
            LEFT JOIN training.training_invite_meetings m ON m.invite_id = e.invitation_id
           WHERE e.conversation_id = :conversationId
-            AND (:before IS NULL OR created_at < :before
-              OR (:beforeId IS NOT NULL AND created_at = :before AND id < :beforeId))
+            AND (:before IS NULL OR e.created_at < :before
+              OR (:beforeId IS NOT NULL AND e.created_at = :before AND e.id < :beforeId))
           ORDER BY e.created_at DESC, e.id DESC
           LIMIT :limit`,
         {
