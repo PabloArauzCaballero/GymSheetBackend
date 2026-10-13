@@ -71,6 +71,15 @@ import { commentLikesMigration } from "./202610120001-comment-likes";
 import { sessionSkipsMigration } from "./202610130001-session-skips";
 import { exerciseSearchMigration } from "./202610130002-exercise-search";
 import { badgesSocialCardioMigration } from "./202610130003-badges-social-cardio";
+import { socialBlocksMigration } from "./202610090006-social-blocks";
+import { trainingInvitationsMigration } from "./202610110002-training-invitations";
+import { trainingInviteResponsesMigration } from "./202610110003-training-invite-responses";
+import { trainingInviteCounterproposalsMigration } from "./202610110004-training-invite-counterproposals";
+import { trainingInviteMeetingsChatEventsMigration } from "./202610110005-training-invite-meetings-chat-events";
+import { trainingInviteExpirationMigration } from "./202610110006-training-invite-expiration";
+import { trainingInviteDisconnectCancellationMigration } from "./202610110007-training-invite-disconnect-cancellation";
+import { trainingInviteSharedSnapshotMigration } from "./202610110008-training-invite-shared-snapshot";
+import { trainingInviteDeclineMigration } from "./202610120001-training-invite-decline";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -137,10 +146,19 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   moderationRoutineKindsMigration,
   programsMigration,
   cardioAndRewardsMigration,
+  socialBlocksMigration,
   routineGroupsCopiesSessionTargetsMigration,
   timedStrengthSetsMigration,
   commentLikesMigration,
   sessionSkipsMigration,
   exerciseSearchMigration,
   badgesSocialCardioMigration,
+  trainingInvitationsMigration,
+  trainingInviteResponsesMigration,
+  trainingInviteCounterproposalsMigration,
+  trainingInviteMeetingsChatEventsMigration,
+  trainingInviteExpirationMigration,
+  trainingInviteDisconnectCancellationMigration,
+  trainingInviteSharedSnapshotMigration,
+  trainingInviteDeclineMigration,
 ];
