@@ -90,6 +90,7 @@ import { socialRecommendationVersionsMigration } from "./202610090008-social-rec
 import { chatMessageIdempotencyMigration } from "./202610090009-chat-message-idempotency";
 import { chatAudioMessageMigration } from "./202610090010-chat-audio-message";
 import { chatStickerMessageMigration } from "./202610090011-chat-sticker-message";
+import { reelSocialInteractionsMigration } from "./202610130001-reel-social-interactions";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -181,4 +182,5 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   trainingInviteDisconnectCancellationMigration,
   trainingInviteSharedSnapshotMigration,
   trainingInviteDeclineMigration,
+  reelSocialInteractionsMigration,
 ];

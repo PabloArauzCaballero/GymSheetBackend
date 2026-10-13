@@ -14,6 +14,7 @@ import { runMigrations } from "../../src/database/migrate";
 import { databaseMigrations } from "../../src/database/migrations";
 import { reelsMigration } from "../../src/database/migrations/202610100005-reels";
 import { reelUploadIdempotencyMigration } from "../../src/database/migrations/202610110001-reel-upload-idempotency";
+import { reelSocialInteractionsMigration } from "../../src/database/migrations/202610130001-reel-social-interactions";
 import {
   MEDIA_STORAGE_PROVIDER,
   MediaStorageProvider,
@@ -140,6 +141,68 @@ describe("reels publication and owner feed (e2e)", () => {
     remove: jest.fn(async () => undefined),
   };
   const url = (path: string) => `/${env.API_PREFIX}${path}`;
+
+  const registerUser = async (label: string) => {
+    const response = await request(httpServer)
+      .post(url("/auth/register"))
+      .send({
+        email: `reels-social-${label}-${randomUUID()}@example.test`,
+        password: "reels-e2e-password",
+        nombreCompleto: `Reels Social ${label}`,
+        acceptedTerms: true,
+      })
+      .expect(201);
+    const user = {
+      accessToken: response.body.data.accessToken as string,
+      userId: response.body.data.user.id as string,
+    };
+    createdUserIds.push(user.userId);
+    return user;
+  };
+
+  const createReadyReel = async (userId: string, label: string) => {
+    const [row] = await sequelize.query<{ id: string }>(
+      `INSERT INTO social.reels
+         (user_id, tenant_id, storage_provider, storage_key, mime_type, duration_seconds, status)
+       VALUES (:userId, :tenantId, 'local', :storageKey, 'video/mp4', 60, 'READY')
+       RETURNING id`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: {
+          userId,
+          tenantId: env.DEFAULT_TENANT_ID,
+          storageKey: `fixture/${label}-${randomUUID()}.mp4`,
+        },
+      },
+    );
+    createdReelIds.push(row.id);
+    return row.id;
+  };
+
+  const connectUsers = async (userA: string, userB: string) => {
+    await sequelize.query(
+      `INSERT INTO social.connections (requester_id, addressee_id, status, responded_at)
+       VALUES (:userA, :userB, 'ACCEPTED', NOW())`,
+      { replacements: { userA, userB } },
+    );
+  };
+
+  const enableDiscovery = async (userId: string) => {
+    await sequelize.query(
+      `INSERT INTO public.perfiles_antropometricos
+         (usuario_id, edad, peso_kg, estatura_cm, objetivo)
+       VALUES (:userId, 25, 70, 175, 'HIPERTROFIA')
+       ON CONFLICT (usuario_id) DO UPDATE SET edad = 25`,
+      { replacements: { userId } },
+    );
+    await sequelize.query(
+      `INSERT INTO social.profile_settings (user_id, profile_enabled, cross_gym_enabled)
+       VALUES (:userId, true, true)
+       ON CONFLICT (user_id) DO UPDATE
+         SET profile_enabled = true, cross_gym_enabled = true`,
+      { replacements: { userId } },
+    );
+  };
 
   beforeAll(async () => {
     if (
@@ -422,15 +485,24 @@ describe("reels publication and owner feed (e2e)", () => {
         storage_key: expectedStorageKey,
         processing_attempt_count: 2,
       });
-      expect([...storedReelObjects.keys()].filter((key) => key === expectedStorageKey)).toHaveLength(1);
+      expect(
+        [...storedReelObjects.keys()].filter(
+          (key) => key === expectedStorageKey,
+        ),
+      ).toHaveLength(1);
 
-      const storageUploadCalls = (storage.upload as jest.Mock).mock.calls.length;
+      const storageUploadCalls = (storage.upload as jest.Mock).mock.calls
+        .length;
       const replay = await upload(video).expect(201);
       expect(replay.body.data.id).toBe(failed.id);
-      expect((storage.upload as jest.Mock).mock.calls).toHaveLength(storageUploadCalls);
+      expect((storage.upload as jest.Mock).mock.calls).toHaveLength(
+        storageUploadCalls,
+      );
 
       await upload(testMp4(301)).expect(409);
-      expect((storage.upload as jest.Mock).mock.calls).toHaveLength(storageUploadCalls);
+      expect((storage.upload as jest.Mock).mock.calls).toHaveLength(
+        storageUploadCalls,
+      );
       const [count] = await sequelize.query<{ count: string }>(
         `SELECT count(*)::text AS count FROM social.reels
           WHERE user_id = :userId AND processing_request_id = :requestId`,
@@ -547,6 +619,17 @@ describe("reels publication and owner feed (e2e)", () => {
       await fresh.transaction(async (transaction) => {
         // The registry has already built all prior schema. Remove only the
         // empty reels tables so synthetic legacy rows precede the new migrations.
+        await reelSocialInteractionsMigration.down(
+          fresh!.getQueryInterface(),
+          transaction,
+        );
+        await fresh!.query(
+          "DELETE FROM app_meta.schema_migrations WHERE id = :migrationId",
+          {
+            transaction,
+            replacements: { migrationId: reelSocialInteractionsMigration.id },
+          },
+        );
         await reelUploadIdempotencyMigration.down(
           fresh!.getQueryInterface(),
           transaction,
@@ -622,6 +705,21 @@ describe("reels publication and owner feed (e2e)", () => {
             replacements: {
               id: reelUploadIdempotencyMigration.id,
               description: reelUploadIdempotencyMigration.description,
+            },
+          },
+        );
+        await reelSocialInteractionsMigration.up(
+          fresh!.getQueryInterface(),
+          transaction,
+        );
+        await fresh!.query(
+          `INSERT INTO app_meta.schema_migrations (id, description)
+           VALUES (:id, :description)`,
+          {
+            transaction,
+            replacements: {
+              id: reelSocialInteractionsMigration.id,
+              description: reelSocialInteractionsMigration.description,
             },
           },
         );
@@ -886,4 +984,282 @@ describe("reels publication and owner feed (e2e)", () => {
       await admin.close();
     }
   }, 120000);
+
+  it("H9.S2.M1 keeps the connections feed separate from discovery recommendations", async () => {
+    const viewer = await registerUser("feed-viewer");
+    const connection = await registerUser("feed-connection");
+    const discoverable = await registerUser("feed-discoverable");
+    const stranger = await registerUser("feed-stranger");
+    await enableDiscovery(discoverable.userId);
+    const ownReel = await createReadyReel(viewer.userId, "feed-own");
+    const connectedReel = await createReadyReel(
+      connection.userId,
+      "feed-connected",
+    );
+    const discoverableReel = await createReadyReel(
+      discoverable.userId,
+      "feed-discoverable",
+    );
+    const privateReel = await createReadyReel(stranger.userId, "feed-private");
+    await connectUsers(viewer.userId, connection.userId);
+
+    const connections = await request(httpServer)
+      .get(url("/me/reels/feed?tab=CONNECTIONS"))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .expect(200);
+    const connectionIds = (
+      connections.body.data.items as Array<{ id: string }>
+    ).map(({ id }) => id);
+    expect(connectionIds).toEqual(
+      expect.arrayContaining([ownReel, connectedReel]),
+    );
+    expect(connectionIds).toHaveLength(2);
+
+    const forYou = await request(httpServer)
+      .get(url("/me/reels/feed?tab=FOR_YOU"))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .expect(200);
+    const forYouIds = (forYou.body.data.items as Array<{ id: string }>).map(
+      ({ id }) => id,
+    );
+    expect(forYouIds).toContain(ownReel);
+    expect(forYouIds).toContain(discoverableReel);
+    expect(forYouIds).not.toContain(connectedReel);
+    expect(forYouIds).not.toContain(privateReel);
+  });
+
+  it("H9.S2.M2 keeps saved reels private to the saving account", async () => {
+    const owner = await registerUser("save-owner");
+    const saver = await registerUser("save-user");
+    const reelId = await createReadyReel(owner.userId, "saved");
+    await connectUsers(owner.userId, saver.userId);
+
+    await request(httpServer)
+      .post(url(`/me/reels/${reelId}/save`))
+      .set("Authorization", `Bearer ${saver.accessToken}`)
+      .send({ saved: true })
+      .expect(201, { ok: true, data: { saved: true } });
+    const ownCollection = await request(httpServer)
+      .get(url("/me/reels/saved"))
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .expect(200);
+    expect(ownCollection.body.data.items).toEqual([]);
+    const saverCollection = await request(httpServer)
+      .get(url("/me/reels/saved"))
+      .set("Authorization", `Bearer ${saver.accessToken}`)
+      .expect(200);
+    expect(
+      saverCollection.body.data.items.map(({ id }: { id: string }) => id),
+    ).toContain(reelId);
+  });
+
+  it("H9.S2 pages feeds with a signed cursor bound to the account and tab", async () => {
+    const owner = await registerUser("feed-cursor");
+    for (let index = 0; index < 51; index += 1) {
+      await createReadyReel(owner.userId, `cursor-${index}`);
+    }
+    const firstPage = await request(httpServer)
+      .get(url("/me/reels/feed?tab=MINE"))
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .expect(200);
+    expect(firstPage.body.data.items).toHaveLength(50);
+    expect(typeof firstPage.body.data.nextCursor).toBe("string");
+    const nextPage = await request(httpServer)
+      .get(
+        url(
+          `/me/reels/feed?tab=MINE&cursor=${encodeURIComponent(firstPage.body.data.nextCursor)}`,
+        ),
+      )
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .expect(200);
+    expect(nextPage.body.data.items).toHaveLength(1);
+    const firstIds = firstPage.body.data.items.map(
+      ({ id }: { id: string }) => id,
+    );
+    const nextIds = nextPage.body.data.items.map(
+      ({ id }: { id: string }) => id,
+    );
+    expect(firstIds).not.toContain(nextIds[0]);
+    await request(httpServer)
+      .get(
+        url(
+          `/me/reels/feed?tab=FOR_YOU&cursor=${encodeURIComponent(firstPage.body.data.nextCursor)}`,
+        ),
+      )
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .expect(400);
+  });
+
+  it("H9.S2.M3 deduplicates a reel reposted by multiple connections and attributes each sharer", async () => {
+    const author = await registerUser("repost-author");
+    const first = await registerUser("repost-first");
+    const second = await registerUser("repost-second");
+    const viewer = await registerUser("repost-viewer");
+    await enableDiscovery(author.userId);
+    const reelId = await createReadyReel(author.userId, "repost-original");
+    await connectUsers(first.userId, viewer.userId);
+    await connectUsers(second.userId, viewer.userId);
+
+    for (const reposter of [first, second]) {
+      await request(httpServer)
+        .post(url(`/me/reels/${reelId}/repost`))
+        .set("Authorization", `Bearer ${reposter.accessToken}`)
+        .send({ reposted: true })
+        .expect(201, { ok: true, data: { reposted: true } });
+    }
+    const feed = await request(httpServer)
+      .get(url("/me/reels/feed?tab=CONNECTIONS"))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .expect(200);
+    const matching = feed.body.data.items.filter(
+      ({ id }: { id: string }) => id === reelId,
+    );
+    expect(matching).toHaveLength(1);
+    expect(matching[0].userId).toBe(author.userId);
+    expect(
+      matching[0].sharedBy
+        .map(({ userId }: { userId: string }) => userId)
+        .sort(),
+    ).toEqual([first.userId, second.userId].sort());
+  });
+
+  it("H9.S2.M4 removes a repost without removing the original reel", async () => {
+    const owner = await registerUser("undo-owner");
+    const reposter = await registerUser("undo-reposter");
+    const reelId = await createReadyReel(owner.userId, "undo-original");
+    await connectUsers(owner.userId, reposter.userId);
+    await request(httpServer)
+      .post(url(`/me/reels/${reelId}/repost`))
+      .set("Authorization", `Bearer ${reposter.accessToken}`)
+      .send({ reposted: true })
+      .expect(201);
+    await request(httpServer)
+      .post(url(`/me/reels/${reelId}/repost`))
+      .set("Authorization", `Bearer ${reposter.accessToken}`)
+      .send({ reposted: false })
+      .expect(201);
+    const feed = await request(httpServer)
+      .get(url("/me/reels/feed?tab=CONNECTIONS"))
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .expect(200);
+    const original = feed.body.data.items.find(
+      ({ id }: { id: string }) => id === reelId,
+    );
+    expect(original.userId).toBe(owner.userId);
+    expect(original.sharedBy).toEqual([]);
+    const [persisted] = await sequelize.query<{ exists: boolean }>(
+      "SELECT EXISTS (SELECT 1 FROM social.reels WHERE id = :reelId AND deleted_at IS NULL) AS exists",
+      { type: QueryTypes.SELECT, replacements: { reelId } },
+    );
+    expect(persisted.exists).toBe(true);
+  });
+
+  it("H9.S2.M5 rejects comments after the owner closes them", async () => {
+    const owner = await registerUser("comments-owner");
+    const viewer = await registerUser("comments-viewer");
+    const replyAuthor = await registerUser("comments-reply");
+    const reelId = await createReadyReel(owner.userId, "comments-closed");
+    await connectUsers(owner.userId, viewer.userId);
+    await connectUsers(owner.userId, replyAuthor.userId);
+    const root = await request(httpServer)
+      .post(url(`/me/reels/${reelId}/comments`))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .send({ body: "Comentario raíz" })
+      .expect(201);
+    const reply = await request(httpServer)
+      .post(url(`/me/reels/${reelId}/comments`))
+      .set("Authorization", `Bearer ${replyAuthor.accessToken}`)
+      .send({ body: "Respuesta", parentCommentId: root.body.data.id })
+      .expect(201);
+    await request(httpServer)
+      .post(url(`/me/reels/${reelId}/comments`))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .send({
+        body: "Nivel adicional no permitido",
+        parentCommentId: reply.body.data.id,
+      })
+      .expect(400);
+    await request(httpServer)
+      .patch(url(`/me/reels/${reelId}/comments`))
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .send({ enabled: false })
+      .expect(200, { ok: true, data: { commentsEnabled: false } });
+    await request(httpServer)
+      .post(url(`/me/reels/${reelId}/comments`))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .send({ body: "Intento desde una pantalla vieja" })
+      .expect(409);
+    const comments = await request(httpServer)
+      .get(url(`/me/reels/${reelId}/comments`))
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .expect(200);
+    expect(comments.body.data).toHaveLength(2);
+    await request(httpServer)
+      .delete(url(`/me/reels/${reelId}/comments/${root.body.data.id}`))
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .expect(200, { ok: true, data: { deleted: true } });
+  });
+
+  it("H9.S2 keeps repeated likes idempotent and reversible", async () => {
+    const owner = await registerUser("likes-owner");
+    const viewer = await registerUser("likes-viewer");
+    const reelId = await createReadyReel(owner.userId, "likes");
+    await connectUsers(owner.userId, viewer.userId);
+    const likePath = url(`/me/reels/${reelId}/like`);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await request(httpServer)
+        .post(likePath)
+        .set("Authorization", `Bearer ${viewer.accessToken}`)
+        .send({ liked: true })
+        .expect(201, { ok: true, data: { liked: true } });
+    }
+    const [liked] = await sequelize.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM social.reel_likes WHERE reel_id = :reelId AND user_id = :userId",
+      {
+        type: QueryTypes.SELECT,
+        replacements: { reelId, userId: viewer.userId },
+      },
+    );
+    expect(liked.count).toBe("1");
+    await request(httpServer)
+      .post(likePath)
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .send({ liked: false })
+      .expect(201, { ok: true, data: { liked: false } });
+  });
+
+  it("H9.S2.M6 makes deleted reels unavailable through saved, reposted and media links", async () => {
+    const owner = await registerUser("delete-owner");
+    const viewer = await registerUser("delete-viewer");
+    const reelId = await createReadyReel(owner.userId, "deleted");
+    await connectUsers(owner.userId, viewer.userId);
+    await request(httpServer)
+      .post(url(`/me/reels/${reelId}/save`))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .send({ saved: true })
+      .expect(201);
+    await request(httpServer)
+      .post(url(`/me/reels/${reelId}/repost`))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .send({ reposted: true })
+      .expect(201);
+    await request(httpServer)
+      .delete(url(`/me/reels/${reelId}`))
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .expect(200);
+    const saved = await request(httpServer)
+      .get(url("/me/reels/saved"))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .expect(200);
+    expect(saved.body.data.items).toEqual([]);
+    const feed = await request(httpServer)
+      .get(url("/me/reels/feed?tab=CONNECTIONS"))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .expect(200);
+    expect(feed.body.data.items).toEqual([]);
+    await request(httpServer)
+      .get(url(`/me/reels/${reelId}/media`))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .expect(404);
+  });
 });

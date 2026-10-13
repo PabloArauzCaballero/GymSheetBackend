@@ -5,10 +5,11 @@ import { ReelModel } from "./reel.model";
 import { ReelsController } from "./reels.controller";
 import { ReelsRepository } from "./reels.repository";
 import { ReelsService } from "./reels.service";
+import { ReelSocialService } from "./reel-social.service";
 
 @Module({
   imports: [MediaModule, SequelizeModule.forFeature([ReelModel])],
   controllers: [ReelsController],
-  providers: [ReelsRepository, ReelsService],
+  providers: [ReelsRepository, ReelsService, ReelSocialService],
 })
 export class ReelsModule {}

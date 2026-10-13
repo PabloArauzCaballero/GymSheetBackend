@@ -80,6 +80,14 @@ export class ReelModel extends Model {
   @Column({ type: DataType.STRING(12), allowNull: false })
   declare status: ReelStatus;
 
+  @Default(true)
+  @Column({
+    type: DataType.BOOLEAN,
+    allowNull: false,
+    field: "comments_enabled",
+  })
+  declare commentsEnabled: boolean;
+
   @CreatedAt
   @Column({ field: "created_at" })
   declare createdAt: Date;

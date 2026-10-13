@@ -120,4 +120,15 @@ export class ReelsRepository {
       },
     });
   }
+
+  findReady(reelId: string): Promise<ReelModel | null> {
+    return this.reels.findOne({
+      where: {
+        id: reelId,
+        status: "READY",
+        hiddenAt: null,
+        deletedAt: null,
+      },
+    });
+  }
 }

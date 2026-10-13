@@ -20,6 +20,7 @@ import { ReelModel } from "./reel.model";
 import type { UploadedReelMedia } from "./reels.controller";
 import { mapReelToResponse } from "./reels.mapper";
 import { ReelsRepository } from "./reels.repository";
+import { ReelSocialService, ReelTab } from "./reel-social.service";
 
 const ALLOWED_VIDEO_MIME_TYPES = new Set(["video/mp4", "video/quicktime"]);
 
@@ -27,6 +28,7 @@ const ALLOWED_VIDEO_MIME_TYPES = new Set(["video/mp4", "video/quicktime"]);
 export class ReelsService {
   constructor(
     private readonly repository: ReelsRepository,
+    private readonly social: ReelSocialService,
     @Inject(MEDIA_STORAGE_PROVIDER)
     private readonly storage: MediaStorageProvider,
   ) {}
@@ -169,16 +171,16 @@ export class ReelsService {
     }
   }
 
-  async feed(userId: string) {
-    const items = (await this.repository.feedForOwner(userId)).map(
-      mapReelToResponse,
-    );
-    return { items, nextCursor: null } as const;
+  async feed(userId: string, tab: ReelTab = "MINE", cursor?: string) {
+    return this.social.feed(userId, tab, cursor);
   }
 
   async downloadMedia(reelId: string, userId: string) {
-    const reel = await this.repository.findReadyForOwner(reelId, userId);
-    if (!reel) throw new NotFoundException("Reel no encontrado.");
+    const [allowed, reel] = await Promise.all([
+      this.social.canViewMedia(userId, reelId),
+      this.repository.findReady(reelId),
+    ]);
+    if (!allowed || !reel) throw new NotFoundException("Reel no encontrado.");
     return {
       buffer: await this.storage.download(reel.storageKey),
       mimeType: reel.mimeType,
