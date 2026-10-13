@@ -50,7 +50,7 @@ export class ChatController {
     @Param("id", UuidParamPipe) conversationId: string,
     @Query(new ZodValidationPipe(messageListQuerySchema)) query: MessageListQuery,
   ) {
-    return this.service.listMessages(conversationId, user.id, query.limit, query.before);
+    return this.service.listMessages(conversationId, user.id, query.limit, query.before, query.beforeId);
   }
 
   @Post(":id/messages")
