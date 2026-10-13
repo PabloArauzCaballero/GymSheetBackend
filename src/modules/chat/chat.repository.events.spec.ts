@@ -35,6 +35,7 @@ describe("ChatRepository training event history", () => {
       startsAt: createdAt,
       timeZone: "America/La_Paz",
       placeLabel: "Gimnasio Central",
+      cancelledAt: null,
       createdAt,
     };
     const { repository, query } = setup([event]);
@@ -68,6 +69,7 @@ describe("ChatRepository training event history", () => {
       startsAt: createdAt,
       timeZone: "America/La_Paz",
       placeLabel: "Gimnasio Central",
+      cancelledAt: null,
       createdAt,
     };
     const result = mapChatHistoryItem({ kind: "system", event });
