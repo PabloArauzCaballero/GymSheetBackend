@@ -11,5 +11,6 @@ import { ReelSocialService } from "./reel-social.service";
   imports: [MediaModule, SequelizeModule.forFeature([ReelModel])],
   controllers: [ReelsController],
   providers: [ReelsRepository, ReelsService, ReelSocialService],
+  exports: [ReelSocialService],
 })
 export class ReelsModule {}

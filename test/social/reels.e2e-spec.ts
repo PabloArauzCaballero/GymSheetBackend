@@ -1262,4 +1262,53 @@ describe("reels publication and owner feed (e2e)", () => {
       .set("Authorization", `Bearer ${viewer.accessToken}`)
       .expect(404);
   });
+
+  it("H9.S2.M6 auto-hides a reported reel from feeds and prior media URLs", async () => {
+    const owner = await registerUser("moderated-owner");
+    const reporters = await Promise.all([
+      registerUser("moderated-reporter-a"),
+      registerUser("moderated-reporter-b"),
+      registerUser("moderated-reporter-c"),
+    ]);
+    const reelId = await createReadyReel(owner.userId, "moderated");
+    for (const reporter of reporters) {
+      await connectUsers(owner.userId, reporter.userId);
+    }
+    const results: Array<{ contentHidden: boolean }> = [];
+    for (const reporter of reporters) {
+      const response = await request(httpServer)
+        .post(url("/me/reports"))
+        .set("Authorization", `Bearer ${reporter.accessToken}`)
+        .send({
+          targetKind: "REEL",
+          targetId: reelId,
+          reason: "SPAM",
+        })
+        .expect(201);
+      results.push(response.body.data as { contentHidden: boolean });
+    }
+    expect(results.map((result) => result.contentHidden)).toEqual([
+      false,
+      false,
+      true,
+    ]);
+    const [hidden] = await sequelize.query<{ hidden: boolean }>(
+      "SELECT hidden_at IS NOT NULL AS hidden FROM social.reels WHERE id = :reelId",
+      { type: QueryTypes.SELECT, replacements: { reelId } },
+    );
+    expect(hidden.hidden).toBe(true);
+    await request(httpServer)
+      .get(url("/me/reels/feed?tab=CONNECTIONS"))
+      .set("Authorization", `Bearer ${reporters[0].accessToken}`)
+      .expect(200)
+      .then((response) => {
+        expect(
+          response.body.data.items.map(({ id }: { id: string }) => id),
+        ).not.toContain(reelId);
+      });
+    await request(httpServer)
+      .get(url(`/me/reels/${reelId}/media`))
+      .set("Authorization", `Bearer ${reporters[0].accessToken}`)
+      .expect(404);
+  });
 });

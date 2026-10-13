@@ -1,14 +1,14 @@
-import { Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
-import { Op, QueryTypes, Transaction } from 'sequelize';
-import { Sequelize } from 'sequelize-typescript';
-import { ModerationReportModel } from './report.model';
-import { UserStrikeModel } from './user-strike.model';
+import { Injectable } from "@nestjs/common";
+import { InjectModel } from "@nestjs/sequelize";
+import { Op, QueryTypes, Transaction } from "sequelize";
+import { Sequelize } from "sequelize-typescript";
+import { ModerationReportModel } from "./report.model";
+import { UserStrikeModel } from "./user-strike.model";
 import {
   ModerationReasonValue,
   ModerationStatus,
   ModerationTargetKindValue,
-} from './moderation.policy';
+} from "./moderation.policy";
 
 /** Una tarjeta de la cola: un contenido con todas sus quejas juntas. */
 export interface ModerationCaseRow {
@@ -97,9 +97,11 @@ export class ModerationRepository {
    * ORDENACIÓN: resolverla en JavaScript obligaría a traerse la cola entera
    * para poder decidir qué va primero.
    */
-  findQueue(
-    input: { tenantScope: string | null; limit: number; offset: number },
-  ): Promise<ModerationCaseRow[]> {
+  findQueue(input: {
+    tenantScope: string | null;
+    limit: number;
+    offset: number;
+  }): Promise<ModerationCaseRow[]> {
     return this.sequelize.query<ModerationCaseRow>(
       `SELECT r.target_kind,
               r.target_id,
@@ -137,7 +139,8 @@ export class ModerationRepository {
               -- reportarían como visibles.
               (bool_or(st.hidden_at IS NOT NULL)
                OR bool_or(ph.hidden_at IS NOT NULL)
-               OR bool_or(rt.hidden_at IS NOT NULL))              AS content_hidden
+               OR bool_or(rt.hidden_at IS NOT NULL)
+               OR bool_or(rl.hidden_at IS NOT NULL))              AS content_hidden
          FROM moderation.reports r
          JOIN public.usuarios u ON u.id = r.reported_user_id
          LEFT JOIN public.usuarios claimer ON claimer.id = r.claimed_by_user_id
@@ -147,6 +150,8 @@ export class ModerationRepository {
            ON r.target_kind = 'PROFILE_PHOTO' AND ph.id = r.target_id
          LEFT JOIN training.routines rt
            ON r.target_kind = 'ROUTINE' AND rt.id = r.target_id
+         LEFT JOIN social.reels rl
+           ON r.target_kind = 'REEL' AND rl.id = r.target_id
         WHERE r.status IN ('PENDIENTE', 'EN_REVISION')
           AND (:tenantScope IS NULL OR r.tenant_id = :tenantScope)
         GROUP BY r.target_kind, r.target_id, r.reported_user_id, u.nombre_completo
@@ -171,7 +176,7 @@ export class ModerationRepository {
         targetId,
         ...(tenantScope ? { tenantId: tenantScope } : {}),
       },
-      order: [['createdAt', 'ASC']],
+      order: [["createdAt", "ASC"]],
     });
   }
 
@@ -233,7 +238,11 @@ export class ModerationRepository {
     tenantScope: string | null,
   ): Promise<number> {
     const [affected] = await this.reports.update(
-      { status: ModerationStatus.PENDIENTE, claimedByUserId: null, claimedAt: null },
+      {
+        status: ModerationStatus.PENDIENTE,
+        claimedByUserId: null,
+        claimedAt: null,
+      },
       {
         where: {
           targetKind,
@@ -262,7 +271,9 @@ export class ModerationRepository {
   ): Promise<number> {
     const [affected] = await this.reports.update(
       {
-        status: input.discarded ? ModerationStatus.DESCARTADO : ModerationStatus.RESUELTO,
+        status: input.discarded
+          ? ModerationStatus.DESCARTADO
+          : ModerationStatus.RESUELTO,
         resolution: input.resolution,
         resolutionNote: input.note,
         resolvedByUserId: input.moderatorUserId,
@@ -301,7 +312,7 @@ export class ModerationRepository {
   listStrikes(userId: string): Promise<UserStrikeModel[]> {
     return this.strikes.findAll({
       where: { userId },
-      order: [['createdAt', 'DESC']],
+      order: [["createdAt", "DESC"]],
     });
   }
 
@@ -342,15 +353,20 @@ export class ModerationRepository {
     },
     transaction: Transaction,
   ): Promise<void> {
-    const table = input.targetKind === 'STORY' ? 'profile.stories'
-      : input.targetKind === 'PROFILE_PHOTO' ? 'profile.photos'
-      : 'training.routines';
+    const table =
+      input.targetKind === "STORY"
+        ? "profile.stories"
+        : input.targetKind === "PROFILE_PHOTO"
+          ? "profile.photos"
+          : input.targetKind === "REEL"
+            ? "social.reels"
+            : "training.routines";
 
     await this.sequelize.query(
       `UPDATE ${table}
-          SET hidden_at = ${input.hidden ? 'now()' : 'NULL'},
-              hidden_by_user_id = ${input.hidden ? ':moderatorUserId' : 'NULL'},
-              hidden_reason = ${input.hidden ? ':reason' : 'NULL'}
+          SET hidden_at = ${input.hidden ? "now()" : "NULL"},
+              hidden_by_user_id = ${input.hidden ? ":moderatorUserId" : "NULL"},
+              hidden_reason = ${input.hidden ? ":reason" : "NULL"}
         WHERE id = :targetId`,
       {
         type: QueryTypes.UPDATE,
@@ -385,12 +401,19 @@ export class ModerationRepository {
       ROUTINE: `SELECT r.created_by_user_id AS "userId", u.tenant_id AS "tenantId"
                   FROM training.routines r JOIN public.usuarios u ON u.id = r.created_by_user_id
                  WHERE r.id = :targetId AND r.visibilidad IN ('PUBLIC','TEMPLATE')`,
+      REEL: `SELECT r.user_id AS "userId", u.tenant_id AS "tenantId"
+               FROM social.reels r JOIN public.usuarios u ON u.id = r.user_id
+              WHERE r.id = :targetId AND r.status = 'READY'
+                AND r.hidden_at IS NULL AND r.deleted_at IS NULL`,
     };
 
     const sql = queries[targetKind];
     if (!sql) return null;
 
-    const rows = await this.sequelize.query<{ userId: string; tenantId: string }>(sql, {
+    const rows = await this.sequelize.query<{
+      userId: string;
+      tenantId: string;
+    }>(sql, {
       type: QueryTypes.SELECT,
       replacements: { targetId },
     });
