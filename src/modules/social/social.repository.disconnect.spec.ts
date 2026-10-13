@@ -62,7 +62,7 @@ describe("SocialRepository.withdrawConnection", () => {
   });
 
   it("does not let the recipient withdraw a request", async () => {
-    const { repository, findOne, query, connection } = setup(ConnectionStatus.PENDING, addresseeId);
+    const { repository, findOne, query, connection } = setup(ConnectionStatus.PENDING);
 
     await expect(repository.withdrawConnection("connection-1", addresseeId)).resolves.toBe(false);
 
