@@ -187,6 +187,29 @@ export class SocialRepository {
    * The stable user-pair lock matches training-invite writes and prevents an
    * invite from being accepted between the connection check and cancellation.
    */
+  async lockConnectionForUser(
+    connectionId: string,
+    userId: string,
+    transaction: Transaction,
+  ): Promise<ConnectionModel | null> {
+    const candidate = await this.findByIdForUser(connectionId, userId, transaction);
+    if (!candidate) return null;
+    await lockSocialPairUsers(
+      this.sequelize,
+      candidate.requesterId,
+      candidate.addresseeId,
+      transaction,
+    );
+    return this.connections.findOne({
+      where: {
+        id: connectionId,
+        [Op.or]: [{ requesterId: userId }, { addresseeId: userId }],
+      },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+  }
+
   async withdrawConnection(connectionId: string, userId: string): Promise<boolean> {
     const candidate = await this.findByIdForUser(connectionId, userId);
     if (!candidate || candidate.requesterId !== userId) return false;
