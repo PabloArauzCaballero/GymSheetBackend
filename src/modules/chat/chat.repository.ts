@@ -276,16 +276,16 @@ export class ChatRepository {
         limit,
       }),
       this.sequelize.query<TrainingInviteConversationEvent>(
-        `SELECT id, conversation_id AS "conversationId",
-                invitation_id AS "invitationId", accepted_revision AS "acceptedRevision",
-                starts_at AS "startsAt", time_zone AS "timeZone", place_label AS "placeLabel",
+        `SELECT e.id, e.conversation_id AS "conversationId",
+                e.invitation_id AS "invitationId", e.accepted_revision AS "acceptedRevision",
+                e.starts_at AS "startsAt", e.time_zone AS "timeZone", e.place_label AS "placeLabel",
                 m.cancelled_at AS "cancelledAt", e.created_at AS "createdAt"
            FROM chat.conversation_events e
            LEFT JOIN training.training_invite_meetings m ON m.invite_id = e.invitation_id
           WHERE e.conversation_id = :conversationId
             AND (:before IS NULL OR created_at < :before
               OR (:beforeId IS NOT NULL AND created_at = :before AND id < :beforeId))
-          ORDER BY created_at DESC, id DESC
+          ORDER BY e.created_at DESC, e.id DESC
           LIMIT :limit`,
         {
           type: QueryTypes.SELECT,
