@@ -6,6 +6,7 @@ import { ConnectionStatus } from "../../common/enums/domain.enums";
 import { ConnectionModel } from "./connection.model";
 import { DiscoveryPassModel } from "./discovery-pass.model";
 import { ProfileSocialSettingsModel } from "./profile-social-settings.model";
+import { lockSocialPairUsers } from "./social-pair-lock";
 
 /** Escapa los comodines de LIKE/ILIKE para que la búsqueda trate `%` y `_` como texto literal. */
 function escapeLikePattern(value: string): string {
@@ -178,6 +179,91 @@ export class SocialRepository {
     return this.connections.findOne({
       where: { id, [Op.or]: [{ requesterId: userId }, { addresseeId: userId }] },
       transaction,
+    });
+  }
+
+  /**
+   * Withdraw a connection atomically with future training-invite cancellation.
+   * The stable user-pair lock matches training-invite writes and prevents an
+   * invite from being accepted between the connection check and cancellation.
+   */
+  async withdrawConnection(connectionId: string, userId: string): Promise<boolean> {
+    const candidate = await this.findByIdForUser(connectionId, userId);
+    if (!candidate || candidate.requesterId !== userId) return false;
+
+    return this.sequelize.transaction(async (transaction) => {
+      await lockSocialPairUsers(
+        this.sequelize,
+        candidate.requesterId,
+        candidate.addresseeId,
+        transaction,
+      );
+
+      const connection = await this.connections.findOne({
+        where: { id: connectionId, requesterId: userId },
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      if (!connection) return false;
+
+      if (connection.status === ConnectionStatus.ACCEPTED) {
+        const futureInvites = await this.sequelize.query<{ id: string }>(
+          `SELECT i.id
+             FROM training.training_invites i
+             JOIN training.training_invite_meetings m ON m.invite_id = i.id
+            WHERE i.state = 'ACCEPTED'
+              AND i.responded_revision = i.current_revision
+              AND m.accepted_revision = i.responded_revision
+              AND m.starts_at > clock_timestamp()
+              AND m.cancelled_at IS NULL
+              AND ((i.inviter_id = :requesterId AND i.recipient_id = :addresseeId)
+                OR (i.inviter_id = :addresseeId AND i.recipient_id = :requesterId))
+            FOR UPDATE OF i, m`,
+          {
+            type: QueryTypes.SELECT,
+            replacements: {
+              requesterId: connection.requesterId,
+              addresseeId: connection.addresseeId,
+            },
+            transaction,
+          },
+        );
+        const inviteIds = futureInvites.map((invite) => invite.id);
+        if (inviteIds.length) {
+          await this.sequelize.query(
+            `UPDATE training.training_invites
+                SET state = 'CANCELLED', updated_at = clock_timestamp()
+              WHERE id IN (:inviteIds) AND state = 'ACCEPTED'`,
+            { replacements: { inviteIds }, transaction },
+          );
+          await this.sequelize.query(
+            `UPDATE training.training_invite_meetings
+                SET cancelled_at = clock_timestamp()
+              WHERE invite_id IN (:inviteIds) AND cancelled_at IS NULL`,
+            { replacements: { inviteIds }, transaction },
+          );
+        }
+
+        // Keep invite revisions and commands for history, but make pending
+        // proposals non-actionable after the connection is removed.
+        await this.sequelize.query(
+          `UPDATE training.training_invites
+              SET state = 'CANCELLED', updated_at = clock_timestamp()
+            WHERE state = 'PENDING'
+              AND ((inviter_id = :requesterId AND recipient_id = :addresseeId)
+                OR (inviter_id = :addresseeId AND recipient_id = :requesterId))`,
+          {
+            replacements: {
+              requesterId: connection.requesterId,
+              addresseeId: connection.addresseeId,
+            },
+            transaction,
+          },
+        );
+      }
+
+      await connection.destroy({ transaction });
+      return true;
     });
   }
 
