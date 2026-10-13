@@ -545,6 +545,10 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
       .expect(200);
     await expect(notification.enqueueDirectMessage(input)).resolves.toBe(false);
     await expect(notification.enqueueDirectMessage(input)).resolves.toBe(false);
+    const concurrentDuplicates = await Promise.all(
+      Array.from({ length: 8 }, () => notification.enqueueDirectMessage(input)),
+    );
+    expect(concurrentDuplicates).toEqual(Array.from({ length: 8 }, () => false));
 
     const initialRows = await sequelize.query<{
       notification_count: string;
