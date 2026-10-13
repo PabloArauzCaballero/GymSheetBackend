@@ -57,6 +57,7 @@ describe("ChatRepository training event history", () => {
     await repository.listConversationsForUser("00000000-0000-4000-8000-000000000003");
     expect(query.mock.calls[0]?.[0]).toContain("FROM chat.conversation_events e");
     expect(query.mock.calls[0]?.[0]).toContain("'Entrenamiento acordado'");
+    expect(query.mock.calls[0]?.[0]).toContain("'Entrenamiento cancelado'");
     expect(query.mock.calls[0]?.[0]).toContain("ORDER BY item.created_at DESC, item.id DESC");
   });
 
@@ -69,7 +70,7 @@ describe("ChatRepository training event history", () => {
       startsAt: createdAt,
       timeZone: "America/La_Paz",
       placeLabel: "Gimnasio Central",
-      cancelledAt: null,
+      cancelledAt: createdAt,
       createdAt,
     };
     const result = mapChatHistoryItem({ kind: "system", event });
@@ -83,6 +84,7 @@ describe("ChatRepository training event history", () => {
         kind: "TRAINING_INVITE_ACCEPTED",
         acceptedRevision: 2,
         placeLabel: "Gimnasio Central",
+        cancelledAt: createdAt.toISOString(),
       },
     });
   });
