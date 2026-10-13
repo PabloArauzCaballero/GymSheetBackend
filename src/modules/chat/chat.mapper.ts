@@ -1,4 +1,4 @@
-import { ConversationSummaryRow, SystemConversationKind } from "./chat.repository";
+import { ConversationHistoryRecord, ConversationSummaryRow, SystemConversationKind, TrainingInviteConversationEvent } from "./chat.repository";
 import { MessageModel, MessageType } from "./message.model";
 
 export type MessageResponse = {
@@ -17,6 +17,49 @@ export type MessageResponse = {
   locationLng: number | null;
   createdAt: Date;
 };
+
+export type SystemChatEventResponse = {
+  id: string;
+  conversationId: string;
+  senderId: null;
+  type: "system";
+  systemEvent: {
+    kind: "TRAINING_INVITE_ACCEPTED";
+    invitationId: string;
+    acceptedRevision: number;
+    startsAt: string;
+    timeZone: string;
+    placeLabel: string;
+  };
+  createdAt: Date;
+};
+
+export type ChatHistoryItem = MessageResponse | SystemChatEventResponse;
+
+export function mapTrainingInviteEvent(event: TrainingInviteConversationEvent): SystemChatEventResponse {
+  return {
+    id: event.id,
+    conversationId: event.conversationId,
+    senderId: null,
+    type: "system",
+    systemEvent: {
+      kind: "TRAINING_INVITE_ACCEPTED",
+      invitationId: event.invitationId,
+      acceptedRevision: event.acceptedRevision,
+      startsAt: new Date(event.startsAt).toISOString(),
+      timeZone: event.timeZone,
+      placeLabel: event.placeLabel,
+    },
+    createdAt: new Date(event.createdAt),
+  };
+}
+
+export function mapChatHistoryItem(record: ConversationHistoryRecord): ChatHistoryItem {
+  return record.kind === "message"
+    ? mapMessageToResponse(record.message)
+    : mapTrainingInviteEvent(record.event);
+}
+
 
 /**
  * `revealViewOnce`: solo lo pasa en `true` el endpoint de "abrir" un mensaje
