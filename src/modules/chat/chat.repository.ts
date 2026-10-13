@@ -29,6 +29,7 @@ export interface TrainingInviteConversationEvent {
   startsAt: Date;
   timeZone: string;
   placeLabel: string;
+  cancelledAt: Date | null;
   createdAt: Date;
 }
 
@@ -278,9 +279,10 @@ export class ChatRepository {
         `SELECT id, conversation_id AS "conversationId",
                 invitation_id AS "invitationId", accepted_revision AS "acceptedRevision",
                 starts_at AS "startsAt", time_zone AS "timeZone", place_label AS "placeLabel",
-                created_at AS "createdAt"
-           FROM chat.conversation_events
-          WHERE conversation_id = :conversationId
+                m.cancelled_at AS "cancelledAt", e.created_at AS "createdAt"
+           FROM chat.conversation_events e
+           LEFT JOIN training.training_invite_meetings m ON m.invite_id = e.invitation_id
+          WHERE e.conversation_id = :conversationId
             AND (:before IS NULL OR created_at < :before
               OR (:beforeId IS NOT NULL AND created_at = :before AND id < :beforeId))
           ORDER BY created_at DESC, id DESC
@@ -318,7 +320,7 @@ export class ChatRepository {
               other_photo.url AS other_user_photo_url,
               u.last_seen_at AS other_user_last_seen_at,
               CASE last_msg.kind
-                WHEN 'system' THEN 'Entrenamiento acordado'
+                WHEN 'system' THEN last_msg.body
                 ELSE CASE last_msg.type
                 WHEN 'image' THEN COALESCE(last_msg.body, 'Foto')
                 WHEN 'video' THEN COALESCE(last_msg.body, 'Video')
@@ -349,9 +351,12 @@ export class ChatRepository {
                  FROM chat.messages m
                 WHERE m.conversation_id = c.id
                UNION ALL
-               SELECT e.id, 'Entrenamiento acordado' AS body, 'system' AS type,
-                      e.created_at, 'system' AS kind
+               SELECT e.id,
+                      CASE WHEN m.cancelled_at IS NULL THEN 'Entrenamiento acordado'
+                           ELSE 'Entrenamiento cancelado' END AS body,
+                      'system' AS type, e.created_at, 'system' AS kind
                  FROM chat.conversation_events e
+                 LEFT JOIN training.training_invite_meetings m ON m.invite_id = e.invitation_id
                 WHERE e.conversation_id = c.id
              ) item
             ORDER BY item.created_at DESC, item.id DESC
