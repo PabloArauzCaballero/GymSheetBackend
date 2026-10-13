@@ -67,6 +67,15 @@ import { programsMigration } from "./202610080005-programs";
 import { cardioAndRewardsMigration } from "./202610080006-cardio-and-rewards";
 import { routineGroupsCopiesSessionTargetsMigration } from "./202610100001-routine-groups-copies-session-targets";
 import { timedStrengthSetsMigration } from "./202610110001-timed-strength-sets";
+import { socialBlocksMigration } from "./202610090006-social-blocks";
+import { trainingInvitationsMigration } from "./202610110002-training-invitations";
+import { trainingInviteResponsesMigration } from "./202610110003-training-invite-responses";
+import { trainingInviteCounterproposalsMigration } from "./202610110004-training-invite-counterproposals";
+import { trainingInviteMeetingsChatEventsMigration } from "./202610110005-training-invite-meetings-chat-events";
+import { trainingInviteExpirationMigration } from "./202610110006-training-invite-expiration";
+import { trainingInviteDisconnectCancellationMigration } from "./202610110007-training-invite-disconnect-cancellation";
+import { trainingInviteSharedSnapshotMigration } from "./202610110008-training-invite-shared-snapshot";
+import { trainingInviteDeclineMigration } from "./202610120001-training-invite-decline";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -133,6 +142,15 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   moderationRoutineKindsMigration,
   programsMigration,
   cardioAndRewardsMigration,
+  socialBlocksMigration,
   routineGroupsCopiesSessionTargetsMigration,
   timedStrengthSetsMigration,
+  trainingInvitationsMigration,
+  trainingInviteResponsesMigration,
+  trainingInviteCounterproposalsMigration,
+  trainingInviteMeetingsChatEventsMigration,
+  trainingInviteExpirationMigration,
+  trainingInviteDisconnectCancellationMigration,
+  trainingInviteSharedSnapshotMigration,
+  trainingInviteDeclineMigration,
 ];
