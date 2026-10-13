@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op, QueryTypes } from 'sequelize';
@@ -11,6 +12,7 @@ import { ConnectionStatus, NotificationChannel } from '../../common/enums/domain
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { ConnectionModel } from '../social/connection.model';
 import { DiscoveryPassModel } from '../social/discovery-pass.model';
+import { SocialRecommendationOutboxService } from '../social/social-recommendation-outbox.service';
 import { NotificationService } from '../notifications/notification.service';
 import { ModerationRepository } from './moderation.repository';
 import {
@@ -59,6 +61,7 @@ export class ModerationService {
     private readonly connections: typeof ConnectionModel,
     @InjectModel(DiscoveryPassModel)
     private readonly passes: typeof DiscoveryPassModel,
+    @Optional() private readonly recommendationOutbox?: SocialRecommendationOutboxService,
   ) {}
 
   /**
@@ -294,8 +297,9 @@ export class ModerationService {
     targetId: string,
   ): Promise<boolean> {
     if (!isHideableTarget(targetKind)) return false;
-    const table =
-      targetKind === ModerationTargetKind.STORY ? 'profile.stories' : 'profile.photos';
+    const table = targetKind === ModerationTargetKind.STORY ? 'profile.stories'
+      : targetKind === ModerationTargetKind.PROFILE_PHOTO ? 'profile.photos'
+      : 'training.routines';
     const [row] = await this.sequelize.query<{ hidden: boolean }>(
       `SELECT (hidden_at IS NOT NULL) AS hidden FROM ${table} WHERE id = :targetId`,
       { type: QueryTypes.SELECT, replacements: { targetId } },
@@ -403,6 +407,7 @@ export class ModerationService {
             sanction.suspendedUntil,
             transaction,
           );
+          await this.recommendationOutbox?.enqueueProfileSnapshot(reportedUserId, transaction);
         }
         if (sanction.kind === StrikeKind.EXPULSION) {
           // La expulsión no es una fecha lejana: es dar de baja la cuenta. Un
@@ -412,6 +417,7 @@ export class ModerationService {
             `UPDATE public.usuarios SET estado = 'INACTIVO' WHERE id = :userId`,
             { replacements: { userId: reportedUserId }, transaction },
           );
+          await this.recommendationOutbox?.enqueueProfileSnapshot(reportedUserId, transaction);
         }
       }
 

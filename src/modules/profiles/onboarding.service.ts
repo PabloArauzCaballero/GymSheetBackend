@@ -27,7 +27,7 @@ const legacyGoal: Record<FitnessGoal, TrainingGoal> = {
   [FitnessGoal.IMPROVE_ENDURANCE]: TrainingGoal.ENDURANCE,
   [FitnessGoal.MAINTAIN_FITNESS]: TrainingGoal.GENERAL_HEALTH,
   [FitnessGoal.GENERAL_HEALTH]: TrainingGoal.GENERAL_HEALTH,
-  [FitnessGoal.SPORT_PERFORMANCE]: TrainingGoal.GENERAL_HEALTH,
+  [FitnessGoal.SPORT_PERFORMANCE]: TrainingGoal.SPORT_PERFORMANCE,
 };
 
 @Injectable()

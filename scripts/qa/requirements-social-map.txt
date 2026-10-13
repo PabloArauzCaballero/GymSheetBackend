@@ -1,0 +1,2 @@
+# Optional dependency for extracting source-tagged POIs from Geofabrik PBF snapshots.
+osmium==4.3.1

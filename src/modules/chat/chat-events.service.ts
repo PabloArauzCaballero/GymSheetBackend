@@ -32,6 +32,16 @@ export class ChatEventsService {
     this.server.to(ChatEventsService.roomFor(message.conversationId)).emit("message:new", message);
   }
 
+  emitMessageDeleted(payload: { conversationId: string; messageId: string; scope: "EVERYONE"; deletedAt: Date }): void {
+    if (!this.server) return;
+    this.server.to(ChatEventsService.roomFor(payload.conversationId)).emit("message:deleted", payload);
+  }
+
+  emitMessageUpdated(message: MessageResponse): void {
+    if (!this.server) return;
+    this.server.to(ChatEventsService.roomFor(message.conversationId)).emit("message:updated", message);
+  }
+
   /**
    * Solo llega a quien tenga esa conversación abierta ahora mismo (unido a su
    * sala) — el mismo alcance que `emitMessage`, no una difusión global.
@@ -47,11 +57,23 @@ export class ChatEventsService {
   /** `userId` es quien recibió/leyó — el otro lado usa esto para pintar el check de sus propios mensajes. */
   emitDelivered(conversationId: string, receipt: { userId: string; deliveredAt: string }): void {
     if (!this.server) return;
-    this.server.to(ChatEventsService.roomFor(conversationId)).emit("message:delivered", receipt);
+    this.server.to(ChatEventsService.roomFor(conversationId)).emit("message:delivered", { ...receipt, conversationId });
   }
 
-  emitRead(conversationId: string, receipt: { userId: string; readAt: string }): void {
+  emitRead(conversationId: string, receipt: { userId: string; readAt: string; readFrom: string | null }): void {
     if (!this.server) return;
-    this.server.to(ChatEventsService.roomFor(conversationId)).emit("message:read", receipt);
+    this.server.to(ChatEventsService.roomFor(conversationId)).emit("message:read", { ...receipt, conversationId });
+  }
+
+  emitReadReceiptSettingsChanged(conversationId: string, userId: string, version: number): void {
+    if (!this.server) return;
+    this.server.to(ChatEventsService.roomFor(conversationId)).emit("read-receipts:changed", { conversationId, userId, version });
+  }
+
+  emitConversationRevoked(conversationId: string, byUserId: string): void {
+    if (!this.server) return;
+    const room = ChatEventsService.roomFor(conversationId);
+    this.server.to(room).emit("conversation:revoked", { conversationId, byUserId });
+    this.server.in(room).socketsLeave(room);
   }
 }

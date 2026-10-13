@@ -27,6 +27,7 @@ export enum TrainingGoal {
   ENDURANCE = "RESISTENCIA",
   FAT_LOSS = "PERDIDA_GRASA",
   GENERAL_HEALTH = "SALUD_GENERAL",
+  SPORT_PERFORMANCE = "RENDIMIENTO_DEPORTIVO",
   REHABILITATION = "REHABILITACION",
 }
 
@@ -98,6 +99,7 @@ export enum WorkoutSessionStatus {
 export enum RoutineVisibility {
   PRIVATE = "PRIVATE",
   SHARED = "SHARED",
+  PUBLIC = "PUBLIC",
   TEMPLATE = "TEMPLATE",
 }
 

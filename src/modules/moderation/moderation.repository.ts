@@ -136,7 +136,8 @@ export class ModerationRepository {
               -- se quedaría siempre con la primera rama y las fotos ocultas se
               -- reportarían como visibles.
               (bool_or(st.hidden_at IS NOT NULL)
-               OR bool_or(ph.hidden_at IS NOT NULL))              AS content_hidden
+               OR bool_or(ph.hidden_at IS NOT NULL)
+               OR bool_or(rt.hidden_at IS NOT NULL))              AS content_hidden
          FROM moderation.reports r
          JOIN public.usuarios u ON u.id = r.reported_user_id
          LEFT JOIN public.usuarios claimer ON claimer.id = r.claimed_by_user_id
@@ -144,6 +145,8 @@ export class ModerationRepository {
            ON r.target_kind = 'STORY' AND st.id = r.target_id
          LEFT JOIN profile.photos ph
            ON r.target_kind = 'PROFILE_PHOTO' AND ph.id = r.target_id
+         LEFT JOIN training.routines rt
+           ON r.target_kind = 'ROUTINE' AND rt.id = r.target_id
         WHERE r.status IN ('PENDIENTE', 'EN_REVISION')
           AND (:tenantScope IS NULL OR r.tenant_id = :tenantScope)
         GROUP BY r.target_kind, r.target_id, r.reported_user_id, u.nombre_completo
@@ -339,8 +342,9 @@ export class ModerationRepository {
     },
     transaction: Transaction,
   ): Promise<void> {
-    const table =
-      input.targetKind === 'STORY' ? 'profile.stories' : 'profile.photos';
+    const table = input.targetKind === 'STORY' ? 'profile.stories'
+      : input.targetKind === 'PROFILE_PHOTO' ? 'profile.photos'
+      : 'training.routines';
 
     await this.sequelize.query(
       `UPDATE ${table}
@@ -378,6 +382,9 @@ export class ModerationRepository {
                       WHERE m.id = :targetId`,
       USER: `SELECT u.id AS "userId", u.tenant_id AS "tenantId"
                FROM public.usuarios u WHERE u.id = :targetId`,
+      ROUTINE: `SELECT r.created_by_user_id AS "userId", u.tenant_id AS "tenantId"
+                  FROM training.routines r JOIN public.usuarios u ON u.id = r.created_by_user_id
+                 WHERE r.id = :targetId AND r.visibilidad IN ('PUBLIC','TEMPLATE')`,
     };
 
     const sql = queries[targetKind];

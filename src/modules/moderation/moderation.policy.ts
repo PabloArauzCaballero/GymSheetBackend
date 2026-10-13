@@ -10,6 +10,7 @@
 export const ModerationTargetKind = {
   STORY: 'STORY',
   PROFILE_PHOTO: 'PROFILE_PHOTO',
+  ROUTINE: 'ROUTINE',
   CHAT_MESSAGE: 'CHAT_MESSAGE',
   USER: 'USER',
 } as const;
@@ -190,6 +191,8 @@ export function strikeExpiryFrom(now: Date = new Date()): Date {
 /** Sólo el contenido con fila propia se puede ocultar; a una persona se la sanciona. */
 export function isHideableTarget(kind: ModerationTargetKindValue): boolean {
   return (
-    kind === ModerationTargetKind.STORY || kind === ModerationTargetKind.PROFILE_PHOTO
+    kind === ModerationTargetKind.STORY ||
+    kind === ModerationTargetKind.PROFILE_PHOTO ||
+    kind === ModerationTargetKind.ROUTINE
   );
 }

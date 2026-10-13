@@ -1,3 +1,21 @@
+import { chatMessageGlobalDeleteMigration } from "./202610090015-chat-message-global-delete";
+import { storiesSelectedAudienceMigration } from "./202610100001-stories-selected-audience";
+import { chatMessageStoryReferenceMigration } from "./202610100002-chat-message-story-reference";
+import { chatStoryRequestFingerprintMigration } from "./202610100003-chat-story-request-fingerprint";
+import { storyUploadIdempotencyMigration } from "./202610100004-story-upload-idempotency";
+import { reelsMigration } from "./202610100005-reels";
+import { reelUploadIdempotencyMigration } from "./202610110001-reel-upload-idempotency";
+import { trainingInvitationsMigration } from "./202610110002-training-invitations";
+import { trainingInviteResponsesMigration } from "./202610110003-training-invite-responses";
+import { trainingInviteCounterproposalsMigration } from "./202610110004-training-invite-counterproposals";
+import { trainingInviteMeetingsChatEventsMigration } from "./202610110005-training-invite-meetings-chat-events";
+import { trainingInviteExpirationMigration } from "./202610110006-training-invite-expiration";
+import { trainingInviteDisconnectCancellationMigration } from "./202610110007-training-invite-disconnect-cancellation";
+import { trainingInviteSharedSnapshotMigration } from "./202610110008-training-invite-shared-snapshot";
+import { trainingInviteDeclineMigration } from "./202610120001-training-invite-decline";
+import { chatMessageLocalVisibilityMigration } from "./202610090014-chat-message-local-visibility";
+import { chatMessageIdempotencyBodyMigration } from "./202610090013-chat-message-idempotency-body";
+import { chatMessageEditMigration } from "./202610090012-chat-message-edit";
 import { hardeningExerciseDataMigration } from "./202607170001-hardening-exercise-data";
 import { facilitiesMembershipMigration } from "./202607190001-facilities-membership";
 import { accessNotificationsOutboxMigration } from "./202607190002-access-notifications-outbox";
@@ -59,6 +77,19 @@ import { adminAuditLogMigration } from "./202609150001-admin-audit-log";
 import { moderationMigration } from "./202609150002-moderation";
 import { webPushDeviceTokensMigration } from "./202609160001-web-push-device-tokens";
 import { profileBirthDateMigration } from "./202609160002-profile-birth-date";
+import { routineWorkoutFlowMigration } from "./202610060001-routine-workout-flow";
+import { chatReadReceiptPreferencesMigration } from "./202610080001-chat-read-receipt-preferences";
+import { socialProfileDiscoveryConsentMigration } from "./202610090001-social-profile-discovery-consent";
+import { chatRevocationMigration } from "./202610090002-chat-revocation";
+import { socialMapLocationsMigration } from "./202610090003-social-map-locations";
+import { socialMapPlacesMigration } from "./202610090004-social-map-places";
+import { socialMapPlaceBranchLinksMigration } from "./202610090005-social-map-place-branch-links";
+import { socialBlocksMigration } from "./202610090006-social-blocks";
+import { socialDiscoveryPreferencesMigration } from "./202610090007-social-discovery-preferences";
+import { socialRecommendationVersionsMigration } from "./202610090008-social-recommendation-versions";
+import { chatMessageIdempotencyMigration } from "./202610090009-chat-message-idempotency";
+import { chatAudioMessageMigration } from "./202610090010-chat-audio-message";
+import { chatStickerMessageMigration } from "./202610090011-chat-sticker-message";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -119,4 +150,35 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   webPushDeviceTokensMigration,
   profileBirthDateMigration,
   exerciseMediaPlainHttpMigration,
+  routineWorkoutFlowMigration,
+  chatReadReceiptPreferencesMigration,
+  socialProfileDiscoveryConsentMigration,
+  chatRevocationMigration,
+  socialMapLocationsMigration,
+  socialMapPlacesMigration,
+  socialMapPlaceBranchLinksMigration,
+  socialBlocksMigration,
+  socialDiscoveryPreferencesMigration,
+  socialRecommendationVersionsMigration,
+  chatMessageIdempotencyMigration,
+  chatAudioMessageMigration,
+  chatStickerMessageMigration,
+  chatMessageEditMigration,
+  chatMessageIdempotencyBodyMigration,
+  chatMessageLocalVisibilityMigration,
+  chatMessageGlobalDeleteMigration,
+  storiesSelectedAudienceMigration,
+  chatMessageStoryReferenceMigration,
+  chatStoryRequestFingerprintMigration,
+  storyUploadIdempotencyMigration,
+  reelsMigration,
+  reelUploadIdempotencyMigration,
+  trainingInvitationsMigration,
+  trainingInviteResponsesMigration,
+  trainingInviteCounterproposalsMigration,
+  trainingInviteMeetingsChatEventsMigration,
+  trainingInviteExpirationMigration,
+  trainingInviteDisconnectCancellationMigration,
+  trainingInviteSharedSnapshotMigration,
+  trainingInviteDeclineMigration,
 ];

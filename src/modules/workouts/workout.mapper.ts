@@ -9,7 +9,7 @@ export type WorkoutSetResponse = {
   numeroSerie: number;
   repeticiones: number;
   pesoKg: number;
-  rir: number;
+  rir: number | null;
   descansoSegAnterior: number;
   fechaRegistro: Date;
 };
@@ -17,6 +17,13 @@ export type WorkoutSetResponse = {
 export type WorkoutSessionExerciseResponse = {
   id: string;
   orden: number;
+  rutinaEjercicioId: string | null;
+  seriesObjetivo: number | null;
+  repsMin: number | null;
+  repsMax: number | null;
+  pesoObjetivoKg: number | null;
+  rirObjetivo: number | null;
+  descansoSeg: number | null;
   esEnfasis: boolean;
   nota: string | null;
   ejercicio: ExerciseResponse | null;
@@ -25,6 +32,7 @@ export type WorkoutSessionExerciseResponse = {
 
 export type WorkoutSessionResponse = {
   id: string;
+  rutinaId: string | null;
   usuarioId: string;
   fechaInicio: Date;
   fechaFin: Date | null;
@@ -60,6 +68,13 @@ export function mapSessionExerciseToResponse(
   return {
     id: sessionExercise.id,
     orden: sessionExercise.order,
+    rutinaEjercicioId: sessionExercise.routineExerciseId ?? null,
+    seriesObjetivo: sessionExercise.plannedSets ?? null,
+    repsMin: sessionExercise.plannedRepsMin ?? null,
+    repsMax: sessionExercise.plannedRepsMax ?? null,
+    pesoObjetivoKg: sessionExercise.plannedWeightKg == null ? null : Number(sessionExercise.plannedWeightKg),
+    rirObjetivo: sessionExercise.plannedRir ?? null,
+    descansoSeg: sessionExercise.plannedRestSeconds ?? null,
     esEnfasis: sessionExercise.isEmphasis,
     nota: sessionExercise.note,
     ejercicio: sessionExercise.exercise
@@ -74,6 +89,7 @@ export function mapWorkoutSessionToResponse(
 ): WorkoutSessionResponse {
   return {
     id: session.id,
+    rutinaId: session.routineId ?? null,
     usuarioId: session.userId,
     fechaInicio: session.startedAt,
     fechaFin: session.finishedAt,

@@ -74,6 +74,67 @@ export class WorkoutsService {
     }
   }
 
+  /** Creates the complete session in one transaction. Repeated taps resume it. */
+  async startPlannedSession(
+    userId: string,
+    routine: {
+      id: string;
+      name: string;
+      exercises: Array<{
+        id: string;
+        exerciseId: string;
+        order: number;
+        targetSets: number;
+        repsMin: number | null;
+        repsMax: number | null;
+        targetWeightKg: string | null;
+        targetRir: number | null;
+        restSeconds: number | null;
+        note: string | null;
+      }>;
+    },
+  ): Promise<WorkoutSessionResponse> {
+    const existing = await this.workoutsRepository.findOpenSessionForUser(userId);
+    if (existing) {
+      if (existing.routineId === routine.id) return this.getMySession(userId, existing.id);
+      throw new ConflictException('Ya existe otra sesión de entrenamiento en progreso.');
+    }
+    try {
+      const sessionId = await this.sequelize.transaction(async (transaction) => {
+        const session = await this.workoutsRepository.createSession(
+          userId,
+          { observation: `Plan: ${routine.name}` },
+          transaction,
+          routine.id,
+        );
+        for (const exercise of [...routine.exercises].sort((a, b) => a.order - b.order)) {
+          await this.workoutsRepository.addExerciseToSession(session.id, {
+            exerciseId: exercise.exerciseId,
+            order: exercise.order,
+            isEmphasis: false,
+            note: exercise.note,
+            routineExerciseId: exercise.id,
+            plannedSets: exercise.targetSets,
+            plannedRepsMin: exercise.repsMin,
+            plannedRepsMax: exercise.repsMax,
+            plannedWeightKg: exercise.targetWeightKg == null ? null : Number(exercise.targetWeightKg),
+            plannedRir: exercise.targetRir,
+            plannedRestSeconds: exercise.restSeconds,
+          }, transaction);
+        }
+        return session.id;
+      });
+      return this.getMySession(userId, sessionId);
+    } catch (error) {
+      if (error instanceof UniqueConstraintError) {
+        const open = await this.workoutsRepository.findOpenSessionForUser(userId);
+        if (open?.routineId === routine.id) return this.getMySession(userId, open.id);
+        throw new ConflictException('Ya existe otra sesión de entrenamiento en progreso.');
+      }
+      throw error;
+    }
+  }
+
   async listMySessions(
     userId: string,
     pagination: WorkoutSessionListInput,
@@ -200,7 +261,7 @@ export class WorkoutsService {
     } catch (error: unknown) {
       if (error instanceof UniqueConstraintError) {
         throw new ConflictException(
-          'El ejercicio u orden ya existe en esta sesión de entrenamiento.',
+          'El orden ya existe en esta sesión de entrenamiento.',
         );
       }
       throw error;
@@ -266,6 +327,13 @@ export class WorkoutsService {
           );
 
         if (duplicatedSet) {
+          if (
+            duplicatedSet.repetitions === input.repetitions &&
+            Number(duplicatedSet.weightKg) === input.weightKg &&
+            duplicatedSet.rir === input.rir
+          ) {
+            return duplicatedSet;
+          }
           throw new ConflictException(
             'Ya existe una serie con ese número para este ejercicio de la sesión.',
           );
@@ -280,6 +348,13 @@ export class WorkoutsService {
       return mapWorkoutSetToResponse(set);
     } catch (error: unknown) {
       if (error instanceof UniqueConstraintError) {
+        const existing = await this.workoutsRepository.findSetBySessionExerciseAndNumber(
+          sessionExerciseId, input.setNumber,
+        );
+        if (existing && existing.repetitions === input.repetitions &&
+          Number(existing.weightKg) === input.weightKg && existing.rir === input.rir) {
+          return mapWorkoutSetToResponse(existing);
+        }
         throw new ConflictException(
           'Ya existe una serie con ese número para este ejercicio de la sesión.',
         );

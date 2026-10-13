@@ -30,6 +30,27 @@ export class WorkoutSessionExerciseModel extends Model {
   @Column({ type: DataType.UUID, allowNull: false, field: 'ejercicio_id' })
   declare exerciseId: string;
 
+  @Column({ type: DataType.UUID, allowNull: true, field: 'routine_exercise_id' })
+  declare routineExerciseId: string | null;
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'planned_sets' })
+  declare plannedSets: number | null;
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'planned_reps_min' })
+  declare plannedRepsMin: number | null;
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'planned_reps_max' })
+  declare plannedRepsMax: number | null;
+
+  @Column({ type: DataType.DECIMAL(7, 2), allowNull: true, field: 'planned_weight_kg' })
+  declare plannedWeightKg: string | null;
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'planned_rir' })
+  declare plannedRir: number | null;
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'planned_rest_seconds' })
+  declare plannedRestSeconds: number | null;
+
   @Column({ type: DataType.INTEGER, allowNull: false, field: 'orden' })
   declare order: number;
 

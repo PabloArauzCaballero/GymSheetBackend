@@ -5,16 +5,21 @@ import { MediaModule } from "../media/media.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { SocialModule } from "../social/social.module";
 import { UsersModule } from "../users/users.module";
-import { ChatEventsService } from "./chat-events.service";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatController } from "./chat.controller";
 import { ChatGateway } from "./chat.gateway";
 import { ChatRepository } from "./chat.repository";
 import { ChatService } from "./chat.service";
+import { ChatMediaCipher } from "./chat-media-cipher";
+import { ReadReceiptSettingsController } from "./read-receipt-settings.controller";
+import { ReadReceiptSettingsService } from "./read-receipt-settings.service";
 import { ConversationParticipantModel } from "./conversation-participant.model";
 import { ConversationModel } from "./conversation.model";
+import { MessageMutationsService } from "./message-mutations.service";
+import { MessageVisibilityModel } from "./message-visibility.model";
 import { MessageModel } from "./message.model";
 import { SystemChatService } from "./system-chat.service";
+import { env } from "../../config/env";
 
 @Module({
   imports: [
@@ -23,9 +28,19 @@ import { SystemChatService } from "./system-chat.service";
     RealtimeModule,
     MediaModule,
     NotificationsModule,
-    SequelizeModule.forFeature([ConversationModel, ConversationParticipantModel, MessageModel]),
+    SequelizeModule.forFeature([ConversationModel, ConversationParticipantModel, MessageModel, MessageVisibilityModel]),
   ],
-  controllers: [ChatController],
-  providers: [ChatRepository, ChatService, ChatEventsService, ChatPresenceService, ChatGateway, SystemChatService],
+  controllers: [ChatController, ReadReceiptSettingsController],
+  providers: [
+    ChatRepository,
+    ChatService,
+    MessageMutationsService,
+    { provide: ChatMediaCipher, useFactory: () => new ChatMediaCipher(env.CHAT_MEDIA_ENCRYPTION_KEY ?? env.JWT_REFRESH_SECRET) },
+    ChatPresenceService,
+    ChatGateway,
+    SystemChatService,
+    ReadReceiptSettingsService,
+  ],
+  exports: [ChatService, ChatRepository],
 })
 export class ChatModule {}

@@ -420,4 +420,38 @@ describe("SocialRepository.directory con userIds", () => {
       userIds: [admirer, crush],
     });
   });
+
+  it("solo amplía el directorio cross-gym cuando el viewer lo autorizó y el candidato también", async () => {
+    const { repository, query } = createRepository();
+    query.mockResolvedValue([]);
+
+    await repository.directory(viewer, HOME_GYM, "default", { limit: 10, includeCrossGym: true });
+
+    const [sql, options] = query.mock.calls[0] as [string, { replacements: Record<string, unknown> }];
+    expect(options.replacements.includeCrossGym).toBe(true);
+    expect(sql).toContain("s.cross_gym_enabled = true");
+    expect(sql).toContain("s.profile_enabled = true");
+    expect(sql).toContain(">= 18");
+  });
+});
+
+describe("SocialRepository.canInteractAcrossTenants", () => {
+  it("requires two active adult profiles and explicit cross-gym consent", async () => {
+    const query = jest.fn().mockResolvedValue([{ allowed: true }]);
+    const repository = new SocialRepository(
+      { query } as unknown as Sequelize,
+      {} as unknown as typeof ConnectionModel,
+      {} as unknown as typeof ProfileSocialSettingsModel,
+      {} as unknown as typeof DiscoveryPassModel,
+    );
+
+    await expect(repository.canInteractAcrossTenants(viewer, admirer)).resolves.toBe(true);
+
+    const [sql, options] = query.mock.calls[0] as [string, { replacements: Record<string, unknown> }];
+    expect(sql).toContain("s.profile_enabled");
+    expect(sql).toContain("s.cross_gym_enabled");
+    expect(sql).toContain("u.estado = 'ACTIVO'");
+    expect(sql).toContain(">= 18");
+    expect(options.replacements).toEqual({ viewerId: viewer, targetId: admirer });
+  });
 });

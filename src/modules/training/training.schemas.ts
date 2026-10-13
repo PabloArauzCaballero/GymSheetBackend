@@ -58,6 +58,40 @@ export const createRoutineSchema = z
     goal: value.objetivo ?? null,
   }));
 
+/** Mobile creation is one atomic write, with a stable key for safe retries. */
+export const createCompleteRoutineSchema = z
+  .object({
+    nombre: routineName,
+    descripcion: z.string().trim().max(4000).nullable().optional(),
+    visibilidad: visibility.default(RoutineVisibility.PRIVATE),
+    objetivo: goal.nullable().optional(),
+    creationKey: z.string().uuid(),
+    ejercicios: z.array(routineExerciseInput).min(1).max(100),
+  })
+  .refine((value) => new Set(value.ejercicios.map((exercise) => exercise.order)).size === value.ejercicios.length, {
+    message: 'Cada ejercicio necesita un orden distinto.',
+    path: ['ejercicios'],
+  })
+  .transform((value) => ({
+    name: value.nombre,
+    description: value.descripcion ?? null,
+    visibility: value.visibilidad,
+    goal: value.objetivo ?? null,
+    creationKey: value.creationKey,
+    exercises: value.ejercicios,
+  }));
+
+export const copyRoutineSchema = z.object({ creationKey: z.string().uuid() });
+export type CopyRoutineInput = z.infer<typeof copyRoutineSchema>;
+
+export const recommendRoutineSchema = z.object({
+  objetivo: goal.optional(),
+  lugar: z.enum(['GYM', 'HOME', 'OUTDOORS']).optional(),
+  minutos: z.coerce.number().int().min(20).max(180).default(60),
+  publico: z.enum(['true', 'false']).default('false'),
+});
+export type RecommendRoutineInput = z.infer<typeof recommendRoutineSchema>;
+
 export const updateRoutineSchema = z
   .object({
     nombre: routineName.optional(),
@@ -151,11 +185,13 @@ export const importRoutinesSchema = z
 export const listRoutinesSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  scope: z.enum(['mine', 'templates']).default('mine'),
+  scope: z.enum(['mine', 'templates', 'public']).default('mine'),
+  goal: goal.optional(),
 });
 
 export type RoutineExerciseInput = z.infer<typeof routineExerciseInput>;
 export type CreateRoutineInput = z.infer<typeof createRoutineSchema>;
+export type CreateCompleteRoutineInput = z.infer<typeof createCompleteRoutineSchema>;
 export type UpdateRoutineInput = z.infer<typeof updateRoutineSchema>;
 export type UpdateRoutineExerciseInput = z.infer<typeof updateRoutineExerciseSchema>;
 

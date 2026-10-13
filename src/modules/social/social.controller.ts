@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Res } from "@nestjs/common";
+import type { Response } from "express";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { UuidParamPipe } from "../../common/pipes/uuid-param.pipe";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -11,13 +12,18 @@ import {
   SendConnectionInput,
   SwipeInput,
   UpdateSocialStatusInput,
+  UpdateSocialDiscoverySettingsInput,
+  DiscoveryPreferencesInput,
   connectionListQuerySchema,
   directoryQuerySchema,
   discoveryDeckQuerySchema,
   respondConnectionSchema,
   sendConnectionSchema,
+  socialBlockSchema,
   swipeSchema,
   updateSocialStatusSchema,
+  updateSocialDiscoverySettingsSchema,
+  discoveryPreferencesInputSchema,
 } from "./social.schemas";
 import { SocialService } from "./social.service";
 
@@ -31,6 +37,21 @@ export class SocialController {
     @Query(new ZodValidationPipe(connectionListQuerySchema)) query: ConnectionListQuery,
   ) {
     return this.service.listConnections(user.id, query.status);
+  }
+
+  @Get("me/blocks")
+  listBlocks(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.listBlockedUsers(user.id);
+  }
+
+  @Post("me/blocks")
+  block(@CurrentUser() user: AuthenticatedUser, @Body(new ZodValidationPipe(socialBlockSchema)) input: { targetUserId: string }) {
+    return this.service.blockUser(user.id, input.targetUserId);
+  }
+
+  @Delete("me/blocks/:targetUserId")
+  unblock(@CurrentUser() user: AuthenticatedUser, @Param("targetUserId", UuidParamPipe) targetUserId: string) {
+    return this.service.unblockUser(user.id, targetUserId);
   }
 
   @Post("me/connections")
@@ -68,6 +89,32 @@ export class SocialController {
     return this.service.updateSocialStatus(user.id, input);
   }
 
+  @Get("me/social-discovery-settings")
+  getDiscoverySettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.getDiscoverySettings(user.id);
+  }
+
+  @Patch("me/social-discovery-settings")
+  updateDiscoverySettings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(updateSocialDiscoverySettingsSchema)) input: UpdateSocialDiscoverySettingsInput,
+  ) {
+    return this.service.updateDiscoverySettings(user.id, input);
+  }
+
+  @Get("me/discovery/preferences")
+  getDiscoveryPreferences(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.getDiscoveryPreferences(user.id);
+  }
+
+  @Put("me/discovery/preferences")
+  updateDiscoveryPreferences(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(discoveryPreferencesInputSchema)) input: DiscoveryPreferencesInput,
+  ) {
+    return this.service.updateDiscoveryPreferences(user.id, input);
+  }
+
   @Get("me/gym-directory")
   directory(
     @CurrentUser() user: AuthenticatedUser,
@@ -79,11 +126,14 @@ export class SocialController {
   // La baraja se declara antes que `me/gym-directory/:userId` por claridad de
   // lectura; son rutas distintas, no compiten entre sí.
   @Get("me/discovery/deck")
-  discoveryDeck(
+  async discoveryDeck(
     @CurrentUser() user: AuthenticatedUser,
     @Query(new ZodValidationPipe(discoveryDeckQuerySchema)) query: DiscoveryDeckQuery,
+    @Res({ passthrough: true }) response: Response,
   ) {
-    return this.service.discoveryDeck(user.id, user.tenantId, query);
+    const page = await this.service.discoveryDeckPage(user.id, user.tenantId, query);
+    if (page.nextCursor) response.setHeader("X-Next-Cursor", page.nextCursor);
+    return page.items;
   }
 
   @Post("me/discovery/swipes")

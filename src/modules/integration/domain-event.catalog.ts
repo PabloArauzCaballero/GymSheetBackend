@@ -17,6 +17,8 @@ export const GymDomainEvent = {
   MAINTENANCE_COMPLETED: 'equipment.maintenance-completed.v1',
   ACCESS_DECISION_RECORDED: 'access.decision-recorded.v1',
   NOTIFICATION_DELIVERY_REQUESTED: 'notification.delivery-requested.v1',
+  SOCIAL_PROFILE_UPDATED: 'social.profile.updated.v1',
+  SOCIAL_PROFILE_DELETED: 'social.profile.deleted.v1',
 } as const;
 
 export type GymDomainEventName =
@@ -89,6 +91,17 @@ export type GymDomainEventPayloadMap = {
     notificationId: string;
     recipientUserId: string;
     channel: string;
+  };
+  [GymDomainEvent.SOCIAL_PROFILE_UPDATED]: {
+    userId: string;
+    aggregateVersion: number;
+    schemaVersion: 1;
+    profile: Record<string, unknown>;
+  };
+  [GymDomainEvent.SOCIAL_PROFILE_DELETED]: {
+    userId: string;
+    aggregateVersion: number;
+    schemaVersion: 1;
   };
 };
 

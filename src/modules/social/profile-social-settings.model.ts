@@ -30,6 +30,28 @@ export class ProfileSocialSettingsModel extends Model {
   @Column({ type: DataType.BOOLEAN, allowNull: false })
   declare visible: boolean;
 
+  /** Social discovery stays off until the account explicitly activates it. */
+  @Default(false)
+  @Column({ type: DataType.BOOLEAN, allowNull: false, field: "profile_enabled" })
+  declare profileEnabled: boolean;
+
+  /** Independent consent to be discoverable across GymSheet tenants. */
+  @Default(false)
+  @Column({ type: DataType.BOOLEAN, allowNull: false, field: "cross_gym_enabled" })
+  declare crossGymEnabled: boolean;
+
+  /** Map exposure is a separate opt-in from profile discovery. */
+  @Default(false)
+  @Column({ type: DataType.BOOLEAN, allowNull: false, field: "map_enabled" })
+  declare mapEnabled: boolean;
+
+  @Column({ type: DataType.DATE, allowNull: true, field: "map_enabled_since" })
+  declare mapEnabledSince: Date | null;
+
+  @Default(0)
+  @Column({ type: DataType.INTEGER, allowNull: false })
+  declare version: number;
+
   /**
    * Cuándo abrió por última vez la lista de "quién vio mi perfil".
    *

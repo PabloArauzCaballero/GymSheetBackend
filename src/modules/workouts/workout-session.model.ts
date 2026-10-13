@@ -26,6 +26,9 @@ export class WorkoutSessionModel extends Model {
   @Column({ type: DataType.UUID, allowNull: false, field: 'usuario_id' })
   declare userId: string;
 
+  @Column({ type: DataType.UUID, allowNull: true, field: 'routine_id' })
+  declare routineId: string | null;
+
   @Default(DataType.NOW)
   @Column({ type: DataType.DATE, allowNull: false, field: 'fecha_inicio' })
   declare startedAt: Date;

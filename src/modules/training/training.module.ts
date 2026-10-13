@@ -4,6 +4,7 @@ import { ExerciseModel } from '../exercises/exercise.model';
 import { ExercisesModule } from '../exercises/exercises.module';
 import { UserModel } from '../users/user.model';
 import { WorkoutsModule } from '../workouts/workouts.module';
+import { OnboardingModel } from '../profiles/onboarding.model';
 import { RoutineAssignmentModel } from './routine-assignment.model';
 import { RoutineExerciseModel } from './routine-exercise.model';
 import { RoutineModel } from './routine.model';
@@ -19,6 +20,7 @@ import { TrainingService } from './training.service';
       RoutineAssignmentModel,
       ExerciseModel,
       UserModel,
+      OnboardingModel,
     ]),
     ExercisesModule,
     WorkoutsModule,

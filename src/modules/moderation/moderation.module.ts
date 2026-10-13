@@ -9,6 +9,7 @@ import {
 } from './moderation.controller';
 import { ModerationRepository } from './moderation.repository';
 import { ModerationService } from './moderation.service';
+import { IntegrationModule } from '../integration/integration.module';
 import { ModerationReportModel } from './report.model';
 import { UserStrikeModel } from './user-strike.model';
 
@@ -25,6 +26,7 @@ import { UserStrikeModel } from './user-strike.model';
       DiscoveryPassModel,
     ]),
     NotificationsModule,
+    IntegrationModule,
   ],
   controllers: [ReportsController, ModerationAdminController],
   providers: [ModerationRepository, ModerationService],

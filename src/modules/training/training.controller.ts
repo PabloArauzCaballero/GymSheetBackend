@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -20,6 +21,9 @@ import {
   AssignRoutineInput,
   SelfScheduleRoutineInput,
   CreateRoutineInput,
+  CreateCompleteRoutineInput,
+  CopyRoutineInput,
+  RecommendRoutineInput,
   ImportRoutinesInput,
   ListRoutinesInput,
   UpdateRoutineExerciseInput,
@@ -28,6 +32,9 @@ import {
   assignRoutineSchema,
   selfScheduleRoutineSchema,
   createRoutineSchema,
+  createCompleteRoutineSchema,
+  copyRoutineSchema,
+  recommendRoutineSchema,
   importRoutinesSchema,
   listRoutinesSchema,
   updateRoutineExerciseSchema,
@@ -46,12 +53,28 @@ export class TrainingController {
     return this.trainingService.createRoutine(user, input);
   }
 
+  @Post('complete')
+  createComplete(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(createCompleteRoutineSchema)) input: CreateCompleteRoutineInput,
+  ) {
+    return this.trainingService.createCompleteRoutine(user, input);
+  }
+
   @Get()
   list(
     @CurrentUser() user: AuthenticatedUser,
     @Query(new ZodValidationPipe(listRoutinesSchema)) query: ListRoutinesInput,
   ) {
-    return this.trainingService.listRoutines(user.id, query);
+    return this.trainingService.listRoutines(user, query);
+  }
+
+  @Get('recommendations')
+  recommendations(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query(new ZodValidationPipe(recommendRoutineSchema)) input: RecommendRoutineInput,
+  ) {
+    return this.trainingService.recommendRoutine(user.id, input);
   }
 
   @Get('assignments/me')
@@ -99,6 +122,15 @@ export class TrainingController {
     return this.trainingService.getRoutineForUser(user, routineId);
   }
 
+  @Post(':id/copy')
+  copy(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', UuidParamPipe) routineId: string,
+    @Body(new ZodValidationPipe(copyRoutineSchema)) input: CopyRoutineInput,
+  ) {
+    return this.trainingService.copyRoutine(user, routineId, input);
+  }
+
   @Patch(':id')
   update(
     @CurrentUser() user: AuthenticatedUser,
@@ -106,6 +138,15 @@ export class TrainingController {
     @Body(new ZodValidationPipe(updateRoutineSchema)) input: UpdateRoutineInput,
   ) {
     return this.trainingService.updateRoutine(user, routineId, input);
+  }
+
+  @Put(':id/complete')
+  replaceComplete(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', UuidParamPipe) routineId: string,
+    @Body(new ZodValidationPipe(createCompleteRoutineSchema)) input: CreateCompleteRoutineInput,
+  ) {
+    return this.trainingService.replaceCompleteRoutine(user, routineId, input);
   }
 
   @Delete(':id')
@@ -146,7 +187,7 @@ export class TrainingController {
     @Body(new ZodValidationPipe(selfScheduleRoutineSchema))
     input: SelfScheduleRoutineInput,
   ) {
-    return this.trainingService.selfScheduleRoutine(user.id, routineId, input);
+    return this.trainingService.selfScheduleRoutine(user, routineId, input);
   }
 
   @Post(':id/start')

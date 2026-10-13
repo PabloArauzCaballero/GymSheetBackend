@@ -44,11 +44,14 @@ export class WorkoutsRepository {
   createSession(
     userId: string,
     input: CreateWorkoutSessionInput,
+    transaction?: Transaction,
+    routineId?: string,
   ): Promise<WorkoutSessionModel> {
     return this.sessionModel.create({
       userId,
       observation: input.observation,
-    });
+      routineId: routineId ?? null,
+    }, { transaction });
   }
 
   findSessionByIdForUser(
@@ -117,7 +120,16 @@ export class WorkoutsRepository {
 
   addExerciseToSession(
     sessionId: string,
-    input: AddSessionExerciseInput,
+    input: AddSessionExerciseInput & {
+      routineExerciseId?: string;
+      plannedSets?: number;
+      plannedRepsMin?: number | null;
+      plannedRepsMax?: number | null;
+      plannedWeightKg?: number | null;
+      plannedRir?: number | null;
+      plannedRestSeconds?: number | null;
+    },
+    transaction?: Transaction,
   ): Promise<WorkoutSessionExerciseModel> {
     return this.sessionExerciseModel.create({
       sessionId,
@@ -125,7 +137,14 @@ export class WorkoutsRepository {
       order: input.order,
       isEmphasis: input.isEmphasis,
       note: input.note,
-    });
+      routineExerciseId: input.routineExerciseId ?? null,
+      plannedSets: input.plannedSets ?? null,
+      plannedRepsMin: input.plannedRepsMin ?? null,
+      plannedRepsMax: input.plannedRepsMax ?? null,
+      plannedWeightKg: input.plannedWeightKg == null ? null : String(input.plannedWeightKg),
+      plannedRir: input.plannedRir ?? null,
+      plannedRestSeconds: input.plannedRestSeconds ?? null,
+    }, { transaction });
   }
 
   findSessionExerciseById(

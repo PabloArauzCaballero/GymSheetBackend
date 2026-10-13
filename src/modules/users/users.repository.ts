@@ -32,19 +32,32 @@ export class UsersRepository {
   ) {}
 
   /** ¿Existe esta sede, activa y dentro del gimnasio indicado? */
-  async isActiveBranchInTenant(branchId: string, tenantId: string): Promise<boolean> {
+  async isActiveBranchInTenant(branchId: string, tenantId: string, transaction?: Transaction): Promise<boolean> {
     const count = await this.branchModel.count({
       where: { id: branchId, tenantId, status: FacilityStatus.ACTIVE },
+      transaction,
     });
     return count > 0;
+  }
+
+  runInTransaction<T>(work: (transaction: Transaction) => Promise<T>): Promise<T> {
+    if (!this.userModel.sequelize) throw new Error("User database connection is unavailable.");
+    return this.userModel.sequelize.transaction(work);
+  }
+
+  async lockUserForUpdate(userId: string, transaction: Transaction): Promise<void> {
+    if (!this.userModel.sequelize) throw new Error("User database connection is unavailable.");
+    await this.userModel.sequelize.query("SELECT id FROM public.usuarios WHERE id = :userId FOR UPDATE", {
+      replacements: { userId }, transaction,
+    });
   }
 
   findById(userId: string, transaction?: Transaction): Promise<UserModel | null> {
     return this.userModel.findByPk(userId, { transaction });
   }
 
-  findActiveById(userId: string): Promise<UserModel | null> {
-    return this.userModel.findOne({ where: { id: userId, status: UserStatus.ACTIVE } });
+  findActiveById(userId: string, transaction?: Transaction): Promise<UserModel | null> {
+    return this.userModel.findOne({ where: { id: userId, status: UserStatus.ACTIVE }, transaction });
   }
 
   findByEmail(emailAddress: string, transaction?: Transaction): Promise<UserModel | null> {

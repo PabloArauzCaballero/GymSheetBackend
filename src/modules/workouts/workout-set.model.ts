@@ -32,8 +32,8 @@ export class WorkoutSetModel extends Model {
   @Column({ type: DataType.DECIMAL(7, 2), allowNull: false, field: 'peso_kg' })
   declare weightKg: string;
 
-  @Column({ type: DataType.INTEGER, allowNull: false, field: 'rir' })
-  declare rir: number;
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'rir' })
+  declare rir: number | null;
 
   @Column({
     type: DataType.INTEGER,

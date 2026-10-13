@@ -1,4 +1,4 @@
-import { Logger } from "@nestjs/common";
+import { ConflictException, Logger } from "@nestjs/common";
 import {
   ConnectedSocket,
   MessageBody,
@@ -26,6 +26,10 @@ import { ChatEventsService } from "./chat-events.service";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatRepository } from "./chat.repository";
 import { ChatService } from "./chat.service";
+import { sendMessageSchema } from "./chat.schemas";
+import { z } from "zod";
+
+const conversationLeaveSchema = z.object({ conversationId: z.string().uuid() }).strict();
 
 /**
  * Un socket se autentica una vez, al conectar, cambiando un boleto de un solo
@@ -115,32 +119,61 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     const conversationId = payload?.conversationId;
     if (!userId || !conversationId) return { joined: false };
 
-    const isParticipant = await this.chatRepository.isParticipant(conversationId, userId);
-    if (!isParticipant) return { joined: false };
-    await client.join(ChatEventsService.roomFor(conversationId));
-    // Unirse a la sala en vivo es, como mínimo, haber recibido lo que ya
-    // había — cubre a quien nunca hizo el fetch REST antes de conectar.
-    await this.chatService.markDelivered(conversationId, userId);
-    return { joined: true };
+    let roomJoined = false;
+    try {
+      const joined = await this.chatRepository.withActiveConversationLock(conversationId, async (transaction) => {
+        const isParticipant = await this.chatRepository.isParticipant(conversationId, userId, transaction);
+        if (!isParticipant) return false;
+        await client.join(ChatEventsService.roomFor(conversationId));
+        roomJoined = true;
+        // Keep validation, room join and initial delivery under the conversation
+        // lock so a concurrent revoke either wins first or evicts this socket after.
+        await this.chatService.markDelivered(conversationId, userId);
+        return true;
+      });
+      return { joined };
+    } catch (error) {
+      if (roomJoined) {
+        try {
+          await client.leave(ChatEventsService.roomFor(conversationId));
+        } catch {
+          // Preserve the original join or transaction error.
+        }
+      }
+      throw error;
+    }
+  }
+
+  @SubscribeMessage("conversation:leave")
+  async leaveConversation(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: unknown,
+  ): Promise<{ left: boolean }> {
+    if (!socketUserId(client)) return { left: false };
+    const parsed = conversationLeaveSchema.safeParse(payload);
+    if (!parsed.success) return { left: false };
+    await client.leave(ChatEventsService.roomFor(parsed.data.conversationId));
+    return { left: true };
   }
 
   @SubscribeMessage("message:send")
   async handleMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { conversationId?: string; body?: string },
-  ): Promise<{ ok: boolean; error?: string }> {
+    @MessageBody() payload: { conversationId?: string; body?: string; clientRequestId?: string },
+  ): Promise<{ ok: boolean; error?: string; messageId?: string; clientRequestId?: string | null }> {
     const userId = socketUserId(client);
     if (!userId) return { ok: false, error: "unauthenticated" };
     const conversationId = payload?.conversationId;
-    const body = payload?.body?.trim();
-    if (!conversationId || !body || body.length > 4000) {
+    const parsed = sendMessageSchema.safeParse({ body: payload?.body, clientRequestId: payload?.clientRequestId });
+    if (!conversationId || !parsed.success || parsed.data.type !== "text") {
       return { ok: false, error: "invalid_payload" };
     }
 
     try {
-      await this.chatService.sendMessage(conversationId, userId, body);
-      return { ok: true };
-    } catch {
+      const message = await this.chatService.sendMessage(conversationId, userId, parsed.data.body as string, parsed.data.clientRequestId);
+      return { ok: true, messageId: message.id, clientRequestId: message.clientRequestId };
+    } catch (error) {
+      if (error instanceof ConflictException) return { ok: false, error: "idempotency_conflict" };
       return { ok: false, error: "not_a_participant" };
     }
   }

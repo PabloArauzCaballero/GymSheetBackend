@@ -52,10 +52,18 @@ export class AdminAccessController {
   }
 
   @Get('events/:id')
-  getEvent(@Param('id', UuidParamPipe) id: string) { return this.service.getEvent(id); }
+  getEvent(
+    @Param('id', UuidParamPipe) id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.service.getEvent(id, actor.tenantScope);
+  }
 
   @Get('history')
-  listHistory(@Query(new ZodValidationPipe(accessHistoryFilterSchema)) query: AccessHistoryFilterInput) {
-    return this.service.listHistory(query);
+  listHistory(
+    @Query(new ZodValidationPipe(accessHistoryFilterSchema)) query: AccessHistoryFilterInput,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.service.listHistory(query, undefined, actor.tenantScope);
   }
 }

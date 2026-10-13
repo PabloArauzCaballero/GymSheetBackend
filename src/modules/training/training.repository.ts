@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Op, Transaction, WhereOptions } from 'sequelize';
+import { Op, QueryTypes, Transaction, WhereOptions } from 'sequelize';
 import {
   ExerciseStatus,
   ExerciseType,
@@ -10,6 +10,7 @@ import {
 } from '../../common/enums/domain.enums';
 import { ExerciseModel } from '../exercises/exercise.model';
 import { UserModel } from '../users/user.model';
+import { OnboardingModel } from '../profiles/onboarding.model';
 import { RoutineAssignmentModel } from './routine-assignment.model';
 import { RoutineExerciseModel } from './routine-exercise.model';
 import { RoutineModel } from './routine.model';
@@ -33,11 +34,18 @@ const clientInclude = { model: UserModel, as: 'client' };
 const routineInclude = { model: RoutineModel, as: 'routine', include: [exercisesInclude] };
 
 export function routineWhereForScope(
-  scope: 'mine' | 'templates',
+  scope: 'mine' | 'templates' | 'public',
   userId: string,
 ): WhereOptions {
   if (scope === 'templates') {
-    return { visibility: RoutineVisibility.TEMPLATE, status: RoutineStatus.ACTIVE };
+    return { visibility: RoutineVisibility.TEMPLATE, status: RoutineStatus.ACTIVE, hiddenAt: null };
+  }
+  if (scope === 'public') {
+    return {
+      visibility: { [Op.in]: [RoutineVisibility.PUBLIC, RoutineVisibility.TEMPLATE] },
+      status: RoutineStatus.ACTIVE,
+      hiddenAt: null,
+    };
   }
   return { createdByUserId: userId };
 }
@@ -52,12 +60,14 @@ export class TrainingRepository {
     private readonly assignmentModel: typeof RoutineAssignmentModel,
     @InjectModel(ExerciseModel) private readonly exerciseModel: typeof ExerciseModel,
     @InjectModel(UserModel) private readonly userModel: typeof UserModel,
+    @InjectModel(OnboardingModel) private readonly onboardingModel: typeof OnboardingModel,
   ) {}
 
   createRoutine(
     ownerId: string,
     input: CreateRoutineInput,
     transaction?: Transaction,
+    creationKey?: string,
   ): Promise<RoutineModel> {
     return this.routineModel.create(
       {
@@ -66,14 +76,41 @@ export class TrainingRepository {
         createdByUserId: ownerId,
         visibility: input.visibility,
         goal: input.goal,
+        metadata: creationKey ? { creationKey } : {},
       },
       { transaction },
     );
   }
 
+  getOnboarding(userId: string): Promise<OnboardingModel | null> {
+    return this.onboardingModel.findByPk(userId);
+  }
+
+  async listReportedRoutineIds(userId: string): Promise<string[]> {
+    const rows = await this.routineModel.sequelize!.query<{ targetId: string }>(
+      `SELECT DISTINCT target_id AS "targetId" FROM moderation.reports
+        WHERE reporter_user_id = :userId AND target_kind = 'ROUTINE'`,
+      { type: QueryTypes.SELECT, replacements: { userId } },
+    );
+    return rows.map((row) => row.targetId);
+  }
+
+  listRecommendationCandidates(userId: string, publicOnly = false): Promise<ExerciseModel[]> {
+    return this.exerciseModel.findAll({
+      where: {
+        status: ExerciseStatus.ACTIVE,
+        ...(publicOnly
+          ? { type: ExerciseType.GLOBAL }
+          : { [Op.or]: [{ type: ExerciseType.GLOBAL }, { type: ExerciseType.PERSONAL, createdByUserId: userId }] }),
+      },
+      order: [['name', 'ASC']],
+      limit: 2000,
+    });
+  }
+
   findRoutineById(routineId: string): Promise<RoutineModel | null> {
     return this.routineModel.findByPk(routineId, {
-      include: [exercisesInclude],
+      include: [exercisesInclude, { model: UserModel, as: 'createdBy' }],
       order: [[{ model: RoutineExerciseModel, as: 'exercises' }, 'order', 'ASC']],
     });
   }
@@ -82,13 +119,17 @@ export class TrainingRepository {
     where: WhereOptions,
     page: number,
     pageSize: number,
+    tenantId?: string,
   ): Promise<RoutinePage> {
     return this.routineModel.findAndCountAll({
       where,
       distinct: true,
       limit: pageSize,
       offset: (page - 1) * pageSize,
-      include: [exercisesInclude],
+      include: [
+        exercisesInclude,
+        ...(tenantId ? [{ model: UserModel, as: 'createdBy', where: { tenantId }, required: true }] : []),
+      ],
       order: [
         ['updatedAt', 'DESC'],
         [{ model: RoutineExerciseModel, as: 'exercises' }, 'order', 'ASC'],
@@ -96,12 +137,26 @@ export class TrainingRepository {
     });
   }
 
+  findRoutineByCreationKey(ownerId: string, creationKey: string): Promise<RoutineModel | null> {
+    return this.routineModel.findOne({
+      where: {
+        createdByUserId: ownerId,
+        metadata: { [Op.contains]: { creationKey } },
+      },
+    });
+  }
+
   async updateRoutine(
     routine: RoutineModel,
     input: UpdateRoutineInput,
+    transaction?: Transaction,
   ): Promise<RoutineModel> {
-    await routine.update(input);
+    await routine.update(input, { transaction });
     return routine;
+  }
+
+  deleteAllRoutineExercises(routineId: string, transaction: Transaction): Promise<number> {
+    return this.routineExerciseModel.destroy({ where: { routineId }, transaction });
   }
 
   deleteRoutine(routineId: string): Promise<number> {

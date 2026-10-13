@@ -2,7 +2,7 @@ import { BelongsTo, Column, CreatedAt, DataType, Default, ForeignKey, Model, Pri
 import { UserModel } from "../users/user.model";
 import { ConversationModel } from "./conversation.model";
 
-export type MessageType = "text" | "image" | "video" | "location";
+export type MessageType = "text" | "image" | "video" | "audio" | "location" | "sticker";
 
 @Table({ tableName: "messages", schema: "chat", underscored: true, timestamps: false })
 export class MessageModel extends Model {
@@ -18,6 +18,18 @@ export class MessageModel extends Model {
   @ForeignKey(() => UserModel)
   @Column({ type: DataType.UUID, allowNull: false, field: "sender_id" })
   declare senderId: string;
+
+  /** Nullable so messages written before idempotency keys remain valid. */
+  @Column({ type: DataType.UUID, allowNull: true, field: "client_request_id" })
+  declare clientRequestId: string | null;
+
+  /** Original send body for retry validation; edits only change body/editedAt. */
+  @Column({ type: DataType.TEXT, allowNull: true, field: "idempotency_body" })
+  declare idempotencyBody: string | null;
+
+  /** Stable story ID for a reply; intentionally no FK so expired/purged stories can render unavailable. */
+  @Column({ type: DataType.UUID, allowNull: true, field: "story_id" })
+  declare storyId: string | null;
 
   /** `null` para tipos sin texto propio (una ubicación, o una foto sin pie de foto). */
   @Column({ type: DataType.TEXT, allowNull: true })
@@ -59,6 +71,16 @@ export class MessageModel extends Model {
 
   @BelongsTo(() => ConversationModel)
   declare conversation?: ConversationModel;
+
+  /** Non-null marks an accepted text edit; the original createdAt never changes. */
+  @Column({ type: DataType.DATE, allowNull: true, field: "edited_at" })
+  declare editedAt: Date | null;
+
+  @Column({ type: DataType.DATE, allowNull: true, field: "deleted_at" })
+  declare deletedAt: Date | null;
+
+  @Column({ type: DataType.STRING(67), allowNull: true, field: "deleted_request_hash" })
+  declare deletedRequestHash: string | null;
 
   @CreatedAt
   @Column({ field: "created_at" })

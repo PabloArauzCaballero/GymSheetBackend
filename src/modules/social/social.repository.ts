@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
 import { Op, QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
@@ -6,6 +6,29 @@ import { ConnectionStatus } from "../../common/enums/domain.enums";
 import { ConnectionModel } from "./connection.model";
 import { DiscoveryPassModel } from "./discovery-pass.model";
 import { ProfileSocialSettingsModel } from "./profile-social-settings.model";
+import { lockSocialPairUsers } from "./social-pair-lock";
+import type { SocialDiscoverySettings } from "./social-discovery-settings.policy";
+import type { DiscoveryPreferencesInput } from "./social.schemas";
+import { SocialRecommendationOutboxService } from "./social-recommendation-outbox.service";
+
+export interface DiscoveryPreferences {
+  configured: true;
+  genders: ("MALE" | "FEMALE")[];
+  intents: ("TRAINING" | "FRIENDSHIP" | "DATING")[];
+  minAge: number;
+  maxAge: number;
+  radiusKm: number;
+  flexibleAge: boolean;
+  flexibleDistance: boolean;
+  version: number;
+}
+
+export interface DiscoveryViewerContext {
+  age: number;
+  gender: string;
+  goal: string | null;
+  area: { lat: number; lon: number };
+}
 
 /** Escapa los comodines de LIKE/ILIKE para que la búsqueda trate `%` y `_` como texto literal. */
 function escapeLikePattern(value: string): string {
@@ -38,6 +61,9 @@ export interface DirectoryRow {
   experienceLevel: string | null;
   points: number | null;
   levelCode: string | null;
+  /** Public gym coordinates and declared discovery intent, internal to ranking only. */
+  recommendationArea?: { lat: number; lon: number } | null;
+  recommendationIntents?: string[];
 }
 
 /**
@@ -51,6 +77,9 @@ export interface DirectoryFilters {
   objetivo?: string;
   branchId?: string;
   gender?: string;
+  genders?: readonly string[];
+  minAge?: number;
+  maxAge?: number;
   search?: string;
   limit: number;
   /** Restringe la consulta a una sola persona (perfil individual). */
@@ -69,6 +98,13 @@ export interface DirectoryFilters {
    * `REJECTED`) y quien el viewer ya descartó.
    */
   excludeDecided?: boolean;
+  /** Add adults from other tenants who explicitly enabled cross-gym discovery. */
+  includeCrossGym?: boolean;
+  /** Map directory: candidates must still have map and profile consent. */
+  mapOnly?: boolean;
+  discoveryOnly?: boolean;
+  /** Map directory: never return an account without a verified adult age. */
+  adultOnly?: boolean;
   /** Alfabético para el directorio; por puntos para la baraja. */
   orderBy?: "name" | "points";
 }
@@ -134,11 +170,116 @@ export class SocialRepository {
     private readonly settings: typeof ProfileSocialSettingsModel,
     @InjectModel(DiscoveryPassModel)
     private readonly passes: typeof DiscoveryPassModel,
+    @Optional()
+    private readonly recommendationOutbox?: SocialRecommendationOutboxService,
   ) {}
 
   /** Ejecuta `work` dentro de una transacción propia. */
-  runInTransaction<T>(work: (transaction: Transaction) => Promise<T>): Promise<T> {
+  runInTransaction<T>(
+    work: (transaction: Transaction) => Promise<T>,
+  ): Promise<T> {
     return this.sequelize.transaction(work);
+  }
+
+  async lockSocialPair(
+    userA: string,
+    userB: string,
+    transaction: Transaction,
+  ): Promise<void> {
+    await lockSocialPairUsers(this.sequelize, userA, userB, transaction);
+  }
+
+  async isBlockedEitherWay(
+    userA: string,
+    userB: string,
+    transaction?: Transaction,
+  ): Promise<boolean> {
+    const rows = await this.sequelize.query<{ blocked: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM social.user_blocks
+          WHERE (blocker_id = :userA AND blocked_id = :userB)
+             OR (blocker_id = :userB AND blocked_id = :userA)
+       ) AS blocked`,
+      { type: QueryTypes.SELECT, replacements: { userA, userB }, transaction },
+    );
+    return rows[0]?.blocked === true;
+  }
+
+  async blockUser(blockerId: string, blockedId: string): Promise<string[]> {
+    return this.sequelize.transaction(async (transaction) => {
+      await this.lockSocialPair(blockerId, blockedId, transaction);
+      await this.sequelize.query(
+        `INSERT INTO social.user_blocks (blocker_id, blocked_id)
+         VALUES (:blockerId, :blockedId) ON CONFLICT DO NOTHING`,
+        { replacements: { blockerId, blockedId }, transaction },
+      );
+      const conversations = await this.sequelize.query<{
+        conversation_id: string;
+      }>(
+        `SELECT c.id AS conversation_id
+           FROM chat.conversations c
+           JOIN chat.participants p1 ON p1.conversation_id = c.id AND p1.user_id = :blockerId
+           JOIN chat.participants p2 ON p2.conversation_id = c.id AND p2.user_id = :blockedId
+          WHERE c.revoked_at IS NULL
+            AND c.system_kind IS NULL
+            AND (SELECT COUNT(*) FROM chat.participants p3 WHERE p3.conversation_id = c.id) = 2
+          FOR UPDATE OF c`,
+        {
+          type: QueryTypes.SELECT,
+          replacements: { blockerId, blockedId },
+          transaction,
+        },
+      );
+      const conversationIds = conversations.map((row) => row.conversation_id);
+      if (conversationIds.length) {
+        await this.sequelize.query(
+          `UPDATE chat.conversations SET revoked_at = NOW(), revoked_by_user_id = :blockerId
+            WHERE id IN (:conversationIds)`,
+          { replacements: { blockerId, conversationIds }, transaction },
+        );
+      }
+      await this.sequelize.query(
+        `DELETE FROM social.connections
+          WHERE (requester_id = :blockerId AND addressee_id = :blockedId)
+             OR (requester_id = :blockedId AND addressee_id = :blockerId)`,
+        { replacements: { blockerId, blockedId }, transaction },
+      );
+      await this.sequelize.query(
+        `DELETE FROM social.discovery_passes
+          WHERE (viewer_id = :blockerId AND target_id = :blockedId)
+             OR (viewer_id = :blockedId AND target_id = :blockerId)`,
+        { replacements: { blockerId, blockedId }, transaction },
+      );
+      return conversationIds;
+    });
+  }
+
+  async unblockUser(blockerId: string, blockedId: string): Promise<void> {
+    await this.sequelize.query(
+      `DELETE FROM social.user_blocks WHERE blocker_id = :blockerId AND blocked_id = :blockedId`,
+      { replacements: { blockerId, blockedId }, type: QueryTypes.DELETE },
+    );
+  }
+
+  async listBlockedUsers(
+    blockerId: string,
+  ): Promise<{ userId: string; displayName: string; blockedAt: Date }[]> {
+    const rows = await this.sequelize.query<{
+      blocked_id: string;
+      full_name: string;
+      created_at: Date;
+    }>(
+      `SELECT block.blocked_id, account.nombre_completo AS full_name, block.created_at
+         FROM social.user_blocks block
+         JOIN public.usuarios account ON account.id = block.blocked_id
+        WHERE block.blocker_id = :blockerId ORDER BY block.created_at DESC`,
+      { replacements: { blockerId }, type: QueryTypes.SELECT },
+    );
+    return rows.map((row) => ({
+      userId: row.blocked_id,
+      displayName: row.full_name,
+      blockedAt: row.created_at,
+    }));
   }
 
   /** Cualquier conexión no rechazada entre dos usuarios, en cualquier dirección. */
@@ -174,14 +315,160 @@ export class SocialRepository {
     id: string,
     userId: string,
     transaction?: Transaction,
+    lock = true,
   ): Promise<ConnectionModel | null> {
     return this.connections.findOne({
-      where: { id, [Op.or]: [{ requesterId: userId }, { addresseeId: userId }] },
+      where: {
+        id,
+        [Op.or]: [{ requesterId: userId }, { addresseeId: userId }],
+      },
       transaction,
+      ...(transaction && lock ? { lock: transaction.LOCK.UPDATE } : {}),
     });
   }
 
-  async listForUser(userId: string, status?: ConnectionStatus): Promise<ConnectionModel[]> {
+  /** Atomically removes a connection and revokes every exact 1:1 chat attached to it. */
+  async revokeConnection(
+    connectionId: string,
+    userId: string,
+  ): Promise<{ conversationIds: string[] } | null> {
+    return this.sequelize.transaction(async (transaction) => {
+      // Discover the pair without taking the connection lock, then serialize all
+      // operations for that pair before locking the connection/conversation rows.
+      const candidate = await this.findByIdForUser(
+        connectionId,
+        userId,
+        transaction,
+        false,
+      );
+      if (!candidate) return null;
+      if (
+        candidate.status === ConnectionStatus.PENDING &&
+        candidate.requesterId !== userId
+      )
+        return null;
+      if (
+        candidate.status !== ConnectionStatus.PENDING &&
+        candidate.status !== ConnectionStatus.ACCEPTED
+      )
+        return null;
+      await this.lockSocialPair(
+        candidate.requesterId,
+        candidate.addresseeId,
+        transaction,
+      );
+      const connection = await this.findByIdForUser(
+        connectionId,
+        userId,
+        transaction,
+      );
+      if (!connection) return null;
+      if (
+        connection.status === ConnectionStatus.PENDING &&
+        connection.requesterId !== userId
+      )
+        return null;
+      if (
+        connection.status !== ConnectionStatus.PENDING &&
+        connection.status !== ConnectionStatus.ACCEPTED
+      )
+        return null;
+
+      let conversationIds: string[] = [];
+      if (connection.status === ConnectionStatus.ACCEPTED) {
+        const conversations = await this.sequelize.query<{
+          conversation_id: string;
+        }>(
+          `SELECT c.id AS conversation_id
+             FROM chat.conversations c
+             JOIN chat.participants p1 ON p1.conversation_id = c.id AND p1.user_id = :requesterId
+             JOIN chat.participants p2 ON p2.conversation_id = c.id AND p2.user_id = :addresseeId
+            WHERE c.revoked_at IS NULL
+              AND c.system_kind IS NULL
+              AND (SELECT COUNT(*) FROM chat.participants p3 WHERE p3.conversation_id = c.id) = 2
+            FOR UPDATE OF c`,
+          {
+            type: QueryTypes.SELECT,
+            replacements: {
+              requesterId: connection.requesterId,
+              addresseeId: connection.addresseeId,
+            },
+            transaction,
+          },
+        );
+        conversationIds = conversations.map((row) => row.conversation_id);
+        if (conversationIds.length) {
+          await this.sequelize.query(
+            `UPDATE chat.conversations
+                SET revoked_at = NOW(), revoked_by_user_id = :userId
+              WHERE id IN (:conversationIds) AND revoked_at IS NULL`,
+            { replacements: { userId, conversationIds }, transaction },
+          );
+        }
+
+        const futureInvites = await this.sequelize.query<{ id: string }>(
+          `SELECT i.id
+             FROM training.training_invites i
+             JOIN training.training_invite_meetings m ON m.invite_id = i.id
+            WHERE i.state = 'ACCEPTED'
+              AND i.responded_revision = i.current_revision
+              AND m.accepted_revision = i.responded_revision
+              AND m.starts_at > clock_timestamp()
+              AND ((i.inviter_id = :requesterId AND i.recipient_id = :addresseeId)
+                OR (i.inviter_id = :addresseeId AND i.recipient_id = :requesterId))
+            FOR UPDATE OF i, m`,
+          {
+            type: QueryTypes.SELECT,
+            replacements: {
+              requesterId: connection.requesterId,
+              addresseeId: connection.addresseeId,
+            },
+            transaction,
+          },
+        );
+        const futureInviteIds = futureInvites.map((row) => row.id);
+        if (futureInviteIds.length) {
+          await this.sequelize.query(
+            `UPDATE training.training_invites
+                SET state = 'CANCELLED', updated_at = clock_timestamp()
+              WHERE id IN (:inviteIds) AND state = 'ACCEPTED'`,
+            { replacements: { inviteIds: futureInviteIds }, transaction },
+          );
+          await this.sequelize.query(
+            `UPDATE training.training_invite_meetings
+                SET cancelled_at = clock_timestamp()
+              WHERE invite_id IN (:inviteIds) AND cancelled_at IS NULL`,
+            { replacements: { inviteIds: futureInviteIds }, transaction },
+          );
+        }
+
+        // A pending proposal is no longer actionable after the pair breaks.
+        // Keep its revisions and command history, but remove it from the
+        // partial unique index so a later reconnection can start fresh.
+        await this.sequelize.query(
+          `UPDATE training.training_invites
+              SET state = 'CANCELLED', updated_at = clock_timestamp()
+            WHERE state = 'PENDING'
+              AND ((inviter_id = :requesterId AND recipient_id = :addresseeId)
+                OR (inviter_id = :addresseeId AND recipient_id = :requesterId))`,
+          {
+            replacements: {
+              requesterId: connection.requesterId,
+              addresseeId: connection.addresseeId,
+            },
+            transaction,
+          },
+        );
+      }
+      await connection.destroy({ transaction });
+      return { conversationIds };
+    });
+  }
+
+  async listForUser(
+    userId: string,
+    status?: ConnectionStatus,
+  ): Promise<ConnectionModel[]> {
     return this.connections.findAll({
       where: {
         [Op.or]: [{ requesterId: userId }, { addresseeId: userId }],
@@ -192,12 +479,19 @@ export class SocialRepository {
   }
 
   /** Nombres de la otra parte de cada conexión, en un solo viaje a la base. */
-  async namesFor(userIds: readonly string[]): Promise<Map<string, string>> {
+  async namesFor(
+    userIds: readonly string[],
+    transaction?: Transaction,
+  ): Promise<Map<string, string>> {
     if (userIds.length === 0) return new Map();
-    const rows = await this.sequelize.query<{ id: string; nombre_completo: string }>(
-      `SELECT id, nombre_completo FROM public.usuarios WHERE id IN (:ids)`,
-      { type: QueryTypes.SELECT, replacements: { ids: userIds } },
-    );
+    const rows = await this.sequelize.query<{
+      id: string;
+      nombre_completo: string;
+    }>(`SELECT id, nombre_completo FROM public.usuarios WHERE id IN (:ids)`, {
+      type: QueryTypes.SELECT,
+      replacements: { ids: userIds },
+      transaction,
+    });
     return new Map(rows.map((row) => [row.id, row.nombre_completo]));
   }
 
@@ -206,7 +500,10 @@ export class SocialRepository {
     status: ConnectionStatus,
     transaction?: Transaction,
   ): Promise<ConnectionModel> {
-    await connection.update({ status, respondedAt: new Date() }, { transaction });
+    await connection.update(
+      { status, respondedAt: new Date() },
+      { transaction },
+    );
     return connection;
   }
 
@@ -226,6 +523,241 @@ export class SocialRepository {
     return this.settings.findByPk(userId);
   }
 
+  /** Both sides must be active adults who explicitly opened cross-gym discovery. */
+  async canInteractAcrossTenants(
+    viewerId: string,
+    targetId: string,
+    transaction?: Transaction,
+  ): Promise<boolean> {
+    const rows = await this.sequelize.query<{ allowed: boolean }>(
+      `SELECT COUNT(DISTINCT u.id) = 2
+                AND BOOL_AND(u.estado = 'ACTIVO'
+                  AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad, 0) >= 18
+                  AND s.profile_enabled
+                  AND s.cross_gym_enabled) AS allowed
+         FROM public.usuarios u
+         JOIN social.profile_settings s ON s.user_id = u.id
+         LEFT JOIN public.perfiles_antropometricos p ON p.usuario_id = u.id
+        WHERE u.id IN (:viewerId, :targetId)`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: { viewerId, targetId },
+        transaction,
+      },
+    );
+    return rows[0]?.allowed === true;
+  }
+
+  async discoverySettings(userId: string): Promise<SocialDiscoverySettings> {
+    const rows = await this.sequelize.query<SocialDiscoverySettings>(
+      `SELECT profile_enabled AS "profileEnabled",
+              cross_gym_enabled AS "crossGymEnabled",
+              map_enabled AS "mapEnabled",
+              version
+         FROM social.profile_settings
+        WHERE user_id = :userId`,
+      { type: QueryTypes.SELECT, replacements: { userId } },
+    );
+    return (
+      rows[0] ?? {
+        profileEnabled: false,
+        crossGymEnabled: false,
+        mapEnabled: false,
+        version: 0,
+      }
+    );
+  }
+
+  async discoveryPreferences(
+    userId: string,
+  ): Promise<DiscoveryPreferences | { configured: false; version: 0 }> {
+    const rows = await this.sequelize.query<
+      Omit<DiscoveryPreferences, "configured"> & { radiusKm: number | string }
+    >(
+      `SELECT genders, intents, min_age AS "minAge", max_age AS "maxAge",
+              radius_km AS "radiusKm", flexible_age AS "flexibleAge",
+              flexible_distance AS "flexibleDistance", version
+         FROM social.discovery_preferences WHERE user_id = :userId`,
+      { type: QueryTypes.SELECT, replacements: { userId } },
+    );
+    const row = rows[0];
+    return row
+      ? { ...row, configured: true, radiusKm: Number(row.radiusKm) }
+      : { configured: false, version: 0 };
+  }
+
+  async discoveryViewerContext(
+    userId: string,
+  ): Promise<DiscoveryViewerContext | null> {
+    const rows = await this.sequelize.query<{
+      age: number | null;
+      gender: string | null;
+      goal: string | null;
+      lat: number | null;
+      lon: number | null;
+    }>(
+      `SELECT COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, profile.fecha_nacimiento))::int, profile.edad) AS age,
+              account.genero AS gender, profile.objetivo AS goal,
+              branch.latitude::float8 AS lat, branch.longitude::float8 AS lon
+         FROM public.usuarios account
+         LEFT JOIN public.perfiles_antropometricos profile ON profile.usuario_id = account.id
+         LEFT JOIN facilities.branches branch ON branch.id = account.sede_id AND branch.status = 'ACTIVE'
+        WHERE account.id = :userId AND account.estado = 'ACTIVO'
+          AND (account.suspended_until IS NULL OR account.suspended_until <= NOW())`,
+      { type: QueryTypes.SELECT, replacements: { userId } },
+    );
+    const row = rows[0];
+    if (
+      !row ||
+      !Number.isInteger(row.age) ||
+      (row.age as number) < 18 ||
+      row.lat === null ||
+      row.lon === null
+    )
+      return null;
+    return {
+      age: row.age as number,
+      gender: row.gender ?? "UNSPECIFIED",
+      goal: row.goal,
+      area: { lat: row.lat, lon: row.lon },
+    };
+  }
+
+  async updateDiscoveryPreferences(
+    userId: string,
+    input: DiscoveryPreferencesInput,
+  ): Promise<DiscoveryPreferences | null> {
+    return this.sequelize.transaction(async (transaction) => {
+      const users = await this.sequelize.query<{ id: string }>(
+        `SELECT id FROM public.usuarios WHERE id = :userId FOR UPDATE`,
+        { type: QueryTypes.SELECT, replacements: { userId }, transaction },
+      );
+      if (!users.length) return null;
+      const rows = await this.sequelize.query<DiscoveryPreferences>(
+        `INSERT INTO social.discovery_preferences
+           (user_id, genders, intents, min_age, max_age, radius_km, flexible_age, flexible_distance, version)
+         VALUES (:userId, ARRAY(SELECT jsonb_array_elements_text(CAST(:gendersJson AS jsonb))),
+                 ARRAY(SELECT jsonb_array_elements_text(CAST(:intentsJson AS jsonb))),
+                 :minAge, :maxAge, :radiusKm, :flexibleAge, :flexibleDistance, 1)
+         ON CONFLICT (user_id) DO UPDATE SET
+           genders = EXCLUDED.genders, intents = EXCLUDED.intents,
+           min_age = EXCLUDED.min_age, max_age = EXCLUDED.max_age,
+           radius_km = EXCLUDED.radius_km, flexible_age = EXCLUDED.flexible_age,
+           flexible_distance = EXCLUDED.flexible_distance,
+           version = social.discovery_preferences.version + 1, updated_at = NOW()
+         WHERE social.discovery_preferences.version = :expectedVersion
+           AND :expectedVersion > 0
+         RETURNING genders, intents, min_age AS "minAge", max_age AS "maxAge",
+                   radius_km AS "radiusKm", flexible_age AS "flexibleAge",
+                   flexible_distance AS "flexibleDistance", version`,
+        {
+          type: QueryTypes.SELECT,
+          replacements: {
+            userId,
+            ...input,
+            gendersJson: JSON.stringify(input.genders),
+            intentsJson: JSON.stringify(input.intents),
+          },
+          transaction,
+        },
+      );
+      if (!rows.length && input.expectedVersion === 0) {
+        const inserted = await this.sequelize.query<DiscoveryPreferences>(
+          `INSERT INTO social.discovery_preferences
+             (user_id, genders, intents, min_age, max_age, radius_km, flexible_age, flexible_distance, version)
+           VALUES (:userId, ARRAY(SELECT jsonb_array_elements_text(CAST(:gendersJson AS jsonb))),
+                   ARRAY(SELECT jsonb_array_elements_text(CAST(:intentsJson AS jsonb))),
+                   :minAge, :maxAge, :radiusKm, :flexibleAge, :flexibleDistance, 1)
+           ON CONFLICT (user_id) DO NOTHING
+           RETURNING genders, intents, min_age AS "minAge", max_age AS "maxAge",
+                     radius_km AS "radiusKm", flexible_age AS "flexibleAge",
+                     flexible_distance AS "flexibleDistance", version`,
+          {
+            type: QueryTypes.SELECT,
+            replacements: {
+              userId,
+              ...input,
+              gendersJson: JSON.stringify(input.genders),
+              intentsJson: JSON.stringify(input.intents),
+            },
+            transaction,
+          },
+        );
+        if (inserted[0]) {
+          await this.recommendationOutbox?.enqueueProfileSnapshot(
+            userId,
+            transaction,
+          );
+          return {
+            ...inserted[0],
+            configured: true,
+            radiusKm: Number(inserted[0].radiusKm),
+          };
+        }
+      }
+      if (!rows[0]) return null;
+      await this.recommendationOutbox?.enqueueProfileSnapshot(
+        userId,
+        transaction,
+      );
+      return {
+        ...rows[0],
+        configured: true,
+        radiusKm: Number(rows[0].radiusKm),
+      };
+    });
+  }
+
+  async updateDiscoverySettings(
+    userId: string,
+    settings: SocialDiscoverySettings,
+    expectedVersion: number,
+  ): Promise<SocialDiscoverySettings | null> {
+    return this.sequelize.transaction(async (transaction) => {
+      const users = await this.sequelize.query<{ id: string }>(
+        `SELECT id FROM public.usuarios WHERE id = :userId FOR UPDATE`,
+        { type: QueryTypes.SELECT, replacements: { userId }, transaction },
+      );
+      if (!users.length) return null;
+      await this.sequelize.query(
+        `INSERT INTO social.profile_settings (user_id) VALUES (:userId)
+         ON CONFLICT (user_id) DO NOTHING`,
+        { replacements: { userId }, transaction },
+      );
+      const rows = await this.sequelize.query<SocialDiscoverySettings>(
+        `UPDATE social.profile_settings
+            SET profile_enabled = :profileEnabled,
+                cross_gym_enabled = :crossGymEnabled,
+                map_enabled = :mapEnabled,
+                map_enabled_since = CASE WHEN :mapEnabled THEN NOW() ELSE NULL END,
+                version = version + 1,
+                updated_at = NOW()
+          WHERE user_id = :userId AND version = :expectedVersion
+          RETURNING profile_enabled AS "profileEnabled",
+                    cross_gym_enabled AS "crossGymEnabled",
+                    map_enabled AS "mapEnabled",
+                    version`,
+        {
+          type: QueryTypes.SELECT,
+          replacements: {
+            userId,
+            profileEnabled: settings.profileEnabled,
+            crossGymEnabled: settings.crossGymEnabled,
+            mapEnabled: settings.mapEnabled,
+            expectedVersion,
+          },
+          transaction,
+        },
+      );
+      if (!rows[0]) return null;
+      await this.recommendationOutbox?.enqueueProfileSnapshot(
+        userId,
+        transaction,
+      );
+      return rows[0];
+    });
+  }
+
   async upsertSettings(
     userId: string,
     input: { socialStatus: string | null; visible: boolean },
@@ -240,14 +772,22 @@ export class SocialRepository {
    * Registra un descarte. Idempotente: repetir el mismo pass no es un error ni
    * mueve la fecha, así que un doble toque en el cliente no rompe nada.
    */
-  async createPass(viewerId: string, targetId: string, transaction?: Transaction): Promise<void> {
+  async createPass(
+    viewerId: string,
+    targetId: string,
+    transaction?: Transaction,
+  ): Promise<void> {
     await this.passes.bulkCreate([{ viewerId, targetId }] as never, {
       ignoreDuplicates: true,
       transaction,
     });
   }
 
-  async deletePass(viewerId: string, targetId: string, transaction?: Transaction): Promise<number> {
+  async deletePass(
+    viewerId: string,
+    targetId: string,
+    transaction?: Transaction,
+  ): Promise<number> {
     return this.passes.destroy({ where: { viewerId, targetId }, transaction });
   }
 
@@ -269,7 +809,10 @@ export class SocialRepository {
    * Las conexiones rechazadas quedan fuera: rechazar no es una acción de la
    * baraja, que solo tiene «me gusta» y «paso».
    */
-  async findLastSwipe(viewerId: string, transaction?: Transaction): Promise<LastSwipeRow | null> {
+  async findLastSwipe(
+    viewerId: string,
+    transaction?: Transaction,
+  ): Promise<LastSwipeRow | null> {
     const rows = await this.sequelize.query<{
       kind: LastSwipeRow["kind"];
       target_id: string;
@@ -313,7 +856,8 @@ export class SocialRepository {
       kind: row.kind,
       targetId: row.target_id,
       connectionId: row.connection_id,
-      connectionStatus: (row.connection_status as ConnectionStatus | null) ?? null,
+      connectionStatus:
+        (row.connection_status as ConnectionStatus | null) ?? null,
       decidedAt: new Date(row.decided_at),
     };
   }
@@ -439,6 +983,9 @@ export class SocialRepository {
       experience_level: string | null;
       points: number | null;
       level_code: string | null;
+      recommendation_lat: number | null;
+      recommendation_lon: number | null;
+      recommendation_intents: string[] | null;
     }>(
       `SELECT u.id AS usuario_id,
               u.nombre_completo AS full_name,
@@ -455,7 +1002,10 @@ export class SocialRepository {
               ph.items AS photos,
               COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad) AS age,
               up.points,
-              up.level_code
+              up.level_code,
+              rank_branch.latitude::float8 AS recommendation_lat,
+              rank_branch.longitude::float8 AS recommendation_lon,
+              candidate_preferences.intents AS recommendation_intents
          FROM public.usuarios u
          LEFT JOIN public.perfiles_antropometricos p ON p.usuario_id = u.id
          LEFT JOIN profile.onboarding o ON o.user_id = u.id
@@ -468,6 +1018,9 @@ export class SocialRepository {
          LEFT JOIN facilities.branches b
            ON b.id = u.sede_id
           AND COALESCE(b.tenant_id, :defaultTenantId) = :tenantId
+         LEFT JOIN facilities.branches rank_branch
+           ON rank_branch.id = u.sede_id AND rank_branch.status = 'ACTIVE'
+         LEFT JOIN social.discovery_preferences candidate_preferences ON candidate_preferences.user_id = u.id
          LEFT JOIN progression.user_progress up ON up.usuario_id = u.id
          LEFT JOIN social.connections c
            ON c.status <> 'REJECTED'
@@ -495,14 +1048,33 @@ export class SocialRepository {
              ) g
          ) ph ON true
         WHERE u.id <> :viewerId
+          AND NOT EXISTS (
+            SELECT 1 FROM social.user_blocks block
+             WHERE (block.blocker_id = :viewerId AND block.blocked_id = u.id)
+                OR (block.blocker_id = u.id AND block.blocked_id = :viewerId))
           AND u.estado = 'ACTIVO'
-          AND COALESCE(u.tenant_id, :defaultTenantId) = :tenantId
+          AND (u.suspended_until IS NULL OR u.suspended_until <= NOW())
+          AND (
+            COALESCE(u.tenant_id, :defaultTenantId) = :tenantId
+            OR (:includeCrossGym::boolean
+              AND COALESCE(u.tenant_id, :defaultTenantId) <> :tenantId
+              AND s.profile_enabled = true
+              AND s.cross_gym_enabled = true
+              AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad, 0) >= 18)
+          )
           AND (:objetivo::text IS NULL OR p.objetivo = :objetivo)
           AND (:branchId::uuid IS NULL OR u.sede_id = :branchId)
           AND (:gender::text IS NULL OR u.genero = :gender)
+          AND (jsonb_array_length(CAST(:gendersJson AS jsonb)) = 0 OR u.genero IN (
+            SELECT jsonb_array_elements_text(CAST(:gendersJson AS jsonb))))
+          AND (:minAge::integer IS NULL OR COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad) >= :minAge)
+          AND (:maxAge::integer IS NULL OR COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad) <= :maxAge)
           AND (:search::text IS NULL OR u.nombre_completo ILIKE :search)
           AND (:targetUserId::uuid IS NULL OR u.id = :targetUserId)
           AND (NOT :hasUserIds::boolean OR u.id IN (:userIds))
+          AND (NOT :mapOnly::boolean OR (s.profile_enabled = TRUE AND s.map_enabled = TRUE))
+          AND (NOT :discoveryOnly::boolean OR s.profile_enabled = TRUE)
+          AND (NOT :adultOnly::boolean OR COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad, 0) >= 18)
           AND (NOT :excludeDecided::boolean
             OR (NOT EXISTS (
                   SELECT 1 FROM social.connections dc
@@ -522,7 +1094,12 @@ export class SocialRepository {
           objetivo: filters.objetivo ?? null,
           branchId: filters.branchId ?? null,
           gender: filters.gender ?? null,
-          search: filters.search ? `%${escapeLikePattern(filters.search)}%` : null,
+          gendersJson: JSON.stringify(filters.genders ?? []),
+          minAge: filters.minAge ?? null,
+          maxAge: filters.maxAge ?? null,
+          search: filters.search
+            ? `%${escapeLikePattern(filters.search)}%`
+            : null,
           targetUserId: filters.targetUserId ?? null,
           hasUserIds: (filters.userIds?.length ?? 0) > 0,
           // El marcador tiene que existir aunque no se use: Sequelize sustituye
@@ -530,6 +1107,10 @@ export class SocialRepository {
           // vacío escribiría `IN ()`. La guarda de arriba ya descartó ese caso.
           userIds: filters.userIds?.length ? filters.userIds : [null],
           excludeDecided: filters.excludeDecided ?? false,
+          includeCrossGym: filters.includeCrossGym ?? false,
+          mapOnly: filters.mapOnly ?? false,
+          discoveryOnly: filters.discoveryOnly ?? false,
+          adultOnly: filters.adultOnly ?? false,
           limit: filters.limit,
         },
       },
@@ -537,14 +1118,13 @@ export class SocialRepository {
 
     return rows.map((row) => {
       const photos = row.photos ?? [];
-      const connectionStatus =
-        !row.connection_status
-          ? ("NONE" as const)
-          : row.connection_status === "ACCEPTED"
-            ? ("ACCEPTED" as const)
-            : row.requester_id === viewerId
-              ? ("PENDING_SENT" as const)
-              : ("PENDING_RECEIVED" as const);
+      const connectionStatus = !row.connection_status
+        ? ("NONE" as const)
+        : row.connection_status === "ACCEPTED"
+          ? ("ACCEPTED" as const)
+          : row.requester_id === viewerId
+            ? ("PENDING_SENT" as const)
+            : ("PENDING_RECEIVED" as const);
       return {
         userId: row.usuario_id,
         fullName: row.full_name,
@@ -555,7 +1135,10 @@ export class SocialRepository {
         connectionStatus,
         // Misma regla que `SocialService.viewSocialStatus`: solo conexión
         // aceptada y visibilidad activada por la propia persona.
-        socialStatus: connectionStatus === "ACCEPTED" && row.social_visible ? row.social_status : null,
+        socialStatus:
+          connectionStatus === "ACCEPTED" && row.social_visible
+            ? row.social_status
+            : null,
         // `json_agg` sin filas devuelve NULL, no un array vacío.
         photoUrl: photos[0]?.url ?? null,
         photos,
@@ -564,6 +1147,11 @@ export class SocialRepository {
         experienceLevel: row.experience_level,
         points: row.points,
         levelCode: row.level_code,
+        recommendationArea:
+          row.recommendation_lat === null || row.recommendation_lon === null
+            ? null
+            : { lat: row.recommendation_lat, lon: row.recommendation_lon },
+        recommendationIntents: row.recommendation_intents ?? [],
       };
     });
   }
@@ -583,7 +1171,10 @@ export class SocialRepository {
    * esperando respuesta, es una conexión, y vive en otra pantalla. Uno
    * rechazado tampoco vuelve a esta lista.
    */
-  async listLikesReceived(viewerId: string, limit: number): Promise<LikeInteractionRow[]> {
+  async listLikesReceived(
+    viewerId: string,
+    limit: number,
+  ): Promise<LikeInteractionRow[]> {
     // `ix_connections_addressee (addressee_id, status)` sostiene este filtro.
     return this.listPendingLikes(
       `SELECT c.requester_id AS user_id, c.id AS connection_id, c.created_at AS liked_at
@@ -596,7 +1187,10 @@ export class SocialRepository {
     );
   }
 
-  async listLikesSent(viewerId: string, limit: number): Promise<LikeInteractionRow[]> {
+  async listLikesSent(
+    viewerId: string,
+    limit: number,
+  ): Promise<LikeInteractionRow[]> {
     // `ix_connections_requester (requester_id, status)`.
     return this.listPendingLikes(
       `SELECT c.addressee_id AS user_id, c.id AS connection_id, c.created_at AS liked_at
@@ -634,7 +1228,10 @@ export class SocialRepository {
   }
 
   /** Quién descartó al viewer. Índice `ix_discovery_passes_target_recent`. */
-  async listPassesReceived(viewerId: string, limit: number): Promise<PassInteractionRow[]> {
+  async listPassesReceived(
+    viewerId: string,
+    limit: number,
+  ): Promise<PassInteractionRow[]> {
     return this.listPasses(
       `SELECT dp.viewer_id AS user_id, dp.created_at AS passed_at
          FROM social.discovery_passes dp
@@ -647,7 +1244,10 @@ export class SocialRepository {
   }
 
   /** A quién descartó el viewer. Índice `ix_discovery_passes_viewer_recent`. */
-  async listPassesSent(viewerId: string, limit: number): Promise<PassInteractionRow[]> {
+  async listPassesSent(
+    viewerId: string,
+    limit: number,
+  ): Promise<PassInteractionRow[]> {
     return this.listPasses(
       `SELECT dp.target_id AS user_id, dp.created_at AS passed_at
          FROM social.discovery_passes dp
@@ -664,12 +1264,18 @@ export class SocialRepository {
     viewerId: string,
     limit: number,
   ): Promise<PassInteractionRow[]> {
-    const rows = await this.sequelize.query<{ user_id: string; passed_at: Date }>(sql, {
+    const rows = await this.sequelize.query<{
+      user_id: string;
+      passed_at: Date;
+    }>(sql, {
       type: QueryTypes.SELECT,
       replacements: { viewerId, limit },
     });
 
-    return rows.map((row) => ({ userId: row.user_id, passedAt: new Date(row.passed_at) }));
+    return rows.map((row) => ({
+      userId: row.user_id,
+      passedAt: new Date(row.passed_at),
+    }));
   }
 
   /**

@@ -1,6 +1,7 @@
 import { Column, CreatedAt, DataType, Default, ForeignKey, Model, PrimaryKey, Table } from "sequelize-typescript";
 import { MediaStorageProviderName } from "../media/media-storage.port";
 import { UserModel } from "../users/user.model";
+import type { StoryAudienceMode } from "./story-audience.policy";
 
 export type StoryMediaType = "image" | "video";
 
@@ -16,6 +17,14 @@ export class StoryModel extends Model {
   @Column({ type: DataType.UUID, allowNull: false, field: "user_id" })
   declare userId: string;
 
+  /** Optional upload idempotency key, scoped to the author. */
+  @Column({ type: DataType.UUID, allowNull: true, field: "upload_request_id" })
+  declare uploadRequestId: string | null;
+
+  /** SHA-256 of the uploaded bytes; compared on idempotent replays. */
+  @Column({ type: DataType.STRING(64), allowNull: true, field: "upload_content_hash" })
+  declare uploadContentHash: string | null;
+
   @Column({ type: DataType.STRING(60), allowNull: false, field: "tenant_id" })
   declare tenantId: string;
 
@@ -27,6 +36,10 @@ export class StoryModel extends Model {
 
   @Column({ type: DataType.TEXT, allowNull: false, field: "storage_key" })
   declare storageKey: string;
+
+  @Default("ALL_CONNECTIONS")
+  @Column({ type: DataType.STRING(24), allowNull: false, field: "audience_mode" })
+  declare audienceMode: StoryAudienceMode;
 
   @Column({ type: DataType.STRING(10), allowNull: false, field: "media_type" })
   declare mediaType: StoryMediaType;

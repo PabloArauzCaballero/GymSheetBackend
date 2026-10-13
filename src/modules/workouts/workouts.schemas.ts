@@ -62,7 +62,7 @@ export const createWorkoutSetSchema = z
     numeroSerie: z.number().int().min(1).max(100),
     repeticiones: z.number().int().min(1).max(1000),
     pesoKg: z.number().min(0).max(2000),
-    rir: z.number().int().min(0).max(10),
+    rir: z.number().int().min(0).max(10).nullable(),
     descansoSegAnterior: z.number().int().min(0).max(7200),
   })
   .transform(({ numeroSerie, repeticiones, pesoKg, rir, descansoSegAnterior }) => ({
@@ -78,7 +78,7 @@ export const updateWorkoutSetSchema = z
     numeroSerie: z.number().int().min(1).max(100).optional(),
     repeticiones: z.number().int().min(1).max(1000).optional(),
     pesoKg: z.number().min(0).max(2000).optional(),
-    rir: z.number().int().min(0).max(10).optional(),
+    rir: z.number().int().min(0).max(10).nullable().optional(),
     descansoSegAnterior: z.number().int().min(0).max(7200).optional(),
   })
   .refine((input) => Object.values(input).some((value) => value !== undefined), {

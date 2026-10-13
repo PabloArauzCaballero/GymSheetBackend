@@ -1,42 +1,48 @@
-import { Logger, Module } from '@nestjs/common';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
-import { JwtModule } from '@nestjs/jwt';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import { ThrottlerStorageService } from '@nestjs/throttler/dist/throttler.service';
-import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
-import { ResilientThrottlerStorage } from './common/redis/resilient-throttler.storage';
-import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
-import { RolesGuard } from './common/guards/roles.guard';
-import { HttpMetricsInterceptor } from './common/metrics/http-metrics.interceptor';
-import { OptionalRedisClient, REDIS_CLIENT, RedisModule } from './common/redis/redis.module';
-import { RealtimeModule } from './common/realtime/realtime.module';
-import { env } from './config/env';
-import { DatabaseModule } from './database/database.module';
-import { GatewayModule } from './gateway/gateway.module';
-import { AccessControlModule } from './modules/access-control/access-control.module';
-import { AdminAccessModule } from './modules/admin-access/admin-access.module';
-import { AuditInterceptor } from './modules/admin-access/audit.interceptor';
-import { PermissionGuard } from './modules/admin-access/permission.guard';
-import { AuthModule } from './modules/auth/auth.module';
-import { EquipmentModule } from './modules/equipment/equipment.module';
-import { ExercisesModule } from './modules/exercises/exercises.module';
-import { ExportModule } from './modules/export/export.module';
-import { FacilitiesModule } from './modules/facilities/facilities.module';
-import { HealthModule } from './modules/health/health.module';
-import { MediaModule } from './modules/media/media.module';
-import { MembershipModule } from './modules/membership/membership.module';
-import { ModerationModule } from './modules/moderation/moderation.module';
-import { NotificationsModule } from './modules/notifications/notifications.module';
-import { ProfilesModule } from './modules/profiles/profiles.module';
-import { ProfileViewsModule } from './modules/profile-views/profile-views.module';
-import { SocialModule } from './modules/social/social.module';
-import { ChatModule } from './modules/chat/chat.module';
-import { StoriesModule } from './modules/stories/stories.module';
-import { TrainingModule } from './modules/training/training.module';
-import { ProgressionModule } from './modules/progression/progression.module';
-import { TenantsModule } from './modules/tenants/tenants.module';
-import { UsersModule } from './modules/users/users.module';
-import { WorkoutsModule } from './modules/workouts/workouts.module';
+import { Logger, Module } from "@nestjs/common";
+import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { JwtModule } from "@nestjs/jwt";
+import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { ThrottlerStorageService } from "@nestjs/throttler/dist/throttler.service";
+import { ThrottlerStorageRedisService } from "@nest-lab/throttler-storage-redis";
+import { ResilientThrottlerStorage } from "./common/redis/resilient-throttler.storage";
+import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
+import { RolesGuard } from "./common/guards/roles.guard";
+import { HttpMetricsInterceptor } from "./common/metrics/http-metrics.interceptor";
+import {
+  OptionalRedisClient,
+  REDIS_CLIENT,
+  RedisModule,
+} from "./common/redis/redis.module";
+import { RealtimeModule } from "./common/realtime/realtime.module";
+import { env } from "./config/env";
+import { DatabaseModule } from "./database/database.module";
+import { GatewayModule } from "./gateway/gateway.module";
+import { AccessControlModule } from "./modules/access-control/access-control.module";
+import { AdminAccessModule } from "./modules/admin-access/admin-access.module";
+import { AuditInterceptor } from "./modules/admin-access/audit.interceptor";
+import { PermissionGuard } from "./modules/admin-access/permission.guard";
+import { AuthModule } from "./modules/auth/auth.module";
+import { EquipmentModule } from "./modules/equipment/equipment.module";
+import { ExercisesModule } from "./modules/exercises/exercises.module";
+import { ExportModule } from "./modules/export/export.module";
+import { FacilitiesModule } from "./modules/facilities/facilities.module";
+import { HealthModule } from "./modules/health/health.module";
+import { MediaModule } from "./modules/media/media.module";
+import { MembershipModule } from "./modules/membership/membership.module";
+import { ModerationModule } from "./modules/moderation/moderation.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { ProfilesModule } from "./modules/profiles/profiles.module";
+import { ProfileViewsModule } from "./modules/profile-views/profile-views.module";
+import { SocialModule } from "./modules/social/social.module";
+import { ChatModule } from "./modules/chat/chat.module";
+import { StoriesModule } from "./modules/stories/stories.module";
+import { ReelsModule } from "./modules/reels/reels.module";
+import { TrainingModule } from "./modules/training/training.module";
+import { TrainingInvitationsModule } from "./modules/training-invitations/training-invitations.module";
+import { ProgressionModule } from "./modules/progression/progression.module";
+import { TenantsModule } from "./modules/tenants/tenants.module";
+import { UsersModule } from "./modules/users/users.module";
+import { WorkoutsModule } from "./modules/workouts/workouts.module";
 
 @Module({
   imports: [
@@ -56,19 +62,29 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
         if (!redisClient) {
           Logger.warn(
             {
-              event: 'throttler.storage_in_memory',
+              event: "throttler.storage_in_memory",
               detail:
-                'Rate limits are per-process. Configure REDIS_URL before running more than one instance.',
+                "Rate limits are per-process. Configure REDIS_URL before running more than one instance.",
             },
-            'AppModule',
+            "AppModule",
           );
           return {
-            throttlers: [{ ttl: env.RATE_LIMIT_TTL_SECONDS * 1000, limit: env.RATE_LIMIT_MAX }],
+            throttlers: [
+              {
+                ttl: env.RATE_LIMIT_TTL_SECONDS * 1000,
+                limit: env.RATE_LIMIT_MAX,
+              },
+            ],
           };
         }
 
         return {
-          throttlers: [{ ttl: env.RATE_LIMIT_TTL_SECONDS * 1000, limit: env.RATE_LIMIT_MAX }],
+          throttlers: [
+            {
+              ttl: env.RATE_LIMIT_TTL_SECONDS * 1000,
+              limit: env.RATE_LIMIT_MAX,
+            },
+          ],
           // Wrapped so a Redis outage degrades to per-process counters instead
           // of failing every request: the throttler guard runs before every
           // handler, so an unhandled storage error is a full API outage.
@@ -86,7 +102,7 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
         expiresIn: env.JWT_ACCESS_EXPIRES_IN,
         issuer: env.JWT_ISSUER,
         audience: env.JWT_AUDIENCE,
-        algorithm: 'HS256',
+        algorithm: "HS256",
       },
     }),
     DatabaseModule,
@@ -104,12 +120,14 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
     ExercisesModule,
     WorkoutsModule,
     TrainingModule,
+    TrainingInvitationsModule,
     ProgressionModule,
     ExportModule,
     MediaModule,
     SocialModule,
     ChatModule,
     StoriesModule,
+    ReelsModule,
     ProfileViewsModule,
     AdminAccessModule,
     TenantsModule,
