@@ -94,6 +94,7 @@ import { reelSocialInteractionsMigration } from "./202610130001-reel-social-inte
 import { reelModerationMigration } from "./202610130002-reel-moderation";
 import { notificationSuppressionMigration } from "./202610130003-notification-suppression";
 import { privateMessagePreviewsMigration } from "./202610130004-private-message-previews";
+import { socialDiscoveryImpressionsMigration } from "./202610130005-social-discovery-impressions";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -189,4 +190,5 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   reelModerationMigration,
   notificationSuppressionMigration,
   privateMessagePreviewsMigration,
+  socialDiscoveryImpressionsMigration,
 ];

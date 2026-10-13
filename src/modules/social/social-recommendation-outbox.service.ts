@@ -1,8 +1,10 @@
 import { Injectable } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { GymDomainEvent } from "../integration/domain-event.catalog";
 import { DomainEventPublisher } from "../integration/domain-event.publisher";
+import { recommendationFeatureCodes } from "./recommendation-feature-codes";
 
 type SocialProfileSnapshot = {
   id: string;
@@ -19,15 +21,98 @@ type SocialProfileSnapshot = {
 
 @Injectable()
 export class SocialRecommendationOutboxService {
-  constructor(private readonly sequelize: Sequelize, private readonly events: DomainEventPublisher) {}
+  constructor(
+    private readonly sequelize: Sequelize,
+    private readonly events: DomainEventPublisher,
+  ) {}
 
-  async lockProfileForUpdate(userId: string, transaction: Transaction): Promise<void> {
-    await this.sequelize.query("SELECT id FROM public.usuarios WHERE id = :userId FOR UPDATE", {
-      type: QueryTypes.SELECT, replacements: { userId }, transaction,
-    });
+  async lockProfileForUpdate(
+    userId: string,
+    transaction: Transaction,
+  ): Promise<void> {
+    await this.sequelize.query(
+      "SELECT id FROM public.usuarios WHERE id = :userId FOR UPDATE",
+      {
+        type: QueryTypes.SELECT,
+        replacements: { userId },
+        transaction,
+      },
+    );
   }
 
-  async enqueueProfileSnapshot(userId: string, transaction: Transaction): Promise<void> {
+  async enqueueSignal(
+    input: {
+      viewerId: string;
+      profileId: string;
+      impressionId: string;
+      kind: "LIKE" | "MUTUAL" | "PASS";
+      featureCodes: string[];
+    },
+    transaction: Transaction,
+  ): Promise<void> {
+    const signal = {
+      eventId: randomUUID(),
+      viewerId: input.viewerId,
+      profileId: input.profileId,
+      impressionId: input.impressionId,
+      kind: input.kind,
+      occurredAt: new Date().toISOString(),
+      observed: true as const,
+      features: { interests: [...new Set(input.featureCodes)].slice(0, 50) },
+    };
+    await this.events.recordAndEnqueue(
+      {
+        eventName: GymDomainEvent.SOCIAL_RECOMMENDATION_SIGNAL_RECORDED,
+        aggregateType: "social.recommendation.signal",
+        aggregateId: input.viewerId,
+        actorUserId: input.viewerId,
+        deduplicationKey: `recommendation-signal:${signal.eventId}`,
+        payload: { schemaVersion: 1, signal },
+      },
+      [
+        {
+          queueName: "recommendations.projection",
+          deduplicationKey: `recommendation-signal:${signal.eventId}`,
+          payload: { schemaVersion: 1, signal },
+        },
+      ],
+      transaction,
+    );
+  }
+
+  async enqueueSignalRetraction(
+    input: {
+      viewerId: string;
+      profileId: string;
+      impressionId: string;
+    },
+    transaction: Transaction,
+  ): Promise<void> {
+    const retraction = { eventId: randomUUID(), ...input };
+    await this.events.recordAndEnqueue(
+      {
+        eventName: GymDomainEvent.SOCIAL_RECOMMENDATION_SIGNAL_RETRACTED,
+        aggregateType: "social.recommendation.signal",
+        aggregateId: input.viewerId,
+        actorUserId: input.viewerId,
+        deduplicationKey: `recommendation-signal-retraction:${retraction.eventId}`,
+        payload: { schemaVersion: 1, retraction },
+      },
+      [
+        {
+          queueName: "recommendations.projection",
+          deduplicationKey: `recommendation-signal-retraction:${retraction.eventId}`,
+          payload: { schemaVersion: 1, retraction },
+        },
+      ],
+      transaction,
+    );
+  }
+
+  async enqueueProfileSnapshot(
+    userId: string,
+    transaction: Transaction,
+  ): Promise<void> {
     await this.lockProfileForUpdate(userId, transaction);
     const snapshots = await this.sequelize.query<SocialProfileSnapshot>(
       `SELECT account.id, account.estado = 'ACTIVO' AS active,
@@ -58,26 +143,39 @@ export class SocialRecommendationOutboxService {
       { type: QueryTypes.SELECT, replacements: { userId }, transaction },
     );
     const aggregateVersion = Number(versions[0]?.version);
-    if (!Number.isInteger(aggregateVersion) || aggregateVersion < 1) throw new Error("Recommendation profile version could not be advanced.");
+    if (!Number.isInteger(aggregateVersion) || aggregateVersion < 1)
+      throw new Error("Recommendation profile version could not be advanced.");
 
-    const eligible = snapshot.active && snapshot.profile_enabled && !snapshot.suspended &&
-      Number.isInteger(snapshot.age) && (snapshot.age as number) >= 18 &&
+    const eligible =
+      snapshot.active &&
+      snapshot.profile_enabled &&
+      !snapshot.suspended &&
+      Number.isInteger(snapshot.age) &&
+      (snapshot.age as number) >= 18 &&
       (snapshot.gender === "MALE" || snapshot.gender === "FEMALE") &&
-      snapshot.intents !== null && snapshot.lat !== null && snapshot.lon !== null;
+      snapshot.intents !== null &&
+      snapshot.lat !== null &&
+      snapshot.lon !== null;
 
     if (!eligible) {
-      await this.events.recordAndEnqueue({
-        eventName: GymDomainEvent.SOCIAL_PROFILE_DELETED,
-        aggregateType: "social.profile",
-        aggregateId: userId,
-        actorUserId: userId,
-        deduplicationKey: `social-profile:${userId}:${aggregateVersion}`,
-        payload: { userId, aggregateVersion, schemaVersion: 1 },
-      }, [{
-        queueName: "recommendations.projection",
-        deduplicationKey: `social-profile:${userId}:${aggregateVersion}`,
-        payload: { aggregateVersion, schemaVersion: 1, profile: null },
-      }], transaction);
+      await this.events.recordAndEnqueue(
+        {
+          eventName: GymDomainEvent.SOCIAL_PROFILE_DELETED,
+          aggregateType: "social.profile",
+          aggregateId: userId,
+          actorUserId: userId,
+          deduplicationKey: `social-profile:${userId}:${aggregateVersion}`,
+          payload: { userId, aggregateVersion, schemaVersion: 1 },
+        },
+        [
+          {
+            queueName: "recommendations.projection",
+            deduplicationKey: `social-profile:${userId}:${aggregateVersion}`,
+            payload: { aggregateVersion, schemaVersion: 1, profile: null },
+          },
+        ],
+        transaction,
+      );
       return;
     }
 
@@ -89,7 +187,7 @@ export class SocialRecommendationOutboxService {
       age: snapshot.age as number,
       gender: snapshot.gender === "MALE" ? "MAN" : "WOMAN",
       intents: snapshot.intents ?? [],
-      interests: [],
+      interests: recommendationFeatureCodes(snapshot.goal, snapshot.intents),
       goals: snapshot.goal ? [snapshot.goal] : [],
       availability: [],
       area: { lat: snapshot.lat as number, lon: snapshot.lon as number },
@@ -97,17 +195,23 @@ export class SocialRecommendationOutboxService {
       connectedIds: [],
       passedIds: [],
     };
-    await this.events.recordAndEnqueue({
-      eventName: GymDomainEvent.SOCIAL_PROFILE_UPDATED,
-      aggregateType: "social.profile",
-      aggregateId: userId,
-      actorUserId: userId,
-      deduplicationKey: `social-profile:${userId}:${aggregateVersion}`,
-      payload: { userId, aggregateVersion, schemaVersion: 1, profile },
-    }, [{
-      queueName: "recommendations.projection",
-      deduplicationKey: `social-profile:${userId}:${aggregateVersion}`,
-      payload: { aggregateVersion, schemaVersion: 1, profile },
-    }], transaction);
+    await this.events.recordAndEnqueue(
+      {
+        eventName: GymDomainEvent.SOCIAL_PROFILE_UPDATED,
+        aggregateType: "social.profile",
+        aggregateId: userId,
+        actorUserId: userId,
+        deduplicationKey: `social-profile:${userId}:${aggregateVersion}`,
+        payload: { userId, aggregateVersion, schemaVersion: 1, profile },
+      },
+      [
+        {
+          queueName: "recommendations.projection",
+          deduplicationKey: `social-profile:${userId}:${aggregateVersion}`,
+          payload: { aggregateVersion, schemaVersion: 1, profile },
+        },
+      ],
+      transaction,
+    );
   }
 }

@@ -30,6 +30,12 @@ function createService(
       runInTransaction: jest.fn(
         (work: (transaction: never) => Promise<unknown>) => work({} as never),
       ),
+      issueDiscoveryImpressions: jest.fn().mockResolvedValue(undefined),
+      getDiscoveryImpression: jest.fn().mockResolvedValue({ targetId: userB }),
+      observeDiscoveryImpression: jest.fn().mockResolvedValue(true),
+      consumeDiscoveryImpression: jest.fn().mockResolvedValue(["goal:FUERZA"]),
+      enqueueRecommendationSignal: jest.fn().mockResolvedValue(undefined),
+      retractLatestDiscoverySignal: jest.fn().mockResolvedValue(undefined),
       ...repositoryOverrides,
     } as unknown as SocialRepository,
     {
@@ -198,6 +204,70 @@ describe("SocialService.sendConnection", () => {
 
     expect(result.status).toBe(ConnectionStatus.PENDING);
     expect(create).toHaveBeenCalledWith(userA, userB, expect.any(Object));
+  });
+});
+
+describe("SocialService verified discovery signals", () => {
+  const impressionId = "00000000-0000-4000-8000-0000000000a1";
+
+  it("only acknowledges a server-issued impression owned by the current viewer", async () => {
+    const observe = jest.fn().mockResolvedValue(true);
+    const service = createService({
+      getDiscoveryImpression: jest.fn().mockResolvedValue({ targetId: userB }),
+      observeDiscoveryImpression: observe,
+    });
+    await expect(
+      service.observeDiscoveryImpression(userA, "default", impressionId),
+    ).resolves.toEqual({ observed: true });
+    expect(observe).toHaveBeenCalledWith(
+      userA,
+      impressionId,
+      expect.any(Object),
+    );
+  });
+
+  it("enqueues learning in the swipe transaction after the issued impression was observed", async () => {
+    const enqueue = jest.fn().mockResolvedValue(undefined);
+    const service = createService({
+      createPass: jest.fn().mockResolvedValue(undefined),
+      enqueueRecommendationSignal: enqueue,
+    });
+    await expect(
+      service.swipe(userA, "default", {
+        targetId: userB,
+        direction: "PASS",
+        impressionId,
+      }),
+    ).resolves.toMatchObject({
+      direction: "PASS",
+      targetId: userB,
+    });
+    expect(enqueue).toHaveBeenCalledWith(
+      {
+        viewerId: userA,
+        profileId: userB,
+        impressionId,
+        kind: "PASS",
+        featureCodes: ["goal:FUERZA"],
+      },
+      expect.any(Object),
+    );
+  });
+
+  it("rejects reused, unobserved, expired, or mismatched impressions without saving a swipe", async () => {
+    const createPass = jest.fn();
+    const service = createService({
+      consumeDiscoveryImpression: jest.fn().mockResolvedValue(null),
+      createPass,
+    });
+    await expect(
+      service.swipe(userA, "default", {
+        targetId: userB,
+        direction: "PASS",
+        impressionId,
+      }),
+    ).rejects.toThrow(ConflictException);
+    expect(createPass).not.toHaveBeenCalled();
   });
 });
 
@@ -519,14 +589,14 @@ describe("SocialService.discoveryDeck preferences", () => {
       connectionId: null,
       socialStatus: null,
       photoUrl: null,
-      objetivo: null,
+      objetivo: "FUERZA",
       branchId: null,
       branchName: null,
       experienceLevel: null,
       points: null,
       levelCode: null,
       recommendationArea: { lat: -17.78, lon: -63.18 },
-      recommendationIntents: [],
+      recommendationIntents: ["TRAINING"],
     };
     const another = { ...female, userId: userC };
     const preferences = jest
@@ -614,6 +684,10 @@ describe("SocialService.discoveryDeck preferences", () => {
     ).rejects.toThrow(BadRequestException);
     expect(directory).toHaveBeenCalledTimes(2);
     expect(rankPeople).toHaveBeenCalledTimes(1);
+    expect(rankPeople.mock.calls[0][0].candidates[0].interests).toEqual([
+      "intent:TRAINING",
+      "goal:FUERZA",
+    ]);
   });
   it("H4.S4.M3 rechecks preferences on the short local path", async () => {
     const female = {

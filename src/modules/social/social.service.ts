@@ -26,9 +26,10 @@ import {
   type SwipeResponse,
   type UndoSwipeResponse,
 } from "./social.mapper";
-import { SocialRepository } from "./social.repository";
+import { DirectoryRow, SocialRepository } from "./social.repository";
 import { NotificationService } from "../notifications/notification.service";
 import { RecommendationsClient } from "./recommendations-client";
+import { recommendationFeatureCodes } from "./recommendation-feature-codes";
 import { applySocialDiscoverySettings } from "./social-discovery-settings.policy";
 import {
   discoveryCursorContext,
@@ -662,7 +663,10 @@ export class SocialService {
                 age: row.age as number,
                 gender: row.gender === "MALE" ? "MAN" : "WOMAN",
                 intents: row.recommendationIntents ?? [],
-                interests: [],
+                interests: recommendationFeatureCodes(
+                  row.objetivo,
+                  row.recommendationIntents,
+                ),
                 goals: row.objetivo ? [row.objetivo] : [],
                 availability: [],
                 area: row.recommendationArea,
@@ -784,16 +788,21 @@ export class SocialService {
         };
       }
       const byId = new Map(current.map((row) => [row.userId, row]));
-      const validated = rankedIds.flatMap((id) => {
+      const validatedRows = rankedIds.flatMap((id) => {
         const row = byId.get(id);
-        return row ? [mapDirectoryRowToResponse(row)] : [];
+        return row ? [row] : [];
       });
       const available = query.limit - items.length;
-      for (const item of validated.slice(0, available)) {
+      const pageRows = validatedRows.slice(0, available);
+      const pageItems = await this.issueDiscoveryImpressions(
+        viewerId,
+        pageRows,
+      );
+      for (const item of pageItems) {
         items.push(item);
         servedIds.add(item.userId);
       }
-      pending = validated.slice(available).map((item) => item.userId);
+      pending = validatedRows.slice(available).map((row) => row.userId);
       if (items.length >= query.limit) {
         return {
           items,
@@ -848,12 +857,66 @@ export class SocialService {
         latestPreferences.version === preferences.version &&
         latestConsent === includeCrossGym
       ) {
-        return rows.slice(0, query.limit).map(mapDirectoryRowToResponse);
+        return this.issueDiscoveryImpressions(
+          viewerId,
+          rows.slice(0, query.limit),
+        );
       }
     }
     throw new ConflictException(
       "Las preferencias cambiaron durante la consulta. Reinicia la baraja.",
     );
+  }
+
+  private async issueDiscoveryImpressions(
+    viewerId: string,
+    rows: readonly DirectoryRow[],
+  ): Promise<DirectoryEntryResponse[]> {
+    const entries = rows.map(mapDirectoryRowToResponse);
+    const issued = rows.map((row) => ({
+      id: randomUUID(),
+      targetId: row.userId,
+      featureCodes: recommendationFeatureCodes(
+        row.objetivo,
+        row.recommendationIntents,
+      ),
+    }));
+    if (
+      issued.length &&
+      typeof this.repository.issueDiscoveryImpressions === "function"
+    ) {
+      await this.repository.issueDiscoveryImpressions(viewerId, issued);
+    } else {
+      return entries;
+    }
+    return entries.map((entry, index) => ({
+      ...entry,
+      impressionId: issued[index].id,
+    }));
+  }
+
+  async observeDiscoveryImpression(
+    viewerId: string,
+    tenantId: string,
+    impressionId: string,
+  ): Promise<{ observed: true }> {
+    const impression = await this.repository.getDiscoveryImpression(
+      viewerId,
+      impressionId,
+    );
+    if (!impression)
+      throw new NotFoundException("Impresión de Conocer no encontrada.");
+    await this.requireSocialCandidate(viewerId, impression.targetId, tenantId);
+    const observed = await this.repository.runInTransaction((transaction) =>
+      this.repository.observeDiscoveryImpression(
+        viewerId,
+        impressionId,
+        transaction,
+      ),
+    );
+    if (!observed)
+      throw new NotFoundException("Impresión de Conocer no encontrada.");
+    return { observed: true };
   }
 
   /**
@@ -880,8 +943,34 @@ export class SocialService {
     try {
       return await this.repository.runInTransaction<SwipeResponse>(
         async (transaction) => {
+          const featureCodes = input.impressionId
+            ? await this.repository.consumeDiscoveryImpression(
+                viewerId,
+                target.id,
+                input.impressionId,
+                input.direction,
+                transaction,
+              )
+            : null;
+          if (input.impressionId && featureCodes === null) {
+            throw new ConflictException(
+              "La impresión expiró o ya fue utilizada.",
+            );
+          }
           if (input.direction === "PASS") {
             await this.repository.createPass(viewerId, target.id, transaction);
+            if (input.impressionId && featureCodes?.length) {
+              await this.repository.enqueueRecommendationSignal(
+                {
+                  viewerId,
+                  profileId: target.id,
+                  impressionId: input.impressionId,
+                  kind: "PASS",
+                  featureCodes,
+                },
+                transaction,
+              );
+            }
             return {
               direction: "PASS",
               targetId: target.id,
@@ -900,6 +989,30 @@ export class SocialService {
             target.id,
             transaction,
           );
+          if (input.impressionId && featureCodes?.length) {
+            await this.repository.enqueueRecommendationSignal(
+              {
+                viewerId,
+                profileId: target.id,
+                impressionId: input.impressionId,
+                kind: "LIKE",
+                featureCodes,
+              },
+              transaction,
+            );
+            if (connection.status === ConnectionStatus.ACCEPTED) {
+              await this.repository.enqueueRecommendationSignal(
+                {
+                  viewerId,
+                  profileId: target.id,
+                  impressionId: input.impressionId,
+                  kind: "MUTUAL",
+                  featureCodes,
+                },
+                transaction,
+              );
+            }
+          }
           return {
             direction: "LIKE",
             targetId: target.id,
@@ -940,6 +1053,12 @@ export class SocialService {
           await this.repository.deletePass(
             viewerId,
             last.targetId,
+            transaction,
+          );
+          await this.repository.retractLatestDiscoverySignal(
+            viewerId,
+            last.targetId,
+            "PASS",
             transaction,
           );
           return {
@@ -984,6 +1103,13 @@ export class SocialService {
           // pendiente, no la borra. Nadie retiró lo que no envió.
           await this.repository.revertToPending(connection, transaction);
         }
+
+        await this.repository.retractLatestDiscoverySignal(
+          viewerId,
+          last.targetId,
+          "LIKE",
+          transaction,
+        );
 
         return {
           undone: "LIKE",

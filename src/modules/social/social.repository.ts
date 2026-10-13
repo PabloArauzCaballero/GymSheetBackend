@@ -250,6 +250,11 @@ export class SocialRepository {
              OR (viewer_id = :blockedId AND target_id = :blockerId)`,
         { replacements: { blockerId, blockedId }, transaction },
       );
+      await this.retractDiscoverySignalsForPair(
+        blockerId,
+        blockedId,
+        transaction,
+      );
       return conversationIds;
     });
   }
@@ -789,6 +794,174 @@ export class SocialRepository {
     transaction?: Transaction,
   ): Promise<number> {
     return this.passes.destroy({ where: { viewerId, targetId }, transaction });
+  }
+
+  async issueDiscoveryImpressions(
+    viewerId: string,
+    impressions: readonly {
+      id: string;
+      targetId: string;
+      featureCodes: string[];
+    }[],
+    transaction?: Transaction,
+  ): Promise<void> {
+    for (const impression of impressions) {
+      await this.sequelize.query(
+        `INSERT INTO social.discovery_impressions
+           (id, viewer_id, target_id, feature_codes)
+         VALUES (:id, :viewerId, :targetId,
+           ARRAY(SELECT jsonb_array_elements_text(CAST(:featureCodes AS jsonb))))
+         ON CONFLICT (id) DO NOTHING`,
+        {
+          replacements: {
+            id: impression.id,
+            viewerId,
+            targetId: impression.targetId,
+            featureCodes: JSON.stringify(impression.featureCodes),
+          },
+          transaction,
+        },
+      );
+    }
+  }
+
+  async getDiscoveryImpression(
+    viewerId: string,
+    impressionId: string,
+    transaction?: Transaction,
+  ): Promise<{ targetId: string } | null> {
+    const rows = await this.sequelize.query<{ target_id: string }>(
+      `SELECT target_id FROM social.discovery_impressions
+        WHERE id = :impressionId AND viewer_id = :viewerId
+          AND issued_at >= NOW() - INTERVAL '24 hours'
+          AND retracted_at IS NULL AND action IS NULL`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: { viewerId, impressionId },
+        transaction,
+      },
+    );
+    return rows[0] ? { targetId: rows[0].target_id } : null;
+  }
+
+  async observeDiscoveryImpression(
+    viewerId: string,
+    impressionId: string,
+    transaction: Transaction,
+  ): Promise<boolean> {
+    const rows = await this.sequelize.query<{ id: string }>(
+      `UPDATE social.discovery_impressions
+          SET observed_at = COALESCE(observed_at, NOW())
+        WHERE id = :impressionId AND viewer_id = :viewerId
+          AND issued_at >= NOW() - INTERVAL '24 hours'
+          AND retracted_at IS NULL AND action IS NULL
+        RETURNING id`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: { viewerId, impressionId },
+        transaction,
+      },
+    );
+    return rows.length === 1;
+  }
+
+  async consumeDiscoveryImpression(
+    viewerId: string,
+    targetId: string,
+    impressionId: string,
+    action: "LIKE" | "PASS",
+    transaction: Transaction,
+  ): Promise<string[] | null> {
+    const rows = await this.sequelize.query<{ feature_codes: string[] }>(
+      `UPDATE social.discovery_impressions
+          SET action = :action, acted_at = NOW()
+        WHERE id = :impressionId AND viewer_id = :viewerId AND target_id = :targetId
+          AND observed_at IS NOT NULL AND issued_at >= NOW() - INTERVAL '24 hours'
+          AND retracted_at IS NULL AND action IS NULL
+        RETURNING feature_codes`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: { viewerId, targetId, impressionId, action },
+        transaction,
+      },
+    );
+    return rows[0]?.feature_codes ?? null;
+  }
+
+  async enqueueRecommendationSignal(
+    input: {
+      viewerId: string;
+      profileId: string;
+      impressionId: string;
+      kind: "LIKE" | "MUTUAL" | "PASS";
+      featureCodes: string[];
+    },
+    transaction: Transaction,
+  ): Promise<void> {
+    await this.recommendationOutbox?.enqueueSignal(input, transaction);
+  }
+
+  async retractLatestDiscoverySignal(
+    viewerId: string,
+    targetId: string,
+    action: "LIKE" | "PASS",
+    transaction: Transaction,
+  ): Promise<void> {
+    if (!this.recommendationOutbox) return;
+    const rows = await this.sequelize.query<{ id: string }>(
+      `SELECT id FROM social.discovery_impressions
+        WHERE viewer_id = :viewerId AND target_id = :targetId AND action = :action
+          AND retracted_at IS NULL
+        ORDER BY acted_at DESC, issued_at DESC LIMIT 1 FOR UPDATE`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: { viewerId, targetId, action },
+        transaction,
+      },
+    );
+    const impressionId = rows[0]?.id;
+    if (!impressionId) return;
+    await this.sequelize.query(
+      `UPDATE social.discovery_impressions SET retracted_at = NOW() WHERE id = :impressionId`,
+      { replacements: { impressionId }, transaction },
+    );
+    await this.recommendationOutbox.enqueueSignalRetraction(
+      { viewerId, profileId: targetId, impressionId },
+      transaction,
+    );
+  }
+
+  private async retractDiscoverySignalsForPair(
+    userA: string,
+    userB: string,
+    transaction: Transaction,
+  ): Promise<void> {
+    if (!this.recommendationOutbox) return;
+    const impressions = await this.sequelize.query<{
+      id: string;
+      viewer_id: string;
+      target_id: string;
+    }>(
+      `SELECT id, viewer_id, target_id FROM social.discovery_impressions
+        WHERE ((viewer_id = :userA AND target_id = :userB) OR (viewer_id = :userB AND target_id = :userA))
+          AND action IS NOT NULL AND retracted_at IS NULL
+        FOR UPDATE`,
+      { type: QueryTypes.SELECT, replacements: { userA, userB }, transaction },
+    );
+    for (const impression of impressions) {
+      await this.sequelize.query(
+        `UPDATE social.discovery_impressions SET retracted_at = NOW() WHERE id = :impressionId`,
+        { replacements: { impressionId: impression.id }, transaction },
+      );
+      await this.recommendationOutbox.enqueueSignalRetraction(
+        {
+          viewerId: impression.viewer_id,
+          profileId: impression.target_id,
+          impressionId: impression.id,
+        },
+        transaction,
+      );
+    }
   }
 
   /**
