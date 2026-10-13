@@ -6,7 +6,7 @@ import { SocialService } from "../social/social.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
 import { ChatEventsService } from "./chat-events.service";
 import { ChatPresenceService } from "./chat-presence.service";
-import { mapConversationSummary, mapMessageToResponse, MessageResponse } from "./chat.mapper";
+import { mapChatHistoryItem, mapConversationSummary, mapMessageToResponse, MessageResponse } from "./chat.mapper";
 import { MessageCreateFields, ChatRepository } from "./chat.repository";
 import { ConversationParticipantModel } from "./conversation-participant.model";
 import { SystemChatService } from "./system-chat.service";
@@ -80,13 +80,13 @@ export class ChatService {
     return rows.map((row) => mapConversationSummary(row, this.presence.isOnline(row.other_user_id)));
   }
 
-  async listMessages(conversationId: string, userId: string, limit: number, before?: string) {
+  async listMessages(conversationId: string, userId: string, limit: number, before?: string, beforeId?: string) {
     await this.assertParticipant(conversationId, userId);
-    const messages = await this.repository.listMessages(conversationId, limit, before);
+    const messages = await this.repository.listMessages(conversationId, limit, before, beforeId);
     // Traer el historial es, como mínimo, haberlo recibido: adelanta el
     // cursor de entregado aunque el socket nunca haya estado conectado.
     await this.markDelivered(conversationId, userId);
-    return messages.map((message) => mapMessageToResponse(message));
+    return messages.map((record) => mapChatHistoryItem(record));
   }
 
   /** Único punto que realmente escribe un mensaje — cada `send*` público arma los campos y pasa por acá. */
