@@ -39,14 +39,14 @@ describe("ChatRepository training event history", () => {
     };
     const { repository, query } = setup([event]);
 
-    const history = await repository.listMessages(conversationId, 1);
+    const history = await repository.listMessages(conversationId, 2);
 
-    expect(history).toHaveLength(1);
-    expect(history[0]).toMatchObject({ kind: "message" });
+    expect(history).toHaveLength(2);
+    expect(history.map((item) => item.kind)).toEqual(["system", "message"]);
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining("FROM chat.conversation_events"),
       expect.objectContaining({
-        replacements: expect.objectContaining({ conversationId, limit: 1 }),
+        replacements: expect.objectContaining({ conversationId, limit: 2 }),
       }),
     );
   });
