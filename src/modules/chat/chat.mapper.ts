@@ -30,6 +30,7 @@ export type SystemChatEventResponse = {
     startsAt: string;
     timeZone: string;
     placeLabel: string;
+    cancelledAt: string | null;
   };
   createdAt: Date;
 };
@@ -49,6 +50,7 @@ export function mapTrainingInviteEvent(event: TrainingInviteConversationEvent): 
       startsAt: new Date(event.startsAt).toISOString(),
       timeZone: event.timeZone,
       placeLabel: event.placeLabel,
+      cancelledAt: event.cancelledAt ? new Date(event.cancelledAt).toISOString() : null,
     },
     createdAt: new Date(event.createdAt),
   };
