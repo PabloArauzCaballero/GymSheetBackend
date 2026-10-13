@@ -168,6 +168,15 @@ export const updateExerciseSchema = exerciseRequestSchema
     }),
   );
 
+/** Cómo se ordena la lista. Sin `orden`: relevancia si hay `search`, nombre si no. */
+export const exerciseOrders = ['relevancia', 'nombre', 'populares', 'recientes', 'masUsados'] as const;
+export type ExerciseOrder = (typeof exerciseOrders)[number];
+
+const queryFlagSchema = z
+  .enum(['true', 'false'])
+  .transform((value) => value === 'true')
+  .optional();
+
 export const exerciseFilterSchema = z
   .object({
     grupoMuscular: z.string().trim().max(100).optional(),
@@ -177,18 +186,31 @@ export const exerciseFilterSchema = z
     targetMuscle: z.string().trim().max(120).optional(),
     dataSource: z.nativeEnum(ExerciseDataSource).optional(),
     /** Solo los favoritos de quien pregunta (favorito privado, D7). */
-    favoritos: z
-      .enum(['true', 'false'])
-      .transform((value) => value === 'true')
-      .optional(),
+    favoritos: queryFlagSchema,
+    orden: z.enum(exerciseOrders).optional(),
+    /** Equipamiento requerido, texto libre en español o inglés («mancuerna», «band»). */
+    equipo: z.string().trim().min(1).max(80).optional(),
+    /** Músculo, grupo o zona, texto libre en español o inglés («pecho», «glutes»). */
+    musculo: z.string().trim().min(1).max(80).optional(),
+    /** Solo ejercicios con imagen fija (lámina o póster). */
+    conImagen: queryFlagSchema,
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(25),
   })
-  .transform(({ grupoMuscular, equipoId, ...filters }) => ({
+  .transform(({ grupoMuscular, equipoId, orden, equipo, musculo, conImagen, ...filters }) => ({
     ...filters,
     muscleGroup: grupoMuscular,
     equipmentId: equipoId,
+    order: orden,
+    equipmentText: equipo,
+    muscleText: musculo,
+    withImage: conImagen,
   }));
+
+export const exerciseShortcutsSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(20).default(10),
+});
+export type ExerciseShortcutsInput = z.infer<typeof exerciseShortcutsSchema>;
 
 const httpsUrlSchema = z
   .string()

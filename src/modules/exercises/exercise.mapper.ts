@@ -40,8 +40,9 @@ export type ExerciseResponse = {
   id: string;
   nombre: string;
   /**
-   * Imagen fija para miniaturas y portadas (lámina o póster del vídeo). Solo la
-   * rellena el detalle de una rutina; en el resto de respuestas no viene.
+   * Imagen fija para miniaturas y portadas (lámina o póster del vídeo). La
+   * rellenan el detalle de una rutina y las listas de ejercicios; en el resto
+   * de respuestas no viene.
    */
   imagenUrl?: string | null;
   /** Nombre en español si el original está en inglés; la UI muestra `nombreEs ?? nombre`. */
@@ -83,6 +84,17 @@ export type ExercisePageResponse = {
   pageSize: number;
   total: number;
   totalPages: number;
+  /** «¿Quisiste decir…?»: la consulta corregida, o `null` si no hace falta. */
+  sugerencia: string | null;
+  /** Lo que se buscó, normalizado; `null` sin `search`. */
+  consulta: string | null;
+};
+
+/** Atajos para la pantalla vacía del buscador. */
+export type ExerciseShortcutsResponse = {
+  recientes: ExerciseResponse[];
+  masUsados: ExerciseResponse[];
+  populares: ExerciseResponse[];
 };
 
 export type FavoriteExerciseResponse = {

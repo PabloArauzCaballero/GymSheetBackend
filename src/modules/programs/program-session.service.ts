@@ -47,6 +47,12 @@ export class ProgramSessionService implements OnModuleInit {
     if (!session || session.status !== WorkoutSessionStatus.COMPLETED) return null;
 
     const performed = this.collectSets(session);
+    // D1: un ejercicio con series saltadas u omitido no sube ni cuenta como fallo.
+    const skippedExercises = new Set(
+      (session.sessionExercises ?? [])
+        .filter((se) => (se.skippedSets?.length ?? 0) > 0 || se.omittedReason != null)
+        .map((se) => se.exerciseId),
+    );
     const today = this.dates.today();
     const weekNumber = weekNumberOn(today, program.startDate, program.plannedEndDate);
     const week = weekNumber ? await this.programs.findWeek(program.id, weekNumber) : null;
@@ -84,7 +90,7 @@ export class ProgramSessionService implements OnModuleInit {
               consecutiveFails: lift.consecutiveFails,
             },
             sets,
-            { isDeload: week?.isDeload ?? false },
+            { isDeload: week?.isDeload ?? false, hadSkippedSets: skippedExercises.has(lift.exerciseId) },
           );
           await lift.update(
             { suggestedKg: outcome.suggestedKg.toFixed(2), consecutiveFails: outcome.consecutiveFails },

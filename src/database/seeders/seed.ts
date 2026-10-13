@@ -15,6 +15,7 @@ import { databaseModels } from "../models";
 import { seedAdminPermissions } from "./admin-permissions.seed";
 import { seedCustomerExperience } from "./customer-experience.seed";
 import { seedFacilities } from "./facilities.seed";
+import { seedExerciseSearchAliases } from "./exercise-search-aliases.seed";
 import { seedProgression } from "./progression.seed";
 
 export type SeedMode = "base" | "mock" | "all";
@@ -233,6 +234,7 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
       branchesCreated: 0,
       branchesUpdated: 0,
     };
+    let searchAliases = { searchAliasesUpdated: 0 };
     let exercisesSnapshot: SnapshotSeedResult = {
       applied: false,
       total: 0,
@@ -280,6 +282,9 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
         // exige que las máquinas ya existan. Es lo que permite que el gimnasio
         // vea qué equipamiento se usa sin pedirle nada a quien entrena.
         await seedExerciseEquipment(sequelize, transaction);
+        // Nombres en español (también los del borrador sin revisar) como alias
+        // de búsqueda: no se muestran, pero permiten encontrar el ejercicio.
+        searchAliases = await seedExerciseSearchAliases(sequelize, transaction);
       }
       await seedCustomerExperience(mode, transaction);
       // El catálogo de la senda es producto, no datos de prueba: se siembra en
@@ -293,6 +298,7 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
       exercisesSnapshotApplied: exercisesSnapshot.applied,
       exercisesInserted: exercisesSnapshot.inserted,
       exercisesSkipped: exercisesSnapshot.skipped,
+      ...searchAliases,
       ...counters,
       ...adminPermissions,
       ...progression,
