@@ -289,7 +289,7 @@ export class SocialService {
       }
 
       const connection = last.connectionId
-        ? await this.repository.findByIdForUser(last.connectionId, viewerId, transaction)
+        ? await this.repository.lockConnectionForUser(last.connectionId, viewerId, transaction)
         : null;
       if (!connection) throw new NotFoundException("No hay ningún swipe que deshacer.");
 
@@ -307,6 +307,11 @@ export class SocialService {
             "Ya hay mensajes en la conversación: este match no se puede deshacer.",
           );
         }
+        await this.repository.cancelTrainingInvitesForPair(
+          connection.requesterId,
+          connection.addresseeId,
+          transaction,
+        );
       }
 
       if (last.kind === "LIKE_SENT") {
