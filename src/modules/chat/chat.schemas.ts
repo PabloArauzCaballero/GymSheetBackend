@@ -38,6 +38,8 @@ export const messageListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   /** Trae mensajes anteriores a este, para scroll hacia atrás. */
   before: z.string().datetime().optional(),
+  /** Desempata la fecha del cursor para paginar mensajes y eventos sin saltos. */
+  beforeId: z.string().uuid().optional(),
 });
 
 /** `null` borra el apodo y vuelve a mostrar el nombre real. */
