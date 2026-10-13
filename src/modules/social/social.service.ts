@@ -106,12 +106,8 @@ export class SocialService {
   }
 
   async withdrawConnection(connectionId: string, userId: string): Promise<{ deleted: true }> {
-    const connection = await this.repository.findByIdForUser(connectionId, userId);
-    if (!connection) throw new NotFoundException("Solicitud no encontrada.");
-    if (connection.requesterId !== userId) {
-      throw new NotFoundException("Solicitud no encontrada.");
-    }
-    await connection.destroy();
+    const deleted = await this.repository.withdrawConnection(connectionId, userId);
+    if (!deleted) throw new NotFoundException("Solicitud no encontrada.");
     return { deleted: true };
   }
 
