@@ -67,11 +67,20 @@ export class NotificationRepository {
     return this.preferences.findOne({ where: { userId } });
   }
 
+  async allowsMessagePreview(userId: string): Promise<boolean> {
+    const preference = await this.preferences.findOne({
+      attributes: ['messagePreviewEnabled'],
+      where: { userId },
+    });
+    return preference?.messagePreviewEnabled === true;
+  }
+
   createDefaultPreference(userId: string, transaction: Transaction) {
     return this.preferences.create(
       {
         userId,
         membershipExpiryEnabled: true,
+        messagePreviewEnabled: false,
         preferredChannel: NotificationChannel.IN_APP,
         externalDeliveryConsentAt: null,
         consentVersion: null,

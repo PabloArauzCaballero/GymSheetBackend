@@ -9,6 +9,7 @@ import { SocialService } from "../social/social.service";
 import { UsersRepository } from "../users/users.repository";
 import { MediaStorageProvider } from "../media/media-storage.port";
 import { PushDispatcherService } from "../notifications/delivery/push-dispatcher.service";
+import { NotificationService } from "../notifications/notification.service";
 import { ChatEventsService } from "./chat-events.service";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatRepository } from "./chat.repository";
@@ -30,6 +31,7 @@ function createService(
   pushOverrides: Partial<PushDispatcherService> = {},
   mediaStorageOverrides: Partial<MediaStorageProvider> = {},
   chatMediaCipher = new ChatMediaCipher("test-secret-that-is-long-enough-to-derive-a-key"),
+  notificationPreferences?: Pick<NotificationService, "allowsMessagePreview">,
 ): ChatService {
   return new ChatService(
     {
@@ -38,7 +40,7 @@ function createService(
       listOtherParticipants: jest.fn().mockResolvedValue([]),
       publishMessageIfVisible: async (_conversationId: string, _messageId: string, publish: () => void) => { publish(); return true; },
       refreshMessageForResponse: async (message: MessageModel) => message,
-      refreshViewedMessageForResponse: async (conversationId: string, messageId: string, viewerId: string) => ({
+      refreshViewedMessageForResponse: async (conversationId: string, messageId: string, _viewerId: string) => ({
         id: messageId, conversationId, senderId: userB, viewOnce: true, viewedAt: new Date(),
       } as MessageModel),
       withActiveConversationLock: async (_conversationId: string, operation: (transaction: Transaction) => Promise<unknown>) =>
@@ -85,6 +87,7 @@ function createService(
       ...mediaStorageOverrides,
     } as unknown as MediaStorageProvider,
     chatMediaCipher,
+    notificationPreferences as NotificationService | undefined,
   );
 }
 
@@ -166,9 +169,7 @@ describe("ChatService.sendMessage", () => {
       {}, { emitMessage },
     );
 
-    const sendWithKey = service.sendMessage.bind(service) as (
-      conversationId: string, senderId: string, body: string, clientRequestId: string,
-    ) => ReturnType<ChatService["sendMessage"]>;
+    const sendWithKey = service.sendMessage.bind(service);
     const first = await sendWithKey("conv-1", userA, "hola", "00000000-0000-4000-8000-000000000010");
     const retry = await sendWithKey("conv-1", userA, "hola", "00000000-0000-4000-8000-000000000010");
 
@@ -498,7 +499,7 @@ describe("ChatService.viewMessage", () => {
   });
 
   it("reveals the media url once, via a single atomic conditional update", async () => {
-    const tryMarkMessageViewed = jest.fn().mockResolvedValue({
+    const viewedMessage = {
       id: "msg-1",
       conversationId: "conv-1",
       senderId: userB,
@@ -513,8 +514,9 @@ describe("ChatService.viewMessage", () => {
       locationLat: null,
       locationLng: null,
       createdAt: new Date("2026-08-27T00:00:00.000Z"),
-    });
-    const refreshViewedMessageForResponse = jest.fn().mockImplementation(async () => tryMarkMessageViewed.mock.results[0].value);
+    } as unknown as MessageModel;
+    const tryMarkMessageViewed = jest.fn().mockResolvedValue(viewedMessage);
+    const refreshViewedMessageForResponse = jest.fn().mockResolvedValue(viewedMessage);
     const service = createService({
       getParticipant: jest.fn().mockResolvedValue({ canWrite: true }),
       tryMarkMessageViewed,
@@ -722,6 +724,7 @@ describe("ChatService avisa por push a quien no está conectado", () => {
     online: boolean,
     sendToUser = jest.fn().mockResolvedValue({ sent: 1, deactivated: 0 }),
     message: Record<string, unknown> = textMessage,
+    previewEnabled = true,
   ) {
     const service = createService(
       {
@@ -735,6 +738,9 @@ describe("ChatService avisa por push a quien no está conectado", () => {
       {},
       { findActiveById: jest.fn().mockResolvedValue({ id: userA, fullName: "Camila Ruiz" }) },
       { sendToUser },
+      {},
+      undefined,
+      { allowsMessagePreview: jest.fn().mockResolvedValue(previewEnabled) },
     );
     return { service, sendToUser };
   }
@@ -759,6 +765,18 @@ describe("ChatService avisa por push a quien no está conectado", () => {
     await service.sendMessage("conv-1", userA, "¿Entrenamos mañana?");
 
     expect(sendToUser).not.toHaveBeenCalled();
+  });
+
+  it("oculta el texto del mensaje cuando el destinatario desactivó la vista previa", async () => {
+    const { service, sendToUser } = serviceWith(false, undefined, textMessage, false);
+
+    await service.sendMessage("conv-1", userA, "¿Entrenamos mañana?");
+
+    expect(sendToUser).toHaveBeenCalledWith(userB, {
+      title: "Camila Ruiz",
+      body: "Tienes un mensaje nuevo.",
+      url: "/chat/conv-1",
+    });
   });
 
   it("no adelanta el contenido de una foto de vista única", async () => {

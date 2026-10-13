@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { env } from "../../config/env";
 import { PushDispatcherService } from "../notifications/delivery/push-dispatcher.service";
+import { NotificationService } from "../notifications/notification.service";
 import { UsersRepository } from "../users/users.repository";
 import { SocialService } from "../social/social.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
@@ -37,6 +38,7 @@ export class ChatService {
     private readonly push: PushDispatcherService,
     @Inject(MEDIA_STORAGE_PROVIDER) private readonly mediaStorage: MediaStorageProvider,
     private readonly mediaCipher: ChatMediaCipher,
+    @Optional() private readonly notificationPreferences?: NotificationService,
   ) {}
 
   private readonly logger = new Logger(ChatService.name);
@@ -143,7 +145,11 @@ export class ChatService {
       if (absent.length === 0) return;
       const sender = await this.usersRepository.findActiveById(senderId);
       const title = sender?.fullName ?? "Mensaje nuevo";
-      const body = ChatService.previewFor(message);
+      const previews = await Promise.all(absent.map(async (participant) => ({
+        userId: participant.userId,
+        enabled: await this.notificationPreferences?.allowsMessagePreview(participant.userId) ?? false,
+      })));
+      const previewByUser = new Map(previews.map(({ userId, enabled }) => [userId, enabled]));
       let deliveries: Promise<PromiseSettledResult<unknown>[]> | undefined;
       // Resolve recipients/title before the lock, then re-check current markers.
       // Initiate dispatch synchronously under the lock, but await external I/O only after release.
@@ -151,7 +157,9 @@ export class ChatService {
         deliveries = Promise.allSettled(absent.map((participant) =>
           this.push.sendToUser(participant.userId, {
             title,
-            body,
+            body: previewByUser.get(participant.userId)
+              ? ChatService.previewFor(message)
+              : "Tienes un mensaje nuevo.",
             url: `/chat/${message.conversationId}`,
           }),
         ));

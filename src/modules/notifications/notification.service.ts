@@ -144,6 +144,10 @@ export class NotificationService {
     );
   }
 
+  allowsMessagePreview(userId: string): Promise<boolean> {
+    return this.repository.allowsMessagePreview(userId);
+  }
+
   async updateMyPreference(
     userId: string,
     input: UpdateNotificationPreferenceInput,

@@ -16,6 +16,7 @@ import { DomainEventPublisher } from "../../src/modules/integration/domain-event
 import { NotificationDeliveryService } from "../../src/modules/notifications/notification-delivery.service";
 import { NotificationService } from "../../src/modules/notifications/notification.service";
 import { NotificationDeliveryRunner } from "../../src/workers/notification-delivery.runner";
+import { PushDispatcherService } from "../../src/modules/notifications/delivery/push-dispatcher.service";
 
 describe("H11 moderation notices (PostgreSQL e2e)", () => {
   let moduleRef: TestingModule | undefined;
@@ -421,5 +422,147 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
       deliveryAttempts: "0",
       acceptedConnections: "0",
     });
+  }, 60000);
+
+  it("H11.S2.M4 hides private message text from push unless the recipient opts in", async () => {
+    if (!application || !moduleRef) {
+      throw new Error("H11 E2E setup did not finish.");
+    }
+    const suffix = randomUUID();
+    const register = async (label: string) => {
+      const registered = await request(application!.getHttpServer())
+        .post(url("/auth/register"))
+        .send({
+          email: `h11-s2-m4-${label}-${suffix}@example.test`,
+          password: "h11-notice-e2e-password",
+          nombreCompleto: `H11 Preview ${label} ${suffix}`,
+          acceptedTerms: true,
+        })
+        .expect(201);
+      return {
+        userId: registered.body.data.user.id as string,
+        accessToken: registered.body.data.accessToken as string,
+      };
+    };
+    const sender = await register("sender");
+    const recipient = await register("recipient");
+    const pending = await request(application.getHttpServer())
+      .post(url("/me/connections"))
+      .set("Authorization", `Bearer ${sender.accessToken}`)
+      .send({ addresseeId: recipient.userId })
+      .expect(201);
+    await request(application.getHttpServer())
+      .patch(url(`/me/connections/${pending.body.data.id}`))
+      .set("Authorization", `Bearer ${recipient.accessToken}`)
+      .send({ action: "ACCEPT" })
+      .expect(200);
+    const started = await request(application.getHttpServer())
+      .post(url("/me/conversations"))
+      .set("Authorization", `Bearer ${sender.accessToken}`)
+      .send({ otherUserId: recipient.userId })
+      .expect(201);
+    const conversationId = started.body.data.conversationId as string;
+    const push = moduleRef.get(PushDispatcherService, { strict: false });
+    const sendToUser = jest
+      .spyOn(push, "sendToUser")
+      .mockResolvedValue({ delivered: 0, deactivated: 0, skipped: 0 });
+    const preference = (vistaPreviaMensajes: boolean) => ({
+      recordatoriosVencimiento: true,
+      vistaPreviaMensajes,
+      canalPreferido: "IN_APP",
+      consentimientoExternoEn: null,
+      versionConsentimiento: null,
+      horaSilencioInicio: null,
+      horaSilencioFin: null,
+      metadata: {},
+    });
+
+    await request(application.getHttpServer())
+      .patch(url("/notifications/preferences/me"))
+      .set("Authorization", `Bearer ${recipient.accessToken}`)
+      .send(preference(false))
+      .expect(200);
+    await request(application.getHttpServer())
+      .post(url(`/me/conversations/${conversationId}/messages`))
+      .set("Authorization", `Bearer ${sender.accessToken}`)
+      .send({ type: "text", body: "texto privado de prueba" })
+      .expect(201);
+    expect(sendToUser).toHaveBeenCalledWith(recipient.userId, expect.objectContaining({
+      body: "Tienes un mensaje nuevo.",
+    }));
+
+    await request(application.getHttpServer())
+      .patch(url("/notifications/preferences/me"))
+      .set("Authorization", `Bearer ${recipient.accessToken}`)
+      .send(preference(true))
+      .expect(200);
+    await request(application.getHttpServer())
+      .post(url(`/me/conversations/${conversationId}/messages`))
+      .set("Authorization", `Bearer ${sender.accessToken}`)
+      .send({ type: "text", body: "texto compartido por preferencia" })
+      .expect(201);
+    expect(sendToUser).toHaveBeenCalledWith(recipient.userId, expect.objectContaining({
+      body: "texto compartido por preferencia",
+    }));
+    sendToUser.mockRestore();
+  }, 60000);
+
+  it("H11.S2.M3 reauthorizes an old chat notification link after disconnect", async () => {
+    if (!application) {
+      throw new Error("H11 E2E setup did not finish.");
+    }
+    const suffix = randomUUID();
+    const register = async (label: string) => {
+      const registered = await request(application!.getHttpServer())
+        .post(url("/auth/register"))
+        .send({
+          email: `h11-s2-m3-${label}-${suffix}@example.test`,
+          password: "h11-notice-e2e-password",
+          nombreCompleto: `H11 Stale Link ${label} ${suffix}`,
+          acceptedTerms: true,
+        })
+        .expect(201);
+      return {
+        userId: registered.body.data.user.id as string,
+        accessToken: registered.body.data.accessToken as string,
+      };
+    };
+    const sender = await register("sender");
+    const recipient = await register("recipient");
+    const pending = await request(application.getHttpServer())
+      .post(url("/me/connections"))
+      .set("Authorization", `Bearer ${sender.accessToken}`)
+      .send({ addresseeId: recipient.userId })
+      .expect(201);
+    const connectionId = pending.body.data.id as string;
+    await request(application.getHttpServer())
+      .patch(url(`/me/connections/${connectionId}`))
+      .set("Authorization", `Bearer ${recipient.accessToken}`)
+      .send({ action: "ACCEPT" })
+      .expect(200);
+    const started = await request(application.getHttpServer())
+      .post(url("/me/conversations"))
+      .set("Authorization", `Bearer ${sender.accessToken}`)
+      .send({ otherUserId: recipient.userId })
+      .expect(201);
+    const conversationId = started.body.data.conversationId as string;
+    const oldPushUrl = `/chat/${conversationId}`;
+    const historyPath = url(`/me/conversations/${conversationId}/messages?limit=40`);
+    await request(application.getHttpServer())
+      .get(historyPath)
+      .set("Authorization", `Bearer ${recipient.accessToken}`)
+      .expect(200);
+
+    await request(application.getHttpServer())
+      .delete(url(`/me/connections/${connectionId}`))
+      .set("Authorization", `Bearer ${sender.accessToken}`)
+      .expect(200);
+    // Opening the old push URL loads this chat route; its history request is
+    // reauthorized and the web client renders “Esta conversación ya no está disponible.”
+    expect(oldPushUrl).toBe(`/chat/${conversationId}`);
+    await request(application.getHttpServer())
+      .get(historyPath)
+      .set("Authorization", `Bearer ${recipient.accessToken}`)
+      .expect(404);
   }, 60000);
 });
