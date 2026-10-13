@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
-import { Op, QueryTypes } from "sequelize";
+import { Op, QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { ConversationParticipantModel } from "./conversation-participant.model";
 import { ConversationModel } from "./conversation.model";
@@ -91,6 +91,38 @@ export class ChatRepository {
    * entre socios) no cambia — este es un camino aparte, no un caso especial
    * dentro de él.
    */
+  /** Reuse or create the direct chat inside an invitation transaction. */
+  async ensureDirectConversationInTransaction(
+    userA: string,
+    userB: string,
+    transaction: Transaction,
+  ): Promise<string> {
+    const existing = await this.sequelize.query<{ conversation_id: string }>(
+      `SELECT p1.conversation_id
+         FROM chat.participants p1
+         JOIN chat.participants p2 ON p2.conversation_id = p1.conversation_id
+         JOIN chat.conversations c ON c.id = p1.conversation_id
+        WHERE p1.user_id = :userA AND p2.user_id = :userB
+          AND c.system_kind IS NULL
+          AND (SELECT COUNT(*) FROM chat.participants p3 WHERE p3.conversation_id = p1.conversation_id) = 2
+        ORDER BY c.created_at DESC
+        LIMIT 1 FOR UPDATE OF c`,
+      { type: QueryTypes.SELECT, replacements: { userA, userB }, transaction },
+    );
+    if (existing[0]) return existing[0].conversation_id;
+
+    const conversation = await this.conversations.create({}, { transaction });
+    const joinedAt = new Date();
+    await this.participants.bulkCreate(
+      [
+        { conversationId: conversation.id, userId: userA, joinedAt },
+        { conversationId: conversation.id, userId: userB, joinedAt },
+      ],
+      { transaction },
+    );
+    return conversation.id;
+  }
+
   async createSystemConversation(
     regularUserId: string,
     systemUserId: string,
