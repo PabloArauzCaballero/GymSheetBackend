@@ -263,10 +263,15 @@ export class WorkoutsService {
     sessionId: string,
     input: AddSessionExerciseInput,
     targets?: SessionExerciseTargets,
+    options: { exerciseAccessCheckedByRoutine?: boolean } = {},
   ): Promise<WorkoutSessionExerciseResponse> {
     const session = await this.getSessionModelOrFail(userId, sessionId);
     this.assertSessionInProgress(session.status);
-    await this.exercisesService.getVisibleExerciseOrFail(input.exerciseId, userId);
+    // Iniciar desde una rutina ya visible para el usuario basta: un ejercicio personal del autor
+    // de una rutina pública se puede entrenar, aunque no aparezca en el catálogo del que la usa.
+    if (!options.exerciseAccessCheckedByRoutine) {
+      await this.exercisesService.getVisibleExerciseOrFail(input.exerciseId, userId);
+    }
 
     try {
       const sessionExercise = await this.workoutsRepository.addExerciseToSession(

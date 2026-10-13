@@ -381,6 +381,7 @@ export class TrainingService {
           group: exercise.group,
           groupType: exercise.groupType,
         },
+        { exerciseAccessCheckedByRoutine: true },
       );
     }
 
