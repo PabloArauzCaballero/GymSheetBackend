@@ -84,6 +84,7 @@ import { UserModel } from "../../modules/users/user.model";
 import { WorkoutSessionExerciseModel } from "../../modules/workouts/workout-session-exercise.model";
 import { WorkoutSessionModel } from "../../modules/workouts/workout-session.model";
 import { WorkoutSetModel } from "../../modules/workouts/workout-set.model";
+import { WorkoutSkippedSetModel } from "../../modules/workouts/workout-skipped-set.model";
 
 export const databaseModels = [
   UserModel,
@@ -116,6 +117,7 @@ export const databaseModels = [
   WorkoutSessionModel,
   WorkoutSessionExerciseModel,
   WorkoutSetModel,
+  WorkoutSkippedSetModel,
   RoutineModel,
   RoutineExerciseModel,
   RoutineAssignmentModel,

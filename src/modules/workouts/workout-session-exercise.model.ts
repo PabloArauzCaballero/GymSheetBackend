@@ -14,6 +14,7 @@ import {
 import { ExerciseModel } from '../exercises/exercise.model';
 import { WorkoutSessionModel } from './workout-session.model';
 import { WorkoutSetModel } from './workout-set.model';
+import { SkipReason, WorkoutSkippedSetModel } from './workout-skipped-set.model';
 
 @Table({ tableName: 'sesiones_ejercicios', underscored: true, timestamps: true })
 export class WorkoutSessionExerciseModel extends Model {
@@ -78,8 +79,21 @@ export class WorkoutSessionExerciseModel extends Model {
   @BelongsTo(() => ExerciseModel)
   declare exercise?: ExerciseModel;
 
+  // El ejercicio se omitió esta sesión (D1). Las series que tuviera siguen contando.
+  @Column({ type: DataType.STRING(16), allowNull: true, field: 'omitido_motivo' })
+  declare omittedReason: SkipReason | null;
+
+  @Column({ type: DataType.STRING(280), allowNull: true, field: 'omitido_nota' })
+  declare omittedNote: string | null;
+
+  @Column({ type: DataType.DATE, allowNull: true, field: 'omitido_en' })
+  declare omittedAt: Date | null;
+
   @HasMany(() => WorkoutSetModel)
   declare sets?: WorkoutSetModel[];
+
+  @HasMany(() => WorkoutSkippedSetModel)
+  declare skippedSets?: WorkoutSkippedSetModel[];
 
   @CreatedAt
   @Column({ field: 'created_at' })

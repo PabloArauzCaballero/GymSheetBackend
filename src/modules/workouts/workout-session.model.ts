@@ -66,6 +66,14 @@ export class WorkoutSessionModel extends Model {
   @Column({ type: DataType.UUID, allowNull: true, field: 'program_id' })
   declare programId: string | null;
 
+  /**
+   * Lo que respondió `finish` (premio de la senda y extras de programa). Un
+   * segundo `finish` devuelve esto mismo: cerrar dos veces no es un error ni un
+   * premio vacío.
+   */
+  @Column({ type: DataType.JSONB, allowNull: true, field: 'resultado_cierre' })
+  declare closeResult: Record<string, unknown> | null;
+
   @BelongsTo(() => UserModel)
   declare user?: UserModel;
 
