@@ -120,7 +120,11 @@ describe('Chat between connections (e2e)', () => {
         .get(url('/me/conversations'))
         .set('Authorization', `Bearer ${b.accessToken}`)
         .expect(200);
-      expect(list.body.data[0].lastMessage).toBe('Hola, ¿entrenamos juntos?');
+      // Las conversaciones del sistema van fijadas arriba: se busca la del par.
+      const summary = (list.body.data as Array<{ conversationId: string; lastMessage: string | null }>).find(
+        (entry) => entry.conversationId === conversationId,
+      );
+      expect(summary?.lastMessage).toBe('Hola, ¿entrenamos juntos?');
     });
 
     it('refuses to read messages from a conversation the caller is not part of', async () => {
