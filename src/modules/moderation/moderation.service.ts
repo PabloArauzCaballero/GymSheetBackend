@@ -33,6 +33,7 @@ import {
 } from "./moderation.policy";
 import { CreateReportInput, ResolveCaseInput } from "./moderation.schemas";
 import { ReelSocialService } from "../reels/reel-social.service";
+import { ChatEventsService } from "../chat/chat-events.service";
 
 /** Lo que se le enseña al moderador antes de que decida. */
 export interface CasePreview {
@@ -68,6 +69,7 @@ export class ModerationService {
     @Optional()
     private readonly recommendationOutbox?: SocialRecommendationOutboxService,
     @Optional() private readonly reelSocial?: ReelSocialService,
+    @Optional() private readonly chatEvents?: ChatEventsService,
   ) {}
 
   /**
@@ -96,6 +98,12 @@ export class ModerationService {
       input.targetKind !== ModerationTargetKind.REEL ||
       (await this.reelSocial?.canViewMedia(reporter.id, input.targetId)) ===
         true;
+    const canReportChatMessage =
+      input.targetKind !== ModerationTargetKind.CHAT_MESSAGE ||
+      (await this.repository.canReporterViewChatMessage(
+        input.targetId,
+        reporter.id,
+      ));
 
     // 404 y no 403: quien reporta no tiene por qué saber si el contenido existe
     // pero es de otro gimnasio, y distinguir ambos casos confirmaría
@@ -103,6 +111,8 @@ export class ModerationService {
     if (
       !owner ||
       (!canReportReel && input.targetKind === ModerationTargetKind.REEL) ||
+      (!canReportChatMessage &&
+        input.targetKind === ModerationTargetKind.CHAT_MESSAGE) ||
       (owner.tenantId !== reporter.tenantId &&
         input.targetKind !== ModerationTargetKind.REEL)
     ) {
@@ -166,11 +176,30 @@ export class ModerationService {
     reportedUserId: string,
   ): Promise<void> {
     try {
-      await this.sequelize.transaction(async (transaction) => {
+      const revokedConversationIds = await this.sequelize.transaction(async (transaction) => {
         await this.passes.bulkCreate(
           [{ viewerId: reporterId, targetId: reportedUserId }] as never,
           { ignoreDuplicates: true, transaction },
         );
+        const conversations = await this.sequelize.query<{ id: string }>(
+          `SELECT c.id
+             FROM chat.conversations c
+             JOIN chat.participants p1
+               ON p1.conversation_id = c.id AND p1.user_id = :reporterId
+             JOIN chat.participants p2
+               ON p2.conversation_id = c.id AND p2.user_id = :reportedUserId
+            WHERE c.revoked_at IS NULL
+              AND c.system_kind IS NULL
+              AND (SELECT count(*) FROM chat.participants p3
+                    WHERE p3.conversation_id = c.id) = 2
+            FOR UPDATE OF c`,
+          {
+            type: QueryTypes.SELECT,
+            replacements: { reporterId, reportedUserId },
+            transaction,
+          },
+        );
+        const conversationIds = conversations.map(({ id }) => id);
         await this.connections.update(
           { status: ConnectionStatus.REJECTED, respondedAt: new Date() },
           {
@@ -184,7 +213,23 @@ export class ModerationService {
             transaction,
           },
         );
+        if (conversationIds.length > 0) {
+          await this.sequelize.query(
+            `UPDATE chat.conversations
+                SET revoked_at = now(), revoked_by_user_id = :reporterId
+              WHERE id IN (:conversationIds) AND revoked_at IS NULL`,
+            {
+              type: QueryTypes.UPDATE,
+              replacements: { reporterId, conversationIds },
+              transaction,
+            },
+          );
+        }
+        return conversationIds;
       });
+      for (const conversationId of revokedConversationIds) {
+        this.chatEvents?.emitConversationRevoked(conversationId, reporterId);
+      }
     } catch (error) {
       this.logger.warn(
         {

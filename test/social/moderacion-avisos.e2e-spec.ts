@@ -112,6 +112,351 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
     }
   }, 60000);
 
+  it("H11.S1.M1 only files an auditable chat report for a message the reporter can still view", async () => {
+    if (!application || !sequelize) {
+      throw new Error("H11 E2E setup did not finish.");
+    }
+    const suffix = randomUUID();
+    const register = async (label: string) => {
+      const registered = await request(application!.getHttpServer())
+        .post(url("/auth/register"))
+        .send({
+          email: `h11-s1-m1-${label}-${suffix}@example.test`,
+          password: "h11-moderation-e2e-password",
+          nombreCompleto: `H11 Report ${label} ${suffix}`,
+          acceptedTerms: true,
+        })
+        .expect(201);
+      return {
+        userId: registered.body.data.user.id as string,
+        accessToken: registered.body.data.accessToken as string,
+      };
+    };
+    const author = await register("author");
+    const viewer = await register("viewer");
+    const outsider = await register("outsider");
+    const central = await register("central-admin");
+    await sequelize.query(
+      `UPDATE public.usuarios SET rol = 'SYSTEM_ADMIN' WHERE id = :userId`,
+      { replacements: { userId: central.userId } },
+    );
+    const connection = await request(application.getHttpServer())
+      .post(url("/me/connections"))
+      .set("Authorization", `Bearer ${author.accessToken}`)
+      .send({ addresseeId: viewer.userId })
+      .expect(201);
+    await request(application.getHttpServer())
+      .patch(url(`/me/connections/${connection.body.data.id}`))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .send({ action: "ACCEPT" })
+      .expect(200);
+    const started = await request(application.getHttpServer())
+      .post(url("/me/conversations"))
+      .set("Authorization", `Bearer ${author.accessToken}`)
+      .send({ otherUserId: viewer.userId })
+      .expect(201);
+    const conversationId = started.body.data.conversationId as string;
+    const sent = await request(application.getHttpServer())
+      .post(url(`/me/conversations/${conversationId}/messages`))
+      .set("Authorization", `Bearer ${author.accessToken}`)
+      .send({ type: "text", body: "Texto del mensaje no duplicado como evidencia" })
+      .expect(201);
+    const messageId = sent.body.data.id as string;
+    const conversationPath = url(`/me/conversations/${conversationId}/messages?limit=40`);
+    await request(application.getHttpServer())
+      .get(conversationPath)
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .expect(200);
+    const reportInput = {
+      targetKind: "CHAT_MESSAGE",
+      targetId: messageId,
+      reason: "ACOSO",
+      details: "Solicito revisar el mensaje.",
+    };
+    const report = await request(application.getHttpServer())
+      .post(url("/me/reports"))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .send(reportInput)
+      .expect(201);
+    expect(report.body.data).toMatchObject({ status: "PENDIENTE", contentHidden: false });
+
+    const stored = await sequelize.query<{
+      reporterUserId: string;
+      reportedUserId: string;
+      targetKind: string;
+      targetId: string;
+      details: string;
+      reason: string;
+    }>(
+      `SELECT reporter_user_id AS "reporterUserId",
+              reported_user_id AS "reportedUserId",
+              target_kind AS "targetKind", target_id AS "targetId",
+              details, reason
+         FROM moderation.reports WHERE id = :reportId`,
+      { type: QueryTypes.SELECT, replacements: { reportId: report.body.data.id } },
+    );
+    expect(stored).toEqual([{
+      reporterUserId: viewer.userId,
+      reportedUserId: author.userId,
+      targetKind: "CHAT_MESSAGE",
+      targetId: messageId,
+      details: reportInput.details,
+      reason: "ACOSO",
+    }]);
+    expect(JSON.stringify(stored)).not.toContain("Texto del mensaje no duplicado como evidencia");
+    await request(application.getHttpServer())
+      .get(conversationPath)
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .expect(404);
+    await request(application.getHttpServer())
+      .get(conversationPath)
+      .set("Authorization", `Bearer ${author.accessToken}`)
+      .expect(404);
+    const preservedCase = await request(application.getHttpServer())
+      .get(url(`/admin/moderation/cases/CHAT_MESSAGE/${messageId}`))
+      .set("Authorization", `Bearer ${central.accessToken}`)
+      .expect(200);
+    expect(preservedCase.body.data.reports).toEqual([
+      expect.objectContaining({
+        id: report.body.data.id,
+        reporterUserId: viewer.userId,
+        details: reportInput.details,
+      }),
+    ]);
+
+    await request(application.getHttpServer())
+      .post(url("/me/reports"))
+      .set("Authorization", `Bearer ${outsider.accessToken}`)
+      .send(reportInput)
+      .expect(404);
+    const [count] = await sequelize.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM moderation.reports WHERE target_id = :messageId",
+      { type: QueryTypes.SELECT, replacements: { messageId } },
+    );
+    expect(count.count).toBe("1");
+  }, 60000);
+
+  it("H11.S1.M2 scopes gym moderation to its tenant and allows explicit central access", async () => {
+    if (!application || !moduleRef || !sequelize) {
+      throw new Error("H11 E2E setup did not finish.");
+    }
+    const suffix = randomUUID();
+    const tenantB = `h11-gym-${suffix.slice(0, 8)}`;
+    const register = async (label: string) => {
+      const registered = await request(application!.getHttpServer())
+        .post(url("/auth/register"))
+        .send({
+          email: `h11-s1-m2-${label}-${suffix}@example.test`,
+          password: "h11-moderation-e2e-password",
+          nombreCompleto: `H11 Scope ${label} ${suffix}`,
+          acceptedTerms: true,
+        })
+        .expect(201);
+      return {
+        userId: registered.body.data.user.id as string,
+        accessToken: registered.body.data.accessToken as string,
+      };
+    };
+    const gymAAdmin = await register("admin-a");
+    const author = await register("author-b");
+    const viewer = await register("viewer-b");
+    const central = await register("central-admin");
+    await sequelize.query(
+      `INSERT INTO public.tenants (id, nombre) VALUES (:tenantB, :tenantB)`,
+      { replacements: { tenantB } },
+    );
+    await sequelize.query(
+      `UPDATE public.usuarios SET tenant_id = :tenantB WHERE id IN (:authorId, :viewerId)`,
+      { replacements: { tenantB, authorId: author.userId, viewerId: viewer.userId } },
+    );
+    await sequelize.query(
+      `UPDATE public.usuarios SET rol = 'ADMIN' WHERE id = :userId`,
+      { replacements: { userId: gymAAdmin.userId } },
+    );
+    await sequelize.query(
+      `UPDATE public.usuarios SET rol = 'SYSTEM_ADMIN' WHERE id = :userId`,
+      { replacements: { userId: central.userId } },
+    );
+    const { seedAdminPermissions } = await import("../../src/database/seeders/admin-permissions.seed");
+    await sequelize.transaction((transaction) => seedAdminPermissions(transaction));
+    await sequelize.query(
+      `INSERT INTO admin.user_permissions
+         (id, user_id, permission_key, granted_by_user_id, granted_at)
+       VALUES (gen_random_uuid(), :userId, 'moderation:read', :userId, now())`,
+      { replacements: { userId: gymAAdmin.userId } },
+    );
+
+    const connection = await request(application.getHttpServer())
+      .post(url("/me/connections"))
+      .set("Authorization", `Bearer ${author.accessToken}`)
+      .send({ addresseeId: viewer.userId })
+      .expect(201);
+    await request(application.getHttpServer())
+      .patch(url(`/me/connections/${connection.body.data.id}`))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .send({ action: "ACCEPT" })
+      .expect(200);
+    const started = await request(application.getHttpServer())
+      .post(url("/me/conversations"))
+      .set("Authorization", `Bearer ${author.accessToken}`)
+      .send({ otherUserId: viewer.userId })
+      .expect(201);
+    const sent = await request(application.getHttpServer())
+      .post(url(`/me/conversations/${started.body.data.conversationId}/messages`))
+      .set("Authorization", `Bearer ${author.accessToken}`)
+      .send({ type: "text", body: "Mensaje reportable del gimnasio B" })
+      .expect(201);
+    const report = await request(application.getHttpServer())
+      .post(url("/me/reports"))
+      .set("Authorization", `Bearer ${viewer.accessToken}`)
+      .send({ targetKind: "CHAT_MESSAGE", targetId: sent.body.data.id, reason: "SPAM" })
+      .expect(201);
+    const casePath = url(`/admin/moderation/cases/CHAT_MESSAGE/${sent.body.data.id}`);
+
+    await request(application.getHttpServer())
+      .get(casePath)
+      .set("Authorization", `Bearer ${gymAAdmin.accessToken}`)
+      .expect(404);
+    await request(application.getHttpServer())
+      .get(url("/admin/moderation/queue"))
+      .set("Authorization", `Bearer ${gymAAdmin.accessToken}`)
+      .expect(200)
+      .then((response) => {
+        expect(response.body.data.map((item: { targetId: string }) => item.targetId))
+          .not.toContain(sent.body.data.id);
+      });
+    const centralCase = await request(application.getHttpServer())
+      .get(casePath)
+      .set("Authorization", `Bearer ${central.accessToken}`)
+      .expect(200);
+    expect(centralCase.body.data.reports).toEqual([
+      expect.objectContaining({ id: report.body.data.id, reporterUserId: viewer.userId }),
+    ]);
+  }, 60000);
+
+  it("H11.S1.M3-M4 removes centrally moderated content and audits the resolution", async () => {
+    if (!application || !moduleRef || !sequelize) {
+      throw new Error("H11 E2E setup did not finish.");
+    }
+    const suffix = randomUUID();
+    const register = async (label: string) => {
+      const registered = await request(application!.getHttpServer())
+        .post(url("/auth/register"))
+        .send({
+          email: `h11-s1-m3-${label}-${suffix}@example.test`,
+          password: "h11-moderation-e2e-password",
+          nombreCompleto: `H11 Hide ${label} ${suffix}`,
+          acceptedTerms: true,
+        })
+        .expect(201);
+      return {
+        userId: registered.body.data.user.id as string,
+        accessToken: registered.body.data.accessToken as string,
+      };
+    };
+    const owner = await register("owner");
+    const reporter = await register("reporter");
+    const observer = await register("observer");
+    const moderator = await register("moderator");
+    await sequelize.query(
+      `UPDATE public.usuarios SET rol = 'SYSTEM_ADMIN' WHERE id = :userId`,
+      { replacements: { userId: moderator.userId } },
+    );
+    const [reel] = await sequelize.query<{ id: string }>(
+      `INSERT INTO social.reels
+         (user_id, tenant_id, storage_provider, storage_key, mime_type, duration_seconds, status)
+       VALUES (:userId, :tenantId, 'local', :storageKey, 'video/mp4', 10, 'READY')
+       RETURNING id`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: {
+          userId: owner.userId,
+          tenantId: env.DEFAULT_TENANT_ID,
+          storageKey: `h11/${suffix}.mp4`,
+        },
+      },
+    );
+    const reelId = reel.id;
+    await sequelize.query(
+      `INSERT INTO social.connections
+         (requester_id, addressee_id, status, responded_at)
+       VALUES (:ownerId, :reporterId, 'ACCEPTED', now()) RETURNING id`,
+      { type: QueryTypes.SELECT, replacements: { ownerId: owner.userId, reporterId: reporter.userId } },
+    );
+    await sequelize.query(
+      `INSERT INTO social.connections
+         (requester_id, addressee_id, status, responded_at)
+       VALUES (:ownerId, :observerId, 'ACCEPTED', now())`,
+      { replacements: { ownerId: owner.userId, observerId: observer.userId } },
+    );
+    const reportInput = { targetKind: "REEL", targetId: reelId, reason: "SPAM" };
+    const report = await request(application.getHttpServer())
+      .post(url("/me/reports"))
+      .set("Authorization", `Bearer ${reporter.accessToken}`)
+      .send(reportInput)
+      .expect(201);
+    await request(application.getHttpServer())
+      .post(url(`/admin/moderation/cases/REEL/${reelId}/claim`))
+      .set("Authorization", `Bearer ${moderator.accessToken}`)
+      .expect(201);
+    await request(application.getHttpServer())
+      .post(url(`/admin/moderation/cases/REEL/${reelId}/resolve`))
+      .set("Authorization", `Bearer ${moderator.accessToken}`)
+      .send({ hideContent: true, sanction: false, note: "Retiro tras revisión central." })
+      .expect(201);
+
+    const rows = await sequelize.query<{
+      status: string;
+      resolution: string;
+      resolutionNote: string;
+      resolvedByUserId: string;
+      resolvedAt: Date | null;
+    }>(
+      `SELECT status, resolution, resolution_note AS "resolutionNote",
+              resolved_by_user_id AS "resolvedByUserId", resolved_at AS "resolvedAt"
+         FROM moderation.reports WHERE id = :reportId`,
+      { type: QueryTypes.SELECT, replacements: { reportId: report.body.data.id } },
+    );
+    expect(rows[0]).toMatchObject({
+      status: "RESUELTO",
+      resolution: "CONTENIDO_OCULTO",
+      resolutionNote: "Retiro tras revisión central.",
+      resolvedByUserId: moderator.userId,
+    });
+    expect(rows[0].resolvedAt).toBeInstanceOf(Date);
+    const auditDeadline = Date.now() + 2000;
+    let auditRows: Array<{ actorUserId: string; action: string; targetId: string; occurredAt: Date }> = [];
+    while (Date.now() < auditDeadline) {
+      auditRows = await sequelize.query(
+        `SELECT actor_user_id AS "actorUserId", action, target_id AS "targetId", occurred_at AS "occurredAt"
+           FROM admin.audit_log
+          WHERE domain = 'moderation' AND action = 'resolve' AND target_id = :reelId
+          ORDER BY occurred_at DESC LIMIT 1`,
+        { type: QueryTypes.SELECT, replacements: { reelId } },
+      );
+      if (auditRows.length > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(auditRows[0]).toMatchObject({
+      actorUserId: moderator.userId,
+      action: "resolve",
+      targetId: reelId,
+    });
+    expect(auditRows[0].occurredAt).toBeInstanceOf(Date);
+
+    const feed = await request(application.getHttpServer())
+      .get(url("/me/reels/feed?tab=CONNECTIONS"))
+      .set("Authorization", `Bearer ${observer.accessToken}`)
+      .expect(200);
+    expect(feed.body.data.items.map((item: { id: string }) => item.id)).not.toContain(reelId);
+    await request(application.getHttpServer())
+      .get(url(`/me/reels/${reelId}/media`))
+      .set("Authorization", `Bearer ${observer.accessToken}`)
+      .expect(404);
+    // The disposable database is dropped by afterAll, including reports and
+    // immutable audit rows that intentionally retain moderator evidence.
+  }, 60000);
+
   it("H11.S2.M1 processes a repeated connection notice once through the delivery worker", async () => {
     if (
       !application ||

@@ -420,6 +420,33 @@ export class ModerationRepository {
     return rows[0] ?? null;
   }
 
+  async canReporterViewChatMessage(
+    messageId: string,
+    reporterUserId: string,
+  ): Promise<boolean> {
+    const rows = await this.sequelize.query<{ allowed: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1
+           FROM chat.messages m
+           JOIN chat.conversations c ON c.id = m.conversation_id
+           JOIN chat.participants p
+             ON p.conversation_id = c.id AND p.user_id = :reporterUserId
+          WHERE m.id = :messageId
+            AND c.revoked_at IS NULL
+            AND m.deleted_at IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM chat.message_visibility v
+               WHERE v.message_id = m.id AND v.user_id = :reporterUserId
+            )
+       ) AS allowed`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: { messageId, reporterUserId },
+      },
+    );
+    return rows[0]?.allowed === true;
+  }
+
   /** Aplica (o levanta) la suspensión temporal de una cuenta. */
   async setSuspension(
     userId: string,

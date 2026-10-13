@@ -13,22 +13,22 @@ import { IntegrationModule } from "../integration/integration.module";
 import { ModerationReportModel } from "./report.model";
 import { UserStrikeModel } from "./user-strike.model";
 import { ReelsModule } from "../reels/reels.module";
+import { SocialModule } from "../social/social.module";
 
 @Module({
   imports: [
     SequelizeModule.forFeature([
       ModerationReportModel,
       UserStrikeModel,
-      // Denunciar aparta a esa persona de la baraja y rompe la conexión. Se
-      // toman los dos modelos y no el repositorio social entero: son dos
-      // escrituras puntuales, y depender del módulo completo ataría moderación
-      // a la superficie social por una razón mucho más pequeña.
+      // Denunciar aparta a esa persona de la baraja; el módulo social también
+      // aporta el evento que invalida las sesiones de chat revocadas.
       ConnectionModel,
       DiscoveryPassModel,
     ]),
     NotificationsModule,
     IntegrationModule,
     ReelsModule,
+    SocialModule,
   ],
   controllers: [ReportsController, ModerationAdminController],
   providers: [ModerationRepository, ModerationService],
