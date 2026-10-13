@@ -27,5 +27,7 @@ import { SystemChatService } from "./system-chat.service";
   ],
   controllers: [ChatController],
   providers: [ChatRepository, ChatService, ChatEventsService, ChatPresenceService, ChatGateway, SystemChatService],
+  // Las invitaciones de entreno publican sus eventos en el chat de la pareja.
+  exports: [ChatRepository],
 })
 export class ChatModule {}
