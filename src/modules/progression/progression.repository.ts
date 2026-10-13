@@ -40,6 +40,49 @@ export interface TrainingMetrics {
   readonly modeMultiplierMax?: number;
   readonly strengthGoalsReached?: number;
   readonly cardioWeeklyStreak?: number;
+  /**
+   * Segunda tanda de criterios (2026-10-13). Opcionales por lo mismo que los de
+   * modo: quien construye unas métricas a mano (pruebas, bases antiguas) no
+   * está obligado a conocerlos, y lo que falta cuenta como cero.
+   */
+  readonly totalTrainingMinutes?: number;
+  readonly maxSetWeightKg?: number;
+  readonly timedSecondsTotal?: number;
+  readonly cardioTotalMinutes?: number;
+  readonly cardioTotalKm?: number;
+  readonly mondaySessions?: number;
+  readonly distinctWeekdays?: number;
+  readonly maxSessionsInWeek?: number;
+  readonly geoVerifiedSessions?: number;
+  readonly supersetSessions?: number;
+  readonly routinesCreated?: number;
+  readonly routinesPublished?: number;
+  readonly routineCopiesReceived?: number;
+  readonly commentsWritten?: number;
+  readonly ratingsGiven?: number;
+  readonly commentLikesReceived?: number;
+}
+
+/** Lo que la persona hizo fuera del entreno: crear, publicar, comentar, valorar. */
+export type CommunityMetrics = Required<
+  Pick<
+    TrainingMetrics,
+    | "routinesCreated"
+    | "routinesPublished"
+    | "routineCopiesReceived"
+    | "commentsWritten"
+    | "ratingsGiven"
+    | "commentLikesReceived"
+  >
+>;
+
+interface CommunityMetricsRow {
+  routines_created: string;
+  routines_published: string;
+  routine_copies: string;
+  comments: string;
+  ratings: string;
+  comment_likes: string;
 }
 
 interface ModeMetricsRow {
@@ -62,7 +105,23 @@ interface AggregateRow {
   night_sessions: string;
   weekend_sessions: string;
   personal_records: string;
+  total_training_minutes: string | null;
+  max_set_weight_kg: string | null;
+  timed_seconds_total: string | null;
+  cardio_total_minutes: string | null;
+  cardio_total_km: string | null;
+  monday_sessions: string;
+  distinct_weekdays: string;
+  max_sessions_in_week: string | null;
+  geo_verified_sessions: string;
+  superset_sessions: string;
 }
+
+/** Tope por sesión al sumar tiempo entrenado: una sesión olvidada abierta no son 40 horas de gimnasio. */
+const MAX_SESSION_MINUTES = 240;
+
+/** Por encima de esto una carga es un error de dedo, no una marca. */
+const MAX_PLAUSIBLE_SET_KG = 500;
 
 interface SessionDayRow {
   day: string;
@@ -324,7 +383,9 @@ export class ProgressionRepository {
       `
       WITH sesion AS (
         SELECT s.id,
-               s.fecha_inicio AT TIME ZONE :timeZone AS local_start
+               s.fecha_inicio AT TIME ZONE :timeZone AS local_start,
+               s.geo_verified,
+               LEAST(GREATEST(EXTRACT(EPOCH FROM (s.fecha_fin - s.fecha_inicio)) / 60, 0), :maxSessionMinutes) AS minutos
           FROM public.sesiones_entrenamiento s
          WHERE s.usuario_id = :userId AND s.estado = :finished
       ),
@@ -333,6 +394,7 @@ export class ProgressionRepository {
                se.ejercicio_id,
                st.repeticiones,
                st.peso_kg,
+               st.duracion_seg,
                st.peso_kg * st.repeticiones AS volumen,
                st.fecha_registro
           FROM public.sesiones_ejercicios se
@@ -379,16 +441,48 @@ export class ProgressionRepository {
         (SELECT COUNT(*) FROM sesion WHERE EXTRACT(HOUR FROM local_start) < 7)::text AS early_sessions,
         (SELECT COUNT(*) FROM sesion WHERE EXTRACT(HOUR FROM local_start) >= 21)::text AS night_sessions,
         (SELECT COUNT(*) FROM sesion WHERE EXTRACT(ISODOW FROM local_start) >= 6)::text AS weekend_sessions,
-        (SELECT COUNT(*) FROM records)::text AS personal_records
+        (SELECT COUNT(*) FROM records)::text AS personal_records,
+        (SELECT COALESCE(SUM(minutos), 0) FROM sesion)::text AS total_training_minutes,
+        (SELECT COALESCE(MAX(peso_kg), 0) FROM serie
+          WHERE repeticiones IS NOT NULL AND peso_kg <= :maxSetKg)::text AS max_set_weight_kg,
+        (SELECT COALESCE(SUM(duracion_seg), 0) FROM serie WHERE repeticiones IS NULL)::text AS timed_seconds_total,
+        (SELECT COALESCE(SUM(c.duracion_seg), 0) / 60.0
+           FROM public.sesiones_ejercicios se
+           JOIN sesion ON sesion.id = se.sesion_id
+           JOIN public.series_entrenamiento c ON c.sesion_ejercicio_id = se.id AND c.tipo_serie = 'CARDIO')::text AS cardio_total_minutes,
+        (SELECT COALESCE(SUM(c.distancia_m), 0) / 1000.0
+           FROM public.sesiones_ejercicios se
+           JOIN sesion ON sesion.id = se.sesion_id
+           JOIN public.series_entrenamiento c ON c.sesion_ejercicio_id = se.id AND c.tipo_serie = 'CARDIO')::text AS cardio_total_km,
+        (SELECT COUNT(*) FROM sesion WHERE EXTRACT(ISODOW FROM local_start) = 1)::text AS monday_sessions,
+        (SELECT COUNT(DISTINCT EXTRACT(ISODOW FROM local_start)) FROM sesion)::text AS distinct_weekdays,
+        (SELECT COALESCE(MAX(n), 0) FROM (
+           SELECT COUNT(*) AS n FROM sesion GROUP BY date_trunc('week', local_start)) por_semana)::text AS max_sessions_in_week,
+        (SELECT COUNT(*) FROM sesion WHERE geo_verified IS TRUE)::text AS geo_verified_sessions,
+        (SELECT COUNT(DISTINCT se.sesion_id)
+           FROM public.sesiones_ejercicios se
+           JOIN sesion ON sesion.id = se.sesion_id
+          WHERE se.grupo IS NOT NULL
+            AND EXISTS (SELECT 1 FROM public.series_entrenamiento st WHERE st.sesion_ejercicio_id = se.id))::text AS superset_sessions
       `,
       {
         type: QueryTypes.SELECT,
-        replacements: { userId, timeZone, finished: FINISHED },
+        replacements: {
+          userId,
+          timeZone,
+          finished: FINISHED,
+          maxSessionMinutes: MAX_SESSION_MINUTES,
+          maxSetKg: MAX_PLAUSIBLE_SET_KG,
+        },
       },
     );
 
+    // Crear una rutina o comentar no exige haber entrenado: estas métricas se
+    // calculan también para quien todavía no tiene ninguna sesión.
+    const community = await this.computeCommunityMetrics(userId);
+
     if (!aggregate || Number(aggregate.total_sessions) === 0) {
-      return EMPTY_METRICS;
+      return { ...EMPTY_METRICS, ...community };
     }
 
     const days = await this.sequelize.query<SessionDayRow>(
@@ -427,6 +521,51 @@ export class ProgressionRepository {
       lastSessionOn: trainingDays.at(-1) ?? null,
       firstSessionOn: trainingDays[0] ?? null,
       ...mode,
+      totalTrainingMinutes: Number(aggregate.total_training_minutes ?? 0),
+      maxSetWeightKg: Number(aggregate.max_set_weight_kg ?? 0),
+      timedSecondsTotal: Number(aggregate.timed_seconds_total ?? 0),
+      cardioTotalMinutes: Number(aggregate.cardio_total_minutes ?? 0),
+      cardioTotalKm: Number(aggregate.cardio_total_km ?? 0),
+      mondaySessions: Number(aggregate.monday_sessions),
+      distinctWeekdays: Number(aggregate.distinct_weekdays),
+      maxSessionsInWeek: Number(aggregate.max_sessions_in_week ?? 0),
+      geoVerifiedSessions: Number(aggregate.geo_verified_sessions),
+      supersetSessions: Number(aggregate.superset_sessions),
+      ...community,
+    };
+  }
+
+  /**
+   * Rutinas propias (no copias), publicadas y cuántas veces las guardaron, y la
+   * participación en la comunidad. Solo cuenta lo que sigue vivo y visible: un
+   * comentario retirado por moderación no da insignia.
+   */
+  private async computeCommunityMetrics(userId: string): Promise<CommunityMetrics> {
+    const [row] = await this.sequelize.query<CommunityMetricsRow>(
+      `SELECT
+         (SELECT COUNT(*) FROM training.routines r
+           WHERE r.created_by_user_id = :userId AND r.estado = 'ACTIVE'
+             AND r.basada_en_rutina_id IS NULL) AS routines_created,
+         (SELECT COUNT(*) FROM training.routines r
+           WHERE r.created_by_user_id = :userId AND r.estado = 'ACTIVE'
+             AND r.visibilidad = 'PUBLIC' AND r.estado_moderacion = 'VISIBLE') AS routines_published,
+         (SELECT COALESCE(SUM(r.copias_total), 0) FROM training.routines r
+           WHERE r.created_by_user_id = :userId AND r.estado = 'ACTIVE') AS routine_copies,
+         (SELECT COUNT(*) FROM community.content_comments c
+           WHERE c.autor_id = :userId AND c.estado = 'VISIBLE') AS comments,
+         (SELECT COUNT(*) FROM community.content_ratings v WHERE v.usuario_id = :userId) AS ratings,
+         (SELECT COUNT(*) FROM community.comment_likes l
+            JOIN community.content_comments c ON c.id = l.comentario_id
+           WHERE c.autor_id = :userId AND c.estado = 'VISIBLE' AND l.usuario_id <> :userId) AS comment_likes`,
+      { type: QueryTypes.SELECT, replacements: { userId } },
+    );
+    return {
+      routinesCreated: Number(row?.routines_created ?? 0),
+      routinesPublished: Number(row?.routines_published ?? 0),
+      routineCopiesReceived: Number(row?.routine_copies ?? 0),
+      commentsWritten: Number(row?.comments ?? 0),
+      ratingsGiven: Number(row?.ratings ?? 0),
+      commentLikesReceived: Number(row?.comment_likes ?? 0),
     };
   }
 
