@@ -207,64 +207,69 @@ export class SocialRepository {
       if (!connection) return false;
 
       if (connection.status === ConnectionStatus.ACCEPTED) {
-        const futureInvites = await this.sequelize.query<{ id: string }>(
-          `SELECT i.id
-             FROM training.training_invites i
-             JOIN training.training_invite_meetings m ON m.invite_id = i.id
-            WHERE i.state = 'ACCEPTED'
-              AND i.responded_revision = i.current_revision
-              AND m.accepted_revision = i.responded_revision
-              AND m.starts_at > clock_timestamp()
-              AND m.cancelled_at IS NULL
-              AND ((i.inviter_id = :requesterId AND i.recipient_id = :addresseeId)
-                OR (i.inviter_id = :addresseeId AND i.recipient_id = :requesterId))
-            FOR UPDATE OF i, m`,
-          {
-            type: QueryTypes.SELECT,
-            replacements: {
-              requesterId: connection.requesterId,
-              addresseeId: connection.addresseeId,
-            },
-            transaction,
-          },
-        );
-        const inviteIds = futureInvites.map((invite) => invite.id);
-        if (inviteIds.length) {
-          await this.sequelize.query(
-            `UPDATE training.training_invites
-                SET state = 'CANCELLED', updated_at = clock_timestamp()
-              WHERE id IN (:inviteIds) AND state = 'ACCEPTED'`,
-            { replacements: { inviteIds }, transaction },
-          );
-          await this.sequelize.query(
-            `UPDATE training.training_invite_meetings
-                SET cancelled_at = clock_timestamp()
-              WHERE invite_id IN (:inviteIds) AND cancelled_at IS NULL`,
-            { replacements: { inviteIds }, transaction },
-          );
-        }
-
-        // Keep invite revisions and commands for history, but make pending
-        // proposals non-actionable after the connection is removed.
-        await this.sequelize.query(
-          `UPDATE training.training_invites
-              SET state = 'CANCELLED', updated_at = clock_timestamp()
-            WHERE state = 'PENDING'
-              AND ((inviter_id = :requesterId AND recipient_id = :addresseeId)
-                OR (inviter_id = :addresseeId AND recipient_id = :requesterId))`,
-          {
-            replacements: {
-              requesterId: connection.requesterId,
-              addresseeId: connection.addresseeId,
-            },
-            transaction,
-          },
+        await this.cancelTrainingInvitesForPair(
+          connection.requesterId,
+          connection.addresseeId,
+          transaction,
         );
       }
 
       await connection.destroy({ transaction });
       return true;
     });
+  }
+
+  /**
+   * Cancel future accepted meetings and pending proposals for a pair.
+   * Callers must hold the stable social-pair lock in this transaction.
+   */
+  async cancelTrainingInvitesForPair(
+    userA: string,
+    userB: string,
+    transaction: Transaction,
+  ): Promise<void> {
+    const futureInvites = await this.sequelize.query<{ id: string }>(
+      `SELECT i.id
+         FROM training.training_invites i
+         JOIN training.training_invite_meetings m ON m.invite_id = i.id
+        WHERE i.state = 'ACCEPTED'
+          AND i.responded_revision = i.current_revision
+          AND m.accepted_revision = i.responded_revision
+          AND m.starts_at > clock_timestamp()
+          AND m.cancelled_at IS NULL
+          AND ((i.inviter_id = :userA AND i.recipient_id = :userB)
+            OR (i.inviter_id = :userB AND i.recipient_id = :userA))
+        FOR UPDATE OF i, m`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: { userA, userB },
+        transaction,
+      },
+    );
+    const inviteIds = futureInvites.map((invite) => invite.id);
+    if (inviteIds.length) {
+      await this.sequelize.query(
+        `UPDATE training.training_invites
+            SET state = 'CANCELLED', updated_at = clock_timestamp()
+          WHERE id IN (:inviteIds) AND state = 'ACCEPTED'`,
+        { replacements: { inviteIds }, transaction },
+      );
+      await this.sequelize.query(
+        `UPDATE training.training_invite_meetings
+            SET cancelled_at = clock_timestamp()
+          WHERE invite_id IN (:inviteIds) AND cancelled_at IS NULL`,
+        { replacements: { inviteIds }, transaction },
+      );
+    }
+
+    await this.sequelize.query(
+      `UPDATE training.training_invites
+          SET state = 'CANCELLED', updated_at = clock_timestamp()
+        WHERE state = 'PENDING'
+          AND ((inviter_id = :userA AND recipient_id = :userB)
+            OR (inviter_id = :userB AND recipient_id = :userA))`,
+      { replacements: { userA, userB }, transaction },
+    );
   }
 
   async listForUser(userId: string, status?: ConnectionStatus): Promise<ConnectionModel[]> {
