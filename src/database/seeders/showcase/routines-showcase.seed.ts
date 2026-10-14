@@ -439,6 +439,7 @@ export class RoutinesShowcaseSeeder {
         const created = await community.create(author, 'ROUTINE', targetId, {
           text: c.text,
           replyToId: c.replyTo ? (ids.get(c.replyTo) ?? null) : null,
+          attachment: null,
         });
         existing = await ContentCommentModel.findByPk(created.id, { rejectOnEmpty: true });
         this.count('comentarios_creados');

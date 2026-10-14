@@ -565,6 +565,11 @@ export const environmentSchema = z
       .min(1024)
       .max(104857600)
       .default(26214400),
+    /**
+     * Clave de GIPHY para el buscador de GIFs y stickers de los comentarios.
+     * Sin ella el buscador responde vacío (los comentarios siguen funcionando).
+     */
+    GIPHY_API_KEY: z.string().trim().optional(),
     CHAT_MEDIA_ALLOWED_MIME: commaSeparatedListSchema.default(
       "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime",
     ),
