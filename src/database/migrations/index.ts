@@ -67,6 +67,10 @@ import { programsMigration } from "./202610080005-programs";
 import { cardioAndRewardsMigration } from "./202610080006-cardio-and-rewards";
 import { routineGroupsCopiesSessionTargetsMigration } from "./202610100001-routine-groups-copies-session-targets";
 import { timedStrengthSetsMigration } from "./202610110001-timed-strength-sets";
+import { commentLikesMigration } from "./202610120001-comment-likes";
+import { sessionSkipsMigration } from "./202610130001-session-skips";
+import { exerciseSearchMigration } from "./202610130002-exercise-search";
+import { badgesSocialCardioMigration } from "./202610130003-badges-social-cardio";
 import { socialBlocksMigration } from "./202610090006-social-blocks";
 import { trainingInvitationsMigration } from "./202610110002-training-invitations";
 import { trainingInviteResponsesMigration } from "./202610110003-training-invite-responses";
@@ -145,6 +149,10 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   socialBlocksMigration,
   routineGroupsCopiesSessionTargetsMigration,
   timedStrengthSetsMigration,
+  commentLikesMigration,
+  sessionSkipsMigration,
+  exerciseSearchMigration,
+  badgesSocialCardioMigration,
   trainingInvitationsMigration,
   trainingInviteResponsesMigration,
   trainingInviteCounterproposalsMigration,

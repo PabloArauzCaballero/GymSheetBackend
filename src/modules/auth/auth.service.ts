@@ -288,6 +288,16 @@ export class AuthService {
     };
   }
 
+  /**
+   * Los campos del principal se conservan tal cual (`role`, `tenantScope`…):
+   * hay clientes que ya los leen. `nombreCompleto` y `rol` se añaden con los
+   * mismos nombres que usa `user` en login/registro/refresh.
+   */
+  async me(principal: AuthenticatedUser) {
+    const account = await this.usersRepository.findActiveById(principal.id);
+    return { ...principal, rol: principal.role, nombreCompleto: account?.fullName ?? '' };
+  }
+
   private buildAuthResponse(
     userId: string,
     emailAddress: string,

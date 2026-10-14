@@ -65,9 +65,16 @@ export const authorPhotoSql = (userIdColumn: string): string => `(SELECT ph.url 
                ORDER BY ph.position ASC, ph.created_at ASC LIMIT 1)`;
 
 /**
+ * Ancho a partir del cual una lámina se ve nítida a sangre en un teléfono a 3×
+ * (402 pt × 3 = 1.206 px). Las láminas originales del catálogo miden 850 px.
+ */
+export const SHARP_COVER_MIN_WIDTH = 1200;
+
+/**
  * Portada de la tarjeta: la imagen del primer ejercicio (por día y orden) que
  * tenga una. Gana la lámina (foto o render a 2000 px) sobre el póster del vídeo
- * (ilustración sobre blanco), que se ve peor a todo el ancho.
+ * (ilustración sobre blanco), que se ve peor a todo el ancho; y entre láminas,
+ * la que llega al ancho nítido antes que una de 850 px que iría ampliada.
  */
 export const coverSql = (routineIdColumn: string): string => `(SELECT CASE WHEN m.media_type = 'IMAGE' THEN m.url ELSE m.thumbnail_url END
                FROM training.routine_exercises ce
@@ -75,7 +82,8 @@ export const coverSql = (routineIdColumn: string): string => `(SELECT CASE WHEN 
                JOIN training.exercise_media m ON m.ejercicio_id = ce.ejercicio_id AND m.status = 'ACTIVE'
                 AND (m.media_type = 'IMAGE' OR (m.media_type = 'VIDEO' AND m.thumbnail_url IS NOT NULL))
               WHERE ce.routine_id = ${routineIdColumn}
-              ORDER BY (m.media_type = 'IMAGE') DESC, cd.orden NULLS LAST, ce.orden, m.is_primary DESC, m.sort_order
+              ORDER BY (m.media_type = 'IMAGE') DESC, (COALESCE(m.width, 0) >= ${SHARP_COVER_MIN_WIDTH}) DESC,
+                       cd.orden NULLS LAST, ce.orden, m.is_primary DESC, m.width DESC NULLS LAST, m.sort_order
               LIMIT 1)`;
 
 /** Columnas de la tarjeta del catálogo (alias `r` = rutina, `u` = autor). */

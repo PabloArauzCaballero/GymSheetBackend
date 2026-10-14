@@ -4,7 +4,7 @@ import { createRoutineSchema } from '../../../modules/training/training.schemas'
 import { EXERCISE_NAMES_ES } from './exercise-names-es.data';
 import { RECOMMENDED_TEMPLATES } from './recommended-routines.data';
 import { assertShowcaseAllowed, referencedExercises, resolveShowcasePassword } from './routines-showcase.seed';
-import { COMMENTS, COMMUNITY_ROUTINES, DEMO_USERS, RATINGS } from './showcase-community.data';
+import { COMMENTS, COMMUNITY_ROUTINES, DEMO_USERS, OFFICIAL_AUTHOR_AVATAR, RATINGS } from './showcase-community.data';
 
 describe('routines-showcase', () => {
   it('se niega a correr con NODE_ENV=production', () => {
@@ -96,5 +96,27 @@ describe('routines-showcase', () => {
     expect(DEMO_USERS).toHaveLength(8);
     expect(DEMO_USERS.every((u) => u.email.endsWith('@demo.repp.test'))).toBe(true);
     expect(COMMENTS.filter((c) => c.moderate)).toHaveLength(1);
+  });
+});
+
+describe('avatares de las cuentas de muestra', () => {
+  // Import diferido: el archivo de datos pesa ~100 KB y solo lo necesita este bloque.
+  const { SHOWCASE_AVATARS, SHOWCASE_AVATAR_MIME } = jest.requireActual<typeof import('./showcase-avatars.data')>(
+    './showcase-avatars.data',
+  );
+
+  it('cada persona de muestra y la cuenta oficial tienen el suyo', () => {
+    for (const demo of DEMO_USERS) expect(SHOWCASE_AVATARS[demo.key]).toBeDefined();
+    expect(SHOWCASE_AVATARS[OFFICIAL_AUTHOR_AVATAR]).toBeDefined();
+  });
+
+  it('son WebP válidos y pequeños (caben de sobra en el límite de subida)', () => {
+    expect(SHOWCASE_AVATAR_MIME).toBe('image/webp');
+    for (const encoded of Object.values(SHOWCASE_AVATARS)) {
+      const buffer = Buffer.from(encoded, 'base64');
+      expect(buffer.subarray(0, 4).toString('ascii')).toBe('RIFF');
+      expect(buffer.subarray(8, 12).toString('ascii')).toBe('WEBP');
+      expect(buffer.byteLength).toBeLessThan(40_000);
+    }
   });
 });

@@ -2,11 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op, QueryTypes, Transaction } from 'sequelize';
 import { exerciseVisibleSql, routineVisibleSql } from '../../common/sql/content-visibility';
+import { authorPhotoSql } from '../training/routine-catalog.repository';
 import { ContentCommentModel } from './content-comment.model';
 import { ContentRatingModel } from './content-rating.model';
 import { ContentKind } from './community.schemas';
 
 export type TargetInfo = { ownerId: string | null; title: string };
+
+/** Cuántas valoraciones hay de cada nota; siempre trae las cinco claves. */
+export type RatingDistribution = Record<'1' | '2' | '3' | '4' | '5', number>;
 
 const TABLE: Record<ContentKind, string> = {
   ROUTINE: 'training.routines',
@@ -60,7 +64,22 @@ export class CommunityRepository {
         RETURNING t.valoracion_promedio AS promedio, t.valoracion_total AS total`,
       { type: QueryTypes.SELECT, replacements: { kind, id }, transaction },
     );
-    return { promedio: row?.promedio == null ? null : Number(row.promedio), total: row?.total ?? 0 };
+    return {
+      promedio: row?.promedio == null ? null : Number(row.promedio),
+      total: row?.total ?? 0,
+      distribucion: await this.distribution(kind, id, transaction),
+    };
+  }
+
+  private async distribution(kind: ContentKind, id: string, transaction?: Transaction): Promise<RatingDistribution> {
+    const rows = await this.ratings.sequelize!.query<{ estrellas: number; total: number }>(
+      `SELECT estrellas, count(*)::int AS total FROM community.content_ratings
+        WHERE target_kind = :kind AND target_id = :id GROUP BY estrellas`,
+      { type: QueryTypes.SELECT, replacements: { kind, id }, transaction },
+    );
+    const distribucion: RatingDistribution = { '5': 0, '4': 0, '3': 0, '2': 0, '1': 0 };
+    for (const row of rows) distribucion[String(row.estrellas) as keyof RatingDistribution] = row.total;
+    return distribucion;
   }
 
   async findMyRating(kind: ContentKind, id: string, userId: string): Promise<number | null> {
@@ -72,7 +91,11 @@ export class CommunityRepository {
       `SELECT valoracion_promedio AS promedio, valoracion_total AS total FROM ${TABLE[kind]} WHERE id = :id`,
       { type: QueryTypes.SELECT, replacements: { id } },
     );
-    return { promedio: row?.promedio == null ? null : Number(row.promedio), total: row?.total ?? 0 };
+    return {
+      promedio: row?.promedio == null ? null : Number(row.promedio),
+      total: row?.total ?? 0,
+      distribucion: await this.distribution(kind, id),
+    };
   }
 
   countRecentComments(authorId: string, sinceMs: number): Promise<number> {
@@ -101,28 +124,56 @@ export class CommunityRepository {
     return this.comments.findByPk(id);
   }
 
-  /** Comentarios de primer nivel visibles (más nuevos primero) con su autor. */
-  async listTopLevel(kind: ContentKind, id: string, limitPlusOne: number, offset: number) {
+  /** Comentarios de primer nivel visibles (más nuevos primero) con su autor y sus me gusta. */
+  async listTopLevel(kind: ContentKind, id: string, viewerId: string, limitPlusOne: number, offset: number) {
     return this.listRows(
       `c.target_kind = :kind AND c.target_id = :id AND c.respuesta_a IS NULL AND c.estado = 'VISIBLE'`,
-      { kind, id, limitPlusOne, offset },
+      { kind, id, viewerId, limitPlusOne, offset },
       'ORDER BY c.created_at DESC, c.id LIMIT :limitPlusOne OFFSET :offset',
     );
   }
 
-  listReplies(parentIds: readonly string[]) {
+  listReplies(parentIds: readonly string[], viewerId: string) {
     if (parentIds.length === 0) return Promise.resolve([]);
     return this.listRows(
       `c.respuesta_a IN (:parentIds) AND c.estado = 'VISIBLE'`,
-      { parentIds: [...parentIds] },
+      { parentIds: [...parentIds], viewerId },
       'ORDER BY c.created_at ASC, c.id',
     );
   }
 
+  /** Un comentario visible con la misma forma que la lista, o `null`. */
+  async findVisibleCommentRow(commentId: string, viewerId: string): Promise<CommentRow | null> {
+    const rows = await this.listRows(`c.id = :commentId AND c.estado = 'VISIBLE'`, { commentId, viewerId }, '');
+    return rows[0] ?? null;
+  }
+
+  /** Da o quita el me gusta (idempotente) y devuelve el total resultante. */
+  async setCommentLike(commentId: string, userId: string, liked: boolean): Promise<number> {
+    const sequelize = this.comments.sequelize!;
+    await sequelize.query(
+      liked
+        ? `INSERT INTO community.comment_likes (comentario_id, usuario_id) VALUES (:commentId, :userId)
+           ON CONFLICT (comentario_id, usuario_id) DO NOTHING`
+        : `DELETE FROM community.comment_likes WHERE comentario_id = :commentId AND usuario_id = :userId`,
+      { replacements: { commentId, userId } },
+    );
+    const [row] = await sequelize.query<{ total: number }>(
+      `SELECT count(*)::int AS total FROM community.comment_likes WHERE comentario_id = :commentId`,
+      { type: QueryTypes.SELECT, replacements: { commentId } },
+    );
+    return row?.total ?? 0;
+  }
+
+  // Los me gusta y la foto salen en la MISMA consulta que la página: nada de una consulta por comentario.
   private listRows(where: string, replacements: Record<string, unknown>, tail: string) {
     return this.comments.sequelize!.query<CommentRow>(
-      `SELECT c.id, c.autor_id AS "authorId", u.nombre_completo AS "authorName", c.texto AS text,
-              c.respuesta_a AS "replyToId", c.created_at AS "createdAt"
+      `SELECT c.id, c.autor_id AS "authorId", u.nombre_completo AS "authorName",
+              ${authorPhotoSql('c.autor_id')} AS "authorPhotoUrl", c.texto AS text,
+              c.respuesta_a AS "replyToId", c.created_at AS "createdAt",
+              (SELECT count(*)::int FROM community.comment_likes l WHERE l.comentario_id = c.id) AS likes,
+              EXISTS (SELECT 1 FROM community.comment_likes l
+                       WHERE l.comentario_id = c.id AND l.usuario_id = :viewerId) AS "likedByViewer"
          FROM community.content_comments c JOIN public.usuarios u ON u.id = c.autor_id
         WHERE ${where} ${tail}`,
       { type: QueryTypes.SELECT, replacements },
@@ -134,7 +185,10 @@ export type CommentRow = {
   id: string;
   authorId: string;
   authorName: string;
+  authorPhotoUrl: string | null;
   text: string;
   replyToId: string | null;
   createdAt: Date;
+  likes: number;
+  likedByViewer: boolean;
 };

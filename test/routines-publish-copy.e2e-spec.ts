@@ -86,6 +86,28 @@ describe('Routines v2 · publish and copy (e2e)', () => {
     expect(source.body.data.copias).toBe(1);
   });
 
+  it('otro socio puede entrenar una pública con ejercicios personales de la autora, sin verlos en su catálogo', async () => {
+    const started = await e2e.as(leo.token).post(`/routines/${originalId}/start`).send({}).expect(201);
+    const session = started.body.data;
+    const ids = (session.ejercicios ?? session.exercises).map((e: { ejercicioId?: string; exerciseId?: string; ejercicio?: { id: string } }) => e.ejercicioId ?? e.exerciseId ?? e.ejercicio?.id);
+    expect(ids).toEqual(expect.arrayContaining([a, b]));
+    await e2e.as(leo.token).patch(`/workouts/${session.id}/cancel`).expect(200);
+    // Entrenarla no la convierte en suya: no puede añadir ese ejercicio a una sesión libre ni encontrarlo buscando.
+    const free = await e2e.as(leo.token).post('/workouts').send({}).expect(201);
+    await e2e.as(leo.token).post(`/workouts/${free.body.data.id}/exercises`).send({ ejercicioId: a, orden: 1 }).expect(404);
+    await e2e.as(leo.token).patch(`/workouts/${free.body.data.id}/cancel`).expect(200);
+    const search = await e2e.as(leo.token).get('/exercises?search=Pub%20A&pageSize=50').expect(200);
+    expect(search.body.data.items.some((e: { id: string }) => e.id === a)).toBe(false);
+  }, 20000);
+
+  it('la copia de esa pública también se puede entrenar', async () => {
+    const copy = await e2e.as(leo.token).post(`/routines/${originalId}/copy`).expect(201);
+    const started = await e2e.as(leo.token).post(`/routines/${copy.body.data.id}/start`).send({}).expect(201);
+    expect((started.body.data.ejercicios ?? started.body.data.exercises).length).toBe(2);
+    await e2e.as(leo.token).patch(`/workouts/${started.body.data.id}/cancel`).expect(200);
+    await e2e.as(leo.token).del(`/routines/${copy.body.data.id}`).expect(200);
+  }, 20000);
+
   it('C2 · dos copias seguidas se llaman «· v1» y «· v2», son editables y la copia se puede activar', async () => {
     const created = await e2e.as(ana.token).post('/routines').send(routine(`Torso-Pierna ${Date.now()}`, [b, a])).expect(201);
     const sourceId = created.body.data.id as string;

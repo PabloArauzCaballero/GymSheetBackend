@@ -104,3 +104,47 @@ Successful refresh logs include source URL, version, SHA-256, fetched time, reco
 count and create/update/deactivation counters. Failures state that cached rows were
 preserved and include the retry delay. The checkpoint table is
 `integration.exercise_dataset_sync_state`.
+
+## Láminas en alta resolución
+
+Las láminas de `free-exercise-db` miden 850 × 567 px y no existe un original
+mayor (el archivo que espejamos es idéntico byte a byte al del repositorio de
+origen). A sangre en un teléfono a 3× (1.206 px) se ven ampliadas. El backend no
+procesa imágenes, así que el reescalado se hace fuera y aquí solo se carga:
+
+```txt
+yarn db:media:laminas-hd --pendientes=pendientes.json      # qué filas quedan por debajo de 1.200 px
+node tools/laminas-hd/reescalar.mjs --realesrgan=<bin> --pendientes=pendientes.json --out=entrega-hd
+yarn db:media:laminas-hd --dir=entrega-hd                  # simulación
+yarn db:media:laminas-hd --dir=entrega-hd --apply          # carga real, idempotente
+```
+
+La fila conserva `metadata.mirroredFrom`, así que la reconciliación diaria no la
+devuelve a la imagen de origen; la URL anterior queda en `metadata.hd.reemplaza`.
+
+## Láminas abiertas emparejadas a mano
+
+La importación solo cuelga una lámina de `free-exercise-db` cuando el nombre (o
+sus palabras y el equipamiento) coincide con el del catálogo. Los dos catálogos
+llaman distinto a lo mismo («sled 45° leg press» / «Leg Press»), así que muchos
+ejercicios con foto libre equivalente se quedaban sin imagen. La tabla
+`tools/laminas-abiertas/fuentes.json` recoge las equivalencias revisadas a ojo,
+cada una con su nivel:
+
+- `exacta`: mismo movimiento y mismo equipamiento.
+- `variante`: mismo patrón y equipamiento; cambia agarre, postura o lateralidad.
+- `implemento`: mismo movimiento con otro implemento (kettlebell por mancuerna,
+  polea por banda). Se pueden dejar fuera con `--solo=exacta,variante`.
+
+```txt
+node tools/laminas-abiertas/preparar.mjs --realesrgan=<bin> --out=entrega-abiertas
+yarn db:media:laminas-abiertas --dir=entrega-abiertas            # simulación
+yarn db:media:laminas-abiertas --dir=entrega-abiertas --apply    # carga real, idempotente
+```
+
+La lámina entra ya reescalada a 1.700 px, con fuente, licencia (Unlicense) y
+nivel en `metadata.emparejado`, y no desplaza al medio principal del ejercicio.
+Fuentes descartadas (2026-10-12): wger (subidas de usuarios sin autoría
+verificable; varias son renders comerciales o generadas por IA) y Wikimedia
+Commons (CC BY-SA exige atribución visible; lo que hay son fotos de actos con
+personas identificables, no demostraciones).

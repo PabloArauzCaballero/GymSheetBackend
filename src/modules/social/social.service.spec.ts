@@ -138,12 +138,20 @@ describe("SocialService.respondConnection", () => {
 });
 
 describe("SocialService.withdrawConnection", () => {
-  it("lets only the requester withdraw their own request", async () => {
-    const connection = fakeConnection({ requesterId: userA, addresseeId: userB });
-    const service = createService({ findByIdForUser: jest.fn().mockResolvedValue(connection) });
+  it("returns not found when the repository rejects a non-requester", async () => {
+    const withdrawConnection = jest.fn().mockResolvedValue(false);
+    const service = createService({ withdrawConnection });
 
     await expect(service.withdrawConnection("conn-1", userB)).rejects.toThrow(NotFoundException);
-    expect(connection.destroy).not.toHaveBeenCalled();
+    expect(withdrawConnection).toHaveBeenCalledWith("conn-1", userB);
+  });
+
+  it("delegates withdrawal to the atomic repository operation", async () => {
+    const withdrawConnection = jest.fn().mockResolvedValue(true);
+    const service = createService({ withdrawConnection });
+
+    await expect(service.withdrawConnection("conn-1", userA)).resolves.toEqual({ deleted: true });
+    expect(withdrawConnection).toHaveBeenCalledWith("conn-1", userA);
   });
 });
 

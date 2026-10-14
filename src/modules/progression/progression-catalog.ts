@@ -44,6 +44,8 @@
  * nada.
  */
 
+import { extendedBadgeSeeds } from "./progression-catalog-extended";
+
 export type ProgressionAudience = "ANY" | "MALE" | "FEMALE";
 
 export type BadgeCriterionType =
@@ -63,7 +65,24 @@ export type BadgeCriterionType =
   | "OVERLOAD_WEEKS_STREAK"
   | "MODE_MULTIPLIER_MAX"
   | "STRENGTH_GOAL_REACHED"
-  | "CARDIO_WEEKLY_MINUTES";
+  | "CARDIO_WEEKLY_MINUTES"
+  // Segunda tanda (2026-10-13): tiempo, cargas, cardio, hábitos y comunidad.
+  | "TOTAL_TRAINING_MINUTES"
+  | "MAX_SET_WEIGHT_KG"
+  | "TIMED_SECONDS_TOTAL"
+  | "CARDIO_TOTAL_MINUTES"
+  | "CARDIO_TOTAL_KM"
+  | "MONDAY_SESSIONS"
+  | "DISTINCT_WEEKDAYS"
+  | "MAX_SESSIONS_IN_WEEK"
+  | "GEO_VERIFIED_SESSIONS"
+  | "SUPERSET_SESSIONS"
+  | "ROUTINES_CREATED"
+  | "ROUTINES_PUBLISHED"
+  | "ROUTINE_COPIES_RECEIVED"
+  | "COMMENTS_WRITTEN"
+  | "RATINGS_GIVEN"
+  | "COMMENT_LIKES_RECEIVED";
 
 export type BadgeCategory =
   | "CONSTANCIA"
@@ -72,7 +91,10 @@ export type BadgeCategory =
   | "VARIEDAD"
   | "HITO"
   | "SECRETA"
-  | "MODO";
+  | "MODO"
+  | "CARDIO"
+  | "SOCIAL"
+  | "CREADOR";
 
 export type BadgeRarity = "COMUN" | "RARA" | "EPICA" | "LEGENDARIA";
 
@@ -954,4 +976,5 @@ export const badgeSeeds: readonly BadgeSeed[] = [
     secret: false,
     sortOrder: 560,
   },
+  ...extendedBadgeSeeds,
 ];

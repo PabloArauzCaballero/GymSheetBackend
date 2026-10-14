@@ -13,7 +13,9 @@ export type DomainErrorCode =
   | 'ROUTINE_NOT_OWNED'
   | 'ROUTINE_GROUP_INVALID'
   | 'SET_DURATION_NOT_ALLOWED'
-  | 'SET_KIND_MISMATCH';
+  | 'SET_KIND_MISMATCH'
+  | 'SET_NUMBER_TAKEN'
+  | 'REST_SETTING_INVALID';
 
 /**
  * Error de dominio con `code` estable y `details` opcional (por ejemplo

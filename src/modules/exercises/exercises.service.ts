@@ -17,19 +17,31 @@ import {
 import {
   ExercisePageResponse,
   ExerciseResponse,
+  ExerciseShortcutsResponse,
   FavoriteExerciseResponse,
   mapExerciseToResponse,
   mapFavoriteToResponse,
 } from './exercise.mapper';
 import { ExerciseCommunityService } from './exercise-community.service';
 import { ExerciseModel } from './exercise.model';
-import { ExercisesRepository } from './exercises.repository';
+import {
+  buildVocabulary,
+  planSearch,
+  SearchPlan,
+  suggestCorrection,
+  Vocabulary,
+} from './exercise-search';
+import { ExercisePageResult, ExercisesRepository } from './exercises.repository';
 import {
   CreateGlobalExerciseInput,
   CreatePersonalExerciseInput,
   ExerciseFilterInput,
+  ExerciseOrder,
   UpdateExerciseInput,
 } from './exercises.schemas';
+
+/** Cada cuánto se rehace el vocabulario de «¿Quisiste decir…?». El catálogo cambia poco. */
+const VOCABULARY_TTL_MS = 10 * 60 * 1000;
 
 /**
  * Alta ya resuelta contra la taxonomía, lista para persistir.
@@ -116,20 +128,94 @@ export class ExercisesService {
     return [...byBodyPart.values()].sort((a, b) => b.total - a.total);
   }
 
+  private vocabulary: { words: Vocabulary; loadedAt: number } | null = null;
+
+  /**
+   * Lista de ejercicios. Con `search` la búsqueda tolera erratas, acentos y
+   * sinónimos y puede proponer una corrección (D8); sin búsqueda ni filtros
+   * nuevos sigue el camino de siempre, por nombre.
+   */
   async listVisibleForUser(
     userId: string,
     filters: ExerciseFilterInput,
   ): Promise<ExercisePageResponse> {
-    const result = await this.exercisesRepository.listVisibleForUser(userId, filters);
-    const items = await this.community.decorate(result.rows.map(mapExerciseToResponse), userId);
+    const plan = filters.search ? planSearch(filters.search) : null;
+    const searching = plan !== null && plan.groups.length > 0;
+    const order: ExerciseOrder = filters.order ?? (searching ? 'relevancia' : 'nombre');
+    const tolerant =
+      searching ||
+      order !== 'nombre' ||
+      Boolean(filters.equipmentText || filters.muscleText || filters.withImage);
+
+    // «¿Quisiste decir…?» sale del vocabulario en memoria, antes de consultar:
+    // si hay una corrección clara se busca directamente la consulta corregida
+    // («sentadilla», no todo lo que se parece a «sentadiya»).
+    const suggestion =
+      searching && plan ? suggestCorrection(plan, await this.searchVocabulary()) : null;
+    const search = (searchPlan: SearchPlan | null) =>
+      this.exercisesRepository.searchVisibleForUser(userId, filters, searchPlan, order);
+
+    let result: ExercisePageResult;
+    if (!tolerant) {
+      result = await this.exercisesRepository.listVisibleForUser(userId, { ...filters, search: undefined });
+    } else if (suggestion) {
+      result = await search(planSearch(suggestion));
+      // La corrección no encontró nada: se queda lo que dé la búsqueda tolerante.
+      if (result.count === 0) result = await search(plan);
+    } else {
+      result = await search(searching ? plan : null);
+    }
 
     return {
-      items,
+      items: await this.toListItems(result.rows, userId),
       page: filters.page,
       pageSize: filters.pageSize,
       total: result.count,
       totalPages: Math.ceil(result.count / filters.pageSize),
+      sugerencia: suggestion,
+      consulta: plan?.normalized ?? null,
     };
+  }
+
+  /** Recientes y más usados de la persona, y populares del catálogo, para el buscador vacío. */
+  async listShortcuts(userId: string, limit: number): Promise<ExerciseShortcutsResponse> {
+    const page = (order: ExerciseOrder) =>
+      this.exercisesRepository.searchVisibleForUser(
+        userId,
+        { page: 1, pageSize: limit } as ExerciseFilterInput,
+        null,
+        order,
+      );
+    // En serie a propósito: son tres consultas pequeñas y no merece ocupar tres conexiones.
+    const recent = await page('recientes');
+    const mostUsed = await page('masUsados');
+    const popular = await page('populares');
+    return {
+      recientes: await this.toListItems(recent.rows, userId),
+      masUsados: await this.toListItems(mostUsed.rows, userId),
+      populares: await this.toListItems(popular.rows, userId),
+    };
+  }
+
+  /** Respuesta de lista: comunidad (me gusta, favorito) e imagen fija de cada ejercicio. */
+  private async toListItems(rows: readonly ExerciseModel[], userId: string): Promise<ExerciseResponse[]> {
+    const items = await this.community.decorate(rows.map(mapExerciseToResponse), userId);
+    const stills = await this.exercisesRepository.findStills(items.map((item) => item.id));
+    for (const item of items) item.imagenUrl = stills.get(item.id) ?? null;
+    return items;
+  }
+
+  private async searchVocabulary(): Promise<Vocabulary> {
+    const cached = this.vocabulary;
+    if (cached && Date.now() - cached.loadedAt < VOCABULARY_TTL_MS) return cached.words;
+    try {
+      const words = buildVocabulary(await this.exercisesRepository.listSearchNames());
+      this.vocabulary = { words, loadedAt: Date.now() };
+      return words;
+    } catch {
+      // Sin vocabulario no hay sugerencia, pero la búsqueda sigue funcionando.
+      return cached?.words ?? new Map();
+    }
   }
 
   /** Ficha para quien mira: añade me gusta/favorito y admite ejercicios privados alcanzables por una rutina visible (D3). */

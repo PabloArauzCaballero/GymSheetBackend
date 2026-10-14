@@ -65,6 +65,7 @@ describe('Workout geo-verification (e2e)', () => {
     coordinates: { latitude: number; longitude: number; geofenceRadiusM: number } | null,
   ): Promise<BranchModel> {
     return branchModel.create({
+      tenantId: env.DEFAULT_TENANT_ID,
       code: `e2e-geo-${label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
       name: `Sede E2E ${label}`,
       timeZone: env.BUSINESS_TIME_ZONE,

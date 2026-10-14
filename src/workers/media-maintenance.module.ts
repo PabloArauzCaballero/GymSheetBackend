@@ -9,6 +9,9 @@ import {
   MediaMirrorService,
 } from "../modules/media/media-mirror.service";
 import { ExerciseMediaModel } from "../modules/exercises/exercise-media.model";
+import { ExerciseModel } from "../modules/exercises/exercise.model";
+import { HdImagesService } from "../modules/media/hd-images.service";
+import { OpenStillsService } from "../modules/media/open-stills.service";
 import { MediaFileModel } from "../modules/membership/media-file.model";
 import { DatabaseModule } from "../database/database.module";
 
@@ -20,10 +23,12 @@ import { DatabaseModule } from "../database/database.module";
 @Module({
   imports: [
     DatabaseModule,
-    SequelizeModule.forFeature([MediaFileModel, ExerciseMediaModel]),
+    SequelizeModule.forFeature([MediaFileModel, ExerciseMediaModel, ExerciseModel]),
   ],
   providers: [
     MediaMirrorService,
+    HdImagesService,
+    OpenStillsService,
     {
       provide: MEDIA_STORAGE_PROVIDER,
       useFactory: () =>

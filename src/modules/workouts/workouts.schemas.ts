@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SKIP_REASONS } from './workout-skipped-set.model';
 
 const nullableNoteSchema = z.string().trim().max(1000).nullable();
 
@@ -169,6 +170,70 @@ export const updateWorkoutSetSchema = z
       : {}),
   }));
 
+const skipNoteSchema = z.string().trim().max(280).nullable().optional();
+
+/** Serie que no se hace: número, motivo de un toque y nota opcional (D1). */
+export const skipSetSchema = z
+  .object({
+    numeroSerie: z.number().int().min(1).max(100),
+    motivo: z.enum(SKIP_REASONS),
+    nota: skipNoteSchema,
+  })
+  .transform(({ numeroSerie, motivo, nota }) => ({
+    setNumber: numeroSerie,
+    reason: motivo,
+    note: nota || null,
+  }));
+
+/** Ejercicio entero que se omite esta sesión (D1). */
+export const omitSessionExerciseSchema = z
+  .object({ motivo: z.enum(SKIP_REASONS), nota: skipNoteSchema })
+  .transform(({ motivo, nota }) => ({ reason: motivo, note: nota || null }));
+
+/**
+ * Descanso e intervalo ajustados a mano durante la sesión (D2). Cada cambio
+ * apunta a un ejercicio de la sesión; «a todos los que quedan» es la lista.
+ */
+export const restSettingsSchema = z
+  .object({
+    cambios: z
+      .array(
+        z
+          .object({
+            sesionEjercicioId: z.string().uuid(),
+            descansoSeg: z.number().int().min(0).max(7200).optional(),
+            descansoEntreSeg: z.number().int().min(0).max(600).optional(),
+            duracionSeg: z.number().int().min(1).max(MAX_TIMED_SET_SECONDS).optional(),
+          })
+          .refine(
+            (c) =>
+              c.descansoSeg !== undefined ||
+              c.descansoEntreSeg !== undefined ||
+              c.duracionSeg !== undefined,
+            { message: 'Cada cambio debe llevar al menos un valor.' },
+          ),
+      )
+      .min(1)
+      .max(60),
+    guardarEnRutina: z.boolean().default(false),
+  })
+  .refine(
+    (input) => new Set(input.cambios.map((c) => c.sesionEjercicioId)).size === input.cambios.length,
+    { message: 'Un ejercicio no puede aparecer dos veces.', path: ['cambios'] },
+  )
+  .transform(({ cambios, guardarEnRutina }) => ({
+    changes: cambios.map((c) => ({
+      sessionExerciseId: c.sesionEjercicioId,
+      ...(c.descansoSeg !== undefined ? { restSeconds: c.descansoSeg } : {}),
+      ...(c.descansoEntreSeg !== undefined ? { restBetweenSeconds: c.descansoEntreSeg } : {}),
+      ...(c.duracionSeg !== undefined ? { durationSeconds: c.duracionSeg } : {}),
+    })),
+    saveToRoutine: guardarEnRutina,
+  }));
+
+export type SkipSetInput = z.infer<typeof skipSetSchema>;
+export type OmitSessionExerciseInput = z.infer<typeof omitSessionExerciseSchema>;
+export type RestSettingsInput = z.infer<typeof restSettingsSchema>;
 export type FinishSessionInput = z.infer<typeof finishSessionSchema>;
 export type CreateWorkoutSessionInput = z.infer<typeof createWorkoutSessionSchema>;
 export type WorkoutSessionListInput = z.infer<typeof workoutSessionListSchema>;

@@ -1,7 +1,10 @@
 import { UserGender } from "../../common/enums/domain.enums";
 import { computeStreaks } from "./progression.repository";
 import type { TrainingMetrics } from "./progression.repository";
+import { badgeIllustration, rarityRank } from "./badge-illustrations";
 import { badgeSeeds, levelSeeds } from "./progression-catalog";
+import { extendedBadgeSeeds } from "./progression-catalog-extended";
+import { criterionTypeSchema } from "./progression.schemas";
 import { restDaysSchema } from "./progression.schemas";
 import {
   computePoints,
@@ -320,5 +323,97 @@ describe("seeded catalogue", () => {
         .map((badge) => badge.criterionThreshold),
     );
     expect(cheapest).toBe(1);
+  });
+});
+
+describe("badge variety for the reward cards (2026-10-13)", () => {
+  const neutral = badgeSeeds.filter((badge) => badge.audience === "ANY");
+
+  it("adds at least thirty badges on top of the original catalogue", () => {
+    expect(extendedBadgeSeeds.length).toBeGreaterThanOrEqual(30);
+    expect(neutral.length).toBeGreaterThanOrEqual(65);
+  });
+
+  it("spreads the new badges over every rarity", () => {
+    const byRarity = new Map<string, number>();
+    for (const badge of extendedBadgeSeeds) {
+      byRarity.set(badge.rarity, (byRarity.get(badge.rarity) ?? 0) + 1);
+    }
+    for (const rarity of ["COMUN", "RARA", "EPICA", "LEGENDARIA"]) {
+      expect(byRarity.get(rarity) ?? 0).toBeGreaterThanOrEqual(6);
+    }
+  });
+
+  it("covers cardio, social and creator next to the training categories", () => {
+    const categories = new Set(extendedBadgeSeeds.map((badge) => badge.category));
+    for (const category of ["HITO", "CONSTANCIA", "FUERZA", "CARDIO", "SOCIAL", "CREADOR"]) {
+      expect(categories.has(category as never)).toBe(true);
+    }
+  });
+
+  it("rewards rarer badges with more points inside the same criterion", () => {
+    const byCriterion = new Map<string, typeof extendedBadgeSeeds[number][]>();
+    for (const badge of neutral) {
+      byCriterion.set(badge.criterionType, [...(byCriterion.get(badge.criterionType) ?? []), badge]);
+    }
+    for (const ladder of byCriterion.values()) {
+      const sorted = [...ladder].sort((a, b) => a.criterionThreshold - b.criterionThreshold);
+      for (let index = 1; index < sorted.length; index += 1) {
+        expect(sorted[index].pointsReward).toBeGreaterThanOrEqual(sorted[index - 1].pointsReward);
+        expect(rarityRank(sorted[index].rarity)).toBeGreaterThanOrEqual(rarityRank(sorted[index - 1].rarity));
+      }
+    }
+  });
+
+  it("gives every badge an illustration and lets the admin create every criterion", () => {
+    for (const badge of badgeSeeds) {
+      expect(badgeIllustration(badge.code, badge.criterionType)).toMatch(/^[a-z]+(-[a-z]+)*$/u);
+      expect(criterionTypeSchema.safeParse(badge.criterionType).success).toBe(true);
+    }
+    expect(badgeIllustration("PRIMERA_SESION", "SESSION_COUNT")).toBe("first-step");
+    expect(badgeIllustration("INVENTADA_POR_UN_GIMNASIO", "STREAK_DAYS")).toBe("streak-flame");
+  });
+
+  it("ranks rarities from common to legendary", () => {
+    expect(["COMUN", "RARA", "EPICA", "LEGENDARIA"].map(rarityRank)).toEqual([1, 2, 3, 4]);
+    expect(rarityRank("DESCONOCIDA")).toBe(1);
+  });
+
+  it("measures the new criteria and treats a missing metric as zero", () => {
+    const metrics: TrainingMetrics = {
+      ...NO_TRAINING,
+      totalTrainingMinutes: 615,
+      maxSetWeightKg: 102.5,
+      timedSecondsTotal: 90,
+      cardioTotalMinutes: 75,
+      cardioTotalKm: 42.3,
+      mondaySessions: 11,
+      distinctWeekdays: 7,
+      maxSessionsInWeek: 5,
+      geoVerifiedSessions: 2,
+      supersetSessions: 1,
+      routinesCreated: 3,
+      routinesPublished: 1,
+      routineCopiesReceived: 6,
+      commentsWritten: 10,
+      ratingsGiven: 1,
+      commentLikesReceived: 5,
+    };
+    const earned = (code: string) => {
+      const badge = extendedBadgeSeeds.find((entry) => entry.code === code)!;
+      return measure(metrics, badge.criterionType) >= badge.criterionThreshold;
+    };
+    for (const code of [
+      "DIEZ_HORAS", "CLUB_100", "PRIMERA_PLANCHA", "CARDIO_1H", "CARDIO_42K", "LUNES_10",
+      "LOS_SIETE_DIAS", "SEMANA_DE_CINCO", "PRESENTE", "PRIMERA_SUPERSERIE", "TRES_RUTINAS",
+      "PRIMERA_PUBLICA", "CINCO_DESCARGAS", "DIEZ_COMENTARIOS", "PRIMERA_VALORACION", "CINCO_ME_GUSTA",
+    ]) {
+      expect([code, earned(code)]).toEqual([code, true]);
+    }
+    for (const code of ["CLUB_140", "CARDIO_100K", "SEMANA_DE_SEIS", "VEINTICINCO_DESCARGAS", "DIEZ_VALORACIONES"]) {
+      expect([code, earned(code)]).toEqual([code, false]);
+    }
+    expect(measure(NO_TRAINING, "COMMENTS_WRITTEN")).toBe(0);
+    expect(measure(NO_TRAINING, "MAX_SET_WEIGHT_KG")).toBe(0);
   });
 });

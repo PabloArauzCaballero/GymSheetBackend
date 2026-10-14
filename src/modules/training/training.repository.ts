@@ -18,6 +18,7 @@ import { RoutineDayModel } from './routine-day.model';
 import { RoutineExerciseModel } from './routine-exercise.model';
 import { RoutineModel } from './routine.model';
 import { authorPhotoSql, coverSql } from './routine-catalog.repository';
+import { ExerciseStill } from './routine-stills';
 import type { RoutineAuthor } from './training.mapper';
 import {
   AssignRoutineInput,
@@ -157,6 +158,26 @@ export class TrainingRepository {
       { type: QueryTypes.SELECT, replacements: { routineId } },
     );
     return row?.portada_url ?? null;
+  }
+
+  /**
+   * Mejor imagen fija de cada ejercicio de la rutina, en una sola consulta: la
+   * lámina más ancha o, si no tiene lámina, el póster de su vídeo. Los
+   * ejercicios sin ninguna imagen no aparecen.
+   */
+  async findExerciseStills(routineId: string): Promise<Map<string, ExerciseStill>> {
+    const rows = await this.routineModel.sequelize!.query<{ ejercicio_id: string; url: string; es_lamina: boolean }>(
+      `SELECT DISTINCT ON (m.ejercicio_id) m.ejercicio_id,
+              CASE WHEN m.media_type = 'IMAGE' THEN m.url ELSE m.thumbnail_url END AS url,
+              (m.media_type = 'IMAGE') AS es_lamina
+         FROM training.exercise_media m
+        WHERE m.status = 'ACTIVE'
+          AND (m.media_type = 'IMAGE' OR (m.media_type = 'VIDEO' AND m.thumbnail_url IS NOT NULL))
+          AND m.ejercicio_id IN (SELECT ce.ejercicio_id FROM training.routine_exercises ce WHERE ce.routine_id = :routineId)
+        ORDER BY m.ejercicio_id, (m.media_type = 'IMAGE') DESC, m.width DESC NULLS LAST, m.is_primary DESC, m.sort_order`,
+      { type: QueryTypes.SELECT, replacements: { routineId } },
+    );
+    return new Map(rows.map((row) => [row.ejercicio_id, { url: row.url, esLamina: row.es_lamina }]));
   }
 
   async findVersionOf(routineId: string): Promise<number | null> {

@@ -42,6 +42,9 @@ describe('Community and moderation of routines (e2e)', () => {
       expect(second.body.data).toMatchObject({ promedio: 3.5, total: 2 });
       const changed = await e2e.as(people[1].token).put(`/ratings/ROUTINE/${routineId}`).send({ estrellas: 4 }).expect(200);
       expect(changed.body.data).toMatchObject({ promedio: 4.5, total: 2 });
+      // Siempre las cinco claves, también las que están a cero; cambiar de nota mueve la cuenta.
+      expect(second.body.data.distribucion).toEqual({ '5': 1, '4': 0, '3': 0, '2': 1, '1': 0 });
+      expect(changed.body.data.distribucion).toEqual({ '5': 1, '4': 1, '3': 0, '2': 0, '1': 0 });
       const own = await e2e.as(ana.token).put(`/ratings/ROUTINE/${routineId}`).send({ estrellas: 5 }).expect(400);
       expect(own.body.code).toBe('CANNOT_RATE_OWN');
       await e2e.as(people[0].token).put(`/ratings/ROUTINE/${routineId}`).send({ estrellas: 6 }).expect(400);
@@ -54,6 +57,8 @@ describe('Community and moderation of routines (e2e)', () => {
       expect(removed.body.data).toMatchObject({ promedio: 5, total: 1, miValoracion: null });
       const mine = await e2e.as(people[0].token).get(`/ratings/ROUTINE/${routineId}`).expect(200);
       expect(mine.body.data.miValoracion).toBe(5);
+      expect(removed.body.data.distribucion).toEqual({ '5': 1, '4': 0, '3': 0, '2': 0, '1': 0 });
+      expect(mine.body.data.distribucion).toEqual({ '5': 1, '4': 0, '3': 0, '2': 0, '1': 0 });
     });
 
     it('un ejercicio privado se valora desde una rutina pública, no su dueña', async () => {
@@ -89,6 +94,72 @@ describe('Community and moderation of routines (e2e)', () => {
       expect(top.respuestas).toHaveLength(1);
       expect(top.respuestas[0].texto).toBe('Gracias');
       expect(top.esMio).toBe(false);
+    });
+
+    it('me gusta: dar y quitar es idempotente, cuenta por comentario y es por lector', async () => {
+      const [p1, p2, p3] = people;
+      const replyId = (await e2e.as(p3.token).get(`/comments/ROUTINE/${routineId}`).expect(200)).body.data.items.find(
+        (c: { id: string }) => c.id === commentId,
+      ).respuestas[0].id;
+      const first = await e2e.as(p2.token).put(`/comments/${commentId}/like`).expect(200);
+      expect(first.body.data).toEqual({ likes: 1, meGusta: true });
+      const again = await e2e.as(p2.token).put(`/comments/${commentId}/like`).expect(200);
+      expect(again.body.data).toEqual({ likes: 1, meGusta: true });
+      const other = await e2e.as(p3.token).put(`/comments/${commentId}/like`).expect(200);
+      expect(other.body.data).toEqual({ likes: 2, meGusta: true });
+      await e2e.as(p1.token).put(`/comments/${replyId}/like`).expect(200);
+
+      const seenByP2 = (await e2e.as(p2.token).get(`/comments/ROUTINE/${routineId}`).expect(200)).body.data.items.find(
+        (c: { id: string }) => c.id === commentId,
+      );
+      expect(seenByP2).toMatchObject({ likes: 2, meGusta: true });
+      expect(seenByP2.autor).toMatchObject({ id: p1.id, fotoUrl: null });
+      expect(seenByP2.autor.nombre).not.toBe('');
+      expect(seenByP2.respuestas[0]).toMatchObject({ likes: 1, meGusta: false });
+      const seenByP1 = (await e2e.as(p1.token).get(`/comments/ROUTINE/${routineId}`).expect(200)).body.data.items.find(
+        (c: { id: string }) => c.id === commentId,
+      );
+      expect(seenByP1).toMatchObject({ likes: 2, meGusta: false });
+      expect(seenByP1.respuestas[0]).toMatchObject({ likes: 1, meGusta: true });
+
+      const removed = await e2e.as(p2.token).del(`/comments/${commentId}/like`).expect(200);
+      expect(removed.body.data).toEqual({ likes: 1, meGusta: false });
+      const removedAgain = await e2e.as(p2.token).del(`/comments/${commentId}/like`).expect(200);
+      expect(removedAgain.body.data).toEqual({ likes: 1, meGusta: false });
+    });
+
+    it('un comentario recién creado ya trae autor, likes 0 y meGusta false', async () => {
+      const created = await e2e.as(people[1].token).post(`/comments/ROUTINE/${routineId}`).send({ texto: 'Recién creado' }).expect(201);
+      expect(created.body.data).toMatchObject({ likes: 0, meGusta: false, esMio: true });
+      expect(created.body.data.autor).toMatchObject({ id: people[1].id, fotoUrl: null });
+      expect(created.body.data.autor.nombre).not.toBe('');
+    });
+
+    it('me gusta: 404 si el comentario no existe o su contenido no es visible para quien lo da', async () => {
+      await e2e.as(people[0].token).put('/comments/00000000-0000-4000-8000-000000000000/like').expect(404);
+      await e2e.as(people[0].token).put('/comments/no-es-uuid/like').expect(400);
+      const priv = await e2e.as(ana.token).post('/routines').send({ nombre: 'Privada con comentario' }).expect(201);
+      const own = await e2e.as(ana.token).post(`/comments/ROUTINE/${priv.body.data.id}`).send({ texto: 'Nota mía' }).expect(201);
+      await e2e.as(people[0].token).put(`/comments/${own.body.data.id}/like`).expect(404);
+      await e2e.as(people[0].token).del(`/comments/${own.body.data.id}/like`).expect(404);
+      await e2e.as(ana.token).put(`/comments/${own.body.data.id}/like`).expect(200);
+    });
+
+    it('me gusta: un comentario borrado por su autor ya no los admite, y borrar la fila se lleva sus me gusta', async () => {
+      const sequelize = e2e.app.get(Sequelize);
+      const temp = await e2e.as(people[2].token).post(`/comments/ROUTINE/${routineId}`).send({ texto: 'Efímero' }).expect(201);
+      const tempId = temp.body.data.id;
+      await e2e.as(people[0].token).put(`/comments/${tempId}/like`).expect(200);
+      await e2e.as(people[2].token).del(`/comments/${tempId}`).expect(200);
+      await e2e.as(people[0].token).put(`/comments/${tempId}/like`).expect(404);
+      const count = async () =>
+        (await sequelize.query<{ n: number }>(
+          'SELECT count(*)::int AS n FROM community.comment_likes WHERE comentario_id = :id',
+          { type: QueryTypes.SELECT, replacements: { id: tempId } },
+        ))[0].n;
+      expect(await count()).toBe(1);
+      await sequelize.query('DELETE FROM community.content_comments WHERE id = :id', { replacements: { id: tempId } });
+      expect(await count()).toBe(0);
     });
 
     it('solo el autor borra su comentario', async () => {

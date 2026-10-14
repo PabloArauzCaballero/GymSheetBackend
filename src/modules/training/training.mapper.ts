@@ -35,6 +35,8 @@ export type RoutineDayResponse = {
   nombre: string | null;
   orden: number;
   ejercicios: RoutineExerciseResponse[];
+  /** Imagen de un ejercicio del día que sí tiene una; solo en el detalle (`GET /routines/:id`). */
+  portadaUrl?: string | null;
 };
 
 export type RoutineResponse = {

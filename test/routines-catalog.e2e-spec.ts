@@ -84,6 +84,44 @@ describe('Routines v2 · catalog (e2e)', () => {
     expect(detail.body.data.autor).toEqual({ id: ana.id, nombre: 'E2E cat-ana', fotoUrl: 'https://media.e2e.test/ana.jpg' });
   });
 
+  it('el detalle da una imagen fija por ejercicio y una portada por día; gana la lámina nítida', async () => {
+    const api = e2e.as(ana.token);
+    const [bare, blurry, sharp] = await Promise.all(['sin', '850', '1700'].map((k) => createPersonalExercise(api, `${tag} still ${k}`)));
+    const created = await api
+      .post('/routines')
+      .send({
+        // Sin `tag`: los demás casos buscan por él y cuentan las rutinas de Ana.
+        nombre: `Láminas e2e ${Date.now().toString(36).split('').reverse().join('')}`,
+        dias: [
+          { diaSemana: 1, ejercicios: [{ ejercicioId: bare }, { ejercicioId: blurry }] },
+          { diaSemana: 3, ejercicios: [{ ejercicioId: sharp }] },
+          { diaSemana: 5, ejercicios: [{ ejercicioId: bare }] },
+        ],
+      })
+      .expect(201);
+    const media = `INSERT INTO training.exercise_media (id, ejercicio_id, media_type, provider, url, thumbnail_url, width, alt_text, is_primary, sort_order, status, created_at, updated_at)
+                   VALUES (gen_random_uuid(), :e, :type, 'e2e', :url, NULL, :width, 'e2e', :primary, :orden, 'ACTIVE', now(), now())`;
+    // Vídeo principal SIN póster + lámina de 850 px: antes el detalle no enseñaba ninguna imagen de este ejercicio.
+    await e2e.sql(media, { e: blurry, type: 'VIDEO', url: 'https://media.e2e.test/sin-poster.mp4', width: null, primary: true, orden: 0 });
+    await e2e.sql(media, { e: blurry, type: 'IMAGE', url: 'https://media.e2e.test/lamina-850.jpg', width: 850, primary: false, orden: 50 });
+    await e2e.sql(media, { e: sharp, type: 'IMAGE', url: 'https://media.e2e.test/lamina-1700.jpg', width: 1700, primary: true, orden: 0 });
+
+    type Item = { ejercicio: { id: string; imagenUrl: string | null; media: Array<{ mediaType: string; thumbnailUrl: string | null }> } };
+    const detail = (await api.get(`/routines/${created.body.data.id}`).expect(200)).body.data as {
+      portadaUrl: string | null;
+      dias: Array<{ portadaUrl: string | null; ejercicios: Item[] }>;
+    };
+    const [monday, wednesday, friday] = detail.dias;
+    expect(monday.ejercicios.map((e) => e.ejercicio.imagenUrl)).toEqual([null, 'https://media.e2e.test/lamina-850.jpg']);
+    expect(monday.ejercicios[1].ejercicio.media[0]).toMatchObject({ mediaType: 'VIDEO', thumbnailUrl: 'https://media.e2e.test/lamina-850.jpg' });
+    // La portada del día salta el ejercicio sin imagen; un día sin ninguna queda en null.
+    expect(monday.portadaUrl).toBe('https://media.e2e.test/lamina-850.jpg');
+    expect(wednesday.portadaUrl).toBe('https://media.e2e.test/lamina-1700.jpg');
+    expect(friday.portadaUrl).toBeNull();
+    // Portada de la rutina: la lámina de ancho nítido antes que la de 850 px, aunque esta vaya primero.
+    expect(detail.portadaUrl).toBe('https://media.e2e.test/lamina-1700.jpg');
+  });
+
   it('Mías incluye también las privadas propias', async () => {
     const res = await e2e.as(ana.token).get(`/routines?scope=mine&q=${tag}&limit=20`).expect(200);
     expect(names(res.body)).toHaveLength(3);

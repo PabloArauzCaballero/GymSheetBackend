@@ -90,8 +90,18 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     // y ahí, y solo ahí, se escribe cuándo fue visto por última vez.
     const becameOffline = this.presence.markDisconnected(userId, client.id);
     if (!becameOffline) return;
-    await this.usersRepository.touchLastSeen(userId);
-    await this.broadcastPresence(userId, false, new Date().toISOString());
+    // La presencia es de mejor esfuerzo: un fallo aquí (p. ej. un socket que se
+    // cierra mientras la app se apaga y el pool ya no existe) no puede quedar
+    // como promesa rechazada sin capturar.
+    try {
+      await this.usersRepository.touchLastSeen(userId);
+      await this.broadcastPresence(userId, false, new Date().toISOString());
+    } catch (error) {
+      this.logger.warn({
+        event: "chat.presence_offline_failed",
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    }
   }
 
   /** Solo llega a quien tenga abierta una conversación con esta persona ahora mismo. */

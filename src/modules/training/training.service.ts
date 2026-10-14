@@ -29,6 +29,7 @@ import {
   RoutinePageResponse,
   RoutineResponse,
 } from './training.mapper';
+import { applyRoutineStills } from './routine-stills';
 import { routineWhereForScope, TrainingRepository } from './training.repository';
 import {
   AssignRoutineInput,
@@ -129,10 +130,14 @@ export class TrainingService {
     const routine = await this.getRoutineModelOrFail(routineId);
     await this.access.assertFullView(user, routine);
     const response = mapRoutineToResponse(routine, this.viewerOf(user, routine));
-    [response.autor, response.portadaUrl] = await Promise.all([
+    const [autor, portadaUrl, stills] = await Promise.all([
       this.repository.findAuthorCard(routine.createdByUserId),
       this.repository.findCoverUrl(routine.id),
+      this.repository.findExerciseStills(routine.id),
     ]);
+    response.autor = autor;
+    response.portadaUrl = portadaUrl;
+    applyRoutineStills(response, stills);
     if (routine.basedOnRoutineId && routine.basedOnVersion != null) {
       const sourceVersion = await this.repository.findVersionOf(routine.basedOnRoutineId);
       response.hayVersionNueva = sourceVersion != null && sourceVersion > routine.basedOnVersion;
@@ -376,6 +381,7 @@ export class TrainingService {
           group: exercise.group,
           groupType: exercise.groupType,
         },
+        { exerciseAccessCheckedByRoutine: true },
       );
     }
 

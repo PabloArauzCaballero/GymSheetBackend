@@ -21,6 +21,22 @@ export type MessageCreateFields = {
   locationLng?: number | null;
 };
 
+export interface TrainingInviteConversationEvent {
+  id: string;
+  conversationId: string;
+  invitationId: string;
+  acceptedRevision: number;
+  startsAt: Date;
+  timeZone: string;
+  placeLabel: string;
+  cancelledAt: Date | null;
+  createdAt: Date;
+}
+
+export type ConversationHistoryRecord =
+  | { kind: "message"; message: MessageModel }
+  | { kind: "system"; event: TrainingInviteConversationEvent };
+
 export interface ConversationSummaryRow {
   conversation_id: string;
   other_user_id: string;
@@ -238,13 +254,61 @@ export class ChatRepository {
     conversationId: string,
     limit: number,
     before?: string,
-  ): Promise<MessageModel[]> {
-    const rows = await this.messages.findAll({
-      where: { conversationId, ...(before ? { createdAt: { [Op.lt]: new Date(before) } } : {}) },
-      order: [["createdAt", "DESC"]],
-      limit,
-    });
-    return rows.reverse();
+    beforeId?: string,
+  ): Promise<ConversationHistoryRecord[]> {
+    const beforeDate = before ? new Date(before) : null;
+    const [messages, events] = await Promise.all([
+      this.messages.findAll({
+        where: {
+          conversationId,
+          ...(beforeDate
+            ? {
+                [Op.or]: [
+                  { createdAt: { [Op.lt]: beforeDate } },
+                  ...(beforeId
+                    ? [{ createdAt: beforeDate, id: { [Op.lt]: beforeId } }]
+                    : []),
+                ],
+              }
+            : {}),
+        },
+        order: [["createdAt", "DESC"], ["id", "DESC"]],
+        limit,
+      }),
+      this.sequelize.query<TrainingInviteConversationEvent>(
+        `SELECT e.id, e.conversation_id AS "conversationId",
+                e.invitation_id AS "invitationId", e.accepted_revision AS "acceptedRevision",
+                e.starts_at AS "startsAt", e.time_zone AS "timeZone", e.place_label AS "placeLabel",
+                m.cancelled_at AS "cancelledAt", e.created_at AS "createdAt"
+           FROM chat.conversation_events e
+           LEFT JOIN training.training_invite_meetings m ON m.invite_id = e.invitation_id
+          WHERE e.conversation_id = :conversationId
+            AND (:before IS NULL OR e.created_at < :before
+              OR (:beforeId IS NOT NULL AND e.created_at = :before AND e.id < :beforeId))
+          ORDER BY e.created_at DESC, e.id DESC
+          LIMIT :limit`,
+        {
+          type: QueryTypes.SELECT,
+          replacements: { conversationId, before: beforeDate, beforeId: beforeId ?? null, limit },
+        },
+      ),
+    ]);
+
+    const combined: ConversationHistoryRecord[] = [
+      ...messages.map((message) => ({ kind: "message" as const, message })),
+      ...events.map((event) => ({ kind: "system" as const, event })),
+    ];
+    return combined
+      .sort((left, right) => {
+        const leftCreatedAt = left.kind === "message" ? left.message.createdAt : left.event.createdAt;
+        const rightCreatedAt = right.kind === "message" ? right.message.createdAt : right.event.createdAt;
+        const byDate = new Date(leftCreatedAt).getTime() - new Date(rightCreatedAt).getTime();
+        if (byDate !== 0) return byDate;
+        const leftId = left.kind === "message" ? left.message.id : left.event.id;
+        const rightId = right.kind === "message" ? right.message.id : right.event.id;
+        return leftId.localeCompare(rightId);
+      })
+      .slice(-limit);
   }
 
   /** Las conversaciones de un usuario, con el otro participante y el último mensaje. */
@@ -255,11 +319,14 @@ export class ChatRepository {
               u.nombre_completo AS other_user_name,
               other_photo.url AS other_user_photo_url,
               u.last_seen_at AS other_user_last_seen_at,
-              CASE last_msg.type
+              CASE last_msg.kind
+                WHEN 'system' THEN last_msg.body
+                ELSE CASE last_msg.type
                 WHEN 'image' THEN COALESCE(last_msg.body, 'Foto')
                 WHEN 'video' THEN COALESCE(last_msg.body, 'Video')
                 WHEN 'location' THEN 'Ubicación'
                 ELSE last_msg.body
+              END
               END AS last_message_body,
               last_msg.created_at AS last_message_at,
               mine.can_write AS can_write,
@@ -278,9 +345,22 @@ export class ChatRepository {
             ORDER BY p.position ASC LIMIT 1
          ) other_photo ON true
          LEFT JOIN LATERAL (
-           SELECT body, type, created_at FROM chat.messages m
-            WHERE m.conversation_id = c.id
-            ORDER BY m.created_at DESC LIMIT 1
+           SELECT item.id, item.body, item.type, item.created_at, item.kind
+             FROM (
+               SELECT m.id, m.body, m.type, m.created_at, 'message' AS kind
+                 FROM chat.messages m
+                WHERE m.conversation_id = c.id
+               UNION ALL
+               SELECT e.id,
+                      CASE WHEN m.cancelled_at IS NULL THEN 'Entrenamiento acordado'
+                           ELSE 'Entrenamiento cancelado' END AS body,
+                      'system' AS type, e.created_at, 'system' AS kind
+                 FROM chat.conversation_events e
+                 LEFT JOIN training.training_invite_meetings m ON m.invite_id = e.invitation_id
+                WHERE e.conversation_id = c.id
+             ) item
+            ORDER BY item.created_at DESC, item.id DESC
+            LIMIT 1
          ) last_msg ON true
         ORDER BY (c.system_kind IS NULL) ASC,
                  CASE c.system_kind WHEN 'CORPORATE' THEN 0 WHEN 'TENANT_ADMIN' THEN 1 ELSE 2 END,

@@ -8,13 +8,14 @@ import { WorkoutsController } from './workouts.controller';
 import { WorkoutSessionExerciseModel } from './workout-session-exercise.model';
 import { WorkoutSessionModel } from './workout-session.model';
 import { WorkoutSetModel } from './workout-set.model';
+import { WorkoutSkippedSetModel } from './workout-skipped-set.model';
 import { SessionHooksRegistry } from './session-hooks';
 import { WorkoutsRepository } from './workouts.repository';
 import { WorkoutsService } from './workouts.service';
 
 @Module({
   imports: [
-    SequelizeModule.forFeature([WorkoutSessionModel, WorkoutSessionExerciseModel, WorkoutSetModel, ExerciseModel]),
+    SequelizeModule.forFeature([WorkoutSessionModel, WorkoutSessionExerciseModel, WorkoutSetModel, WorkoutSkippedSetModel, ExerciseModel]),
     ExercisesModule,
     FacilitiesModule,
     ProgressionModule,
