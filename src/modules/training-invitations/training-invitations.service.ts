@@ -1096,6 +1096,22 @@ export class TrainingInvitationsService {
     if (!revisions[0]) {
       throw new ConflictException("La invitación no tiene revisión válida.");
     }
+    const meetings = await this.select<{
+      id: string;
+      accepted_revision: number;
+      starts_at: Date;
+      time_zone: string;
+      place_label: string;
+      cancelled_at: Date | null;
+    }>(
+      `SELECT id, accepted_revision, starts_at, time_zone, place_label,
+              cancelled_at
+         FROM training.training_invite_meetings
+        WHERE invite_id = :inviteId`,
+      { inviteId: invite.id },
+      transaction,
+    );
+    const meeting = meetings[0];
     return {
       ...this.project(invite, revisions[0]),
       response: invite.responded_at
@@ -1107,6 +1123,18 @@ export class TrainingInvitationsService {
             respondedBy: invite.responded_by_user_id,
             revision: invite.responded_revision,
             respondedAt: new Date(invite.responded_at).toISOString(),
+          }
+        : null,
+      meeting: meeting
+        ? {
+            id: meeting.id,
+            acceptedRevision: meeting.accepted_revision,
+            startsAt: new Date(meeting.starts_at).toISOString(),
+            timeZone: meeting.time_zone,
+            placeLabel: meeting.place_label,
+            cancelledAt: meeting.cancelled_at
+              ? new Date(meeting.cancelled_at).toISOString()
+              : null,
           }
         : null,
     };

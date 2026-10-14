@@ -47,11 +47,20 @@ import { ProfilePhotoModel } from "../../modules/profiles/profile-photo.model";
 import { ConnectionModel } from "../../modules/social/connection.model";
 import { DiscoveryPassModel } from "../../modules/social/discovery-pass.model";
 import { ProfileSocialSettingsModel } from "../../modules/social/profile-social-settings.model";
+import { SocialMapLocationModel } from "../../modules/social/social-map-location.model";
+import { SocialMapPlaceModel } from "../../modules/social/social-map-place.model";
 import { ConversationModel } from "../../modules/chat/conversation.model";
 import { ConversationParticipantModel } from "../../modules/chat/conversation-participant.model";
+import { ConversationEventModel } from "../../modules/chat/conversation-event.model";
+import { MessageVisibilityModel } from "../../modules/chat/message-visibility.model";
 import { MessageModel } from "../../modules/chat/message.model";
 import { StoryModel } from "../../modules/stories/story.model";
+import { StoryAudienceModel } from "../../modules/stories/story-audience.model";
 import { StoryViewModel } from "../../modules/stories/story-view.model";
+import { ReelModel } from "../../modules/reels/reel.model";
+import { TrainingInviteModel } from "../../modules/training-invitations/training-invite.model";
+import { TrainingInviteRevisionModel } from "../../modules/training-invitations/training-invite-revision.model";
+import { TrainingMeetingModel } from "../../modules/training-invitations/training-meeting.model";
 import { ProfileViewModel } from "../../modules/profile-views/profile-view.model";
 import { RoutineModel } from "../../modules/training/routine.model";
 import { RoutineExerciseModel } from "../../modules/training/routine-exercise.model";
@@ -98,11 +107,20 @@ export const databaseModels = [
   ConnectionModel,
   ProfileSocialSettingsModel,
   DiscoveryPassModel,
+  SocialMapLocationModel,
+  SocialMapPlaceModel,
   ConversationModel,
   ConversationParticipantModel,
   MessageModel,
+  MessageVisibilityModel,
+  ConversationEventModel,
   StoryModel,
+  StoryAudienceModel,
   StoryViewModel,
+  ReelModel,
+  TrainingInviteModel,
+  TrainingInviteRevisionModel,
+  TrainingMeetingModel,
   ProfileViewModel,
   EquipmentModel,
   ExerciseModel,

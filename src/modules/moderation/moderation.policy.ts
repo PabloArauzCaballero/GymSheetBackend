@@ -8,58 +8,55 @@
 
 /** Qué se puede reportar. */
 export const ModerationTargetKind = {
-  STORY: 'STORY',
-  PROFILE_PHOTO: 'PROFILE_PHOTO',
-  CHAT_MESSAGE: 'CHAT_MESSAGE',
-  USER: 'USER',
-  ROUTINE: 'ROUTINE',
-  EXERCISE: 'EXERCISE',
-  COMMENT: 'COMMENT',
+  STORY: "STORY",
+  PROFILE_PHOTO: "PROFILE_PHOTO",
+  ROUTINE: "ROUTINE",
+  REEL: "REEL",
+  CHAT_MESSAGE: "CHAT_MESSAGE",
+  COMMENT: "COMMENT",
+  USER: "USER",
 } as const;
 export type ModerationTargetKindValue =
   (typeof ModerationTargetKind)[keyof typeof ModerationTargetKind];
 
 /** Por qué. Taxonomía cerrada: un campo libre no se puede priorizar ni contar. */
 export const ModerationReason = {
-  CONTENIDO_SEXUAL: 'CONTENIDO_SEXUAL',
-  ACOSO: 'ACOSO',
-  DISCURSO_DE_ODIO: 'DISCURSO_DE_ODIO',
-  VIOLENCIA: 'VIOLENCIA',
-  SPAM: 'SPAM',
-  PERFIL_FALSO: 'PERFIL_FALSO',
-  MENOR_DE_EDAD: 'MENOR_DE_EDAD',
-  DROGAS: 'DROGAS',
-  EJERCICIO_PELIGROSO: 'EJERCICIO_PELIGROSO',
-  INFORMACION_ENGANOSA: 'INFORMACION_ENGANOSA',
-  PLAGIO: 'PLAGIO',
-  OTRO: 'OTRO',
+  CONTENIDO_SEXUAL: "CONTENIDO_SEXUAL",
+  ACOSO: "ACOSO",
+  DISCURSO_DE_ODIO: "DISCURSO_DE_ODIO",
+  VIOLENCIA: "VIOLENCIA",
+  SPAM: "SPAM",
+  PERFIL_FALSO: "PERFIL_FALSO",
+  MENOR_DE_EDAD: "MENOR_DE_EDAD",
+  DROGAS: "DROGAS",
+  OTRO: "OTRO",
 } as const;
 export type ModerationReasonValue =
   (typeof ModerationReason)[keyof typeof ModerationReason];
 
 export const ModerationStatus = {
-  PENDIENTE: 'PENDIENTE',
-  EN_REVISION: 'EN_REVISION',
-  RESUELTO: 'RESUELTO',
-  DESCARTADO: 'DESCARTADO',
+  PENDIENTE: "PENDIENTE",
+  EN_REVISION: "EN_REVISION",
+  RESUELTO: "RESUELTO",
+  DESCARTADO: "DESCARTADO",
 } as const;
 export type ModerationStatusValue =
   (typeof ModerationStatus)[keyof typeof ModerationStatus];
 
 export const ModerationResolution = {
-  SIN_ACCION: 'SIN_ACCION',
-  CONTENIDO_OCULTO: 'CONTENIDO_OCULTO',
-  USUARIO_ADVERTIDO: 'USUARIO_ADVERTIDO',
-  USUARIO_SUSPENDIDO: 'USUARIO_SUSPENDIDO',
-  USUARIO_EXPULSADO: 'USUARIO_EXPULSADO',
+  SIN_ACCION: "SIN_ACCION",
+  CONTENIDO_OCULTO: "CONTENIDO_OCULTO",
+  USUARIO_ADVERTIDO: "USUARIO_ADVERTIDO",
+  USUARIO_SUSPENDIDO: "USUARIO_SUSPENDIDO",
+  USUARIO_EXPULSADO: "USUARIO_EXPULSADO",
 } as const;
 export type ModerationResolutionValue =
   (typeof ModerationResolution)[keyof typeof ModerationResolution];
 
 export const StrikeKind = {
-  ADVERTENCIA: 'ADVERTENCIA',
-  SUSPENSION: 'SUSPENSION',
-  EXPULSION: 'EXPULSION',
+  ADVERTENCIA: "ADVERTENCIA",
+  SUSPENSION: "SUSPENSION",
+  EXPULSION: "EXPULSION",
 } as const;
 export type StrikeKindValue = (typeof StrikeKind)[keyof typeof StrikeKind];
 
@@ -86,14 +83,10 @@ const SEVERITY_BY_REASON: Record<ModerationReasonValue, number> = {
   [ModerationReason.ACOSO]: ReasonSeverity.ALTA,
   [ModerationReason.DISCURSO_DE_ODIO]: ReasonSeverity.ALTA,
   [ModerationReason.CONTENIDO_SEXUAL]: ReasonSeverity.ALTA,
-  // Una técnica que puede lesionar a quien la sigue: sube como un daño real.
-  [ModerationReason.EJERCICIO_PELIGROSO]: ReasonSeverity.ALTA,
   // Molesto o tramposo, pero nadie sale herido esta tarde.
   [ModerationReason.PERFIL_FALSO]: ReasonSeverity.NORMAL,
   [ModerationReason.DROGAS]: ReasonSeverity.NORMAL,
   [ModerationReason.SPAM]: ReasonSeverity.NORMAL,
-  [ModerationReason.INFORMACION_ENGANOSA]: ReasonSeverity.NORMAL,
-  [ModerationReason.PLAGIO]: ReasonSeverity.NORMAL,
   [ModerationReason.OTRO]: ReasonSeverity.NORMAL,
 };
 
@@ -197,7 +190,12 @@ export function strikeExpiryFrom(now: Date = new Date()): Date {
   return new Date(now.getTime() + STRIKE_LIFETIME_DAYS * DAY_MS);
 }
 
-/** Sólo el contenido con fila propia se puede ocultar; a una persona se la sanciona (y un mensaje de chat no se oculta). */
+/** Sólo el contenido con fila propia se puede ocultar; a una persona se la sanciona. */
 export function isHideableTarget(kind: ModerationTargetKindValue): boolean {
-  return kind !== ModerationTargetKind.CHAT_MESSAGE && kind !== ModerationTargetKind.USER;
+  return (
+    kind === ModerationTargetKind.STORY ||
+    kind === ModerationTargetKind.PROFILE_PHOTO ||
+    kind === ModerationTargetKind.ROUTINE ||
+    kind === ModerationTargetKind.REEL
+  );
 }

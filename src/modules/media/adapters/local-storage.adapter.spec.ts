@@ -54,6 +54,13 @@ describe("LocalStorageAdapter", () => {
     expect(readFileSync(join(root, key)).toString()).toBe("abc");
   });
 
+  it("reads stored bytes through the server-side storage port", async () => {
+    const input = makeInput({ buffer: Buffer.from("private-media") });
+    const stored = await adapter.upload(input, TARGET);
+
+    await expect(adapter.download(stored.key)).resolves.toEqual(input.buffer);
+  });
+
   /**
    * El layout de carpetas es el requisito de producto ("ordenadas por perfil de
    * usuario"), así que se comprueba entero y no solo la carpeta de perfiles.
@@ -62,6 +69,7 @@ describe("LocalStorageAdapter", () => {
     const cases: ReadonlyArray<[MediaUploadTarget, string]> = [
       [{ category: "perfiles", ownerUserId: OWNER }, `users/${OWNER}/perfiles`],
       [{ category: "stories", ownerUserId: OWNER }, `users/${OWNER}/stories`],
+      [{ category: "reels", ownerUserId: OWNER }, `users/${OWNER}/reels`],
       [
         { category: "publicaciones", ownerUserId: OWNER },
         `users/${OWNER}/publicaciones`,

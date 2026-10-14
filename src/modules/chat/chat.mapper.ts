@@ -1,12 +1,16 @@
-import { ConversationHistoryRecord, ConversationSummaryRow, SystemConversationKind, TrainingInviteConversationEvent } from "./chat.repository";
+import { ConversationSummaryRow, SystemConversationKind } from "./chat.repository";
 import { MessageModel, MessageType } from "./message.model";
 
 export type MessageResponse = {
   id: string;
   conversationId: string;
   senderId: string;
+  clientRequestId: string | null;
   body: string | null;
   type: MessageType;
+  storyReference: { storyId: string; available: boolean } | null;
+  /** Stable catalog ID; clients resolve their bundled sticker asset. */
+  stickerId: string | null;
   /** `null` si es vista única y ya se abrió (o si esta respuesta no es la de apertura). */
   mediaUrl: string | null;
   mediaMimeType: string | null;
@@ -16,6 +20,9 @@ export type MessageResponse = {
   locationLat: number | null;
   locationLng: number | null;
   createdAt: Date;
+  /** Clients display «Editado» when present. */
+  editedAt: Date | null;
+  deletedAt: Date | null;
 };
 
 export type SystemChatEventResponse = {
@@ -30,14 +37,24 @@ export type SystemChatEventResponse = {
     startsAt: string;
     timeZone: string;
     placeLabel: string;
-    cancelledAt: string | null;
+    cancelledAt?: string;
   };
   createdAt: Date;
 };
 
 export type ChatHistoryItem = MessageResponse | SystemChatEventResponse;
 
-export function mapTrainingInviteEvent(event: TrainingInviteConversationEvent): SystemChatEventResponse {
+export function mapTrainingInviteEvent(event: {
+  id: string;
+  conversationId: string;
+  invitationId: string;
+  acceptedRevision: number;
+  startsAt: Date;
+  timeZone: string;
+  placeLabel: string;
+    cancelledAt?: Date | null;
+  createdAt: Date;
+}): SystemChatEventResponse {
   return {
     id: event.id,
     conversationId: event.conversationId,
@@ -50,18 +67,18 @@ export function mapTrainingInviteEvent(event: TrainingInviteConversationEvent): 
       startsAt: new Date(event.startsAt).toISOString(),
       timeZone: event.timeZone,
       placeLabel: event.placeLabel,
-      cancelledAt: event.cancelledAt ? new Date(event.cancelledAt).toISOString() : null,
+      ...(event.cancelledAt ? { cancelledAt: new Date(event.cancelledAt).toISOString() } : {}),
     },
     createdAt: new Date(event.createdAt),
   };
 }
 
-export function mapChatHistoryItem(record: ConversationHistoryRecord): ChatHistoryItem {
-  return record.kind === "message"
-    ? mapMessageToResponse(record.message)
-    : mapTrainingInviteEvent(record.event);
+export function mapChatHistoryItem(record: {
+  kind: "system";
+  event: Parameters<typeof mapTrainingInviteEvent>[0];
+}): SystemChatEventResponse {
+  return mapTrainingInviteEvent(record.event);
 }
-
 
 /**
  * `revealViewOnce`: solo lo pasa en `true` el endpoint de "abrir" un mensaje
@@ -75,22 +92,36 @@ export function mapChatHistoryItem(record: ConversationHistoryRecord): ChatHisto
  */
 export function mapMessageToResponse(
   message: MessageModel,
-  { revealViewOnce = false }: { revealViewOnce?: boolean } = {},
+  { revealViewOnce = false, storyAvailable }: { revealViewOnce?: boolean; storyAvailable?: boolean } = {},
 ): MessageResponse {
+  if (message.deletedAt) return {
+    id: message.id, conversationId: message.conversationId, senderId: message.senderId,
+    clientRequestId: message.clientRequestId ?? null, body: "Mensaje eliminado", type: "text",
+    stickerId: null, storyReference: null, mediaUrl: null, mediaMimeType: null, viewOnce: false, viewed: false,
+    locationLat: null, locationLng: null, createdAt: message.createdAt, editedAt: null,
+    deletedAt: message.deletedAt,
+  };
   const mediaLocked = message.viewOnce && !revealViewOnce;
   return {
     id: message.id,
     conversationId: message.conversationId,
     senderId: message.senderId,
+    clientRequestId: message.clientRequestId ?? null,
     body: message.body,
     type: message.type,
-    mediaUrl: mediaLocked ? null : message.mediaUrl,
+    stickerId: message.type === "sticker" ? message.body : null,
+    storyReference: message.storyId ? { storyId: message.storyId, available: storyAvailable ?? true } : null,
+    mediaUrl: mediaLocked || !message.mediaKey
+      ? null
+      : `/me/conversations/${message.conversationId}/messages/${message.id}/media`,
     mediaMimeType: message.mediaMimeType,
     viewOnce: message.viewOnce,
     viewed: Boolean(message.viewedAt),
     locationLat: message.locationLat,
     locationLng: message.locationLng,
     createdAt: message.createdAt,
+    editedAt: message.editedAt ?? null,
+    deletedAt: null,
   };
 }
 
@@ -110,6 +141,7 @@ export type ConversationSummaryResponse = {
   /** Cursores del otro participante: comparar contra `createdAt` de mis mensajes para pintar el check. */
   otherUserLastDeliveredAt: string | null;
   otherUserLastReadAt: string | null;
+  otherUserReadReceiptsSinceAt: string | null;
 };
 
 export function mapConversationSummary(
@@ -130,5 +162,8 @@ export function mapConversationSummary(
     nickname: row.nickname,
     otherUserLastDeliveredAt: row.other_last_delivered_at,
     otherUserLastReadAt: row.other_last_read_at,
+    otherUserReadReceiptsSinceAt: row.other_read_receipts_enabled_since instanceof Date
+      ? row.other_read_receipts_enabled_since.toISOString()
+      : row.other_read_receipts_enabled_since,
   };
 }

@@ -1,6 +1,10 @@
 import { StoryFeedRow, StoryViewerRow } from "./stories.repository";
 import { StoryModel, StoryMediaType } from "./story.model";
 
+function authorizedMediaUrl(storyId: string): string {
+  return `/me/stories/${storyId}/media`;
+}
+
 export type StoryResponse = {
   id: string;
   mediaUrl: string;
@@ -12,7 +16,7 @@ export type StoryResponse = {
 export function mapStoryToResponse(story: StoryModel): StoryResponse {
   return {
     id: story.id,
-    mediaUrl: story.mediaUrl,
+    mediaUrl: authorizedMediaUrl(story.id),
     mediaType: story.mediaType,
     createdAt: story.createdAt,
     expiresAt: story.expiresAt,
@@ -54,7 +58,7 @@ export function mapFeedRowsToResponse(rows: StoryFeedRow[]): StoryFeedEntryRespo
     }
     entry.stories.push({
       id: row.id,
-      mediaUrl: row.media_url,
+      mediaUrl: authorizedMediaUrl(row.id),
       mediaType: row.media_type,
       // `new Date(...).toISOString()` y no una copia tal cual: el driver devuelve
       // `Date` para `timestamptz`, así que copiarlo a un campo declarado `string`

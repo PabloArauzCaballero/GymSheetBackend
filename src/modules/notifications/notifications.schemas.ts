@@ -18,6 +18,7 @@ export const notificationListSchema = z.object({
 export const updateNotificationPreferenceSchema = z
   .object({
     recordatoriosVencimiento: z.boolean(),
+    vistaPreviaMensajes: z.boolean().default(false),
     canalPreferido: z.enum([
       NotificationChannel.IN_APP,
       NotificationChannel.HTTP_GATEWAY,
@@ -72,6 +73,7 @@ export const updateNotificationPreferenceSchema = z
   })
   .transform((input) => ({
     membershipExpiryEnabled: input.recordatoriosVencimiento,
+    messagePreviewEnabled: input.vistaPreviaMensajes,
     preferredChannel: input.canalPreferido,
     externalDeliveryConsentAt: input.consentimientoExternoEn
       ? new Date(input.consentimientoExternoEn)

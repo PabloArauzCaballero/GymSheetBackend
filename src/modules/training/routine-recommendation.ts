@@ -69,6 +69,7 @@ const GOAL_LABEL: Record<TrainingGoal, string> = {
   [TrainingGoal.ENDURANCE]: 'Para resistencia',
   [TrainingGoal.GENERAL_HEALTH]: 'Para tu salud',
   [TrainingGoal.REHABILITATION]: 'Para volver con calma',
+  [TrainingGoal.SPORT_PERFORMANCE]: 'Para rendimiento deportivo',
 };
 
 /** Niveles de plantilla aceptados por nivel de la persona, en orden de preferencia. */

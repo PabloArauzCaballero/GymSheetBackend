@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { OnboardingRepository } from "./onboarding.repository";
 import {
   AnthropometricProfileResponse,
@@ -6,12 +6,14 @@ import {
 } from "./profile.mapper";
 import { ProfilesRepository } from "./profiles.repository";
 import { UpsertProfileInput } from "./profiles.schemas";
+import { SocialRecommendationOutboxService } from "../social/social-recommendation-outbox.service";
 
 @Injectable()
 export class ProfilesService {
   constructor(
     private readonly profilesRepository: ProfilesRepository,
     private readonly onboardingRepository: OnboardingRepository,
+    @Optional() private readonly recommendationOutbox?: SocialRecommendationOutboxService,
   ) {}
 
   async getMyProfile(userId: string): Promise<AnthropometricProfileResponse> {
@@ -30,7 +32,14 @@ export class ProfilesService {
     userId: string,
     input: UpsertProfileInput,
   ): Promise<AnthropometricProfileResponse> {
-    const profile = await this.profilesRepository.upsertByUserId(userId, input);
+    const profile = this.recommendationOutbox
+      ? await this.profilesRepository.runInTransaction(async (transaction) => {
+          await this.recommendationOutbox!.lockProfileForUpdate(userId, transaction);
+          const saved = await this.profilesRepository.upsertByUserId(userId, input, transaction);
+          await this.recommendationOutbox!.enqueueProfileSnapshot(userId, transaction);
+          return saved;
+        })
+      : await this.profilesRepository.upsertByUserId(userId, input);
     // Toda edición de peso pasa también por el histórico: es el mismo dato
     // que ya alimenta `GET /me/body-measurements`, y antes de esto solo el
     // onboarding lo registraba ahí. La clave de idempotencia evita una fila

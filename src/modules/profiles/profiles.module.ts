@@ -4,6 +4,7 @@ import { MediaModule } from "../media/media.module";
 import { AnthropometricProfileModel } from "./anthropometric-profile.model";
 import { ProfilesController } from "./profiles.controller";
 import { ProfilesRepository } from "./profiles.repository";
+import { IntegrationModule } from "../integration/integration.module";
 import { ProfilesService } from "./profiles.service";
 import { BodyMeasurementModel } from "./body-measurement.model";
 import { OnboardingController } from "./onboarding.controller";
@@ -18,6 +19,7 @@ import { ProfilePhotosService } from "./profile-photos.service";
 @Module({
   imports: [
     MediaModule,
+    IntegrationModule,
     SequelizeModule.forFeature([
       AnthropometricProfileModel,
       OnboardingModel,

@@ -119,10 +119,10 @@ export class SocialInteractionsService {
    * Las fichas de todas las personas de la lista, en una sola consulta.
    *
    * El `flatMap` de quien llama no es un descarte silencioso de errores: es el
-   * filtro de seguridad. `directory()` sólo devuelve a socios activos del mismo
-   * gimnasio, así que una baja o alguien que se cambió de sede simplemente no
-   * trae ficha y desaparece de la lista. Ese es el comportamiento que se busca:
-   * no hay 403 ni hueco vacío, esa persona ya no existe para quien pregunta.
+   * filtro de seguridad. `directory()` devuelve socios activos del gimnasio y
+   * los de otros gimnasios sólo mientras ambos mantengan el consentimiento
+   * cross-gym. Una baja o una revocación de consentimiento no trae ficha y la
+   * persona desaparece de la lista.
    *
    * El orden lo pone la lista de interacciones (ya viene por fecha descendente
    * desde la base), no el `ORDER BY` alfabético de `directory()`: por eso se
@@ -137,6 +137,7 @@ export class SocialInteractionsService {
     const cards = await this.repository.directory(viewerId, tenantId, env.DEFAULT_TENANT_ID, {
       limit: userIds.length,
       userIds,
+      includeCrossGym: true,
     });
     return new Map(cards.map((card) => [card.userId, card]));
   }

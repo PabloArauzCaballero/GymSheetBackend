@@ -6,6 +6,8 @@ import { ConnectionStatus } from "../../common/enums/domain.enums";
 import type { StoredAsset } from "../media/media-storage.port";
 import { StoryModel, StoryMediaType } from "./story.model";
 import { StoryViewModel } from "./story-view.model";
+import { StoryAudienceModel } from "./story-audience.model";
+import type { StoryAudienceMode } from "./story-audience.policy";
 
 export interface StoryFeedRow {
   id: string;
@@ -24,6 +26,7 @@ export interface StoryFeedRow {
   created_at: Date;
   expires_at: Date;
   viewed_by_me: boolean;
+  audience_mode: StoryAudienceMode;
 }
 
 /** Una fila por espectador de una story propia. */
@@ -72,6 +75,7 @@ export class StoriesRepository {
     private readonly sequelize: Sequelize,
     @InjectModel(StoryModel) private readonly stories: typeof StoryModel,
     @InjectModel(StoryViewModel) private readonly views: typeof StoryViewModel,
+    @InjectModel(StoryAudienceModel) private readonly audiences: typeof StoryAudienceModel,
   ) {}
 
   async create(
@@ -79,16 +83,35 @@ export class StoriesRepository {
     tenantId: string,
     asset: StoredAsset,
     mediaType: StoryMediaType,
+    audienceMode: StoryAudienceMode = "ALL_CONNECTIONS",
+    recipientIds: readonly string[] = [],
+    uploadIdempotency?: { requestId: string; contentHash: string },
   ): Promise<StoryModel> {
-    return this.stories.create({
-      userId,
-      tenantId,
-      mediaUrl: asset.url,
-      storageProvider: asset.provider,
-      storageKey: asset.key,
-      mediaType,
-      expiresAt: new Date(Date.now() + ONE_DAY_MS),
+    return this.sequelize.transaction(async (transaction) => {
+      const story = await this.stories.create({
+        userId,
+        tenantId,
+        uploadRequestId: uploadIdempotency?.requestId ?? null,
+        uploadContentHash: uploadIdempotency?.contentHash ?? null,
+        mediaUrl: asset.url,
+        storageProvider: asset.provider,
+        storageKey: asset.key,
+        mediaType,
+        audienceMode,
+        expiresAt: new Date(Date.now() + ONE_DAY_MS),
+      }, { transaction });
+      if (audienceMode === "SELECTED_CONNECTIONS" && recipientIds.length > 0) {
+        await this.audiences.bulkCreate(
+          recipientIds.map((recipientId) => ({ storyId: story.id, userId: recipientId })),
+          { transaction },
+        );
+      }
+      return story;
     });
+  }
+
+  findByUploadRequest(userId: string, requestId: string): Promise<StoryModel | null> {
+    return this.stories.findOne({ where: { userId, uploadRequestId: requestId } });
   }
 
   findByIdForUser(id: string, userId: string): Promise<StoryModel | null> {
@@ -157,12 +180,59 @@ export class StoriesRepository {
     return rows.length > 0;
   }
 
+  async isBlockedEitherWay(userId: string, otherUserId: string): Promise<boolean> {
+    const rows = await this.sequelize.query<{ ok: number }>(
+      `SELECT 1 AS ok FROM social.user_blocks b
+        WHERE (b.blocker_id = :userId AND b.blocked_id = :otherUserId)
+           OR (b.blocker_id = :otherUserId AND b.blocked_id = :userId)
+        LIMIT 1`,
+      { type: QueryTypes.SELECT, replacements: { userId, otherUserId } },
+    );
+    return rows.length > 0;
+  }
+
+  async isSelectedRecipient(storyId: string, userId: string): Promise<boolean> {
+    return (await this.audiences.findOne({ where: { storyId, userId } })) !== null;
+  }
+
+  /** Returns only recipients whose accepted relationship still exists and is not blocked. */
+  async validAudienceRecipients(authorId: string, recipientIds: readonly string[]): Promise<string[]> {
+    if (recipientIds.length === 0) return [];
+    const replacements: Record<string, unknown> = {
+      authorId,
+      acceptedStatus: ConnectionStatus.ACCEPTED,
+    };
+    const recipientPlaceholders = recipientIds.map((recipientId, index) => {
+      const name = `recipient${index}`;
+      replacements[name] = recipientId;
+      return `:${name}`;
+    });
+    const rows = await this.sequelize.query<{ user_id: string }>(
+      `SELECT requested.user_id
+         FROM unnest(ARRAY[${recipientPlaceholders.join(", ")}]::uuid[]) AS requested(user_id)
+        WHERE EXISTS (
+          SELECT 1 FROM social.connections c
+           WHERE c.status = :acceptedStatus
+             AND ((c.requester_id = :authorId AND c.addressee_id = requested.user_id)
+               OR (c.addressee_id = :authorId AND c.requester_id = requested.user_id))
+        )
+          AND NOT EXISTS (
+            SELECT 1 FROM social.user_blocks b
+             WHERE (b.blocker_id = :authorId AND b.blocked_id = requested.user_id)
+                OR (b.blocker_id = requested.user_id AND b.blocked_id = :authorId)
+          )`,
+      { type: QueryTypes.SELECT, replacements },
+    );
+    return rows.map((row) => row.user_id);
+  }
+
   /**
    * Stories activas de las personas con las que el viewer hace match, más las
    * suyas propias. El tenant ya no basta como perímetro: una story es contenido
    * personal y solo la ven los `ACCEPTED` (R2.1), así que la pertenencia a
-   * `visible_authors` es la autorización, y `tenant_id`/`expires_at` quedan como
-   * defensa en profundidad.
+   * `visible_authors` es la autorización. El tenant no limita stories sociales:
+   * una conexión aceptada puede ser de otro gimnasio; los datos privados del
+   * negocio siguen sujetos a sus propios permisos y consultas.
    *
    * **Por qué CTE y no `EXISTS` por fila** (medido con 500 socios, 300 matches y
    * 2000 stories vigentes): con `EXISTS` el planificador recorría la tabla de
@@ -184,7 +254,7 @@ export class StoriesRepository {
    *      del mapper;
    *   5. las stories de una persona, en el orden en que se publicaron.
    */
-  async feedForConnections(viewerId: string, tenantId: string): Promise<StoryFeedRow[]> {
+  async feedForConnections(viewerId: string): Promise<StoryFeedRow[]> {
     return this.sequelize.query<StoryFeedRow>(
       `WITH visible_authors AS MATERIALIZED (
          SELECT CAST(:viewerId AS uuid) AS user_id
@@ -198,23 +268,38 @@ export class StoriesRepository {
           WHERE c.addressee_id = :viewerId AND c.status = :acceptedStatus
        ),
        active_stories AS MATERIALIZED (
-         SELECT s.id, s.user_id, s.media_url, s.media_type, s.created_at, s.expires_at
+         SELECT s.id, s.user_id, s.media_url, s.media_type, s.created_at, s.expires_at, s.audience_mode
            FROM visible_authors a
            CROSS JOIN LATERAL (
-             SELECT st.id, st.user_id, st.media_url, st.media_type, st.created_at, st.expires_at
+             SELECT st.id, st.user_id, st.media_url, st.media_type, st.created_at, st.expires_at, st.audience_mode
                FROM profile.stories st
               WHERE st.user_id = a.user_id
-                AND st.tenant_id = :tenantId
                 AND st.expires_at > now()
                 -- Moderación: una story retirada deja de servirse al instante,
                 -- aunque su binario siga en el almacén (ADR-0010).
                 AND st.hidden_at IS NULL
+                AND (
+                  st.user_id = CAST(:viewerId AS uuid)
+                  OR st.audience_mode = 'ALL_CONNECTIONS'
+                  OR EXISTS (
+                    SELECT 1 FROM profile.story_audiences sa
+                     WHERE sa.story_id = st.id AND sa.user_id = CAST(:viewerId AS uuid)
+                  )
+                )
+                AND (
+                  st.user_id = CAST(:viewerId AS uuid)
+                  OR NOT EXISTS (
+                    SELECT 1 FROM social.user_blocks b
+                     WHERE (b.blocker_id = st.user_id AND b.blocked_id = CAST(:viewerId AS uuid))
+                        OR (b.blocked_id = st.user_id AND b.blocker_id = CAST(:viewerId AS uuid))
+                  )
+                )
               ORDER BY st.created_at DESC, st.id DESC
               LIMIT :storiesPerAuthor
            ) s
        ),
        seen AS MATERIALIZED (
-         SELECT s.id, s.user_id, s.media_url, s.media_type, s.created_at, s.expires_at,
+         SELECT s.id, s.user_id, s.media_url, s.media_type, s.created_at, s.expires_at, s.audience_mode,
                 (v.viewer_id IS NOT NULL) AS viewed_by_me
            FROM active_stories s
            LEFT JOIN profile.story_views v
@@ -240,7 +325,8 @@ export class StoriesRepository {
               s.media_type,
               s.created_at,
               s.expires_at,
-              s.viewed_by_me
+              s.viewed_by_me,
+              s.audience_mode
          FROM ranked_authors a
          JOIN seen s ON s.user_id = a.user_id
          JOIN public.usuarios u ON u.id = a.user_id
@@ -260,7 +346,6 @@ export class StoriesRepository {
         type: QueryTypes.SELECT,
         replacements: {
           viewerId,
-          tenantId,
           acceptedStatus: ConnectionStatus.ACCEPTED,
           maxAuthors: STORY_FEED_MAX_AUTHORS,
           storiesPerAuthor: STORY_FEED_MAX_STORIES_PER_AUTHOR,
@@ -308,6 +393,21 @@ export class StoriesRepository {
                    (c.requester_id = s.user_id AND c.addressee_id = v.viewer_id)
                    OR (c.addressee_id = s.user_id AND c.requester_id = v.viewer_id)
                  )
+            )
+          )
+          AND (
+            s.audience_mode = 'ALL_CONNECTIONS'
+            OR EXISTS (
+              SELECT 1 FROM profile.story_audiences sa
+               WHERE sa.story_id = s.id AND sa.user_id = v.viewer_id
+            )
+          )
+          AND (
+            v.viewer_id = s.user_id
+            OR NOT EXISTS (
+              SELECT 1 FROM social.user_blocks b
+               WHERE (b.blocker_id = s.user_id AND b.blocked_id = v.viewer_id)
+                  OR (b.blocked_id = s.user_id AND b.blocker_id = v.viewer_id)
             )
           )
         ORDER BY v.viewed_at DESC, v.viewer_id`,

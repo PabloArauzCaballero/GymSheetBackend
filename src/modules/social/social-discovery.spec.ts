@@ -80,8 +80,9 @@ function createFakeRepository(members: readonly FakeMember[]) {
   }
 
   const repository = {
+    lockSocialPair: async () => undefined,
     runInTransaction: <T>(work: (transaction: never) => Promise<T>): Promise<T> =>
-      work(undefined as never),
+      work({} as never),
 
     findActiveBetween: (userA: string, userB: string) =>
       Promise.resolve(
@@ -188,6 +189,11 @@ function createFakeRepository(members: readonly FakeMember[]) {
 
     directConversationHasMessages: () => Promise.resolve(state.conversationHasMessages),
 
+    discoverySettings: () => Promise.resolve({ profileEnabled: false, crossGymEnabled: false, mapEnabled: false, version: 0 }),
+    discoveryPreferences: () => Promise.resolve({ configured: true, genders: ["MALE"], intents: ["TRAINING"], minAge: 18, maxAge: 65, radiusKm: 25, flexibleAge: false, flexibleDistance: false, version: 1 }),
+    canInteractAcrossTenants: () => Promise.resolve(false),
+    isBlockedEitherWay: () => Promise.resolve(false),
+
     listEarnedBadges: () => Promise.resolve([]),
 
     directory: (viewerId: string, tenantId: string, _default: string, filters: DirectoryFilters) => {
@@ -242,6 +248,7 @@ function createService(members: readonly FakeMember[]) {
   const service = new SocialService(
     fake.repository as unknown as SocialRepository,
     usersRepository,
+    { emitConversationRevoked: jest.fn() } as never,
   );
   return { service, ...fake };
 }
