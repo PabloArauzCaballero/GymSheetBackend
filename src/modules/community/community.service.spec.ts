@@ -1,3 +1,4 @@
+import type { MediaStorageProvider } from '../media/media-storage.port';
 import { NotFoundException } from '@nestjs/common';
 import { RoutineNotifier } from '../training/routine-notifier';
 import { CommentRow, CommunityRepository } from './community.repository';
@@ -13,6 +14,13 @@ const row = (over: Partial<CommentRow> = {}): CommentRow => ({
   createdAt: new Date('2026-10-12T00:00:00Z'),
   likes: 2,
   likedByViewer: true,
+  attachmentKind: null,
+  attachmentUrl: null,
+  attachmentMime: null,
+  attachmentName: null,
+  attachmentBytes: null,
+  attachmentWidth: null,
+  attachmentHeight: null,
   ...over,
 });
 
@@ -27,6 +35,7 @@ describe('CommunityService · me gusta de comentarios', () => {
   const service = new CommunityService(
     repository as unknown as CommunityRepository,
     { notify: jest.fn() } as unknown as RoutineNotifier,
+    { upload: jest.fn() } as unknown as MediaStorageProvider,
   );
   const actor = { id: 'viewer' };
 
@@ -95,6 +104,7 @@ describe('CommunityService · valoraciones', () => {
   const service = new CommunityService(
     repository as unknown as CommunityRepository,
     { notify: jest.fn() } as unknown as RoutineNotifier,
+    { upload: jest.fn() } as unknown as MediaStorageProvider,
   );
   const actor = { id: 'viewer' };
 

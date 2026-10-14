@@ -5,7 +5,7 @@ import { exerciseVisibleSql, routineVisibleSql } from '../../common/sql/content-
 import { authorPhotoSql } from '../training/routine-catalog.repository';
 import { ContentCommentModel } from './content-comment.model';
 import { ContentRatingModel } from './content-rating.model';
-import { ContentKind } from './community.schemas';
+import { AttachmentInput, ContentKind } from './community.schemas';
 
 export type TargetInfo = { ownerId: string | null; title: string };
 
@@ -110,6 +110,7 @@ export class CommunityRepository {
     authorId: string;
     text: string;
     replyToId: string | null;
+    attachment?: AttachmentInput | null;
   }) {
     return this.comments.create({
       targetKind: input.kind,
@@ -117,6 +118,13 @@ export class CommunityRepository {
       authorId: input.authorId,
       text: input.text,
       replyToId: input.replyToId,
+      attachmentKind: input.attachment?.tipo ?? null,
+      attachmentUrl: input.attachment?.url ?? null,
+      attachmentMime: input.attachment?.mime ?? null,
+      attachmentName: input.attachment?.nombre ?? null,
+      attachmentBytes: input.attachment?.bytes ?? null,
+      attachmentWidth: input.attachment?.ancho ?? null,
+      attachmentHeight: input.attachment?.alto ?? null,
     });
   }
 
@@ -171,6 +179,10 @@ export class CommunityRepository {
       `SELECT c.id, c.autor_id AS "authorId", u.nombre_completo AS "authorName",
               ${authorPhotoSql('c.autor_id')} AS "authorPhotoUrl", c.texto AS text,
               c.respuesta_a AS "replyToId", c.created_at AS "createdAt",
+              c.adjunto_tipo AS "attachmentKind", c.adjunto_url AS "attachmentUrl",
+              c.adjunto_mime AS "attachmentMime", c.adjunto_nombre AS "attachmentName",
+              c.adjunto_bytes AS "attachmentBytes", c.adjunto_ancho AS "attachmentWidth",
+              c.adjunto_alto AS "attachmentHeight",
               (SELECT count(*)::int FROM community.comment_likes l WHERE l.comentario_id = c.id) AS likes,
               EXISTS (SELECT 1 FROM community.comment_likes l
                        WHERE l.comentario_id = c.id AND l.usuario_id = :viewerId) AS "likedByViewer"
@@ -191,4 +203,11 @@ export type CommentRow = {
   createdAt: Date;
   likes: number;
   likedByViewer: boolean;
+  attachmentKind: string | null;
+  attachmentUrl: string | null;
+  attachmentMime: string | null;
+  attachmentName: string | null;
+  attachmentBytes: number | null;
+  attachmentWidth: number | null;
+  attachmentHeight: number | null;
 };

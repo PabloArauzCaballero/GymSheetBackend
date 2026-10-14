@@ -71,6 +71,7 @@ import { commentLikesMigration } from "./202610120001-comment-likes";
 import { sessionSkipsMigration } from "./202610130001-session-skips";
 import { exerciseSearchMigration } from "./202610130002-exercise-search";
 import { badgesSocialCardioMigration } from "./202610130003-badges-social-cardio";
+import { commentMediaMigration } from "./202610140001-comment-media";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -143,4 +144,5 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   sessionSkipsMigration,
   exerciseSearchMigration,
   badgesSocialCardioMigration,
+  commentMediaMigration,
 ];
