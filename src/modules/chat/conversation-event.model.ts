@@ -44,6 +44,9 @@ export class ConversationEventModel extends Model {
   })
   declare placeLabel: string;
 
+  @Column({ type: DataType.DATE, allowNull: true, field: "cancelled_at" })
+  declare cancelledAt: Date | null;
+
   @CreatedAt
   @Column({ field: "created_at" })
   declare createdAt: Date;

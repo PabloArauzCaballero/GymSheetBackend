@@ -21,6 +21,7 @@ function createService(
   repositoryOverrides: Partial<SocialRepository>,
   usersOverrides: Partial<UsersRepository> = {},
   notificationOverrides: { enqueueDirectMessage?: jest.Mock } = {},
+  chatOverrides: { ensureDirectConversationInTransaction?: jest.Mock } = {},
 ): SocialService {
   return new SocialService(
     {
@@ -54,6 +55,10 @@ function createService(
     {
       enqueueDirectMessage: jest.fn().mockResolvedValue(true),
       ...notificationOverrides,
+    } as never,
+    {
+      ensureDirectConversationInTransaction: jest.fn().mockResolvedValue("conversation-1"),
+      ...chatOverrides,
     } as never,
   );
 }
@@ -298,6 +303,32 @@ describe("SocialService.blockUser", () => {
 });
 
 describe("SocialService.respondConnection", () => {
+  it("creates the pair chat atomically when the addressee accepts", async () => {
+    const connection = fakeConnection({ addresseeId: userB, requesterId: userA });
+    const ensureDirectConversationInTransaction = jest.fn().mockResolvedValue("conversation-1");
+    const service = createService(
+      {
+        findByIdForUser: jest.fn().mockResolvedValue(connection),
+        respond: jest.fn().mockImplementation((conn: typeof connection, status: ConnectionStatus) => {
+          conn.status = status;
+          return Promise.resolve(conn);
+        }),
+        namesFor: jest.fn().mockResolvedValue(new Map([[userA, "Quien Pidió"]])),
+      },
+      {},
+      {},
+      { ensureDirectConversationInTransaction },
+    );
+
+    await service.respondConnection("conn-1", userB, { action: "ACCEPT" });
+
+    expect(ensureDirectConversationInTransaction).toHaveBeenCalledWith(
+      userA,
+      userB,
+      expect.any(Object),
+    );
+  });
+
   it("lets only the addressee accept a pending request", async () => {
     const connection = fakeConnection({
       addresseeId: userB,

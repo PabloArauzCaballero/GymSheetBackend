@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { forwardRef, Module } from "@nestjs/common";
 import { SequelizeModule } from "@nestjs/sequelize";
 import { RealtimeModule } from "../../common/realtime/realtime.module";
 import { MediaModule } from "../media/media.module";
@@ -24,7 +24,7 @@ import { env } from "../../config/env";
 @Module({
   imports: [
     UsersModule,
-    SocialModule,
+    forwardRef(() => SocialModule),
     RealtimeModule,
     MediaModule,
     NotificationsModule,

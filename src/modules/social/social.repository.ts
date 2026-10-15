@@ -406,6 +406,16 @@ export class SocialRepository {
           WHERE invite_id IN (:inviteIds) AND cancelled_at IS NULL`,
         { replacements: { inviteIds }, transaction },
       );
+      await this.sequelize.query(
+        `UPDATE chat.conversation_events e
+            SET cancelled_at = m.cancelled_at
+           FROM training.training_invite_meetings m
+          WHERE e.invitation_id = m.invite_id
+            AND e.accepted_revision = m.accepted_revision
+            AND m.invite_id IN (:inviteIds)
+            AND e.cancelled_at IS NULL`,
+        { replacements: { inviteIds }, transaction },
+      );
     }
 
     await this.sequelize.query(
@@ -528,6 +538,16 @@ export class SocialRepository {
             `UPDATE training.training_invite_meetings
                 SET cancelled_at = clock_timestamp()
               WHERE invite_id IN (:inviteIds) AND cancelled_at IS NULL`,
+            { replacements: { inviteIds: futureInviteIds }, transaction },
+          );
+          await this.sequelize.query(
+            `UPDATE chat.conversation_events e
+                SET cancelled_at = m.cancelled_at
+               FROM training.training_invite_meetings m
+              WHERE e.invitation_id = m.invite_id
+                AND e.accepted_revision = m.accepted_revision
+                AND m.invite_id IN (:inviteIds)
+                AND e.cancelled_at IS NULL`,
             { replacements: { inviteIds: futureInviteIds }, transaction },
           );
         }

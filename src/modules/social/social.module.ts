@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { forwardRef, Module } from "@nestjs/common";
 import { SequelizeModule } from "@nestjs/sequelize";
 import { ChatEventsService } from "../chat/chat-events.service";
 import { UsersModule } from "../users/users.module";
@@ -18,9 +18,11 @@ import { SocialService } from "./social.service";
 import { RecommendationsClient } from "./recommendations-client";
 import { IntegrationModule } from "../integration/integration.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { ChatModule } from "../chat/chat.module";
 
 @Module({
   imports: [
+    forwardRef(() => ChatModule),
     IntegrationModule,
     NotificationsModule,
     UsersModule,

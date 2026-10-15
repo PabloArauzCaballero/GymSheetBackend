@@ -57,7 +57,9 @@ describe("SocialRepository.withdrawConnection", () => {
     expect(query.mock.calls[1]?.[0]).toContain("m.cancelled_at IS NULL");
     expect(query.mock.calls[2]?.[0]).toContain("state = 'CANCELLED'");
     expect(query.mock.calls[3]?.[0]).toContain("cancelled_at = clock_timestamp()");
-    expect(query.mock.calls[4]?.[0]).toContain("state = 'PENDING'");
+    expect(query.mock.calls[4]?.[0]).toContain("UPDATE chat.conversation_events e");
+    expect(query.mock.calls[4]?.[0]).toContain("e.cancelled_at IS NULL");
+    expect(query.mock.calls[5]?.[0]).toContain("state = 'PENDING'");
     expect(connection.destroy).toHaveBeenCalledWith({ transaction });
   });
 

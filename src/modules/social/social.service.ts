@@ -2,9 +2,11 @@ import {
   BadGatewayException,
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
   Optional,
+  forwardRef,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { Transaction, UniqueConstraintError } from "sequelize";
@@ -16,6 +18,7 @@ import { env } from "../../config/env";
 import { UserModel } from "../users/user.model";
 import { UsersRepository } from "../users/users.repository";
 import { ChatEventsService } from "../chat/chat-events.service";
+import { ChatRepository } from "../chat/chat.repository";
 import {
   mapConnectionToResponse,
   mapDirectoryRowToResponse,
@@ -54,6 +57,9 @@ export class SocialService {
     private readonly chatEvents: ChatEventsService,
     @Optional() private readonly recommendations?: RecommendationsClient,
     @Optional() private readonly notifications?: NotificationService,
+    @Optional()
+    @Inject(forwardRef(() => ChatRepository))
+    private readonly chatRepository?: ChatRepository,
   ) {}
 
   async sendConnection(
@@ -252,6 +258,11 @@ export class SocialService {
         transaction,
       );
       if (input.action === "ACCEPT") {
+        await this.chatRepository?.ensureDirectConversationInTransaction(
+          connection.requesterId,
+          connection.addresseeId,
+          transaction,
+        );
         await this.enqueueConnectionAcceptedNotice(connection, transaction);
       }
       const names = await this.repository.namesFor(
