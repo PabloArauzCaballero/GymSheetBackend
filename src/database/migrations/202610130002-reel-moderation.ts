@@ -7,7 +7,7 @@ const upStatements = [
      ADD COLUMN hidden_reason varchar(30)`,
   `ALTER TABLE moderation.reports DROP CONSTRAINT ck_moderation_report_target_kind`,
   `ALTER TABLE moderation.reports ADD CONSTRAINT ck_moderation_report_target_kind
-     CHECK (target_kind IN ('STORY','PROFILE_PHOTO','CHAT_MESSAGE','USER','ROUTINE','REEL'))`,
+     CHECK (target_kind IN ('STORY','PROFILE_PHOTO','CHAT_MESSAGE','USER','ROUTINE','EXERCISE','COMMENT','REEL'))`,
 ] as const;
 
 const downStatements = [
@@ -20,7 +20,7 @@ const downStatements = [
    $$`,
   `ALTER TABLE moderation.reports DROP CONSTRAINT ck_moderation_report_target_kind`,
   `ALTER TABLE moderation.reports ADD CONSTRAINT ck_moderation_report_target_kind
-     CHECK (target_kind IN ('STORY','PROFILE_PHOTO','CHAT_MESSAGE','USER','ROUTINE'))`,
+     CHECK (target_kind IN ('STORY','PROFILE_PHOTO','CHAT_MESSAGE','USER','ROUTINE','EXERCISE','COMMENT'))`,
   `ALTER TABLE social.reels
      DROP COLUMN IF EXISTS hidden_reason,
      DROP COLUMN IF EXISTS hidden_by_user_id`,
