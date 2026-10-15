@@ -123,8 +123,19 @@ export class RoutineCatalogRepository {
         where.push("r.visibilidad = 'PUBLIC'", "r.estado_moderacion = 'VISIBLE'", 'r.es_oficial = true');
         if (env.CATALOG_HIDDEN_NAME_PREFIX) where.push(HIDDEN_PREFIX_CONDITION);
         break;
+      case 'all': {
+        // Lo público de la comunidad más lo que creé yo (privado o no). Las
+        // rutinas de REPP tienen su propia pestaña y no se mezclan aquí.
+        const community = `(${[
+          "r.visibilidad = 'PUBLIC'",
+          "r.estado_moderacion = 'VISIBLE'",
+          ...(env.CATALOG_HIDDEN_NAME_PREFIX ? [HIDDEN_PREFIX_CONDITION] : []),
+        ].join(' AND ')})`;
+        where.push('r.es_oficial = false', `(r.created_by_user_id = :userId OR ${community})`);
+        break;
+      }
       case 'mine':
-        where.push('r.created_by_user_id = :userId');
+        where.push('r.created_by_user_id = :userId', 'r.es_oficial = false');
         break;
       case 'shared':
         shareJoin = `JOIN training.routine_shares s ON s.routine_id = r.id AND s.invitado_id = :userId

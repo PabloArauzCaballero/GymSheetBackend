@@ -128,6 +128,14 @@ describe('Routines v2 · catalog (e2e)', () => {
     expect(res.body.data.items.every((c: { esMia: boolean }) => c.esMia)).toBe(true);
   });
 
+  it('Todas junta lo público con lo propio: Ana ve sus 3, Leo solo las 2 públicas', async () => {
+    const ana3 = await e2e.as(ana.token).get(`/routines?scope=all&q=${tag}&limit=20`).expect(200);
+    expect(names(ana3.body)).toHaveLength(3);
+    const leo2 = await e2e.as(leo.token).get(`/routines?scope=all&q=${tag}&limit=20`).expect(200);
+    expect(names(leo2.body).sort()).toEqual([`${tag} Pública 2 días`, `${tag} Pública 3 días`]);
+    expect(JSON.stringify(leo2.body)).not.toContain('Privada de Ana');
+  });
+
   it('filtra por objetivo y por días por semana, y combina los filtros', async () => {
     const goal = await e2e.as(leo.token).get(`/routines?scope=public&q=${tag}&objetivo=FUERZA`).expect(200);
     expect(names(goal.body)).toEqual([`${tag} Pública 2 días`]);
