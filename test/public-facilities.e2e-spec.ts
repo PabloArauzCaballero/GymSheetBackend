@@ -63,6 +63,7 @@ describe('Public facilities directory (e2e)', () => {
     overrides: Partial<{ status: FacilityStatus; description: string | null }> = {},
   ): Promise<BranchModel> {
     return branchModel.create({
+      tenantId: env.DEFAULT_TENANT_ID,
       code: unique(`pub-${label}`),
       name: `Sede Pública ${label} ${unique('')}`,
       description: overrides.description ?? `Descripción de ${label}`,
@@ -87,7 +88,7 @@ describe('Public facilities directory (e2e)', () => {
   }
 
   async function attachEquipment(roomId: string, name: string, type: EquipmentType): Promise<void> {
-    const equipment = await equipmentModel.create({ name, type });
+    const equipment = await equipmentModel.create({ tenantId: env.DEFAULT_TENANT_ID, name, type });
     await assignmentModel.create({ equipmentId: equipment.id, roomId });
   }
 

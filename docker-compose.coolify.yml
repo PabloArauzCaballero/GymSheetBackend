@@ -172,7 +172,7 @@ x-app-environment: &app-environment
   # Faltaban: el contenedor corría con los defaults de env.ts y cualquier ajuste
   # pegado en Coolify no llegaba al proceso (ver regla 2 arriba).
   CHAT_MEDIA_MAX_BYTES: ${CHAT_MEDIA_MAX_BYTES:-26214400}
-  CHAT_MEDIA_ALLOWED_MIME: '${CHAT_MEDIA_ALLOWED_MIME:-image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime}'
+  CHAT_MEDIA_ALLOWED_MIME: '${CHAT_MEDIA_ALLOWED_MIME:-image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,audio/mp4}'
   MEDIA_MIRROR_ALLOWED_HOSTS: ${MEDIA_MIRROR_ALLOWED_HOSTS:-images.unsplash.com,raw.githubusercontent.com}
   MEDIA_MIRROR_TIMEOUT_MS: ${MEDIA_MIRROR_TIMEOUT_MS:-15000}
 
@@ -559,11 +559,11 @@ services:
         mc admin policy attach gs gymsheet-api --user "$$MINIO_ACCESS_KEY" 2>/dev/null || true
 
         # Lectura anónima por prefijo. `perfiles` es público por diseño (el
-        # directorio del gimnasio lo consumen navegadores sin sesión); el resto
-        # conserva el modelo que ya tenía el adaptador local, donde
-        # express.static servía todo el directorio. Se apoya en que la clave es
-        # el SHA-256 del contenido, así que la URL no se adivina — y por eso
-        # NO se concede s3:ListBucket anónimo: sin listado, no hay enumeración.
+        # directorio del gimnasio lo consumen navegadores sin sesión). Chats y
+        # stories se excluyen, incluidos objetos históricos: sólo la API
+        # autenticada entrega su media y revalida acceso en cada descarga.
+        # Nunca añadir users/*/chats/*, users/*/stories/*, users/* ni bucket/*.
+        # NO se concede s3:ListBucket anónimo.
         cat > /tmp/bucket-policy.json <<JSON
         {
           "Version": "2012-10-17",
@@ -574,9 +574,7 @@ services:
               "Action": ["s3:GetObject"],
               "Resource": [
                 "arn:aws:s3:::$$MINIO_BUCKET/users/*/perfiles/*",
-                "arn:aws:s3:::$$MINIO_BUCKET/users/*/stories/*",
                 "arn:aws:s3:::$$MINIO_BUCKET/users/*/publicaciones/*",
-                "arn:aws:s3:::$$MINIO_BUCKET/users/*/chats/*",
                 "arn:aws:s3:::$$MINIO_BUCKET/catalog/*",
                 "arn:aws:s3:::$$MINIO_BUCKET/ejercicios/*"
               ]

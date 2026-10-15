@@ -394,7 +394,8 @@ export class ExportService {
     );
   }
 
-  private escapeCsvCell(value: string | number | boolean): string {
+  private escapeCsvCell(value: string | number | boolean | null): string {
+    if (value === null) return '';
     const serializedValue = String(value);
     const formulaSafeValue = /^[=+\-@]/.test(serializedValue)
       ? `'${serializedValue}`

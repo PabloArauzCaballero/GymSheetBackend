@@ -1,15 +1,14 @@
-import { ConflictException, Injectable } from '@nestjs/common';
-import { exerciseVisibleSql, routineVisibleSql } from '../../common/sql/content-visibility';
-import { InjectModel } from '@nestjs/sequelize';
-import { Op, QueryTypes, Transaction } from 'sequelize';
-import { Sequelize } from 'sequelize-typescript';
-import { ModerationReportModel } from './report.model';
-import { UserStrikeModel } from './user-strike.model';
+import { Injectable } from "@nestjs/common";
+import { InjectModel } from "@nestjs/sequelize";
+import { Op, QueryTypes, Transaction } from "sequelize";
+import { Sequelize } from "sequelize-typescript";
+import { ModerationReportModel } from "./report.model";
+import { UserStrikeModel } from "./user-strike.model";
 import {
   ModerationReasonValue,
   ModerationStatus,
   ModerationTargetKindValue,
-} from './moderation.policy';
+} from "./moderation.policy";
 
 /** Una tarjeta de la cola: un contenido con todas sus quejas juntas. */
 export interface ModerationCaseRow {
@@ -98,9 +97,11 @@ export class ModerationRepository {
    * ORDENACIÓN: resolverla en JavaScript obligaría a traerse la cola entera
    * para poder decidir qué va primero.
    */
-  findQueue(
-    input: { tenantScope: string | null; limit: number; offset: number },
-  ): Promise<ModerationCaseRow[]> {
+  findQueue(input: {
+    tenantScope: string | null;
+    limit: number;
+    offset: number;
+  }): Promise<ModerationCaseRow[]> {
     return this.sequelize.query<ModerationCaseRow>(
       `SELECT r.target_kind,
               r.target_id,
@@ -133,17 +134,14 @@ export class ModerationRepository {
               -- Si el contenido ya está oculto (por umbral o por un moderador),
               -- la tarjeta lo dice: cambia lo urgente que es mirarla.
               --
-              -- Se combinan con OR y no con COALESCE: bool_or sobre un LEFT
-              -- JOIN que no casó devuelve false, no NULL, así que un COALESCE
-              -- se quedaría siempre con la primera rama y las fotos ocultas se
-              -- reportarían como visibles.
-              -- COALESCE: bool_or sobre un LEFT JOIN sin casar es NULL en los tipos nuevos,
-              -- y un NULL aquí rompía la validación de la cola en la consola.
-              COALESCE(bool_or(st.hidden_at IS NOT NULL), false)
-               OR COALESCE(bool_or(ph.hidden_at IS NOT NULL), false)
-               OR COALESCE(bool_or(rt.estado_moderacion <> 'VISIBLE'), false)
-               OR COALESCE(bool_or(ex.estado_moderacion <> 'VISIBLE'), false)
-               OR COALESCE(bool_or(cm.estado IN ('OCULTO_AUTO','OCULTO_MODERACION')), false) AS content_hidden
+              -- Cada tipo tiene su tabla. COALESCE mantiene el contrato del API
+              -- aunque una versión antigua o un fixture devuelva NULL.
+              COALESCE((bool_or(st.hidden_at IS NOT NULL)
+               OR bool_or(ph.hidden_at IS NOT NULL)
+               OR bool_or(rt.hidden_at IS NOT NULL)
+               OR bool_or(rl.hidden_at IS NOT NULL)
+               OR bool_or(ex.estado_moderacion <> 'VISIBLE')
+               OR bool_or(cm.estado IN ('OCULTO_AUTO','OCULTO_MODERACION'))), false) AS content_hidden
          FROM moderation.reports r
          JOIN public.usuarios u ON u.id = r.reported_user_id
          LEFT JOIN public.usuarios claimer ON claimer.id = r.claimed_by_user_id
@@ -153,6 +151,8 @@ export class ModerationRepository {
            ON r.target_kind = 'PROFILE_PHOTO' AND ph.id = r.target_id
          LEFT JOIN training.routines rt
            ON r.target_kind = 'ROUTINE' AND rt.id = r.target_id
+         LEFT JOIN social.reels rl
+           ON r.target_kind = 'REEL' AND rl.id = r.target_id
          LEFT JOIN public.ejercicios ex
            ON r.target_kind = 'EXERCISE' AND ex.id = r.target_id
          LEFT JOIN community.content_comments cm
@@ -181,7 +181,7 @@ export class ModerationRepository {
         targetId,
         ...(tenantScope ? { tenantId: tenantScope } : {}),
       },
-      order: [['createdAt', 'ASC']],
+      order: [["createdAt", "ASC"]],
     });
   }
 
@@ -243,7 +243,11 @@ export class ModerationRepository {
     tenantScope: string | null,
   ): Promise<number> {
     const [affected] = await this.reports.update(
-      { status: ModerationStatus.PENDIENTE, claimedByUserId: null, claimedAt: null },
+      {
+        status: ModerationStatus.PENDIENTE,
+        claimedByUserId: null,
+        claimedAt: null,
+      },
       {
         where: {
           targetKind,
@@ -272,7 +276,9 @@ export class ModerationRepository {
   ): Promise<number> {
     const [affected] = await this.reports.update(
       {
-        status: input.discarded ? ModerationStatus.DESCARTADO : ModerationStatus.RESUELTO,
+        status: input.discarded
+          ? ModerationStatus.DESCARTADO
+          : ModerationStatus.RESUELTO,
         resolution: input.resolution,
         resolutionNote: input.note,
         resolvedByUserId: input.moderatorUserId,
@@ -311,7 +317,7 @@ export class ModerationRepository {
   listStrikes(userId: string): Promise<UserStrikeModel[]> {
     return this.strikes.findAll({
       where: { userId },
-      order: [['createdAt', 'DESC']],
+      order: [["createdAt", "DESC"]],
     });
   }
 
@@ -353,115 +359,28 @@ export class ModerationRepository {
     transaction: Transaction,
   ): Promise<void> {
     const automatic = input.moderatorUserId === null;
-    const statements: Record<string, string> = {
-      ROUTINE: `UPDATE training.routines
-                   SET estado_moderacion = :state, updated_at = now()
-                 WHERE id = :targetId`,
-      EXERCISE: `UPDATE public.ejercicios
-                    SET estado_moderacion = :commentState, updated_at = now()
-                  WHERE id = :targetId`,
-      COMMENT: `UPDATE community.content_comments
-                   SET estado = :commentState, updated_at = now()
-                 WHERE id = :targetId AND estado <> 'BORRADO_AUTOR'`,
+    const state = !input.hidden ? "VISIBLE" : automatic ? "OCULTA_AUTO" : "OCULTA_MODERACION";
+    const commentState = !input.hidden ? "VISIBLE" : automatic ? "OCULTO_AUTO" : "OCULTO_MODERACION";
+    const exerciseState = !input.hidden ? "VISIBLE" : automatic ? "OCULTO_AUTO" : "OCULTO_MODERACION";
+    const updates: Partial<Record<ModerationTargetKindValue, { sql: string; state: string }>> = {
+      ROUTINE: { sql: "UPDATE training.routines SET estado_moderacion = :state, updated_at = now() WHERE id = :targetId", state },
+      EXERCISE: { sql: "UPDATE public.ejercicios SET estado_moderacion = :state, updated_at = now() WHERE id = :targetId", state: exerciseState },
+      COMMENT: { sql: "UPDATE community.content_comments SET estado = :state, updated_at = now() WHERE id = :targetId AND estado <> 'BORRADO_AUTOR'", state: commentState },
     };
-    const shared = statements[input.targetKind];
-    if (shared) {
-      try {
-        await this.sequelize.query(shared, {
-          type: QueryTypes.UPDATE,
-          replacements: {
-            targetId: input.targetId,
-            state: !input.hidden ? 'VISIBLE' : automatic ? 'OCULTA_AUTO' : 'OCULTA_MODERACION',
-            commentState: !input.hidden ? 'VISIBLE' : automatic ? 'OCULTO_AUTO' : 'OCULTO_MODERACION',
-          },
-          transaction,
-        });
-      } catch (error: unknown) {
-        // Restaurar una rutina cuya huella ya publicó otra persona choca con el índice único.
-        if (error instanceof Error && error.name === 'SequelizeUniqueConstraintError') {
-          throw new ConflictException(
-            'No se puede restaurar: ya existe una rutina pública con los mismos ejercicios.',
-          );
-        }
-        throw error;
-      }
+    const update = updates[input.targetKind];
+    if (update) {
+      await this.sequelize.query(update.sql, {
+        type: QueryTypes.UPDATE,
+        replacements: { targetId: input.targetId, state: update.state },
+        transaction,
+      });
       return;
     }
-    const table = input.targetKind === 'STORY' ? 'profile.stories' : 'profile.photos';
-
+    const table = input.targetKind === "STORY" ? "profile.stories" : input.targetKind === "PROFILE_PHOTO" ? "profile.photos" : "social.reels";
     await this.sequelize.query(
-      `UPDATE ${table}
-          SET hidden_at = ${input.hidden ? 'now()' : 'NULL'},
-              hidden_by_user_id = ${input.hidden ? ':moderatorUserId' : 'NULL'},
-              hidden_reason = ${input.hidden ? ':reason' : 'NULL'}
-        WHERE id = :targetId`,
-      {
-        type: QueryTypes.UPDATE,
-        replacements: {
-          targetId: input.targetId,
-          ...(input.hidden
-            ? { moderatorUserId: input.moderatorUserId, reason: input.reason }
-            : {}),
-        },
-        transaction,
-      },
+      `UPDATE ${table} SET hidden_at = ${input.hidden ? "now()" : "NULL"}, hidden_by_user_id = ${input.hidden ? ":moderatorUserId" : "NULL"}, hidden_reason = ${input.hidden ? ":reason" : "NULL"} WHERE id = :targetId`,
+      { type: QueryTypes.UPDATE, replacements: { targetId: input.targetId, ...(input.hidden ? { moderatorUserId: input.moderatorUserId, reason: input.reason } : {}) }, transaction },
     );
-  }
-
-  /**
-   * ¿Puede quien denuncia ver ese contenido? Denunciar es una forma de leerlo:
-   * sin este filtro se podrían sondear identificadores de rutinas privadas ajenas.
-   */
-  async canReporterSee(
-    targetKind: ModerationTargetKindValue,
-    targetId: string,
-    reporterId: string,
-  ): Promise<boolean> {
-    const queries: Record<string, string> = {
-      ROUTINE: `SELECT 1 AS ok FROM training.routines r WHERE r.id = :targetId AND ${routineVisibleSql('r', ':userId')}`,
-      EXERCISE: `SELECT 1 AS ok FROM public.ejercicios e WHERE e.id = :targetId AND ${exerciseVisibleSql('e', ':userId')}`,
-      COMMENT: `SELECT 1 AS ok FROM community.content_comments c
-                 WHERE c.id = :targetId AND c.estado = 'VISIBLE' AND (
-                   (c.target_kind = 'ROUTINE' AND EXISTS (SELECT 1 FROM training.routines r
-                      WHERE r.id = c.target_id AND ${routineVisibleSql('r', ':userId')}))
-                OR (c.target_kind = 'EXERCISE' AND EXISTS (SELECT 1 FROM public.ejercicios e
-                      WHERE e.id = c.target_id AND ${exerciseVisibleSql('e', ':userId')})))`,
-    };
-    const sql = queries[targetKind];
-    if (!sql) return true;
-    const rows = await this.sequelize.query(sql, {
-      type: QueryTypes.SELECT,
-      replacements: { targetId, userId: reporterId },
-    });
-    return rows.length > 0;
-  }
-
-  /** Texto del comentario y su origen, para la vista previa del caso (el moderador ve lo denunciado). */
-  async commentPreview(commentId: string) {
-    const [row] = await this.sequelize.query<{ text: string; targetKind: string; targetId: string }>(
-      `SELECT texto AS text, target_kind AS "targetKind", target_id AS "targetId"
-         FROM community.content_comments WHERE id = :commentId`,
-      { type: QueryTypes.SELECT, replacements: { commentId } },
-    );
-    return row ?? null;
-  }
-
-  /** ¿Está oculto? Cada tipo guarda su estado en su propia tabla. */
-  async isContentHidden(targetKind: ModerationTargetKindValue, targetId: string): Promise<boolean> {
-    const queries: Record<string, string> = {
-      STORY: `SELECT (hidden_at IS NOT NULL) AS hidden FROM profile.stories WHERE id = :targetId`,
-      PROFILE_PHOTO: `SELECT (hidden_at IS NOT NULL) AS hidden FROM profile.photos WHERE id = :targetId`,
-      ROUTINE: `SELECT (estado_moderacion <> 'VISIBLE') AS hidden FROM training.routines WHERE id = :targetId`,
-      EXERCISE: `SELECT (estado_moderacion <> 'VISIBLE') AS hidden FROM public.ejercicios WHERE id = :targetId`,
-      COMMENT: `SELECT (estado IN ('OCULTO_AUTO','OCULTO_MODERACION')) AS hidden FROM community.content_comments WHERE id = :targetId`,
-    };
-    const sql = queries[targetKind];
-    if (!sql) return false;
-    const [row] = await this.sequelize.query<{ hidden: boolean }>(sql, {
-      type: QueryTypes.SELECT,
-      replacements: { targetId },
-    });
-    return row?.hidden ?? false;
   }
 
   /** Dueño de un contenido, para resolver a quién se sanciona. Nulo si no existe. */
@@ -483,24 +402,57 @@ export class ModerationRepository {
                FROM public.usuarios u WHERE u.id = :targetId`,
       ROUTINE: `SELECT r.created_by_user_id AS "userId", u.tenant_id AS "tenantId"
                   FROM training.routines r JOIN public.usuarios u ON u.id = r.created_by_user_id
-                 WHERE r.id = :targetId AND r.estado = 'ACTIVE'`,
-      // Solo los ejercicios privados tienen dueño: los del catálogo son de REPP.
+                 WHERE r.id = :targetId AND r.visibilidad IN ('PUBLIC','TEMPLATE')`,
       EXERCISE: `SELECT e.created_by_usuario_id AS "userId", u.tenant_id AS "tenantId"
                    FROM public.ejercicios e JOIN public.usuarios u ON u.id = e.created_by_usuario_id
                   WHERE e.id = :targetId AND e.estado = 'ACTIVO'`,
       COMMENT: `SELECT c.autor_id AS "userId", u.tenant_id AS "tenantId"
                   FROM community.content_comments c JOIN public.usuarios u ON u.id = c.autor_id
                  WHERE c.id = :targetId AND c.estado <> 'BORRADO_AUTOR'`,
+      REEL: `SELECT r.user_id AS "userId", u.tenant_id AS "tenantId"
+               FROM social.reels r JOIN public.usuarios u ON u.id = r.user_id
+              WHERE r.id = :targetId AND r.status = 'READY'
+                AND r.hidden_at IS NULL AND r.deleted_at IS NULL`,
     };
 
     const sql = queries[targetKind];
     if (!sql) return null;
 
-    const rows = await this.sequelize.query<{ userId: string; tenantId: string }>(sql, {
+    const rows = await this.sequelize.query<{
+      userId: string;
+      tenantId: string;
+    }>(sql, {
       type: QueryTypes.SELECT,
       replacements: { targetId },
     });
     return rows[0] ?? null;
+  }
+
+  async canReporterViewChatMessage(
+    messageId: string,
+    reporterUserId: string,
+  ): Promise<boolean> {
+    const rows = await this.sequelize.query<{ allowed: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1
+           FROM chat.messages m
+           JOIN chat.conversations c ON c.id = m.conversation_id
+           JOIN chat.participants p
+             ON p.conversation_id = c.id AND p.user_id = :reporterUserId
+          WHERE m.id = :messageId
+            AND c.revoked_at IS NULL
+            AND m.deleted_at IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM chat.message_visibility v
+               WHERE v.message_id = m.id AND v.user_id = :reporterUserId
+            )
+       ) AS allowed`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: { messageId, reporterUserId },
+      },
+    );
+    return rows[0]?.allowed === true;
   }
 
   /** Aplica (o levanta) la suspensión temporal de una cuenta. */

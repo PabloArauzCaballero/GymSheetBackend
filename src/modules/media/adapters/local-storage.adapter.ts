@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { existsSync } from "fs";
-import { mkdir, unlink, writeFile } from "fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "fs/promises";
 import { dirname, join, resolve, sep } from "path";
 import {
   MediaStorageProvider,
@@ -79,6 +79,10 @@ export class LocalStorageAdapter implements MediaStorageProvider {
   async remove(key: string): Promise<void> {
     const absolutePath = this.resolveWithinRoot(key);
     if (existsSync(absolutePath)) await unlink(absolutePath);
+  }
+
+  async download(key: string): Promise<Buffer> {
+    return readFile(this.resolveWithinRoot(key));
   }
 
   /**

@@ -63,7 +63,10 @@
     "db:seed:mock": "ts-node src/database/seeders/seed.ts mock",
     "db:seed:all:development": "ts-node src/database/seeders/seed.ts all",
     "db:seed:showcase": "ts-node src/workers/routines-showcase.command.ts",
-    "db:seed:showcase:prod": "node dist/workers/routines-showcase.command.js"
+    "db:seed:showcase:prod": "node dist/workers/routines-showcase.command.js",
+    "worker:recommendations": "ts-node src/workers/recommendations-projection.worker.ts",
+    "db:import:social-map": "ts-node src/workers/social-map-places-import.command.ts",
+    "worker:recommendations:prod": "node dist/workers/recommendations-projection.worker.js"
   },
   "dependencies": {
     "@nest-lab/throttler-storage-redis": "^1.2.0",
@@ -91,6 +94,7 @@
     "rxjs": "^7.8.1",
     "sequelize": "^6.37.8",
     "sequelize-typescript": "^2.1.6",
+    "sharp": "^0.35.5",
     "socket.io": "^4.8.1",
     "web-push": "^3.6.7",
     "zod": "^3.24.1"
@@ -104,6 +108,7 @@
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.2",
+    "@types/nodemailer": "^8.0.1",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^7.2.1",
     "@types/web-push": "^3.6.4",

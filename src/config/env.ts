@@ -163,6 +163,8 @@ export const environmentSchema = z
      */
     JWT_IMPERSONATION_EXPIRES_IN: jwtDurationSchema.default("15m"),
     JWT_REFRESH_SECRET: z.string().min(64),
+    /** Clave estable e independiente para descifrar medios históricos del chat. */
+    CHAT_MEDIA_ENCRYPTION_KEY: optionalSecretSchema,
     JWT_REFRESH_EXPIRES_IN: jwtDurationSchema.default("7d"),
     JWT_ISSUER: z.string().trim().min(3).default("gym-sheet-api"),
     JWT_AUDIENCE: z.string().trim().min(3).default("gym-sheet-web"),
@@ -289,6 +291,8 @@ export const environmentSchema = z
       .enum(["IN_APP", "HTTP_GATEWAY", "MOCK"])
       .default("IN_APP"),
     NOTIFICATION_GATEWAY_URL: optionalUrlSchema,
+    RECOMMENDATIONS_URL: optionalUrlSchema,
+    RECOMMENDATIONS_SERVICE_TOKEN: optionalSecretSchema,
     NOTIFICATION_GATEWAY_SECRET: optionalSecretSchema,
     NOTIFICATION_GATEWAY_ALLOWED_HOSTS: commaSeparatedListSchema.default(""),
     NOTIFICATION_GATEWAY_TIMEOUT_MS: z.coerce
@@ -555,9 +559,8 @@ export const environmentSchema = z
       "image/jpeg,image/png,image/webp,image/gif",
     ),
     /**
-     * Adjuntos de chat (fotos/video, incluida la vista única): límite propio
-     * porque un video pesa mucho más que una foto de perfil, y un tipo MIME
-     * propio porque acá sí se admite video, a diferencia de `MEDIA_ALLOWED_MIME`.
+     * Adjuntos de chat (fotos/video/audio, incluida la vista única): límite
+     * propio y tipos MIME propios respecto de `MEDIA_ALLOWED_MIME`.
      */
     CHAT_MEDIA_MAX_BYTES: z.coerce
       .number()
@@ -571,7 +574,7 @@ export const environmentSchema = z
      */
     GIPHY_API_KEY: z.string().trim().optional(),
     CHAT_MEDIA_ALLOWED_MIME: commaSeparatedListSchema.default(
-      "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime",
+      "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,audio/mp4",
     ),
     /**
      * Demostraciones de ejercicio: límite y tipos propios.

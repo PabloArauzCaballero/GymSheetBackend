@@ -48,7 +48,10 @@ interface FakePass {
 function createFakeRepository(members: readonly FakeMember[]) {
   const connections: FakeConnection[] = [];
   const passes: FakePass[] = [];
-  const state = { conversationHasMessages: false };
+  const state = {
+    conversationHasMessages: false,
+    cancelledInvitePairs: [] as Array<[string, string]>,
+  };
 
   // Reloj monótono: los tests necesitan un orden de swipes inequívoco, y dos
   // llamadas seguidas a `new Date()` pueden devolver el mismo milisegundo.
@@ -77,8 +80,9 @@ function createFakeRepository(members: readonly FakeMember[]) {
   }
 
   const repository = {
+    lockSocialPair: async () => undefined,
     runInTransaction: <T>(work: (transaction: never) => Promise<T>): Promise<T> =>
-      work(undefined as never),
+      work({} as never),
 
     findActiveBetween: (userA: string, userB: string) =>
       Promise.resolve(
@@ -102,6 +106,18 @@ function createFakeRepository(members: readonly FakeMember[]) {
           (row) => row.id === id && (row.requesterId === userId || row.addresseeId === userId),
         ) ?? null,
       ),
+
+    lockConnectionForUser: (id: string, userId: string) =>
+      Promise.resolve(
+        connections.find(
+          (row) => row.id === id && (row.requesterId === userId || row.addresseeId === userId),
+        ) ?? null,
+      ),
+
+    cancelTrainingInvitesForPair: (userA: string, userB: string) => {
+      state.cancelledInvitePairs.push([userA, userB]);
+      return Promise.resolve();
+    },
 
     respond: (connection: FakeConnection, status: ConnectionStatus) => {
       connection.status = status;
@@ -173,6 +189,11 @@ function createFakeRepository(members: readonly FakeMember[]) {
 
     directConversationHasMessages: () => Promise.resolve(state.conversationHasMessages),
 
+    discoverySettings: () => Promise.resolve({ profileEnabled: false, crossGymEnabled: false, mapEnabled: false, version: 0 }),
+    discoveryPreferences: () => Promise.resolve({ configured: true, genders: ["MALE"], intents: ["TRAINING"], minAge: 18, maxAge: 65, radiusKm: 25, flexibleAge: false, flexibleDistance: false, version: 1 }),
+    canInteractAcrossTenants: () => Promise.resolve(false),
+    isBlockedEitherWay: () => Promise.resolve(false),
+
     listEarnedBadges: () => Promise.resolve([]),
 
     directory: (viewerId: string, tenantId: string, _default: string, filters: DirectoryFilters) => {
@@ -227,6 +248,7 @@ function createService(members: readonly FakeMember[]) {
   const service = new SocialService(
     fake.repository as unknown as SocialRepository,
     usersRepository,
+    { emitConversationRevoked: jest.fn() } as never,
   );
   return { service, ...fake };
 }
@@ -401,11 +423,14 @@ describe("SocialService.undoLastSwipe", () => {
   });
 
   it("undoes a match by returning the other person's request to pending", async () => {
-    const { service, connections } = createService(GYM);
+    const { service, connections, state } = createService(GYM);
     await service.swipe(candidate, HOME_GYM, { targetId: viewer, direction: "LIKE" });
     await service.swipe(viewer, HOME_GYM, { targetId: candidate, direction: "LIKE" });
 
     const result = await service.undoLastSwipe(viewer);
+
+    // Deshacer el match cancela las quedadas de entreno futuras de la pareja.
+    expect(state.cancelledInvitePairs).toEqual([[candidate, viewer]]);
 
     expect(result).toMatchObject({ undone: "LIKE", targetId: candidate, unmatched: true });
     // La solicitud no era del viewer: se deshace el «sí», no se borra lo que
@@ -426,6 +451,7 @@ describe("SocialService.undoLastSwipe", () => {
 
     await expect(service.undoLastSwipe(viewer)).rejects.toThrow(ConflictException);
     expect(connections[0].status).toBe(ConnectionStatus.ACCEPTED);
+    expect(state.cancelledInvitePairs).toEqual([]);
   });
 });
 

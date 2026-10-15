@@ -60,6 +60,7 @@ describe("MediaService", () => {
       name: "local",
       immutable: false,
       upload: jest.fn().mockResolvedValue(fakeStored()),
+      download: jest.fn(),
       remove: jest.fn(),
     };
     repository = {

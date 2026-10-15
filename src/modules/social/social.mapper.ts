@@ -30,6 +30,8 @@ export function mapConnectionToResponse(
 
 export type DirectoryEntryResponse = {
   userId: string;
+  /** Backend-issued token linking a visible discovery card to one swipe. */
+  impressionId?: string;
   /** Nombre de pila e inicial: el directorio no es una lista de socios con nombre completo. */
   displayName: string;
   objetivo: string | null;

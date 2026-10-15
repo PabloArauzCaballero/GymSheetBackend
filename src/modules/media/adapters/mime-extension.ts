@@ -24,6 +24,7 @@ export const MIME_EXTENSION: Record<string, string> = {
   "video/mp4": ".mp4",
   "video/webm": ".webm",
   "video/quicktime": ".mov",
+  "audio/mp4": ".m4a",
   "application/pdf": ".pdf",
 };
 

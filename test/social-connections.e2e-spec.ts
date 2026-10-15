@@ -10,6 +10,9 @@ import { env } from '../src/config/env';
 
 /** Punto 11 y 10 del audit: solicitudes de conexión y estado social del perfil. */
 describe('Social connections and status (e2e)', () => {
+  // Cada prueba registra varias cuentas (bcrypt): con el equipo cargado 5 s no alcanzan.
+  jest.setTimeout(20000);
+
   let application: INestApplication;
   let httpServer: Parameters<typeof request>[0];
 
@@ -38,19 +41,26 @@ describe('Social connections and status (e2e)', () => {
     await application?.close();
   });
 
-  async function registerAccount(label: string): Promise<{ accessToken: string; userId: string }> {
+  async function registerAccount(
+    label: string,
+  ): Promise<{ accessToken: string; userId: string; fullName: string }> {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    // Nombre único: el directorio se filtra por nombre (`q`) y la base acumula
+    // cuentas de corridas anteriores.
+    const fullName = `Social ${label} ${suffix}`;
     const response = await request(httpServer)
       .post(url('/auth/register'))
       .send({
-        email: `social-${label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.test`,
+        email: `social-${label}-${suffix}@example.test`,
         password,
-        nombreCompleto: `Social ${label}`,
+        nombreCompleto: fullName,
         acceptedTerms: true,
       })
       .expect(201);
     return {
       accessToken: response.body.data.accessToken as string,
       userId: response.body.data.user.id as string,
+      fullName,
     };
   }
 
@@ -205,33 +215,11 @@ describe('Social connections and status (e2e)', () => {
    * cuentas del resto de la base de datos desechable, que la suite entera
    * comparte y va acumulando cuentas.
    */
-  async function markLocation(
-    accessToken: string,
-    trainingLocation: 'GYM' | 'HOME' | 'OUTDOORS' | 'MIXED',
-  ): Promise<void> {
-    await request(httpServer)
-      .put(url('/me/onboarding/preferences'))
-      .set('Authorization', `Bearer ${accessToken}`)
-      .send({
-        experienceLevel: 'BEGINNER',
-        weeklyFrequency: 3,
-        trainingLocation,
-        trainingPreferences: [],
-        consentHealth: true,
-        consentData: true,
-      })
-      .expect(200);
-  }
-
   describe('social status visibility', () => {
     it('shows the social status only to an accepted, visible connection — never to a stranger', async () => {
       const owner = await registerAccount('status-owner');
       const stranger = await registerAccount('status-stranger');
       const friend = await registerAccount('status-friend');
-      const marker = 'OUTDOORS';
-      await Promise.all(
-        [owner, stranger, friend].map((account) => markLocation(account.accessToken, marker)),
-      );
 
       await request(httpServer)
         .patch(url('/me/social-status'))
@@ -252,7 +240,7 @@ describe('Social connections and status (e2e)', () => {
         .expect(200);
 
       const seenByStranger = await request(httpServer)
-        .get(url(`/me/gym-directory?ubicacion=${marker}&limit=50`))
+        .get(url(`/me/gym-directory?q=${encodeURIComponent(owner.fullName)}&limit=50`))
         .set('Authorization', `Bearer ${stranger.accessToken}`)
         .expect(200);
       const ownerForStranger = (
@@ -262,7 +250,7 @@ describe('Social connections and status (e2e)', () => {
       expect(ownerForStranger?.socialStatus).toBeNull();
 
       const seenByFriend = await request(httpServer)
-        .get(url(`/me/gym-directory?ubicacion=${marker}&limit=50`))
+        .get(url(`/me/gym-directory?q=${encodeURIComponent(owner.fullName)}&limit=50`))
         .set('Authorization', `Bearer ${friend.accessToken}`)
         .expect(200);
       const ownerForFriend = (
@@ -275,8 +263,6 @@ describe('Social connections and status (e2e)', () => {
     it('hides the social status from a connection when marked not visible', async () => {
       const owner = await registerAccount('status-hidden-owner');
       const friend = await registerAccount('status-hidden-friend');
-      const marker = 'MIXED';
-      await Promise.all([owner, friend].map((account) => markLocation(account.accessToken, marker)));
 
       await request(httpServer)
         .patch(url('/me/social-status'))
@@ -296,7 +282,7 @@ describe('Social connections and status (e2e)', () => {
         .expect(200);
 
       const directory = await request(httpServer)
-        .get(url(`/me/gym-directory?ubicacion=${marker}&limit=50`))
+        .get(url(`/me/gym-directory?q=${encodeURIComponent(owner.fullName)}&limit=50`))
         .set('Authorization', `Bearer ${friend.accessToken}`)
         .expect(200);
       const entry = (
@@ -322,7 +308,6 @@ describe('Social connections and status (e2e)', () => {
     it('reflects an accepted connection in the directory entry', async () => {
       const a = await registerAccount('dir-a');
       const b = await registerAccount('dir-b');
-      await Promise.all([a, b].map((account) => markLocation(account.accessToken, 'HOME')));
       const sent = await request(httpServer)
         .post(url('/me/connections'))
         .set('Authorization', `Bearer ${a.accessToken}`)
@@ -335,7 +320,7 @@ describe('Social connections and status (e2e)', () => {
         .expect(200);
 
       const directory = await request(httpServer)
-        .get(url('/me/gym-directory?ubicacion=HOME&limit=50'))
+        .get(url(`/me/gym-directory?q=${encodeURIComponent(b.fullName)}&limit=50`))
         .set('Authorization', `Bearer ${a.accessToken}`)
         .expect(200);
       const entry = (directory.body.data as Array<{ userId: string; connectionStatus: string }>).find(

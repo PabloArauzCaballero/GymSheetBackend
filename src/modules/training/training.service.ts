@@ -113,7 +113,10 @@ export class TrainingService {
     userId: string,
     input: ListRoutinesInput,
   ): Promise<RoutinePageResponse> {
-    const where = routineWhereForScope(input.scope, userId);
+    const where = routineWhereForScope(
+      input.scope === 'public' ? 'templates' : input.scope,
+      userId,
+    );
     const result = await this.repository.listRoutines(where, input.page, input.pageSize);
     return {
       items: result.rows.map((routine) =>

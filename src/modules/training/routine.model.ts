@@ -77,6 +77,9 @@ export class RoutineModel extends Model {
   })
   declare status: RoutineStatus;
 
+  @Column({ type: DataType.DATE, allowNull: true, field: 'hidden_at' })
+  declare hiddenAt: Date | null;
+
   @Default({})
   @Column({ type: DataType.JSONB, allowNull: false, field: 'metadata' })
   declare metadata: Record<string, unknown>;
