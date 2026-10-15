@@ -25,10 +25,14 @@ export type MediaStorageProviderName =
  * `publicaciones` está declarado pero todavía no lo usa nadie: no existe el
  * módulo de publicaciones. Se reserva aquí para que, cuando exista, el layout
  * de claves no tenga que cambiar (y con él, las URLs ya persistidas).
+ * `reels` tiene una carpeta separada porque sus objetos no están en la política
+ * de lectura anónima de MinIO; no se debe guardar contenido de este módulo bajo
+ * `publicaciones`.
  */
 export type MediaCategory =
   | "perfiles"
   | "stories"
+  | "reels"
   | "publicaciones"
   | "chats"
   | "catalog"
@@ -45,7 +49,7 @@ export type MediaCategory =
  */
 export type MediaUploadTarget =
   | {
-      readonly category: "perfiles" | "stories" | "publicaciones";
+      readonly category: "perfiles" | "stories" | "reels" | "publicaciones";
       readonly ownerUserId: string;
     }
   | {
@@ -111,6 +115,8 @@ export interface MediaStorageProvider {
     input: MediaUploadInput,
     target: MediaUploadTarget,
   ): Promise<StoredAsset>;
+  /** Reads private bytes for an authenticated application route. */
+  download(key: string): Promise<Buffer>;
   remove(key: string): Promise<void>;
 }
 

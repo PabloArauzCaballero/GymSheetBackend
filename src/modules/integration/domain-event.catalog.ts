@@ -3,20 +3,26 @@ import {
   EmploymentStatus,
   MaintenanceStatus,
   MembershipStatus,
-} from '../../common/enums/domain.enums';
+} from "../../common/enums/domain.enums";
 
 export const GymDomainEvent = {
-  CUSTOMER_REGISTERED: 'customer.registered.v1',
-  STAFF_PROFILE_CREATED: 'staff.profile-created.v1',
-  STAFF_STATUS_CHANGED: 'staff.employment-status-changed.v1',
-  MEMBERSHIP_ACTIVATED: 'membership.activated.v1',
-  MEMBERSHIP_STATUS_CHANGED: 'membership.status-changed.v1',
-  EQUIPMENT_ASSIGNED: 'equipment.assigned-to-room.v1',
-  MAINTENANCE_SCHEDULED: 'equipment.maintenance-scheduled.v1',
-  MAINTENANCE_STARTED: 'equipment.maintenance-started.v1',
-  MAINTENANCE_COMPLETED: 'equipment.maintenance-completed.v1',
-  ACCESS_DECISION_RECORDED: 'access.decision-recorded.v1',
-  NOTIFICATION_DELIVERY_REQUESTED: 'notification.delivery-requested.v1',
+  CUSTOMER_REGISTERED: "customer.registered.v1",
+  STAFF_PROFILE_CREATED: "staff.profile-created.v1",
+  STAFF_STATUS_CHANGED: "staff.employment-status-changed.v1",
+  MEMBERSHIP_ACTIVATED: "membership.activated.v1",
+  MEMBERSHIP_STATUS_CHANGED: "membership.status-changed.v1",
+  EQUIPMENT_ASSIGNED: "equipment.assigned-to-room.v1",
+  MAINTENANCE_SCHEDULED: "equipment.maintenance-scheduled.v1",
+  MAINTENANCE_STARTED: "equipment.maintenance-started.v1",
+  MAINTENANCE_COMPLETED: "equipment.maintenance-completed.v1",
+  ACCESS_DECISION_RECORDED: "access.decision-recorded.v1",
+  NOTIFICATION_DELIVERY_REQUESTED: "notification.delivery-requested.v1",
+  SOCIAL_PROFILE_UPDATED: "social.profile.updated.v1",
+  SOCIAL_PROFILE_DELETED: "social.profile.deleted.v1",
+  SOCIAL_RECOMMENDATION_SIGNAL_RECORDED:
+    "social.recommendation.signal-recorded.v1",
+  SOCIAL_RECOMMENDATION_SIGNAL_RETRACTED:
+    "social.recommendation.signal-retracted.v1",
 } as const;
 
 export type GymDomainEventName =
@@ -81,7 +87,7 @@ export type GymDomainEventPayloadMap = {
     deviceEventId: string;
     decisionId: string;
     userId: string;
-    direction: 'ENTRY' | 'EXIT';
+    direction: "ENTRY" | "EXIT";
     outcome: AccessDecisionOutcome;
     reasonCode: string;
   };
@@ -89,6 +95,39 @@ export type GymDomainEventPayloadMap = {
     notificationId: string;
     recipientUserId: string;
     channel: string;
+  };
+  [GymDomainEvent.SOCIAL_PROFILE_UPDATED]: {
+    userId: string;
+    aggregateVersion: number;
+    schemaVersion: 1;
+    profile: Record<string, unknown>;
+  };
+  [GymDomainEvent.SOCIAL_PROFILE_DELETED]: {
+    userId: string;
+    aggregateVersion: number;
+    schemaVersion: 1;
+  };
+  [GymDomainEvent.SOCIAL_RECOMMENDATION_SIGNAL_RECORDED]: {
+    schemaVersion: 1;
+    signal: {
+      eventId: string;
+      viewerId: string;
+      profileId: string;
+      impressionId: string;
+      kind: "LIKE" | "MUTUAL" | "PASS";
+      occurredAt: string;
+      observed: true;
+      features: { interests: string[] };
+    };
+  };
+  [GymDomainEvent.SOCIAL_RECOMMENDATION_SIGNAL_RETRACTED]: {
+    schemaVersion: 1;
+    retraction: {
+      eventId: string;
+      viewerId: string;
+      profileId: string;
+      impressionId: string;
+    };
   };
 };
 

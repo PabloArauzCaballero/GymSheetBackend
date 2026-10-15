@@ -197,14 +197,18 @@ export class AccessControlService {
     return mapDecision(decision);
   }
 
-  async getEvent(id: string) {
-    const event = await this.repository.findEvent(id);
+  async getEvent(id: string, tenantScope?: string | null) {
+    const event = await this.repository.findEvent(id, undefined, tenantScope);
     if (!event) throw new NotFoundException('Evento no encontrado.');
     return mapEvent(event);
   }
 
-  async listHistory(filters: AccessHistoryFilterInput, forcedUserId?: string) {
-    const result = await this.repository.listDecisions(filters, forcedUserId);
+  async listHistory(
+    filters: AccessHistoryFilterInput,
+    forcedUserId?: string,
+    tenantScope?: string | null,
+  ) {
+    const result = await this.repository.listDecisions(filters, forcedUserId, tenantScope);
     return {
       items: result.rows.map(mapDecision),
       page: filters.page,

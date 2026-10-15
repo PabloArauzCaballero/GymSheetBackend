@@ -1,15 +1,18 @@
 import { createHash } from "crypto";
+import { Readable } from "stream";
 import { MediaUploadInput, MediaUploadTarget } from "../media-storage.port";
 
 const mockStatObject = jest.fn();
 const mockPutObject = jest.fn();
 const mockRemoveObject = jest.fn();
+const mockGetObject = jest.fn();
 
 jest.mock("minio", () => ({
   Client: jest.fn().mockImplementation(() => ({
     statObject: mockStatObject,
     putObject: mockPutObject,
     removeObject: mockRemoveObject,
+    getObject: mockGetObject,
   })),
 }));
 
@@ -93,6 +96,25 @@ describe("MinioStorageAdapter", () => {
     });
 
     expect(stored.key.startsWith(`users/${OWNER}/chats/conv-7/`)).toBe(true);
+  });
+
+  it("stores reels under a dedicated owner-scoped key prefix", async () => {
+    mockStatObject.mockRejectedValue(notFound());
+
+    const stored = await adapter.upload(makeInput(), {
+      category: "reels",
+      ownerUserId: OWNER,
+    });
+
+    expect(stored.key).toMatch(new RegExp(`^users/${OWNER}/reels/[a-f0-9]{64}\\.jpg$`));
+    expect(stored.key).not.toContain("publicaciones");
+  });
+
+  it("reads object bytes through the authenticated server-side storage port", async () => {
+    mockGetObject.mockResolvedValue(Readable.from([Buffer.from("private-media")]));
+
+    await expect(adapter.download("users/a/chats/c/file.jpg")).resolves.toEqual(Buffer.from("private-media"));
+    expect(mockGetObject).toHaveBeenCalledWith("gymsheet-media", "users/a/chats/c/file.jpg");
   });
 
   /**

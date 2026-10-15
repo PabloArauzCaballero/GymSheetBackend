@@ -32,9 +32,11 @@ import { ProfileViewsModule } from './modules/profile-views/profile-views.module
 import { SocialModule } from './modules/social/social.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { StoriesModule } from './modules/stories/stories.module';
+import { ReelsModule } from './modules/reels/reels.module';
 import { ProgramsModule } from './modules/programs/programs.module';
 import { CommunityModule } from './modules/community/community.module';
 import { TrainingModule } from './modules/training/training.module';
+import { TrainingInvitationsModule } from './modules/training-invitations/training-invitations.module';
 import { ProgressionModule } from './modules/progression/progression.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { UsersModule } from './modules/users/users.module';
@@ -106,6 +108,7 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
     ExercisesModule,
     WorkoutsModule,
     TrainingModule,
+    TrainingInvitationsModule,
     CommunityModule,
     ProgramsModule,
     ProgressionModule,
@@ -114,6 +117,7 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
     SocialModule,
     ChatModule,
     StoriesModule,
+    ReelsModule,
     ProfileViewsModule,
     AdminAccessModule,
     TenantsModule,

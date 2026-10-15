@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { QueryTypes, Transaction } from 'sequelize';
+import { Op, QueryTypes, Transaction } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { QueueItemStatus } from '../../common/enums/domain.enums';
 import { AccessPointModel } from '../facilities/access-point.model';
@@ -77,12 +77,22 @@ export class AccessControlRepository {
     });
   }
 
-  findEvent(id: string, transaction?: Transaction) {
+  findEvent(id: string, transaction?: Transaction, tenantScope?: string | null) {
     return this.events.findByPk(id, {
       include: [
         { model: AccessDeviceModel, include: [AccessPointModel] },
         { model: AccessCredentialModel, include: [UserModel] },
-        AccessDecisionModel,
+        tenantScope == null
+          ? AccessDecisionModel
+          : {
+              model: AccessDecisionModel,
+              required: true,
+              include: [{
+                model: UserModel,
+                required: true,
+                where: { [Op.or]: [{ tenantId: tenantScope }, { tenantId: null }] },
+              }],
+            },
       ],
       transaction,
       lock: transaction ? transaction.LOCK.UPDATE : undefined,
@@ -215,7 +225,11 @@ export class AccessControlRepository {
     });
   }
 
-  listDecisions(filters: AccessHistoryFilterInput, forcedUserId?: string) {
+  listDecisions(
+    filters: AccessHistoryFilterInput,
+    forcedUserId?: string,
+    tenantScope?: string | null,
+  ) {
     const where = {
       ...(forcedUserId
         ? { userId: forcedUserId }
@@ -227,6 +241,15 @@ export class AccessControlRepository {
 
     return this.decisions.findAndCountAll({
       where,
+      ...(tenantScope == null
+        ? {}
+        : {
+            include: [{
+              model: UserModel,
+              required: true,
+              where: { [Op.or]: [{ tenantId: tenantScope }, { tenantId: null }] },
+            }],
+          }),
       limit: filters.pageSize,
       offset: (filters.page - 1) * filters.pageSize,
       order: [['decidedAt', 'DESC']],
