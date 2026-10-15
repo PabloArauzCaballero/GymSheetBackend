@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Patch, Query } from "@nestjs/common";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
-import { SocialMapBoundsInput, UpdateSocialMapLocationInput, socialMapBoundsSchema, socialMapCellIdSchema, socialMapCityQuerySchema, updateSocialMapLocationSchema } from "./social-map.schemas";
+import { SocialMapBoundsInput, UpdateSocialMapLocationInput, socialMapBoundsSchema, socialMapCellIdSchema, socialMapCityQuerySchema, socialMapNearbyQuerySchema, SocialMapNearbyQueryInput, updateSocialMapLocationSchema } from "./social-map.schemas";
 import { SocialMapService } from "./social-map.service";
 
 @Controller("me/social-map")
@@ -31,6 +31,14 @@ export class SocialMapController {
     @Param("cellId", new ZodValidationPipe(socialMapCellIdSchema)) cellId: string,
   ) {
     return this.service.peopleInCell(user.id, user.tenantId, cellId);
+  }
+
+  @Get("nearby")
+  nearby(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query(new ZodValidationPipe(socialMapNearbyQuerySchema)) point: SocialMapNearbyQueryInput,
+  ) {
+    return this.service.nearby(user.id, user.tenantId, point);
   }
 
   @Get("gyms")

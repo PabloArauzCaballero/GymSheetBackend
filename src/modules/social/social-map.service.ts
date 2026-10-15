@@ -2,7 +2,7 @@ import { ForbiddenException, Injectable } from "@nestjs/common";
 import { SocialRepository } from "./social.repository";
 import { env } from "../../config/env";
 import { mapDirectoryRowToResponse } from "./social.mapper";
-import { MapBounds, MapCoordinates, mapCellForLocation, mapCellsForBounds } from "./social-map.policy";
+import { MapBounds, MapCoordinates, approximateDistanceKm, mapCellForLocation, mapCellsAround, mapCellsForBounds } from "./social-map.policy";
 import { SocialMapRepository } from "./social-map.repository";
 
 @Injectable()
@@ -49,6 +49,40 @@ export class SocialMapService {
       excludeDecided: true,
     });
     return rows.map(mapDirectoryRowToResponse);
+  }
+
+  /**
+   * People around a tapped point (a gym or any spot), filtered by the viewer's
+   * Conocer preferences and sorted by approximate distance. Distances come from
+   * public cell centers, so they never reveal a stored coordinate.
+   */
+  async nearby(viewerId: string, tenantId: string, point: MapCoordinates) {
+    const cells = mapCellsAround(point);
+    const centers = new Map(cells.map((cell) => [cell.id, cell.center]));
+    const [settings, preferences, located] = await Promise.all([
+      this.socialRepository.discoverySettings(viewerId),
+      this.socialRepository.discoveryPreferences(viewerId),
+      this.repository.listEligibleMapPeopleInCells(viewerId, cells.map((cell) => cell.id)),
+    ]);
+    const preferencesApplied = preferences.configured;
+    if (located.length === 0) return { preferencesApplied, people: [] };
+    const rows = await this.socialRepository.directory(viewerId, tenantId, env.DEFAULT_TENANT_ID, {
+      userIds: located.map((person) => person.userId),
+      limit: located.length,
+      includeCrossGym: settings.profileEnabled && settings.crossGymEnabled,
+      mapOnly: true,
+      adultOnly: true,
+      ...(preferences.configured
+        ? { genders: preferences.genders, minAge: preferences.minAge, maxAge: preferences.maxAge }
+        : {}),
+    });
+    const cellByUser = new Map(located.map((person) => [person.userId, person.cellId]));
+    const people = rows.map((row) => {
+      const center = centers.get(cellByUser.get(row.userId) ?? "");
+      return { ...mapDirectoryRowToResponse(row), distanceKm: center ? approximateDistanceKm(point, center) : null };
+    });
+    people.sort((a, b) => (a.distanceKm ?? 99) - (b.distanceKm ?? 99) || a.displayName.localeCompare(b.displayName));
+    return { preferencesApplied, people };
   }
 
   async gyms(bounds: MapBounds) {
