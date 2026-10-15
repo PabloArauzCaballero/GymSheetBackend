@@ -87,6 +87,7 @@ describe("SocialRepository.revokeConnection", () => {
       .mockResolvedValueOnce([{ id: "invite-1" }])
       .mockResolvedValueOnce([]) // accepted state update
       .mockResolvedValueOnce([]) // meeting cancelled_at update
+      .mockResolvedValueOnce([]) // chat event cancelled_at update
       .mockResolvedValueOnce([]); // pending state update
 
     await repository.revokeConnection("connection-1", actor);
@@ -95,7 +96,8 @@ describe("SocialRepository.revokeConnection", () => {
     expect(query.mock.calls[3]?.[0]).toContain("state = 'CANCELLED'");
     expect(query.mock.calls[3]?.[1].replacements.inviteIds).toEqual(["invite-1"]);
     expect(query.mock.calls[4]?.[0]).toContain("cancelled_at IS NULL");
-    expect(query.mock.calls[5]?.[0]).toContain("state = 'PENDING'");
+    expect(query.mock.calls[5]?.[0]).toContain("chat.conversation_events");
+    expect(query.mock.calls[6]?.[0]).toContain("state = 'PENDING'");
     expect(query.mock.calls.some(([sql]) => String(sql).includes("DELETE FROM training."))).toBe(false);
     expect(connection.destroy).toHaveBeenCalledTimes(1);
   });
