@@ -359,16 +359,18 @@ export class ModerationService {
     targetId: string,
   ): Promise<boolean> {
     if (!isHideableTarget(targetKind)) return false;
-    const table =
-      targetKind === ModerationTargetKind.STORY
-        ? "profile.stories"
-        : targetKind === ModerationTargetKind.PROFILE_PHOTO
-          ? "profile.photos"
-          : targetKind === ModerationTargetKind.REEL
-            ? "social.reels"
-            : "training.routines";
+    const queries: Partial<Record<ModerationTargetKindValue, string>> = {
+      STORY: "SELECT (hidden_at IS NOT NULL) AS hidden FROM profile.stories WHERE id = :targetId",
+      PROFILE_PHOTO: "SELECT (hidden_at IS NOT NULL) AS hidden FROM profile.photos WHERE id = :targetId",
+      REEL: "SELECT (hidden_at IS NOT NULL) AS hidden FROM social.reels WHERE id = :targetId",
+      ROUTINE: "SELECT (estado_moderacion <> 'VISIBLE') AS hidden FROM training.routines WHERE id = :targetId",
+      EXERCISE: "SELECT (estado_moderacion <> 'VISIBLE') AS hidden FROM public.ejercicios WHERE id = :targetId",
+      COMMENT: "SELECT (estado IN ('OCULTO_AUTO','OCULTO_MODERACION')) AS hidden FROM community.content_comments WHERE id = :targetId",
+    };
+    const query = queries[targetKind];
+    if (!query) return false;
     const [row] = await this.sequelize.query<{ hidden: boolean }>(
-      `SELECT (hidden_at IS NOT NULL) AS hidden FROM ${table} WHERE id = :targetId`,
+      query,
       { type: QueryTypes.SELECT, replacements: { targetId } },
     );
     return row?.hidden ?? false;

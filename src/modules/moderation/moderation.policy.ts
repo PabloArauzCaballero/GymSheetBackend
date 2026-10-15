@@ -11,9 +11,10 @@ export const ModerationTargetKind = {
   STORY: "STORY",
   PROFILE_PHOTO: "PROFILE_PHOTO",
   ROUTINE: "ROUTINE",
+  EXERCISE: "EXERCISE",
+  COMMENT: "COMMENT",
   REEL: "REEL",
   CHAT_MESSAGE: "CHAT_MESSAGE",
-  COMMENT: "COMMENT",
   USER: "USER",
 } as const;
 export type ModerationTargetKindValue =
@@ -29,6 +30,9 @@ export const ModerationReason = {
   PERFIL_FALSO: "PERFIL_FALSO",
   MENOR_DE_EDAD: "MENOR_DE_EDAD",
   DROGAS: "DROGAS",
+  EJERCICIO_PELIGROSO: "EJERCICIO_PELIGROSO",
+  INFORMACION_ENGANOSA: "INFORMACION_ENGANOSA",
+  PLAGIO: "PLAGIO",
   OTRO: "OTRO",
 } as const;
 export type ModerationReasonValue =
@@ -86,6 +90,9 @@ const SEVERITY_BY_REASON: Record<ModerationReasonValue, number> = {
   // Molesto o tramposo, pero nadie sale herido esta tarde.
   [ModerationReason.PERFIL_FALSO]: ReasonSeverity.NORMAL,
   [ModerationReason.DROGAS]: ReasonSeverity.NORMAL,
+  [ModerationReason.EJERCICIO_PELIGROSO]: ReasonSeverity.ALTA,
+  [ModerationReason.INFORMACION_ENGANOSA]: ReasonSeverity.NORMAL,
+  [ModerationReason.PLAGIO]: ReasonSeverity.NORMAL,
   [ModerationReason.SPAM]: ReasonSeverity.NORMAL,
   [ModerationReason.OTRO]: ReasonSeverity.NORMAL,
 };
@@ -196,6 +203,8 @@ export function isHideableTarget(kind: ModerationTargetKindValue): boolean {
     kind === ModerationTargetKind.STORY ||
     kind === ModerationTargetKind.PROFILE_PHOTO ||
     kind === ModerationTargetKind.ROUTINE ||
+    kind === ModerationTargetKind.EXERCISE ||
+    kind === ModerationTargetKind.COMMENT ||
     kind === ModerationTargetKind.REEL
   );
 }

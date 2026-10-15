@@ -117,6 +117,7 @@ export class ModerationRepository {
                     WHEN 'ACOSO' THEN 2
                     WHEN 'DISCURSO_DE_ODIO' THEN 2
                     WHEN 'CONTENIDO_SEXUAL' THEN 2
+                    WHEN 'EJERCICIO_PELIGROSO' THEN 2
                     ELSE 1
                   END)::int                                       AS severity,
               min(r.created_at)                                   AS first_reported_at,
@@ -133,14 +134,14 @@ export class ModerationRepository {
               -- Si el contenido ya está oculto (por umbral o por un moderador),
               -- la tarjeta lo dice: cambia lo urgente que es mirarla.
               --
-              -- Se combinan con OR y no con COALESCE: bool_or sobre un LEFT
-              -- JOIN que no casó devuelve false, no NULL, así que un COALESCE
-              -- se quedaría siempre con la primera rama y las fotos ocultas se
-              -- reportarían como visibles.
-              (bool_or(st.hidden_at IS NOT NULL)
+              -- Cada tipo tiene su tabla. COALESCE mantiene el contrato del API
+              -- aunque una versión antigua o un fixture devuelva NULL.
+              COALESCE((bool_or(st.hidden_at IS NOT NULL)
                OR bool_or(ph.hidden_at IS NOT NULL)
                OR bool_or(rt.hidden_at IS NOT NULL)
-               OR bool_or(rl.hidden_at IS NOT NULL))              AS content_hidden
+               OR bool_or(rl.hidden_at IS NOT NULL)
+               OR bool_or(ex.estado_moderacion <> 'VISIBLE')
+               OR bool_or(cm.estado IN ('OCULTO_AUTO','OCULTO_MODERACION'))), false) AS content_hidden
          FROM moderation.reports r
          JOIN public.usuarios u ON u.id = r.reported_user_id
          LEFT JOIN public.usuarios claimer ON claimer.id = r.claimed_by_user_id
@@ -152,6 +153,10 @@ export class ModerationRepository {
            ON r.target_kind = 'ROUTINE' AND rt.id = r.target_id
          LEFT JOIN social.reels rl
            ON r.target_kind = 'REEL' AND rl.id = r.target_id
+         LEFT JOIN public.ejercicios ex
+           ON r.target_kind = 'EXERCISE' AND ex.id = r.target_id
+         LEFT JOIN community.content_comments cm
+           ON r.target_kind = 'COMMENT' AND cm.id = r.target_id
         WHERE r.status IN ('PENDIENTE', 'EN_REVISION')
           AND (:tenantScope IS NULL OR r.tenant_id = :tenantScope)
         GROUP BY r.target_kind, r.target_id, r.reported_user_id, u.nombre_completo
@@ -353,31 +358,28 @@ export class ModerationRepository {
     },
     transaction: Transaction,
   ): Promise<void> {
-    const table =
-      input.targetKind === "STORY"
-        ? "profile.stories"
-        : input.targetKind === "PROFILE_PHOTO"
-          ? "profile.photos"
-          : input.targetKind === "REEL"
-            ? "social.reels"
-            : "training.routines";
-
-    await this.sequelize.query(
-      `UPDATE ${table}
-          SET hidden_at = ${input.hidden ? "now()" : "NULL"},
-              hidden_by_user_id = ${input.hidden ? ":moderatorUserId" : "NULL"},
-              hidden_reason = ${input.hidden ? ":reason" : "NULL"}
-        WHERE id = :targetId`,
-      {
+    const automatic = input.moderatorUserId === null;
+    const state = !input.hidden ? "VISIBLE" : automatic ? "OCULTA_AUTO" : "OCULTA_MODERACION";
+    const commentState = !input.hidden ? "VISIBLE" : automatic ? "OCULTO_AUTO" : "OCULTO_MODERACION";
+    const exerciseState = !input.hidden ? "VISIBLE" : automatic ? "OCULTO_AUTO" : "OCULTO_MODERACION";
+    const updates: Partial<Record<ModerationTargetKindValue, { sql: string; state: string }>> = {
+      ROUTINE: { sql: "UPDATE training.routines SET estado_moderacion = :state, updated_at = now() WHERE id = :targetId", state },
+      EXERCISE: { sql: "UPDATE public.ejercicios SET estado_moderacion = :state, updated_at = now() WHERE id = :targetId", state: exerciseState },
+      COMMENT: { sql: "UPDATE community.content_comments SET estado = :state, updated_at = now() WHERE id = :targetId AND estado <> 'BORRADO_AUTOR'", state: commentState },
+    };
+    const update = updates[input.targetKind];
+    if (update) {
+      await this.sequelize.query(update.sql, {
         type: QueryTypes.UPDATE,
-        replacements: {
-          targetId: input.targetId,
-          ...(input.hidden
-            ? { moderatorUserId: input.moderatorUserId, reason: input.reason }
-            : {}),
-        },
+        replacements: { targetId: input.targetId, state: update.state },
         transaction,
-      },
+      });
+      return;
+    }
+    const table = input.targetKind === "STORY" ? "profile.stories" : input.targetKind === "PROFILE_PHOTO" ? "profile.photos" : "social.reels";
+    await this.sequelize.query(
+      `UPDATE ${table} SET hidden_at = ${input.hidden ? "now()" : "NULL"}, hidden_by_user_id = ${input.hidden ? ":moderatorUserId" : "NULL"}, hidden_reason = ${input.hidden ? ":reason" : "NULL"} WHERE id = :targetId`,
+      { type: QueryTypes.UPDATE, replacements: { targetId: input.targetId, ...(input.hidden ? { moderatorUserId: input.moderatorUserId, reason: input.reason } : {}) }, transaction },
     );
   }
 
@@ -401,6 +403,12 @@ export class ModerationRepository {
       ROUTINE: `SELECT r.created_by_user_id AS "userId", u.tenant_id AS "tenantId"
                   FROM training.routines r JOIN public.usuarios u ON u.id = r.created_by_user_id
                  WHERE r.id = :targetId AND r.visibilidad IN ('PUBLIC','TEMPLATE')`,
+      EXERCISE: `SELECT e.created_by_usuario_id AS "userId", u.tenant_id AS "tenantId"
+                   FROM public.ejercicios e JOIN public.usuarios u ON u.id = e.created_by_usuario_id
+                  WHERE e.id = :targetId AND e.estado = 'ACTIVO'`,
+      COMMENT: `SELECT c.autor_id AS "userId", u.tenant_id AS "tenantId"
+                  FROM community.content_comments c JOIN public.usuarios u ON u.id = c.autor_id
+                 WHERE c.id = :targetId AND c.estado <> 'BORRADO_AUTOR'`,
       REEL: `SELECT r.user_id AS "userId", u.tenant_id AS "tenantId"
                FROM social.reels r JOIN public.usuarios u ON u.id = r.user_id
               WHERE r.id = :targetId AND r.status = 'READY'

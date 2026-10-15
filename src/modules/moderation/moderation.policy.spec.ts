@@ -83,6 +83,9 @@ describe('Política de moderación', () => {
       expect(severityOf(ModerationReason.MENOR_DE_EDAD)).toBe(ReasonSeverity.CRITICA);
       expect(severityOf(ModerationReason.VIOLENCIA)).toBe(ReasonSeverity.CRITICA);
       expect(severityOf(ModerationReason.ACOSO)).toBe(ReasonSeverity.ALTA);
+      expect(severityOf(ModerationReason.EJERCICIO_PELIGROSO)).toBe(ReasonSeverity.ALTA);
+      expect(severityOf(ModerationReason.INFORMACION_ENGANOSA)).toBe(ReasonSeverity.NORMAL);
+      expect(severityOf(ModerationReason.PLAGIO)).toBe(ReasonSeverity.NORMAL);
       expect(severityOf(ModerationReason.SPAM)).toBe(ReasonSeverity.NORMAL);
     });
 
@@ -97,6 +100,10 @@ describe('Política de moderación', () => {
     it('sólo el contenido con fila propia', () => {
       expect(isHideableTarget(ModerationTargetKind.STORY)).toBe(true);
       expect(isHideableTarget(ModerationTargetKind.PROFILE_PHOTO)).toBe(true);
+      expect(isHideableTarget(ModerationTargetKind.ROUTINE)).toBe(true);
+      expect(isHideableTarget(ModerationTargetKind.EXERCISE)).toBe(true);
+      expect(isHideableTarget(ModerationTargetKind.COMMENT)).toBe(true);
+      expect(isHideableTarget(ModerationTargetKind.REEL)).toBe(true);
     });
 
     it('a una persona se la sanciona, no se la oculta', () => {
