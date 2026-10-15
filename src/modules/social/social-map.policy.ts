@@ -107,6 +107,19 @@ export function approximateDistanceKm(from: MapCoordinates, cellCenter: MapCoord
   return Math.max(1, Math.round(km));
 }
 
+const MAX_GYM_QUERY_DEGREES = 3;
+
+/**
+ * Gyms are public places, not people: a whole city (or a department) can be
+ * listed at once. Only the box size is bounded; the query caps the rows.
+ */
+export function validateGymBounds(bounds: MapBounds): void {
+  validateBounds(bounds);
+  if (bounds.north - bounds.south > MAX_GYM_QUERY_DEGREES || bounds.east - bounds.west > MAX_GYM_QUERY_DEGREES) {
+    throw new BadRequestException("Acerca el mapa para ver los gimnasios.");
+  }
+}
+
 function validateCoordinates(location: MapCoordinates): void {
   if (
     !Number.isFinite(location.latitude) ||

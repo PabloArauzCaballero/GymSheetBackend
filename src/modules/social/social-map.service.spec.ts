@@ -125,4 +125,14 @@ describe("SocialMapService", () => {
       .resolves.toEqual({ preferencesApplied: false, people: [] });
     expect(socialRepository.directory).not.toHaveBeenCalled();
   });
+
+  it("lists gyms for a whole city but refuses a box wider than three degrees", async () => {
+    const mapRepository = { listExternalGyms: jest.fn().mockResolvedValue([]) };
+    const service = new SocialMapService(mapRepository as never, {} as never);
+    const laPaz = { south: -16.75, west: -68.35, north: -16.25, east: -67.85 };
+
+    await expect(service.gyms(laPaz)).resolves.toEqual([]);
+    expect(mapRepository.listExternalGyms).toHaveBeenCalledWith(laPaz);
+    await expect(service.gyms({ south: -22, west: -69, north: -10, east: -58 })).rejects.toThrow("Acerca el mapa");
+  });
 });

@@ -2,7 +2,7 @@ import { ForbiddenException, Injectable } from "@nestjs/common";
 import { SocialRepository } from "./social.repository";
 import { env } from "../../config/env";
 import { mapDirectoryRowToResponse } from "./social.mapper";
-import { MapBounds, MapCoordinates, approximateDistanceKm, mapCellForLocation, mapCellsAround, mapCellsForBounds } from "./social-map.policy";
+import { MapBounds, MapCoordinates, approximateDistanceKm, mapCellForLocation, mapCellsAround, mapCellsForBounds, validateGymBounds } from "./social-map.policy";
 import { SocialMapRepository } from "./social-map.repository";
 
 @Injectable()
@@ -86,7 +86,7 @@ export class SocialMapService {
   }
 
   async gyms(bounds: MapBounds) {
-    mapCellsForBounds(bounds);
+    validateGymBounds(bounds);
     return this.repository.listExternalGyms(bounds);
   }
 
