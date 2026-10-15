@@ -18,9 +18,9 @@ const upStatements = [
      ADD COLUMN hidden_at timestamptz,
      ADD COLUMN hidden_by_user_id uuid REFERENCES public.usuarios(id) ON DELETE SET NULL,
      ADD COLUMN hidden_reason varchar(30)`,
-  `ALTER TABLE moderation.reports DROP CONSTRAINT ck_moderation_report_target_kind`,
-  `ALTER TABLE moderation.reports ADD CONSTRAINT ck_moderation_report_target_kind
-     CHECK (target_kind IN ('STORY','PROFILE_PHOTO','CHAT_MESSAGE','USER','ROUTINE'))`,
+  // `ck_moderation_report_target_kind` ya no se toca aquí: esta migración llegó
+  // a `test` después de 202610080004 y 202610130002, que la dejan con todos los
+  // tipos de reporte. Volver a estrecharla rompe con los reportes existentes.
   // The same lift can appear twice in a planned session, at different points.
   `DROP INDEX IF EXISTS public.uq_session_exercise_identity`,
   `ALTER TABLE public.series_entrenamiento ALTER COLUMN rir DROP NOT NULL`,
