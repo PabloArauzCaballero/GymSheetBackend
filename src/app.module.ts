@@ -26,6 +26,7 @@ import { HealthModule } from './modules/health/health.module';
 import { MediaModule } from './modules/media/media.module';
 import { MembershipModule } from './modules/membership/membership.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
+import { MusicModule } from './modules/music/music.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
 import { ProfileViewsModule } from './modules/profile-views/profile-views.module';
@@ -118,6 +119,7 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
     ChatModule,
     StoriesModule,
     ReelsModule,
+    MusicModule,
     ProfileViewsModule,
     AdminAccessModule,
     TenantsModule,
