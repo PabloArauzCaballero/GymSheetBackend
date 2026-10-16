@@ -49,6 +49,12 @@ export class NotificationRepository {
     });
   }
 
+  countUnreadForUser(userId: string) {
+    return this.messages.count({
+      where: { recipientUserId: userId, readAt: null },
+    });
+  }
+
   findForUser(id: string, userId: string) {
     return this.messages.findOne({
       where: { id, recipientUserId: userId },

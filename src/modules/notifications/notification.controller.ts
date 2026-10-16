@@ -25,6 +25,11 @@ export class NotificationController {
     private readonly deviceTokens: DeviceTokenService,
   ) {}
 
+  @Get('me/unread-count')
+  unreadCountMine(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.unreadCountMine(user.id);
+  }
+
   @Get('me')
   listMine(
     @CurrentUser() user: AuthenticatedUser,
