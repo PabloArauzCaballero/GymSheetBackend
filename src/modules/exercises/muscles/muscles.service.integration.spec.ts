@@ -63,13 +63,15 @@ async function insertMedia(seed: {
   sortOrder: number;
   status?: string;
   mediaType?: string;
+  thumbnailUrl?: string;
 }): Promise<void> {
   await raw(
     `INSERT INTO training.exercise_media
-       (id, ejercicio_id, media_type, provider, url, alt_text, is_primary, sort_order, status)
-     VALUES (:id, :exerciseId, :mediaType, 'LOCAL', :url, 'lámina de prueba',
+       (id, ejercicio_id, media_type, provider, url, thumbnail_url, alt_text, is_primary, sort_order, status)
+     VALUES (:id, :exerciseId, :mediaType, 'LOCAL', :url, :thumbnailUrl, 'lámina de prueba',
              :isPrimary, :sortOrder, :status)`,
     {
+      thumbnailUrl: seed.thumbnailUrl ?? null,
       id: seed.id,
       exerciseId: seed.exerciseId,
       mediaType: seed.mediaType ?? "IMAGE",
@@ -281,6 +283,49 @@ describe("MusclesService.listExercisesByMuscle (SQL real)", () => {
     });
     const after = await service.listExercisesByMuscle(CODE, 1, 0);
     expect(after.ejercicios[0].imagen?.url).toBe("https://example.test/first.jpg");
+  });
+
+  it("uses the video poster when the exercise only has video", async () => {
+    if (unavailable) return;
+    const { ejercicios } = await service.listExercisesByMuscle(CODE, 1, 0);
+    const exerciseId = ejercicios[0].id;
+    await clearMedia(exerciseId);
+    await insertMedia({
+      id: "33333333-0000-4000-8000-000000000021",
+      exerciseId,
+      url: "https://example.test/clip.mp4",
+      thumbnailUrl: "https://example.test/poster.webp",
+      isPrimary: true,
+      sortOrder: 0,
+      mediaType: "VIDEO",
+    });
+    const after = await service.listExercisesByMuscle(CODE, 1, 0);
+    expect(after.ejercicios[0].imagen?.url).toBe("https://example.test/poster.webp");
+  });
+
+  it("prefers an image over a primary video poster, and never returns the video itself", async () => {
+    if (unavailable) return;
+    const { ejercicios } = await service.listExercisesByMuscle(CODE, 1, 0);
+    const exerciseId = ejercicios[0].id;
+    await clearMedia(exerciseId);
+    await insertMedia({
+      id: "33333333-0000-4000-8000-000000000031",
+      exerciseId,
+      url: "https://example.test/clip.mp4",
+      thumbnailUrl: "https://example.test/poster.webp",
+      isPrimary: true,
+      sortOrder: 0,
+      mediaType: "VIDEO",
+    });
+    await insertMedia({
+      id: "33333333-0000-4000-8000-000000000032",
+      exerciseId,
+      url: "https://example.test/photo.jpg",
+      isPrimary: false,
+      sortOrder: 5,
+    });
+    const after = await service.listExercisesByMuscle(CODE, 1, 0);
+    expect(after.ejercicios[0].imagen?.url).toBe("https://example.test/photo.jpg");
   });
 
   it("leaves imagen null for an exercise with no usable media", async () => {
