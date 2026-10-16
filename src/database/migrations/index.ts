@@ -104,6 +104,7 @@ import { privateMessagePreviewsMigration } from "./202610130004-private-message-
 import { socialDiscoveryImpressionsMigration } from "./202610130005-social-discovery-impressions";
 import { commentMediaMigration } from "./202610140001-comment-media";
 import { chatEventCancellationMigration } from "./202610150001-chat-event-cancellation";
+import { musicPlaylistsMigration } from "./202610150002-music-playlists";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -214,4 +215,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   socialDiscoveryImpressionsMigration,
   commentMediaMigration,
   chatEventCancellationMigration,
+  musicPlaylistsMigration,
 ];
