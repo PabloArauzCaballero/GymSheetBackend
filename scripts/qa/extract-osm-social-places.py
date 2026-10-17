@@ -13,7 +13,7 @@ import re
 import sys
 from typing import Iterable, Mapping
 
-SOURCE_URL = "https://download.geofabrik.de/south-america/bolivia-261008.osm.pbf"
+SOURCE_BASE_URL = "https://download.geofabrik.de/south-america/"
 ATTRIBUTION = "© OpenStreetMap contributors"
 LICENSE = "ODbL-1.0"
 
@@ -177,7 +177,7 @@ def main() -> int:
             output.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
 
     manifest = {
-        "sourceUrl": SOURCE_URL,
+        "sourceUrl": SOURCE_BASE_URL + args.input.name,
         "snapshot": snapshot_id(args.input),
         "downloadedAtUtc": datetime.now(timezone.utc).isoformat(),
         "inputBytes": args.input.stat().st_size,

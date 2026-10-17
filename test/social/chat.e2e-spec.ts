@@ -781,6 +781,12 @@ describe("H7 chat persistence", () => {
 
     const sequelize = app.get(Sequelize);
     const repository = app.get(ChatRepository);
+    // Aceptar ya crea el chat; aquí se quiere la carrera de crearlo después
+    // (conexiones aceptadas antes de eso, sin chat), así que se borra.
+    const autoCreated = await repository.findDirectConversation(a.id, b.id);
+    if (autoCreated) {
+      await sequelize.query(`DELETE FROM chat.conversations WHERE id = :id`, { replacements: { id: autoCreated } });
+    }
     const socialRepository = app.get(SocialRepository);
     const chat = app.get(ChatService);
     const conversationModel = app.get<typeof ConversationModel>(getModelToken(ConversationModel));
@@ -1310,7 +1316,7 @@ describe("H7 chat persistence", () => {
       emitMessage.mockRestore();
     }
   }, 60000);
-  it("H7.S2.M4 accepts 23:59:59 and 24:00:00, rejects 24:00:00.001 and 24:00:01 with original content intact", async () => {
+  it("H7.S2.M4 accepts 59:59:59 and 60:00:00, rejects 60:00:00.001 and 60:00:01 with original content intact (WhatsApp window)", async () => {
     // This case uses a fresh real app to keep fixture registrations inside normal auth limits.
     await app.close();
     await createApp();
@@ -1320,9 +1326,9 @@ describe("H7 chat persistence", () => {
     const { conversationId } = await connect(a, b);
     const messagesUrl = url(`/me/conversations/${conversationId}/messages`);
     const base = Date.now();
-    const createdAt = new Date(base - 86400000);
+    const createdAt = new Date(base - 216000000);
     const cases: Array<{ age: number; status: number; id: string; body: string; requestId: string }> = [];
-    for (const [index, [age, status]] of [[86399000, 200], [86400000, 200], [86400001, 400], [86401000, 400]].entries()) {
+    for (const [index, [age, status]] of [[215999000, 200], [216000000, 200], [216000001, 400], [216001000, 400]].entries()) {
       const body = `Texto privado original ${index}`;
       const requestId = `00000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`;
       const sent = await request(server).post(messagesUrl).set("Authorization", `Bearer ${a.token}`)

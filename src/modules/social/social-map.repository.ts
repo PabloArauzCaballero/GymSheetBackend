@@ -91,6 +91,7 @@ export class SocialMapRepository {
          FROM social.map_locations AS location
          JOIN social.profile_settings AS settings ON settings.user_id = location.user_id
          JOIN public.usuarios AS user_account ON user_account.id = location.user_id
+         LEFT JOIN public.perfiles_antropometricos AS profile ON profile.usuario_id = location.user_id
         WHERE location.cell_id IN (:cellIds)
           AND NOT EXISTS (
             SELECT 1 FROM social.user_blocks block
@@ -99,7 +100,7 @@ export class SocialMapRepository {
           AND settings.profile_enabled = TRUE
           AND settings.map_enabled = TRUE
           AND user_account.estado = 'ACTIVO'
-          AND user_account.fecha_nacimiento <= CURRENT_DATE - INTERVAL '18 years'
+          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, profile.fecha_nacimiento))::int, profile.edad, 0) >= 18
         GROUP BY location.cell_id`,
       { replacements: { viewerId, cellIds: cells.map((cell) => cell.id) }, type: QueryTypes.SELECT },
     );
@@ -114,6 +115,7 @@ export class SocialMapRepository {
          FROM social.map_locations AS location
          JOIN social.profile_settings AS settings ON settings.user_id = location.user_id
          JOIN public.usuarios AS user_account ON user_account.id = location.user_id
+         LEFT JOIN public.perfiles_antropometricos AS profile ON profile.usuario_id = location.user_id
         WHERE location.cell_id = :cellId
           AND NOT EXISTS (
             SELECT 1 FROM social.user_blocks block
@@ -122,11 +124,39 @@ export class SocialMapRepository {
           AND settings.profile_enabled = TRUE
           AND settings.map_enabled = TRUE
           AND user_account.estado = 'ACTIVO'
-          AND user_account.fecha_nacimiento <= CURRENT_DATE - INTERVAL '18 years'
+          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, profile.fecha_nacimiento))::int, profile.edad, 0) >= 18
         ORDER BY location.updated_at DESC, location.user_id
         LIMIT 30`,
       { replacements: { viewerId, cellId }, type: QueryTypes.SELECT },
     );
     return rows.map((row) => row.user_id);
+  }
+
+  /** Eligible people (consent, adult, active, not blocked) located in any of the given cells. */
+  async listEligibleMapPeopleInCells(viewerId: string, cellIds: readonly string[]): Promise<{ userId: string; cellId: string }[]> {
+    if (cellIds.length === 0) return [];
+    const sequelize = this.settings.sequelize;
+    if (!sequelize) throw new Error("Social map database connection is unavailable.");
+    const rows = await sequelize.query<{ user_id: string; cell_id: string }>(
+      `SELECT location.user_id, location.cell_id
+         FROM social.map_locations AS location
+         JOIN social.profile_settings AS settings ON settings.user_id = location.user_id
+         JOIN public.usuarios AS user_account ON user_account.id = location.user_id
+         LEFT JOIN public.perfiles_antropometricos AS profile ON profile.usuario_id = location.user_id
+        WHERE location.cell_id IN (:cellIds)
+          AND location.user_id <> :viewerId
+          AND NOT EXISTS (
+            SELECT 1 FROM social.user_blocks block
+             WHERE (block.blocker_id = :viewerId AND block.blocked_id = location.user_id)
+                OR (block.blocker_id = location.user_id AND block.blocked_id = :viewerId))
+          AND settings.profile_enabled = TRUE
+          AND settings.map_enabled = TRUE
+          AND user_account.estado = 'ACTIVO'
+          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, profile.fecha_nacimiento))::int, profile.edad, 0) >= 18
+        ORDER BY location.updated_at DESC, location.user_id
+        LIMIT 120`,
+      { replacements: { viewerId, cellIds }, type: QueryTypes.SELECT },
+    );
+    return rows.map((row) => ({ userId: row.user_id, cellId: row.cell_id }));
   }
 }

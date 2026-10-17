@@ -69,6 +69,57 @@ export function mapCellsForBounds(bounds: MapBounds): PublicMapCell[] {
   return [...cells.values()];
 }
 
+/**
+ * Cells within `ring` cells of a tapped point (ring 2 ≈ 10 km square).
+ * The tapped point may be a gym or any place: only cell ids and public
+ * centers leave this function, never a stored user coordinate.
+ */
+export function mapCellsAround(location: MapCoordinates, ring = 2): PublicMapCell[] {
+  const origin = mapCellForLocation(location);
+  const [originRow] = origin.id.split(":").map(Number);
+  const cells: PublicMapCell[] = [];
+  for (let row = originRow - ring; row <= originRow + ring; row += 1) {
+    const centerLatitude = -90 + (row + 0.5) * LATITUDE_STEP;
+    if (Math.abs(centerLatitude) > MAX_MAP_LATITUDE) continue;
+    const longitudeStep = longitudeStepAt(centerLatitude);
+    const centerColumn = Math.floor((location.longitude + 180) / longitudeStep);
+    for (let column = centerColumn - ring; column <= centerColumn + ring; column += 1) {
+      cells.push({
+        id: `${row}:${column}`,
+        center: {
+          latitude: roundToThree(centerLatitude),
+          longitude: roundToThree(-180 + (column + 0.5) * longitudeStep),
+        },
+      });
+    }
+  }
+  return cells;
+}
+
+/** Distance in km between a point and a public cell center, rounded so it never beats the cell size. */
+export function approximateDistanceKm(from: MapCoordinates, cellCenter: MapCoordinates): number {
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+  const dLat = toRadians(cellCenter.latitude - from.latitude);
+  const dLon = toRadians(cellCenter.longitude - from.longitude);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRadians(from.latitude)) * Math.cos(toRadians(cellCenter.latitude)) * Math.sin(dLon / 2) ** 2;
+  const km = 2 * 6_371 * Math.asin(Math.sqrt(a));
+  return Math.max(1, Math.round(km));
+}
+
+const MAX_GYM_QUERY_DEGREES = 3;
+
+/**
+ * Gyms are public places, not people: a whole city (or a department) can be
+ * listed at once. Only the box size is bounded; the query caps the rows.
+ */
+export function validateGymBounds(bounds: MapBounds): void {
+  validateBounds(bounds);
+  if (bounds.north - bounds.south > MAX_GYM_QUERY_DEGREES || bounds.east - bounds.west > MAX_GYM_QUERY_DEGREES) {
+    throw new BadRequestException("Acerca el mapa para ver los gimnasios.");
+  }
+}
+
 function validateCoordinates(location: MapCoordinates): void {
   if (
     !Number.isFinite(location.latitude) ||

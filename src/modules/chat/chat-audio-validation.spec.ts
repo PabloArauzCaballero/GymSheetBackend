@@ -14,6 +14,26 @@ describe("validateChatAudio", () => {
     expect(durationMs).toBeLessThanOrEqual(2000);
   });
 
+  it("accepts a voice note encoded by Apple CoreAudio, whose esds leaves the reserved bit at 0", () => {
+    // Producido con `afconvert -f m4af -d aac`, el mismo motor que usa
+    // AVAudioRecorder en el iPhone: DecoderConfigDescriptor.streamType = 0x14.
+    const apple = readFileSync(join(__dirname, "fixtures/apple-coreaudio.m4a"));
+    expect(apple.includes(Buffer.from([0x04, 0x80, 0x80, 0x80, 0x14, 0x40, 0x14]))).toBe(true);
+
+    const durationMs = validateChatAudio(apple, "audio/mp4");
+
+    expect(durationMs).toBeGreaterThanOrEqual(1000);
+    expect(durationMs).toBeLessThanOrEqual(10_000);
+  });
+
+  it("still rejects a decoder config whose stream type is not audio", () => {
+    const apple = Buffer.from(readFileSync(join(__dirname, "fixtures/apple-coreaudio.m4a")));
+    const at = apple.indexOf(Buffer.from([0x04, 0x80, 0x80, 0x80, 0x14, 0x40, 0x14]));
+    apple[at + 6] = 0x10; // streamType 4 (visual), no audio (5)
+
+    expect(() => validateChatAudio(apple, "audio/mp4")).toThrow(BadRequestException);
+  });
+
   it("rejects a MIME type that is not the supported AAC M4A format", () => {
     expect(() => validateChatAudio(audio, "audio/webm")).toThrow(BadRequestException);
   });

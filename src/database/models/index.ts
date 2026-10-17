@@ -58,6 +58,7 @@ import { StoryModel } from "../../modules/stories/story.model";
 import { StoryAudienceModel } from "../../modules/stories/story-audience.model";
 import { StoryViewModel } from "../../modules/stories/story-view.model";
 import { ReelModel } from "../../modules/reels/reel.model";
+import { MusicPlaylistModel } from "../../modules/music/music-playlist.model";
 import { TrainingInviteModel } from "../../modules/training-invitations/training-invite.model";
 import { TrainingInviteRevisionModel } from "../../modules/training-invitations/training-invite-revision.model";
 import { TrainingMeetingModel } from "../../modules/training-invitations/training-meeting.model";
@@ -118,6 +119,7 @@ export const databaseModels = [
   StoryAudienceModel,
   StoryViewModel,
   ReelModel,
+  MusicPlaylistModel,
   TrainingInviteModel,
   TrainingInviteRevisionModel,
   TrainingMeetingModel,

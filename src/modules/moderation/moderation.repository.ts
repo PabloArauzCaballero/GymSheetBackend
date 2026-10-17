@@ -140,6 +140,7 @@ export class ModerationRepository {
                OR bool_or(ph.hidden_at IS NOT NULL)
                OR bool_or(rt.hidden_at IS NOT NULL)
                OR bool_or(rl.hidden_at IS NOT NULL)
+               OR bool_or(mp.hidden_at IS NOT NULL)
                OR bool_or(ex.estado_moderacion <> 'VISIBLE')
                OR bool_or(cm.estado IN ('OCULTO_AUTO','OCULTO_MODERACION'))), false) AS content_hidden
          FROM moderation.reports r
@@ -153,6 +154,8 @@ export class ModerationRepository {
            ON r.target_kind = 'ROUTINE' AND rt.id = r.target_id
          LEFT JOIN social.reels rl
            ON r.target_kind = 'REEL' AND rl.id = r.target_id
+         LEFT JOIN community.music_playlists mp
+           ON r.target_kind = 'MUSIC_PLAYLIST' AND mp.id = r.target_id
          LEFT JOIN public.ejercicios ex
            ON r.target_kind = 'EXERCISE' AND ex.id = r.target_id
          LEFT JOIN community.content_comments cm
@@ -376,7 +379,14 @@ export class ModerationRepository {
       });
       return;
     }
-    const table = input.targetKind === "STORY" ? "profile.stories" : input.targetKind === "PROFILE_PHOTO" ? "profile.photos" : "social.reels";
+    const hiddenAtTables: Partial<Record<ModerationTargetKindValue, string>> = {
+      STORY: "profile.stories",
+      PROFILE_PHOTO: "profile.photos",
+      REEL: "social.reels",
+      MUSIC_PLAYLIST: "community.music_playlists",
+    };
+    const table = hiddenAtTables[input.targetKind];
+    if (!table) return;
     await this.sequelize.query(
       `UPDATE ${table} SET hidden_at = ${input.hidden ? "now()" : "NULL"}, hidden_by_user_id = ${input.hidden ? ":moderatorUserId" : "NULL"}, hidden_reason = ${input.hidden ? ":reason" : "NULL"} WHERE id = :targetId`,
       { type: QueryTypes.UPDATE, replacements: { targetId: input.targetId, ...(input.hidden ? { moderatorUserId: input.moderatorUserId, reason: input.reason } : {}) }, transaction },
@@ -413,6 +423,11 @@ export class ModerationRepository {
                FROM social.reels r JOIN public.usuarios u ON u.id = r.user_id
               WHERE r.id = :targetId AND r.status = 'READY'
                 AND r.hidden_at IS NULL AND r.deleted_at IS NULL`,
+      // Solo las públicas: una privada no la ve nadie más, así que no se puede
+      // denunciar (y responder 404 no confirma que exista).
+      MUSIC_PLAYLIST: `SELECT p.user_id AS "userId", u.tenant_id AS "tenantId"
+                   FROM community.music_playlists p JOIN public.usuarios u ON u.id = p.user_id
+                  WHERE p.id = :targetId AND p.visibilidad = 'PUBLIC' AND p.hidden_at IS NULL`,
     };
 
     const sql = queries[targetKind];
