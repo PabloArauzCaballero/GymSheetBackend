@@ -1,5 +1,7 @@
-import { BadRequestException, Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, StreamableFile, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Header, Headers, HttpStatus, Param, Patch, Post, Query, Res, StreamableFile, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import type { Response } from "express";
+import { parseByteRange } from "./chat-media-range";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { UuidParamPipe } from "../../common/pipes/uuid-param.pipe";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -132,8 +134,26 @@ export class ChatController {
     @CurrentUser() user: AuthenticatedUser,
     @Param("id", UuidParamPipe) conversationId: string,
     @Param("messageId", UuidParamPipe) messageId: string,
+    @Headers("range") rangeHeader: string | undefined,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<StreamableFile> {
     const media = await this.service.downloadMedia(conversationId, messageId, user.id);
+    const size = media.buffer.length;
+    response.setHeader("Accept-Ranges", "bytes");
+    const range = parseByteRange(rangeHeader, size);
+    if (range === "unsatisfiable") {
+      response.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE);
+      response.setHeader("Content-Range", `bytes */${size}`);
+      return new StreamableFile(Buffer.alloc(0), { type: media.mimeType });
+    }
+    if (range) {
+      response.status(HttpStatus.PARTIAL_CONTENT);
+      response.setHeader("Content-Range", `bytes ${range.start}-${range.end}/${size}`);
+      return new StreamableFile(media.buffer.subarray(range.start, range.end + 1), {
+        type: media.mimeType,
+        disposition: "inline",
+      });
+    }
     return new StreamableFile(media.buffer, { type: media.mimeType, disposition: "inline" });
   }
 

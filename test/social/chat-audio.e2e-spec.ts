@@ -99,6 +99,18 @@ describe("H7 chat audio persistence", () => {
     expect(downloaded.headers["content-type"]).toMatch(/^audio\/mp4/);
     expect(Buffer.isBuffer(downloaded.body)).toBe(true);
     expect(downloaded.body as Buffer).toEqual(audio);
+    expect(downloaded.headers["accept-ranges"]).toBe("bytes");
+
+    // AVPlayer (iOS) sondea con `bytes=0-1` y exige 206: con 200 la nota de voz no suena.
+    const probe = await request(server).get(mediaUrl)
+      .set("Authorization", `Bearer ${b.token}`).set("Range", "bytes=0-1").expect(206);
+    expect(probe.headers["content-range"]).toBe(`bytes 0-1/${audio.length}`);
+    expect(probe.body as Buffer).toEqual(audio.subarray(0, 2));
+    const tail = await request(server).get(mediaUrl)
+      .set("Authorization", `Bearer ${b.token}`).set("Range", `bytes=${audio.length - 10}-`).expect(206);
+    expect(tail.body as Buffer).toEqual(audio.subarray(audio.length - 10));
+    await request(server).get(mediaUrl)
+      .set("Authorization", `Bearer ${b.token}`).set("Range", `bytes=${audio.length}-`).expect(416);
 
     await request(server).post(url("/me/blocks"))
       .set("Authorization", `Bearer ${b.token}`).send({ targetUserId: a.id }).expect(201);
