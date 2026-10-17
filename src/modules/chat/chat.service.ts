@@ -236,7 +236,13 @@ export class ChatService {
       );
     }
     const mimeType = file.mimetype.toLowerCase();
-    if (!env.CHAT_MEDIA_ALLOWED_MIME.includes(mimeType)) {
+    // La nota de voz tiene su propio validador estructural (M4A AAC, ≤ 120 s):
+    // la lista configurable gobierna fotos y videos. Un despliegue con la lista
+    // vieja (sin `audio/mp4`) rechazaba todas las notas de voz.
+    const allowed = options.type === "audio"
+      ? mimeType === "audio/mp4"
+      : env.CHAT_MEDIA_ALLOWED_MIME.includes(mimeType);
+    if (!allowed) {
       throw new BadRequestException("Tipo de archivo no admitido.");
     }
     if (options.type === "audio") validateChatAudio(file.buffer, mimeType);
