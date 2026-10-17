@@ -781,6 +781,12 @@ describe("H7 chat persistence", () => {
 
     const sequelize = app.get(Sequelize);
     const repository = app.get(ChatRepository);
+    // Aceptar ya crea el chat; aquí se quiere la carrera de crearlo después
+    // (conexiones aceptadas antes de eso, sin chat), así que se borra.
+    const autoCreated = await repository.findDirectConversation(a.id, b.id);
+    if (autoCreated) {
+      await sequelize.query(`DELETE FROM chat.conversations WHERE id = :id`, { replacements: { id: autoCreated } });
+    }
     const socialRepository = app.get(SocialRepository);
     const chat = app.get(ChatService);
     const conversationModel = app.get<typeof ConversationModel>(getModelToken(ConversationModel));
