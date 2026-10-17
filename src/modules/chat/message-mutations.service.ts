@@ -11,6 +11,10 @@ import { ConversationParticipantModel } from "./conversation-participant.model";
 import { MessageVisibilityModel } from "./message-visibility.model";
 import { MessageModel } from "./message.model";
 
+/** Como WhatsApp: «Eliminar para todos» dura unos dos días (60 h); editar, 15 minutos. */
+export const DELETE_FOR_EVERYONE_WINDOW_MS = 60 * 60 * 60 * 1000;
+export const EDIT_WINDOW_MS = 15 * 60 * 1000;
+
 @Injectable()
 export class MessageMutationsService {
   constructor(
@@ -38,7 +42,7 @@ export class MessageMutationsService {
         if (message.deletedAt) return { message, changed: false };
         const now = new Date(Date.now());
         const age = now.getTime() - message.createdAt.getTime();
-        if (age < 0 || age > 24 * 60 * 60 * 1000) throw new BadRequestException("El plazo para eliminar este mensaje terminó.");
+        if (age < 0 || age > DELETE_FOR_EVERYONE_WINDOW_MS) throw new BadRequestException("El plazo para eliminar este mensaje terminó.");
         const recoverable = message.idempotencyBody !== null || message.editedAt === null;
         const deletedRequestHash = message.clientRequestId && recoverable ? chatRequestFingerprint({
           type: message.type, body: message.idempotencyBody ?? message.body,
@@ -83,7 +87,7 @@ export class MessageMutationsService {
       // Sample server time after acquiring locks: waiting for a lock cannot extend the deadline.
       const now = new Date(Date.now());
       const age = now.getTime() - message.createdAt.getTime();
-      if (age < 0 || age > 15 * 60 * 1000) throw new BadRequestException("El plazo para editar este mensaje terminó.");
+      if (age < 0 || age > EDIT_WINDOW_MS) throw new BadRequestException("El plazo para editar este mensaje terminó.");
       await message.update({ body: validated.data.body, editedAt: now }, { transaction });
       return message;
     });

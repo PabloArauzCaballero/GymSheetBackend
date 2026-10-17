@@ -15,7 +15,9 @@ export type DomainErrorCode =
   | 'SET_DURATION_NOT_ALLOWED'
   | 'SET_KIND_MISMATCH'
   | 'SET_NUMBER_TAKEN'
-  | 'REST_SETTING_INVALID';
+  | 'REST_SETTING_INVALID'
+  | 'MUSIC_URL_INVALID'
+  | 'MUSIC_PLAYLIST_DUPLICATE';
 
 /**
  * Error de dominio con `code` estable y `details` opcional (por ejemplo

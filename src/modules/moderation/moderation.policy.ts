@@ -16,6 +16,8 @@ export const ModerationTargetKind = {
   REEL: "REEL",
   CHAT_MESSAGE: "CHAT_MESSAGE",
   USER: "USER",
+  /** Enlace de música (Spotify) público de la comunidad. */
+  MUSIC_PLAYLIST: "MUSIC_PLAYLIST",
 } as const;
 export type ModerationTargetKindValue =
   (typeof ModerationTargetKind)[keyof typeof ModerationTargetKind];
@@ -205,6 +207,7 @@ export function isHideableTarget(kind: ModerationTargetKindValue): boolean {
     kind === ModerationTargetKind.ROUTINE ||
     kind === ModerationTargetKind.EXERCISE ||
     kind === ModerationTargetKind.COMMENT ||
-    kind === ModerationTargetKind.REEL
+    kind === ModerationTargetKind.REEL ||
+    kind === ModerationTargetKind.MUSIC_PLAYLIST
   );
 }

@@ -11,7 +11,7 @@ const booleanQuery = z
  * la respuesta paginada por página de siempre (ver `TrainingController.list`).
  */
 export const routineCatalogQuerySchema = z.object({
-  scope: z.enum(['public', 'official', 'mine', 'shared']),
+  scope: z.enum(['all', 'public', 'official', 'mine', 'shared']),
   q: z.string().trim().min(1).max(80).optional(),
   objetivo: z.nativeEnum(TrainingGoal).optional(),
   diasPorSemana: z.coerce.number().int().min(1).max(7).optional(),

@@ -118,7 +118,10 @@ function hasAacLcDecoderConfig(buffer: Buffer, sampleEntry: Mp4Box, budget: Mp4P
       if (decoderConfig.end - decoderConfig.payloadStart < 13) throw invalidAudio();
       const objectTypeIndication = buffer[decoderConfig.payloadStart];
       const streamType = buffer[decoderConfig.payloadStart + 1];
-      if (objectTypeIndication !== 0x40 || ((streamType >> 2) & 0x3f) !== 5 || (streamType & 1) !== 1) continue;
+      // streamType(6) · upStream(1) · reserved(1). El bit reservado NO se
+      // exige: los codificadores de Apple (AVAudioRecorder, CoreAudio) lo
+      // escriben a 0 (0x14) y exigirlo rechazaba toda nota de voz de un iPhone.
+      if (objectTypeIndication !== 0x40 || ((streamType >> 2) & 0x3f) !== 5) continue;
 
       const decoderSpecificInfos = readDescriptors(buffer, decoderConfig.payloadStart + 13, decoderConfig.end);
       if (decoderSpecificInfos.some((descriptor) =>

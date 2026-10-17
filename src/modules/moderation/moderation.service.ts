@@ -35,6 +35,15 @@ import { CreateReportInput, ResolveCaseInput } from "./moderation.schemas";
 import { ReelSocialService } from "../reels/reel-social.service";
 import { ChatEventsService } from "../chat/chat-events.service";
 
+/**
+ * Contenido que se ve entre gimnasios (reels y playlists públicas): quien lo ve
+ * puede denunciarlo aunque el autor sea de otro gimnasio.
+ */
+const CROSS_TENANT_TARGETS: ReadonlySet<ModerationTargetKindValue> = new Set([
+  ModerationTargetKind.REEL,
+  ModerationTargetKind.MUSIC_PLAYLIST,
+]);
+
 /** Lo que se le enseña al moderador antes de que decida. */
 export interface CasePreview {
   targetKind: ModerationTargetKindValue;
@@ -114,7 +123,7 @@ export class ModerationService {
       (!canReportChatMessage &&
         input.targetKind === ModerationTargetKind.CHAT_MESSAGE) ||
       (owner.tenantId !== reporter.tenantId &&
-        input.targetKind !== ModerationTargetKind.REEL)
+        !CROSS_TENANT_TARGETS.has(input.targetKind))
     ) {
       throw new NotFoundException("No encontramos ese contenido.");
     }
@@ -363,6 +372,7 @@ export class ModerationService {
       STORY: "SELECT (hidden_at IS NOT NULL) AS hidden FROM profile.stories WHERE id = :targetId",
       PROFILE_PHOTO: "SELECT (hidden_at IS NOT NULL) AS hidden FROM profile.photos WHERE id = :targetId",
       REEL: "SELECT (hidden_at IS NOT NULL) AS hidden FROM social.reels WHERE id = :targetId",
+      MUSIC_PLAYLIST: "SELECT (hidden_at IS NOT NULL) AS hidden FROM community.music_playlists WHERE id = :targetId",
       ROUTINE: "SELECT (estado_moderacion <> 'VISIBLE') AS hidden FROM training.routines WHERE id = :targetId",
       EXERCISE: "SELECT (estado_moderacion <> 'VISIBLE') AS hidden FROM public.ejercicios WHERE id = :targetId",
       COMMENT: "SELECT (estado IN ('OCULTO_AUTO','OCULTO_MODERACION')) AS hidden FROM community.content_comments WHERE id = :targetId",

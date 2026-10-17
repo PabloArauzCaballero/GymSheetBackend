@@ -102,7 +102,9 @@ import { badgesSocialCardioMigration } from "./202610130003-badges-social-cardio
 import { notificationSuppressionMigration } from "./202610130003-notification-suppression";
 import { privateMessagePreviewsMigration } from "./202610130004-private-message-previews";
 import { socialDiscoveryImpressionsMigration } from "./202610130005-social-discovery-impressions";
+import { commentMediaMigration } from "./202610140001-comment-media";
 import { chatEventCancellationMigration } from "./202610150001-chat-event-cancellation";
+import { musicPlaylistsMigration } from "./202610150002-music-playlists";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -211,5 +213,7 @@ export const databaseMigrations: DatabaseMigration[] = [
   notificationSuppressionMigration,
   privateMessagePreviewsMigration,
   socialDiscoveryImpressionsMigration,
+  commentMediaMigration,
   chatEventCancellationMigration,
+  musicPlaylistsMigration,
 ];
