@@ -44,6 +44,10 @@ export class StoryModel extends Model {
   @Column({ type: DataType.STRING(10), allowNull: false, field: "media_type" })
   declare mediaType: StoryMediaType;
 
+  /** Pie de foto opcional; nulo cuando la story no lleva texto. */
+  @Column({ type: DataType.STRING(200), allowNull: true, field: "caption" })
+  declare caption: string | null;
+
   @CreatedAt
   @Column({ field: "created_at" })
   declare createdAt: Date;
