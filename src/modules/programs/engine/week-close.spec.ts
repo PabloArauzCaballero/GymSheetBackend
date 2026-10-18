@@ -1,7 +1,10 @@
 import {
+  closeWeekWithShield,
+  formatMultiplier,
   isProgramCompleted,
   isSuspiciousSet,
   isWeekFulfilled,
+  multiplierTier,
   nextMultiplier,
   sessionQualifies,
   weekBonus,
@@ -17,14 +20,81 @@ describe('multiplicador', () => {
     }
     expect(seen).toEqual([1.2, 1.4, 1.6, 1.8, 2, 2, 2]);
   });
-  it('vuelve a 1,0 si no se cumple, desde cualquier valor', () => {
-    expect(nextMultiplier(1.8, false)).toBe(1);
+  it('sin escudo, una semana fallida baja dos escalones (−0,4) y nunca de x1,0 (caída suave, P4)', () => {
+    expect(nextMultiplier(2, false)).toBe(1.6);
+    expect(nextMultiplier(1.8, false)).toBe(1.4);
+    expect(nextMultiplier(1.2, false)).toBe(1);
     expect(nextMultiplier(1, false)).toBe(1);
+  });
+  it('con escudo, una semana fallida conserva el multiplicador', () => {
+    expect(nextMultiplier(1.8, false, true)).toBe(1.8);
+    expect(nextMultiplier(1, false, true)).toBe(1);
   });
   it('no acumula error de coma flotante', () => {
     let m = 1;
     for (let i = 0; i < 3; i += 1) m = nextMultiplier(m, true);
     expect(m).toBe(1.6);
+  });
+});
+
+describe('escudo', () => {
+  it('cuatro semanas cumplidas seguidas dan un escudo', () => {
+    expect(closeWeekWithShield({ current: 1.6, fulfilled: true, shields: 0, recentClosed: [true, true] })).toMatchObject({
+      shields: 0,
+      shieldEarned: false,
+    });
+    expect(closeWeekWithShield({ current: 1.6, fulfilled: true, shields: 0, recentClosed: [false, true, true, true] })).toEqual({
+      multiplier: 1.8,
+      shields: 1,
+      shieldUsed: false,
+      shieldEarned: true,
+    });
+  });
+  it('nunca hay más de uno', () => {
+    expect(closeWeekWithShield({ current: 2, fulfilled: true, shields: 1, recentClosed: [true, true, true, true, true] })).toMatchObject({
+      shields: 1,
+      shieldEarned: false,
+    });
+  });
+  it('una semana fallida con escudo lo gasta y conserva el multiplicador', () => {
+    expect(closeWeekWithShield({ current: 1.8, fulfilled: false, shields: 1, recentClosed: [true, true, true, true] })).toEqual({
+      multiplier: 1.8,
+      shields: 0,
+      shieldUsed: true,
+      shieldEarned: false,
+    });
+  });
+  it('tras gastarlo hacen falta otras cuatro cumplidas', () => {
+    const history = [true, true, true, true, false];
+    expect(closeWeekWithShield({ current: 1.8, fulfilled: true, shields: 0, recentClosed: history }).shieldEarned).toBe(false);
+    expect(
+      closeWeekWithShield({ current: 1.8, fulfilled: true, shields: 0, recentClosed: [...history, true, true, true] }).shieldEarned,
+    ).toBe(true);
+  });
+  it('sin escudo, la semana fallida cae dos escalones', () => {
+    expect(closeWeekWithShield({ current: 2, fulfilled: false, shields: 0, recentClosed: [] })).toEqual({
+      multiplier: 1.6,
+      shields: 0,
+      shieldUsed: false,
+      shieldEarned: false,
+    });
+  });
+});
+
+describe('nombre del escalón', () => {
+  it.each([
+    [1, 'Arrancando'],
+    [1.2, 'En marcha'],
+    [1.4, 'Encendido'],
+    [1.6, 'En llamas'],
+    [1.8, 'Imparable'],
+    [2, 'Leyenda'],
+    [1.79, 'En llamas'],
+  ])('x%f → %s', (multiplier, name) => {
+    expect(multiplierTier(multiplier)).toBe(name);
+  });
+  it('se escribe con coma', () => {
+    expect(formatMultiplier(1.6)).toBe('x1,6');
   });
 });
 
@@ -87,11 +157,21 @@ describe('los puntos de modo nunca bajan (D8, propiedad)', () => {
     for (let run = 0; run < 1000; run += 1) {
       const random = seeded(run + 1);
       let multiplier = 1;
+      let shields = 0;
       let total = 0;
+      const closed: boolean[] = [];
       for (let week = 0; week < 52; week += 1) {
         const fulfilled = random() < 0.6;
         const base = Math.floor(random() * 800);
-        multiplier = nextMultiplier(multiplier, fulfilled);
+        const previousMultiplier = multiplier;
+        const outcome = closeWeekWithShield({ current: multiplier, fulfilled, shields, recentClosed: closed });
+        multiplier = outcome.multiplier;
+        shields = outcome.shields;
+        closed.push(fulfilled);
+        expect(shields).toBeGreaterThanOrEqual(0);
+        expect(shields).toBeLessThanOrEqual(1);
+        // El escudo solo frena la caída: una semana fallida nunca sube el multiplicador.
+        if (!fulfilled) expect(multiplier).toBeLessThanOrEqual(previousMultiplier);
         const bonus = fulfilled ? weekBonus(base, multiplier) : 0;
         expect(bonus).toBeGreaterThanOrEqual(0);
         const previous = total;

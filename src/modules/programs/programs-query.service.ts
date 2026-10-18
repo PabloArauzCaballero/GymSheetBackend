@@ -97,6 +97,7 @@ export class ProgramsQueryService {
         minutosCardio: w.cardioMinutes,
         cumplida: w.fulfilled,
         multiplicador: w.multiplier == null ? null : Number(w.multiplier),
+        escudoUsado: w.shieldUsed ?? false,
       })),
     };
   }
