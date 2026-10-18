@@ -33,3 +33,34 @@ describe("ChatGateway conversation:leave", () => {
     expect(client.leave).not.toHaveBeenCalled();
   });
 });
+
+describe("ChatGateway authentication gate", () => {
+  it("lets a conversation:join sent right after connect wait for the ticket exchange", async () => {
+    let redeem: (userId: string) => void = () => undefined;
+    const tickets = { consume: jest.fn(() => new Promise<string>((resolve) => { redeem = resolve; })) };
+    const users = { findActiveById: jest.fn().mockResolvedValue({ id: "user-1" }) };
+    const repository = {
+      withActiveConversationLock: jest.fn(async (_id: string, operation: (transaction: unknown) => Promise<boolean>) => operation({})),
+      isParticipant: jest.fn().mockResolvedValue(true),
+      conversationIdsForUser: jest.fn().mockResolvedValue([]),
+    };
+    const chatService = { markDelivered: jest.fn().mockResolvedValue(undefined) };
+    const presence = { markConnected: jest.fn().mockReturnValue(false) };
+    const chatGateway = new ChatGateway(
+      tickets as never, users as never, repository as never, chatService as never, {} as never, presence as never,
+    );
+    const client = {
+      id: "socket-1",
+      data: {},
+      handshake: { auth: { ticket: "t" }, query: {} },
+      join: jest.fn().mockResolvedValue(undefined),
+      disconnect: jest.fn(),
+    } as unknown as Socket;
+
+    const connecting = chatGateway.handleConnection(client);
+    const joining = chatGateway.joinConversation(client, { conversationId: "00000000-0000-4000-8000-000000000001" });
+    redeem("user-1");
+    await connecting;
+    await expect(joining).resolves.toEqual({ joined: true });
+  });
+});

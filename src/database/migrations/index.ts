@@ -107,6 +107,9 @@ import { chatEventCancellationMigration } from "./202610150001-chat-event-cancel
 import { musicPlaylistsMigration } from "./202610150002-music-playlists";
 import { premiosRetosEscudosMigration } from "./202610180001-premios-retos-escudos";
 import { storyCaptionMigration } from "./202610180001-story-caption";
+import { chatLocationLabelMigration } from "./202610180101-chat-location-label";
+import { chatDisappearingMessagesMigration } from "./202610180102-chat-disappearing-messages";
+import { chatRepliesReactionsForwardMigration } from "./202610180201-chat-replies-reactions-forward";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -220,4 +223,7 @@ export const databaseMigrations: DatabaseMigration[] = [
   musicPlaylistsMigration,
   premiosRetosEscudosMigration,
   storyCaptionMigration,
+  chatLocationLabelMigration,
+  chatDisappearingMessagesMigration,
+  chatRepliesReactionsForwardMigration,
 ];

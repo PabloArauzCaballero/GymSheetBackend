@@ -38,6 +38,7 @@ function createService(
       // Por defecto nadie más en la conversación: los casos que no van de
       // avisos no deberían tener que declarar destinatarios.
       listOtherParticipants: jest.fn().mockResolvedValue([]),
+      messageExtras: jest.fn().mockResolvedValue(new Map()),
       publishMessageIfVisible: async (_conversationId: string, _messageId: string, publish: () => void) => { publish(); return true; },
       refreshMessageForResponse: async (message: MessageModel) => message,
       refreshViewedMessageForResponse: async (conversationId: string, messageId: string, _viewerId: string) => ({
@@ -243,6 +244,7 @@ describe("ChatService.sendLocationMessage", () => {
       type: "location",
       locationLat: -17.78,
       locationLng: -63.18,
+      locationLabel: null,
     });
     expect(result.locationLat).toBe(-17.78);
   });

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import type { Server } from "socket.io";
-import { MessageResponse } from "./chat.mapper";
+import { MessageReaction, MessageResponse, SystemChatEventResponse } from "./chat.mapper";
 
 /**
  * Puente entre el servicio de dominio y el servidor de sockets.
@@ -32,6 +32,12 @@ export class ChatEventsService {
     this.server.to(ChatEventsService.roomFor(message.conversationId)).emit("message:new", message);
   }
 
+  /** Un aviso de sistema (p. ej. cambio de mensajes temporales) entra al hilo como un mensaje más. */
+  emitSystemEvent(event: SystemChatEventResponse): void {
+    if (!this.server) return;
+    this.server.to(ChatEventsService.roomFor(event.conversationId)).emit("message:new", event);
+  }
+
   emitMessageDeleted(payload: { conversationId: string; messageId: string; scope: "EVERYONE"; deletedAt: Date }): void {
     if (!this.server) return;
     this.server.to(ChatEventsService.roomFor(payload.conversationId)).emit("message:deleted", payload);
@@ -40,6 +46,12 @@ export class ChatEventsService {
   emitMessageUpdated(message: MessageResponse): void {
     if (!this.server) return;
     this.server.to(ChatEventsService.roomFor(message.conversationId)).emit("message:updated", message);
+  }
+
+  /** Las reacciones vigentes del mensaje (el estado completo, no el cambio): el cliente reemplaza. */
+  emitMessageReaction(payload: { conversationId: string; messageId: string; reactions: MessageReaction[] }): void {
+    if (!this.server) return;
+    this.server.to(ChatEventsService.roomFor(payload.conversationId)).emit("message:reaction", payload);
   }
 
   /**

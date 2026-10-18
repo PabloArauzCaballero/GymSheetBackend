@@ -1,13 +1,18 @@
 import { chatRequestFingerprint } from "./chat-request-fingerprint";
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
-import { literal, Op, QueryTypes, Transaction } from "sequelize";
+import { literal, Op, QueryTypes, Transaction, type WhereOptions } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { ConversationParticipantModel } from "./conversation-participant.model";
 import { ConversationModel } from "./conversation.model";
 import { MessageVisibilityModel } from "./message-visibility.model";
 import { lockSocialPairUsers } from "../social/social-pair-lock";
 import { MessageModel, MessageType } from "./message.model";
+import { expiryFor } from "./chat-disappearing";
+import { MessageReactionModel } from "./message-reaction.model";
+import { replyPreviewOf, type MessageExtras, type MessageReaction } from "./chat.mapper";
+
+export const REPLY_UNAVAILABLE_MESSAGE = "El mensaje al que respondes ya no está disponible.";
 
 export type SystemConversationKind = "CORPORATE" | "TENANT_ADMIN";
 
@@ -22,7 +27,11 @@ export type MessageCreateFields = {
   viewOnce?: boolean;
   locationLat?: number | null;
   locationLng?: number | null;
+  locationLabel?: string | null;
   storyId?: string | null;
+  /** Mensaje citado; se valida dentro de la misma transacción que crea la respuesta. */
+  replyToId?: string | null;
+  forwarded?: boolean;
 };
 
 export interface ConversationSummaryRow {
@@ -41,6 +50,8 @@ export interface ConversationSummaryRow {
   other_last_delivered_at: string | null;
   other_last_read_at: string | null;
   other_read_receipts_enabled_since: string | Date | null;
+  /** Mensajes temporales vigentes en la conversación; `null` = desactivados. */
+  disappearing_seconds: number | null;
 }
 
 export interface MessageWithStoryAvailability {
@@ -60,9 +71,19 @@ export interface TrainingInviteConversationEvent {
   readonly createdAt: Date;
 }
 
+/** Aviso de sistema «X activó/desactivó los mensajes temporales». */
+export interface DisappearingTimerEvent {
+  readonly id: string;
+  readonly conversationId: string;
+  readonly changedByUserId: string | null;
+  readonly seconds: number | null;
+  readonly createdAt: Date;
+}
+
 export type ConversationHistoryRecord =
   | { readonly kind: "message"; readonly message: MessageModel; readonly storyAvailable?: boolean }
-  | { readonly kind: "system"; readonly event: TrainingInviteConversationEvent };
+  | { readonly kind: "system"; readonly event: TrainingInviteConversationEvent }
+  | { readonly kind: "timer"; readonly event: DisappearingTimerEvent };
 
 @Injectable()
 export class ChatRepository {
@@ -76,7 +97,85 @@ export class ChatRepository {
     private readonly messages: typeof MessageModel,
     @InjectModel(MessageVisibilityModel)
     private readonly visibility: typeof MessageVisibilityModel = MessageVisibilityModel,
+    @InjectModel(MessageReactionModel)
+    private readonly reactions: typeof MessageReactionModel = MessageReactionModel,
   ) {}
+
+  /**
+   * Cita y reacciones de una tanda de mensajes, en tres consultas fijas (sin
+   * N+1). `viewerId` decide si una cita a un mensaje que esa persona ocultó se
+   * muestra como «no disponible»; `null` = vista compartida (eventos de sala).
+   */
+  async messageExtras(
+    messages: ReadonlyArray<Pick<MessageModel, "id" | "conversationId" | "replyToId">>,
+    viewerId: string | null,
+    transaction?: Transaction,
+  ): Promise<Map<string, MessageExtras>> {
+    const extras = new Map<string, MessageExtras>();
+    if (messages.length === 0) return extras;
+    const ids = messages.map((message) => message.id);
+    const replyIds = [...new Set(messages.map((message) => message.replyToId).filter((id): id is string => Boolean(id)))];
+    const [targets, hidden, reactionRows] = await Promise.all([
+      replyIds.length ? this.messages.findAll({ where: { id: replyIds }, transaction }) : Promise.resolve([]),
+      replyIds.length && viewerId
+        ? this.visibility.findAll({ where: { userId: viewerId, messageId: replyIds }, transaction })
+        : Promise.resolve([]),
+      this.reactions.findAll({ where: { messageId: ids }, order: [["createdAt", "ASC"], ["userId", "ASC"]], transaction }),
+    ]);
+    const targetById = new Map(targets.map((target) => [target.id, target]));
+    const hiddenIds = new Set(hidden.map((row) => row.messageId));
+    const reactionsById = new Map<string, MessageReaction[]>();
+    for (const row of reactionRows) {
+      const list = reactionsById.get(row.messageId) ?? [];
+      list.push({ userId: row.userId, emoji: row.emoji });
+      reactionsById.set(row.messageId, list);
+    }
+    const now = new Date();
+    for (const message of messages) {
+      const target = message.replyToId ? targetById.get(message.replyToId) : undefined;
+      const sameConversation = target && target.conversationId === message.conversationId ? target : undefined;
+      extras.set(message.id, {
+        replyTo: replyPreviewOf(sameConversation, Boolean(message.replyToId && hiddenIds.has(message.replyToId)), now),
+        reactions: reactionsById.get(message.id) ?? [],
+      });
+    }
+    return extras;
+  }
+
+  /** Las reacciones vigentes de un mensaje, en el orden en que llegaron. */
+  async listReactions(messageId: string, transaction?: Transaction): Promise<MessageReaction[]> {
+    const rows = await this.reactions.findAll({
+      where: { messageId }, order: [["createdAt", "ASC"], ["userId", "ASC"]], transaction,
+    });
+    return rows.map((row) => ({ userId: row.userId, emoji: row.emoji }));
+  }
+
+  /** Solo se responde a algo de esta misma conversación que el remitente todavía ve. */
+  private async assertReplyTarget(
+    conversationId: string,
+    senderId: string,
+    replyToId: string | null | undefined,
+    transaction: Transaction,
+  ): Promise<void> {
+    if (!replyToId) return;
+    const target = await this.messages.findOne({
+      where: { id: replyToId, conversationId, deletedAt: null, [Op.and]: this.visibleTo(senderId) },
+      transaction,
+    });
+    if (!target) throw new BadRequestException(REPLY_UNAVAILABLE_MESSAGE);
+  }
+
+  /** Publica un evento que solo lleva identificadores mientras el mensaje siga vivo y la conversación activa. */
+  async publishIfMessageAlive(conversationId: string, messageId: string, publish: () => void): Promise<boolean> {
+    return this.sequelize.transaction(async (transaction) => {
+      const conversation = await this.conversations.findByPk(conversationId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!conversation || conversation.revokedAt) return false;
+      const message = await this.messages.findOne({ where: { id: messageId, conversationId }, transaction });
+      if (!message || message.deletedAt) return false;
+      publish();
+      return true;
+    });
+  }
 
   /** Run only a synchronous publication/initiation while hiding and revocation cannot commit. */
   async publishMessageIfVisible(conversationId: string, messageId: string, publish: () => void): Promise<boolean> {
@@ -432,7 +531,11 @@ export class ChatRepository {
       });
       if (!participant) throw new NotFoundException("Conversación no encontrada.");
       if (!participant.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
-      return this.messages.create({ conversationId, senderId, ...fields }, { transaction });
+      // El modo temporal se lee bajo el mismo bloqueo que lo cambia: un mensaje
+      // enviado justo después de activarlo ya nace con caducidad.
+      await this.assertReplyTarget(conversationId, senderId, fields.replyToId, transaction);
+      const expiresAt = expiryFor(conversation.disappearingSeconds, new Date());
+      return this.messages.create({ conversationId, senderId, ...fields, expiresAt }, { transaction });
     });
   }
 
@@ -480,12 +583,15 @@ export class ChatRepository {
           && originalBody === (fields.body ?? null)
           && existing.locationLat === (fields.locationLat ?? null)
           && existing.locationLng === (fields.locationLng ?? null)
-          && existing.storyId === (fields.storyId ?? null);
+          && existing.storyId === (fields.storyId ?? null)
+          && (existing.replyToId ?? null) === (fields.replyToId ?? null);
         if (!samePayload) throw new ConflictException("El clientRequestId ya se usó para otro mensaje.");
         return { message: existing, created: false };
       }
+      await this.assertReplyTarget(conversationId, senderId, fields.replyToId, transaction);
       const message = await this.messages.create({
         conversationId, senderId, clientRequestId, ...fields, idempotencyBody: fields.body ?? null,
+        expiresAt: expiryFor(conversation.disappearingSeconds, new Date()),
       }, { transaction });
       return { message, created: true };
     });
@@ -537,11 +643,18 @@ export class ChatRepository {
     });
   }
 
-  /** SQL predicate applied before LIMIT; values are escaped by Sequelize. */
-  private visibleTo(userId: string) {
-    return { id: { [Op.notIn]: literal(`(
-      SELECT message_id FROM chat.message_visibility WHERE user_id = ${this.sequelize.escape(userId)}
-    )`) } };
+  /**
+   * SQL predicate applied before LIMIT; values are escaped by Sequelize.
+   * A disappearing message stops existing for everyone at `expires_at`, before
+   * the purge removes the row.
+   */
+  visibleTo(userId: string): WhereOptions<MessageModel> {
+    return {
+      id: { [Op.notIn]: literal(`(
+        SELECT message_id FROM chat.message_visibility WHERE user_id = ${this.sequelize.escape(userId)}
+      )`) },
+      [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: literal("now()") } }],
+    };
   }
 
   async listMessages(
@@ -580,6 +693,16 @@ export class ChatRepository {
         LIMIT :limit`,
       { type: QueryTypes.SELECT, replacements: { conversationId, before: before ?? null, limit } },
     );
+    const timerEvents = await this.sequelize.query<DisappearingTimerEvent>(
+      `SELECT id, conversation_id AS "conversationId", changed_by_user_id AS "changedByUserId",
+              seconds, created_at AS "createdAt"
+         FROM chat.conversation_timer_events
+        WHERE conversation_id = :conversationId
+          AND (:before IS NULL OR created_at < :before)
+        ORDER BY created_at DESC, id DESC
+        LIMIT :limit`,
+      { type: QueryTypes.SELECT, replacements: { conversationId, before: before ?? null, limit } },
+    );
     const storyIds = [...new Set(ordered.map((message) => message.storyId).filter((id): id is string => Boolean(id)))];
     const availability = new Map<string, boolean>();
     if (storyIds.length > 0) {
@@ -600,13 +723,12 @@ export class ChatRepository {
         ...(message.storyId ? { storyAvailable: availability.get(message.storyId) ?? false } : {}),
       })),
       ...events.map((event) => ({ kind: "system" as const, event })),
+      ...timerEvents.map((event) => ({ kind: "timer" as const, event })),
     ];
+    const createdAtOf = (record: ConversationHistoryRecord) =>
+      new Date(record.kind === "message" ? record.message.createdAt : record.event.createdAt).getTime();
     return history
-      .sort((left, right) => {
-        const leftDate = left.kind === "message" ? left.message.createdAt : left.event.createdAt;
-        const rightDate = right.kind === "message" ? right.message.createdAt : right.event.createdAt;
-        return leftDate.getTime() - rightDate.getTime();
-      })
+      .sort((left, right) => createdAtOf(left) - createdAtOf(right))
       .slice(-limit);
   }
 
@@ -643,7 +765,8 @@ export class ChatRepository {
                 CASE WHEN other.read_receipts_enabled IS NOT NULL
                   THEN CASE WHEN other.read_receipts_enabled THEN other.read_receipts_enabled_since ELSE NULL END
                   ELSE CASE WHEN COALESCE(other_receipts.enabled, true) THEN other_receipts.enabled_since ELSE NULL END END
-              ) AS other_read_receipts_enabled_since
+              ) AS other_read_receipts_enabled_since,
+              c.disappearing_seconds AS disappearing_seconds
          FROM chat.conversations c
          JOIN chat.participants mine ON mine.conversation_id = c.id AND mine.user_id = :userId
          JOIN chat.participants other ON other.conversation_id = c.id AND other.user_id <> :userId
@@ -662,6 +785,7 @@ export class ChatRepository {
                SELECT m.id, m.body, m.type, m.created_at, m.deleted_at
                  FROM chat.messages m
                 WHERE m.conversation_id = c.id
+                  AND (m.expires_at IS NULL OR m.expires_at > now())
                   AND NOT EXISTS (SELECT 1 FROM chat.message_visibility v WHERE v.message_id = m.id AND v.user_id = :userId)
                UNION ALL
                SELECT e.id,
@@ -669,6 +793,12 @@ export class ChatRepository {
                       'system'::text AS type, e.created_at, NULL::timestamptz AS deleted_at
                  FROM chat.conversation_events e
                 WHERE e.conversation_id = c.id
+               UNION ALL
+               SELECT t.id,
+                      CASE WHEN t.seconds IS NULL THEN 'Mensajes temporales desactivados' ELSE 'Mensajes temporales activados' END AS body,
+                      'system'::text AS type, t.created_at, NULL::timestamptz AS deleted_at
+                 FROM chat.conversation_timer_events t
+                WHERE t.conversation_id = c.id
              ) item
             ORDER BY item.created_at DESC, item.id DESC LIMIT 1
          ) last_msg ON true
@@ -678,6 +808,59 @@ export class ChatRepository {
                  COALESCE(last_msg.created_at, c.created_at) DESC`,
       { type: QueryTypes.SELECT, replacements: { userId } },
     );
+  }
+
+  /**
+   * Cambia el modo de mensajes temporales y deja el aviso en el historial, todo
+   * bajo el bloqueo de la conversación (el mismo que usan enviar y revocar).
+   * Volver a elegir el modo vigente no escribe nada ni repite el aviso.
+   */
+  async setDisappearingSeconds(
+    conversationId: string,
+    userId: string,
+    seconds: number | null,
+  ): Promise<{ seconds: number | null; event: DisappearingTimerEvent | null }> {
+    return this.sequelize.transaction(async (transaction) => {
+      const conversation = await this.conversations.findByPk(conversationId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!conversation || conversation.revokedAt) throw new NotFoundException("Conversación no encontrada.");
+      const participant = await this.participants.findOne({ where: { conversationId, userId }, transaction });
+      if (!participant) throw new NotFoundException("Conversación no encontrada.");
+      if (!participant.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
+      if ((conversation.disappearingSeconds ?? null) === seconds) return { seconds, event: null };
+      await conversation.update({ disappearingSeconds: seconds }, { transaction });
+      const [row] = await this.sequelize.query<DisappearingTimerEvent>(
+        `INSERT INTO chat.conversation_timer_events (conversation_id, changed_by_user_id, seconds)
+         VALUES (:conversationId, :userId, :seconds)
+         RETURNING id, conversation_id AS "conversationId", changed_by_user_id AS "changedByUserId",
+                   seconds, created_at AS "createdAt"`,
+        { type: QueryTypes.SELECT, replacements: { conversationId, userId, seconds }, transaction },
+      );
+      return { seconds, event: row ?? null };
+    });
+  }
+
+  /**
+   * Borra un lote de mensajes temporales ya caducados. La lectura ya los oculta
+   * desde `expires_at`; esto es la higiene posterior. Un mensaje denunciado se
+   * conserva para que moderación pueda revisarlo.
+   */
+  async purgeExpiredMessages(batchSize: number): Promise<number> {
+    const rows = await this.sequelize.query<{ id: string }>(
+      `DELETE FROM chat.messages
+        WHERE id IN (
+          SELECT m.id FROM chat.messages m
+           WHERE m.expires_at IS NOT NULL AND m.expires_at <= now()
+             AND NOT EXISTS (
+               SELECT 1 FROM moderation.reports r
+                WHERE r.target_kind = 'CHAT_MESSAGE' AND r.target_id = m.id
+             )
+           ORDER BY m.expires_at
+           LIMIT :batchSize
+        )
+        RETURNING id`,
+      { type: QueryTypes.SELECT, replacements: { batchSize } },
+    );
+    return rows.length;
   }
 
   /** IDs de todas las conversaciones donde participa — para difundir presencia. */

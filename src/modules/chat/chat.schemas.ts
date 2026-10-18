@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CHAT_STICKER_IDS } from "./chat-sticker-catalog";
+import { DISAPPEARING_SECONDS } from "./chat-disappearing";
 
 export const startConversationSchema = z.object({
   otherUserId: z.string().uuid(),
@@ -17,6 +18,10 @@ const sendTextOrLocationSchema = z
     clientRequestId: z.string().uuid().optional(),
     locationLat: z.number().min(-90).max(90).optional(),
     locationLng: z.number().min(-180).max(180).optional(),
+    /** Nombre del lugar elegido en el mapa; solo tiene sentido con `type: "location"`. */
+    locationLabel: z.string().trim().min(1).max(180).optional(),
+    /** Responder citando: el mensaje citado, de esta misma conversación. */
+    replyToId: z.string().uuid().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.type === "text" && !value.body) {
@@ -25,6 +30,9 @@ const sendTextOrLocationSchema = z
     if (value.type === "location" && (value.locationLat === undefined || value.locationLng === undefined)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["locationLat"], message: "Falta la ubicación." });
     }
+    if (value.type !== "location" && value.locationLabel !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["locationLabel"], message: "El nombre del lugar solo acompaña a una ubicación." });
+    }
   });
 
 /** Stickers only accept catalog IDs: no arbitrary URLs or alternate body. */
@@ -32,6 +40,7 @@ const sendStickerMessageSchema = z.object({
   type: z.literal("sticker"),
   stickerId: z.enum(CHAT_STICKER_IDS),
   clientRequestId: z.string().uuid().optional(),
+  replyToId: z.string().uuid().optional(),
 }).strict();
 
 export const sendMessageSchema = z.union([sendTextOrLocationSchema, sendStickerMessageSchema]);
@@ -43,6 +52,8 @@ export const sendMediaMessageSchema = z.object({
   viewOnce: z
     .preprocess((value) => (typeof value === "string" ? value === "true" : value), z.boolean())
     .default(false),
+  /** Responder citando con una foto, video o nota de voz (campo multipart). */
+  replyToId: z.string().uuid().optional(),
 });
 
 export const messageListQuerySchema = z.object({
@@ -82,3 +93,44 @@ export type EditMessageInput = z.infer<typeof editMessageSchema>;
 /** Local hiding or author-only global tombstone. */
 export const deleteMessageSchema = z.object({ scope: z.enum(["ME", "EVERYONE"]) }).strict();
 export type DeleteMessageInput = z.infer<typeof deleteMessageSchema>;
+
+/** Mensajes temporales: `null` los desactiva; si no, 24 h, 7 días o 90 días en segundos. */
+export const setDisappearingMessagesSchema = z.object({
+  seconds: z.union([
+    z.literal(DISAPPEARING_SECONDS[0]),
+    z.literal(DISAPPEARING_SECONDS[1]),
+    z.literal(DISAPPEARING_SECONDS[2]),
+  ]).nullable(),
+}).strict();
+export type SetDisappearingMessagesInput = z.infer<typeof setDisappearingMessagesSchema>;
+
+/**
+ * Un emoji de verdad (o una secuencia: tono de piel, ZWJ, bandera, tecla):
+ * solo se admiten piezas de emoji y al menos una tiene que ser pictográfica,
+ * una bandera (dos indicadores regionales) o una tecla «1️⃣».
+ */
+const EMOJI_PIECES = /^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|\p{Emoji_Modifier}|\p{Regional_Indicator}|\u200d|\ufe0f|\u20e3)+$/u;
+const EMOJI_ANCHOR = /\p{Extended_Pictographic}|\p{Regional_Indicator}{2}|[0-9#*]\ufe0f?\u20e3/u;
+
+export function isReactionEmoji(value: string): boolean {
+  return value.length >= 1 && value.length <= 16 && EMOJI_PIECES.test(value) && EMOJI_ANCHOR.test(value);
+}
+
+/** Reaccionar a un mensaje: `null` quita la reacción propia. */
+export const setReactionSchema = z.object({
+  emoji: z.string().refine(isReactionEmoji, { message: "La reacción debe ser un emoji." }).nullable(),
+}).strict();
+export type SetReactionInput = z.infer<typeof setReactionSchema>;
+
+/** Reenviar un mensaje de otra conversación (o de la misma) a `:id`. */
+export const forwardMessageSchema = z.object({
+  fromConversationId: z.string().uuid(),
+  messageId: z.string().uuid(),
+}).strict();
+export type ForwardMessageInput = z.infer<typeof forwardMessageSchema>;
+
+/** «Escribiendo…» por socket: no se guarda, solo se difunde a la sala. */
+export const typingSchema = z.object({
+  conversationId: z.string().uuid(),
+  typing: z.boolean(),
+}).strict();
