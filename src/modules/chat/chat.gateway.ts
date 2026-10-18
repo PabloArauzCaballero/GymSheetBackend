@@ -14,10 +14,23 @@ import type { Server, Socket } from "socket.io";
 /** Lo único que este gateway guarda en `socket.data`, tras autenticar en `handleConnection`. */
 interface ChatSocketData {
   userId?: string;
+  /** Se resuelve cuando `handleConnection` terminó de autenticar (con éxito o no). */
+  authenticated?: Promise<void>;
 }
 
 function socketUserId(client: Socket): string | undefined {
   return (client.data as ChatSocketData).userId;
+}
+
+/**
+ * El cliente recibe `connect` antes de que el boleto se haya canjeado: un
+ * `conversation:join` emitido en ese instante llegaba sin identidad y
+ * respondía `joined: false`, dejando el hilo sin eventos en vivo. Los
+ * manejadores asíncronos esperan a que la autenticación termine.
+ */
+async function authenticatedUserId(client: Socket): Promise<string | undefined> {
+  await (client.data as ChatSocketData).authenticated;
+  return socketUserId(client);
 }
 import { env } from "../../config/env";
 import { SocketTicketService } from "../../common/realtime/socket-ticket.service";
@@ -64,6 +77,10 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   }
 
   async handleConnection(client: Socket): Promise<void> {
+    let markAuthenticated: () => void = () => undefined;
+    (client.data as ChatSocketData).authenticated = new Promise<void>((resolve) => {
+      markAuthenticated = resolve;
+    });
     try {
       const ticket = this.extractTicket(client);
       if (!ticket) throw new Error("missing ticket");
@@ -75,6 +92,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       if (!user) throw new Error("inactive user");
 
       (client.data as ChatSocketData).userId = user.id;
+      markAuthenticated();
 
       // Solo la PRIMERA conexión activa de la cuenta la pone "en línea" —
       // abrir una segunda pestaña no debe reiniciar nada para quien ya la ve.
@@ -83,6 +101,8 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     } catch (error: unknown) {
       this.logger.warn({ event: "chat.socket_rejected", error: error instanceof Error ? error.message : "unknown" });
       client.disconnect(true);
+    } finally {
+      markAuthenticated();
     }
   }
 
@@ -125,7 +145,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { conversationId?: string },
   ): Promise<{ joined: boolean }> {
-    const userId = socketUserId(client);
+    const userId = await authenticatedUserId(client);
     const conversationId = payload?.conversationId;
     if (!userId || !conversationId) return { joined: false };
 
@@ -171,7 +191,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { conversationId?: string; body?: string; clientRequestId?: string; replyToId?: string },
   ): Promise<{ ok: boolean; error?: string; messageId?: string; clientRequestId?: string | null }> {
-    const userId = socketUserId(client);
+    const userId = await authenticatedUserId(client);
     if (!userId) return { ok: false, error: "unauthenticated" };
     const conversationId = payload?.conversationId;
     const parsed = sendMessageSchema.safeParse({
