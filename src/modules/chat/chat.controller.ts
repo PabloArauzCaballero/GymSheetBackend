@@ -14,6 +14,10 @@ import {
   deleteMessageSchema,
   EditMessageInput,
   editMessageSchema,
+  ForwardMessageInput,
+  forwardMessageSchema,
+  SetReactionInput,
+  setReactionSchema,
   MessageListQuery,
   SendMediaMessageInput,
   SendMessageInput,
@@ -72,7 +76,7 @@ export class ChatController {
     @Body(new ZodValidationPipe(sendMessageSchema)) input: SendMessageInput,
   ) {
     if (input.type === "sticker") {
-      return this.service.sendStickerMessage(conversationId, user.id, input.stickerId, input.clientRequestId);
+      return this.service.sendStickerMessage(conversationId, user.id, input.stickerId, input.clientRequestId, input.replyToId);
     }
     if (input.type === "location") {
       // `superRefine` en el schema ya garantiza que ambos vengan si el tipo es 'location'.
@@ -80,9 +84,30 @@ export class ChatController {
         lat: input.locationLat as number,
         lng: input.locationLng as number,
         ...(input.locationLabel ? { label: input.locationLabel } : {}),
-      }, input.clientRequestId);
+      }, input.clientRequestId, input.replyToId);
     }
-    return this.service.sendMessage(conversationId, user.id, input.body as string, input.clientRequestId);
+    return this.service.sendMessage(conversationId, user.id, input.body as string, input.clientRequestId, input.replyToId);
+  }
+
+  /** Reenvía a `:id` un mensaje de `fromConversationId` (quien llama participa en ambas). */
+  @Post(":id/messages/forward")
+  forwardMessage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", UuidParamPipe) conversationId: string,
+    @Body(new ZodValidationPipe(forwardMessageSchema)) input: ForwardMessageInput,
+  ) {
+    return this.service.forwardMessage(conversationId, user.id, input.fromConversationId, input.messageId);
+  }
+
+  /** Una reacción por persona: otro emoji la reemplaza, `null` la quita. */
+  @Put(":id/messages/:messageId/reaction")
+  setReaction(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", UuidParamPipe) conversationId: string,
+    @Param("messageId", UuidParamPipe) messageId: string,
+    @Body(new ZodValidationPipe(setReactionSchema)) input: SetReactionInput,
+  ) {
+    return this.mutations.setReaction(conversationId, messageId, user.id, input.emoji);
   }
 
   @Delete(":id/messages/:messageId")
@@ -118,6 +143,7 @@ export class ChatController {
       type: input.type,
       body: input.body,
       viewOnce: input.viewOnce,
+      ...(input.replyToId ? { replyToId: input.replyToId } : {}),
     });
   }
 

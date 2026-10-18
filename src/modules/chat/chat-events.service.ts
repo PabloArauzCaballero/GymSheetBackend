@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import type { Server } from "socket.io";
-import { MessageResponse, SystemChatEventResponse } from "./chat.mapper";
+import { MessageReaction, MessageResponse, SystemChatEventResponse } from "./chat.mapper";
 
 /**
  * Puente entre el servicio de dominio y el servidor de sockets.
@@ -46,6 +46,12 @@ export class ChatEventsService {
   emitMessageUpdated(message: MessageResponse): void {
     if (!this.server) return;
     this.server.to(ChatEventsService.roomFor(message.conversationId)).emit("message:updated", message);
+  }
+
+  /** Las reacciones vigentes del mensaje (el estado completo, no el cambio): el cliente reemplaza. */
+  emitMessageReaction(payload: { conversationId: string; messageId: string; reactions: MessageReaction[] }): void {
+    if (!this.server) return;
+    this.server.to(ChatEventsService.roomFor(payload.conversationId)).emit("message:reaction", payload);
   }
 
   /**

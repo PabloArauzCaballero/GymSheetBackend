@@ -1,7 +1,7 @@
 import { chatRequestFingerprint } from "./chat-request-fingerprint";
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
-import { literal, Op, QueryTypes, Transaction } from "sequelize";
+import { literal, Op, QueryTypes, Transaction, type WhereOptions } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { ConversationParticipantModel } from "./conversation-participant.model";
 import { ConversationModel } from "./conversation.model";
@@ -9,6 +9,10 @@ import { MessageVisibilityModel } from "./message-visibility.model";
 import { lockSocialPairUsers } from "../social/social-pair-lock";
 import { MessageModel, MessageType } from "./message.model";
 import { expiryFor } from "./chat-disappearing";
+import { MessageReactionModel } from "./message-reaction.model";
+import { replyPreviewOf, type MessageExtras, type MessageReaction } from "./chat.mapper";
+
+export const REPLY_UNAVAILABLE_MESSAGE = "El mensaje al que respondes ya no está disponible.";
 
 export type SystemConversationKind = "CORPORATE" | "TENANT_ADMIN";
 
@@ -25,6 +29,9 @@ export type MessageCreateFields = {
   locationLng?: number | null;
   locationLabel?: string | null;
   storyId?: string | null;
+  /** Mensaje citado; se valida dentro de la misma transacción que crea la respuesta. */
+  replyToId?: string | null;
+  forwarded?: boolean;
 };
 
 export interface ConversationSummaryRow {
@@ -90,7 +97,85 @@ export class ChatRepository {
     private readonly messages: typeof MessageModel,
     @InjectModel(MessageVisibilityModel)
     private readonly visibility: typeof MessageVisibilityModel = MessageVisibilityModel,
+    @InjectModel(MessageReactionModel)
+    private readonly reactions: typeof MessageReactionModel = MessageReactionModel,
   ) {}
+
+  /**
+   * Cita y reacciones de una tanda de mensajes, en tres consultas fijas (sin
+   * N+1). `viewerId` decide si una cita a un mensaje que esa persona ocultó se
+   * muestra como «no disponible»; `null` = vista compartida (eventos de sala).
+   */
+  async messageExtras(
+    messages: ReadonlyArray<Pick<MessageModel, "id" | "conversationId" | "replyToId">>,
+    viewerId: string | null,
+    transaction?: Transaction,
+  ): Promise<Map<string, MessageExtras>> {
+    const extras = new Map<string, MessageExtras>();
+    if (messages.length === 0) return extras;
+    const ids = messages.map((message) => message.id);
+    const replyIds = [...new Set(messages.map((message) => message.replyToId).filter((id): id is string => Boolean(id)))];
+    const [targets, hidden, reactionRows] = await Promise.all([
+      replyIds.length ? this.messages.findAll({ where: { id: replyIds }, transaction }) : Promise.resolve([]),
+      replyIds.length && viewerId
+        ? this.visibility.findAll({ where: { userId: viewerId, messageId: replyIds }, transaction })
+        : Promise.resolve([]),
+      this.reactions.findAll({ where: { messageId: ids }, order: [["createdAt", "ASC"], ["userId", "ASC"]], transaction }),
+    ]);
+    const targetById = new Map(targets.map((target) => [target.id, target]));
+    const hiddenIds = new Set(hidden.map((row) => row.messageId));
+    const reactionsById = new Map<string, MessageReaction[]>();
+    for (const row of reactionRows) {
+      const list = reactionsById.get(row.messageId) ?? [];
+      list.push({ userId: row.userId, emoji: row.emoji });
+      reactionsById.set(row.messageId, list);
+    }
+    const now = new Date();
+    for (const message of messages) {
+      const target = message.replyToId ? targetById.get(message.replyToId) : undefined;
+      const sameConversation = target && target.conversationId === message.conversationId ? target : undefined;
+      extras.set(message.id, {
+        replyTo: replyPreviewOf(sameConversation, Boolean(message.replyToId && hiddenIds.has(message.replyToId)), now),
+        reactions: reactionsById.get(message.id) ?? [],
+      });
+    }
+    return extras;
+  }
+
+  /** Las reacciones vigentes de un mensaje, en el orden en que llegaron. */
+  async listReactions(messageId: string, transaction?: Transaction): Promise<MessageReaction[]> {
+    const rows = await this.reactions.findAll({
+      where: { messageId }, order: [["createdAt", "ASC"], ["userId", "ASC"]], transaction,
+    });
+    return rows.map((row) => ({ userId: row.userId, emoji: row.emoji }));
+  }
+
+  /** Solo se responde a algo de esta misma conversación que el remitente todavía ve. */
+  private async assertReplyTarget(
+    conversationId: string,
+    senderId: string,
+    replyToId: string | null | undefined,
+    transaction: Transaction,
+  ): Promise<void> {
+    if (!replyToId) return;
+    const target = await this.messages.findOne({
+      where: { id: replyToId, conversationId, deletedAt: null, [Op.and]: this.visibleTo(senderId) },
+      transaction,
+    });
+    if (!target) throw new BadRequestException(REPLY_UNAVAILABLE_MESSAGE);
+  }
+
+  /** Publica un evento que solo lleva identificadores mientras el mensaje siga vivo y la conversación activa. */
+  async publishIfMessageAlive(conversationId: string, messageId: string, publish: () => void): Promise<boolean> {
+    return this.sequelize.transaction(async (transaction) => {
+      const conversation = await this.conversations.findByPk(conversationId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!conversation || conversation.revokedAt) return false;
+      const message = await this.messages.findOne({ where: { id: messageId, conversationId }, transaction });
+      if (!message || message.deletedAt) return false;
+      publish();
+      return true;
+    });
+  }
 
   /** Run only a synchronous publication/initiation while hiding and revocation cannot commit. */
   async publishMessageIfVisible(conversationId: string, messageId: string, publish: () => void): Promise<boolean> {
@@ -448,6 +533,7 @@ export class ChatRepository {
       if (!participant.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
       // El modo temporal se lee bajo el mismo bloqueo que lo cambia: un mensaje
       // enviado justo después de activarlo ya nace con caducidad.
+      await this.assertReplyTarget(conversationId, senderId, fields.replyToId, transaction);
       const expiresAt = expiryFor(conversation.disappearingSeconds, new Date());
       return this.messages.create({ conversationId, senderId, ...fields, expiresAt }, { transaction });
     });
@@ -497,10 +583,12 @@ export class ChatRepository {
           && originalBody === (fields.body ?? null)
           && existing.locationLat === (fields.locationLat ?? null)
           && existing.locationLng === (fields.locationLng ?? null)
-          && existing.storyId === (fields.storyId ?? null);
+          && existing.storyId === (fields.storyId ?? null)
+          && (existing.replyToId ?? null) === (fields.replyToId ?? null);
         if (!samePayload) throw new ConflictException("El clientRequestId ya se usó para otro mensaje.");
         return { message: existing, created: false };
       }
+      await this.assertReplyTarget(conversationId, senderId, fields.replyToId, transaction);
       const message = await this.messages.create({
         conversationId, senderId, clientRequestId, ...fields, idempotencyBody: fields.body ?? null,
         expiresAt: expiryFor(conversation.disappearingSeconds, new Date()),
@@ -560,7 +648,7 @@ export class ChatRepository {
    * A disappearing message stops existing for everyone at `expires_at`, before
    * the purge removes the row.
    */
-  private visibleTo(userId: string) {
+  visibleTo(userId: string): WhereOptions<MessageModel> {
     return {
       id: { [Op.notIn]: literal(`(
         SELECT message_id FROM chat.message_visibility WHERE user_id = ${this.sequelize.escape(userId)}
