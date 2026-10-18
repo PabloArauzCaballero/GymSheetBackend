@@ -313,14 +313,15 @@ describe("computePoints", () => {
     };
     const badges = [{ pointsReward: 25 }];
     const breakdown = computePointsBreakdown(metrics, badges);
-    expect(breakdown).toEqual({ session: 100, sets: 40, volume: 50, streak: 20, badges: 25, modes: 0 });
+    expect(breakdown).toEqual({ session: 100, sets: 40, volume: 50, streak: 20, badges: 25, modes: 0, challenges: 0 });
     const sum =
       breakdown.session +
       breakdown.sets +
       breakdown.volume +
       breakdown.streak +
       breakdown.badges +
-      breakdown.modes;
+      breakdown.modes +
+      breakdown.challenges;
     expect(sum).toBe(computePoints(metrics, badges));
   });
 

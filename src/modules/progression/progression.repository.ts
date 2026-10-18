@@ -548,8 +548,12 @@ export class ProgressionRepository {
     // calculan también para quien todavía no tiene ninguna sesión.
     const community = await this.computeCommunityMetrics(userId);
 
+    // Los programas con modo tampoco: una semana fallida cubierta por el escudo
+    // existe aunque esa persona no haya terminado ninguna sesión.
+    const mode = await this.computeModeMetrics(userId);
+
     if (!aggregate || Number(aggregate.total_sessions) === 0) {
-      return { ...EMPTY_METRICS, ...community };
+      return { ...EMPTY_METRICS, ...mode, ...community };
     }
 
     const days = await this.sequelize.query<SessionDayRow>(
@@ -565,7 +569,6 @@ export class ProgressionRepository {
       },
     );
 
-    const mode = await this.computeModeMetrics(userId);
     const trainingDays = days.map((row) => row.day);
     const restWeekdays = await this.getRestWeekdays(userId);
     const streaks = computeStreaks(trainingDays, businessToday(timeZone), restWeekdays);
