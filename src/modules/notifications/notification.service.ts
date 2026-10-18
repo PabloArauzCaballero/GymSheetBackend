@@ -132,6 +132,10 @@ export class NotificationService {
     };
   }
 
+  async unreadCountMine(userId: string) {
+    return { count: await this.repository.countUnreadForUser(userId) };
+  }
+
   async markMineRead(userId: string, notificationId: string) {
     const message = await this.repository.findForUser(notificationId, userId);
     if (!message) throw new NotFoundException("Notificación no encontrada.");
