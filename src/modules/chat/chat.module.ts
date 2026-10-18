@@ -11,12 +11,14 @@ import { ChatGateway } from "./chat.gateway";
 import { ChatRepository } from "./chat.repository";
 import { ChatService } from "./chat.service";
 import { ChatMediaCipher } from "./chat-media-cipher";
+import { ChatDisappearingPurgeService } from "./chat-disappearing-purge.service";
 import { ReadReceiptSettingsController } from "./read-receipt-settings.controller";
 import { ReadReceiptSettingsService } from "./read-receipt-settings.service";
 import { ConversationParticipantModel } from "./conversation-participant.model";
 import { ConversationModel } from "./conversation.model";
 import { MessageMutationsService } from "./message-mutations.service";
 import { MessageVisibilityModel } from "./message-visibility.model";
+import { MessageReactionModel } from "./message-reaction.model";
 import { MessageModel } from "./message.model";
 import { SystemChatService } from "./system-chat.service";
 import { env } from "../../config/env";
@@ -28,7 +30,7 @@ import { env } from "../../config/env";
     RealtimeModule,
     MediaModule,
     NotificationsModule,
-    SequelizeModule.forFeature([ConversationModel, ConversationParticipantModel, MessageModel, MessageVisibilityModel]),
+    SequelizeModule.forFeature([ConversationModel, ConversationParticipantModel, MessageModel, MessageVisibilityModel, MessageReactionModel]),
   ],
   controllers: [ChatController, ReadReceiptSettingsController],
   providers: [
@@ -40,6 +42,7 @@ import { env } from "../../config/env";
     ChatGateway,
     SystemChatService,
     ReadReceiptSettingsService,
+    ChatDisappearingPurgeService,
   ],
   exports: [ChatService, ChatRepository],
 })

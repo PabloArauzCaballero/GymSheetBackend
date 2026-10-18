@@ -53,6 +53,7 @@ import { ConversationModel } from "../../modules/chat/conversation.model";
 import { ConversationParticipantModel } from "../../modules/chat/conversation-participant.model";
 import { ConversationEventModel } from "../../modules/chat/conversation-event.model";
 import { MessageVisibilityModel } from "../../modules/chat/message-visibility.model";
+import { MessageReactionModel } from "../../modules/chat/message-reaction.model";
 import { MessageModel } from "../../modules/chat/message.model";
 import { StoryModel } from "../../modules/stories/story.model";
 import { StoryAudienceModel } from "../../modules/stories/story-audience.model";
@@ -114,6 +115,7 @@ export const databaseModels = [
   ConversationParticipantModel,
   MessageModel,
   MessageVisibilityModel,
+  MessageReactionModel,
   ConversationEventModel,
   StoryModel,
   StoryAudienceModel,

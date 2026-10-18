@@ -69,6 +69,23 @@ export class MessageModel extends Model {
   @Column({ type: DataType.DOUBLE, allowNull: true, field: "location_lng" })
   declare locationLng: number | null;
 
+  /** Nombre del lugar elegido en el mapa («Gimnasio X · Calle Y»); `null` para «mi ubicación». */
+  @Column({ type: DataType.STRING(180), allowNull: true, field: "location_label" })
+  declare locationLabel: string | null;
+
+  /** Mensaje temporal: deja de verse para ambos a esta hora y la purga lo borra después. */
+  @Column({ type: DataType.DATE, allowNull: true, field: "expires_at" })
+  declare expiresAt: Date | null;
+
+  /** Mensaje citado al responder; `null` si no es respuesta o si el original ya se purgó. */
+  @Column({ type: DataType.UUID, allowNull: true, field: "reply_to_id" })
+  declare replyToId: string | null;
+
+  /** Copia de un mensaje de otra conversación («Reenviado»). */
+  @Default(false)
+  @Column({ type: DataType.BOOLEAN, allowNull: false })
+  declare forwarded: boolean;
+
   @BelongsTo(() => ConversationModel)
   declare conversation?: ConversationModel;
 

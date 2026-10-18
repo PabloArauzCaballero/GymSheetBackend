@@ -16,6 +16,7 @@ export interface StoryFeedRow {
   photo_url: string | null;
   media_url: string;
   media_type: StoryMediaType;
+  caption: string | null;
   /**
    * `Date`, no `string`: el driver de PostgreSQL materializa `timestamptz` como
    * `Date`. Declararlo `string` compilaba y se serializaba bien a JSON, pero
@@ -86,6 +87,7 @@ export class StoriesRepository {
     audienceMode: StoryAudienceMode = "ALL_CONNECTIONS",
     recipientIds: readonly string[] = [],
     uploadIdempotency?: { requestId: string; contentHash: string },
+    caption: string | null = null,
   ): Promise<StoryModel> {
     return this.sequelize.transaction(async (transaction) => {
       const story = await this.stories.create({
@@ -97,6 +99,7 @@ export class StoriesRepository {
         storageProvider: asset.provider,
         storageKey: asset.key,
         mediaType,
+        caption,
         audienceMode,
         expiresAt: new Date(Date.now() + ONE_DAY_MS),
       }, { transaction });
@@ -268,10 +271,10 @@ export class StoriesRepository {
           WHERE c.addressee_id = :viewerId AND c.status = :acceptedStatus
        ),
        active_stories AS MATERIALIZED (
-         SELECT s.id, s.user_id, s.media_url, s.media_type, s.created_at, s.expires_at, s.audience_mode
+         SELECT s.id, s.user_id, s.media_url, s.media_type, s.caption, s.created_at, s.expires_at, s.audience_mode
            FROM visible_authors a
            CROSS JOIN LATERAL (
-             SELECT st.id, st.user_id, st.media_url, st.media_type, st.created_at, st.expires_at, st.audience_mode
+             SELECT st.id, st.user_id, st.media_url, st.media_type, st.caption, st.created_at, st.expires_at, st.audience_mode
                FROM profile.stories st
               WHERE st.user_id = a.user_id
                 AND st.expires_at > now()
@@ -299,7 +302,7 @@ export class StoriesRepository {
            ) s
        ),
        seen AS MATERIALIZED (
-         SELECT s.id, s.user_id, s.media_url, s.media_type, s.created_at, s.expires_at, s.audience_mode,
+         SELECT s.id, s.user_id, s.media_url, s.media_type, s.caption, s.created_at, s.expires_at, s.audience_mode,
                 (v.viewer_id IS NOT NULL) AS viewed_by_me
            FROM active_stories s
            LEFT JOIN profile.story_views v
@@ -323,6 +326,7 @@ export class StoriesRepository {
               photo.url AS photo_url,
               s.media_url,
               s.media_type,
+              s.caption,
               s.created_at,
               s.expires_at,
               s.viewed_by_me,
@@ -360,7 +364,7 @@ export class StoriesRepository {
    * alguien llegara con el id de una story de otro gimnasio, la lista sale vacía
    * en vez de filtrar nombres.
    *
-   * Además solo aparecen el propio autor y sus `ACCEPTED`: es la misma regla que
+   * Además solo aparecen sus `ACCEPTED` (nunca el propio autor): es la misma regla que
    * el feed, aplicada aquí como defensa en profundidad. `view` ya rechaza a
    * quien no es match, pero las vistas grabadas **antes** de ese arreglo siguen
    * en la tabla, y publicar nombre y foto de alguien que no es match es
@@ -383,9 +387,12 @@ export class StoriesRepository {
          ) photo ON true
         WHERE v.story_id = :storyId
           AND s.tenant_id = :tenantId
+          -- El autor no es su propio espectador: su vista se graba (es lo que
+          -- apaga el anillo de «Tu historia»), pero contarla inflaba el total y
+          -- le ponía a sí mismo en su propia lista de «Vistas».
+          AND v.viewer_id <> s.user_id
           AND (
-            v.viewer_id = s.user_id
-            OR EXISTS (
+            EXISTS (
               SELECT 1
                 FROM social.connections c
                WHERE c.status = :acceptedStatus
@@ -403,8 +410,7 @@ export class StoriesRepository {
             )
           )
           AND (
-            v.viewer_id = s.user_id
-            OR NOT EXISTS (
+            NOT EXISTS (
               SELECT 1 FROM social.user_blocks b
                WHERE (b.blocker_id = s.user_id AND b.blocked_id = v.viewer_id)
                   OR (b.blocked_id = s.user_id AND b.blocker_id = v.viewer_id)

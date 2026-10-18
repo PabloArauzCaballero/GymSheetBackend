@@ -23,6 +23,10 @@ export class ConversationModel extends Model {
   @Column({ type: DataType.UUID, allowNull: true, field: "revoked_by_user_id" })
   declare revokedByUserId: string | null;
 
+  /** Mensajes temporales: segundos de vida de lo que se envíe (24 h, 7 días o 90 días); `null` = desactivado. */
+  @Column({ type: DataType.INTEGER, allowNull: true, field: "disappearing_seconds" })
+  declare disappearingSeconds: number | null;
+
   @HasMany(() => ConversationParticipantModel)
   declare participants?: ConversationParticipantModel[];
 

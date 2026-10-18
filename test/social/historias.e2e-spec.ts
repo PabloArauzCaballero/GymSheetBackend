@@ -456,6 +456,13 @@ describe('stories across tenant boundaries (e2e)', () => {
     );
     expect(activeViews).toEqual([{ viewer_id: viewer.userId }]);
 
+    // El autor abre su propia historia: la vista se graba, pero no cuenta como
+    // espectador ni aparece en su propia lista.
+    await request(httpServer)
+      .post(url(`/me/stories/${activeStory.id}/view`))
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .expect(201);
+
     await request(httpServer)
       .get(url(`/me/stories/${activeStory.id}/viewers`))
       .set('Authorization', `Bearer ${owner.accessToken}`)
@@ -561,5 +568,59 @@ describe('stories across tenant boundaries (e2e)', () => {
     );
     expect(messagesAfterDisconnect[0].count).toBe('0');
 
-  }, 60000);
+    // Pie de foto: viaja en el multipart, se recorta y vuelve en el feed.
+    const captionUpload = await request(httpServer)
+      .post(url('/me/stories'))
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .field('caption', '  Día de pierna  ')
+      .attach('file', Buffer.from('caption-upload'), { filename: 'caption.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    const captionStoryId = captionUpload.body.data.id as string;
+    storyIds.push(captionStoryId);
+    expect(captionUpload.body.data.caption).toBe('Día de pierna');
+    const captionFeed = await request(httpServer)
+      .get(url('/me/stories/feed'))
+      .set('Authorization', `Bearer ${viewer.accessToken}`)
+      .expect(200);
+    const captionStory = (captionFeed.body.data as Array<{
+      userId: string; stories: Array<{ id: string; caption: string | null; expiresAt: string }>;
+    }>).find((entry) => entry.userId === owner.userId)?.stories.find((story) => story.id === captionStoryId);
+    expect(captionStory?.caption).toBe('Día de pierna');
+    expect(Date.parse(captionStory?.expiresAt ?? '')).toBeGreaterThan(Date.now());
+    await request(httpServer)
+      .post(url('/me/stories'))
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .field('caption', 'x'.repeat(201))
+      .attach('file', Buffer.from('too-long-caption'), { filename: 'long.jpg', contentType: 'image/jpeg' })
+      .expect(400);
+
+    // Rangos: AVPlayer pide el vídeo a trozos y exige un 206.
+    const partialMedia = await request(httpServer)
+      .get(url(`/me/stories/${captionStoryId}/media`))
+      .set('Authorization', `Bearer ${viewer.accessToken}`)
+      .set('Range', 'bytes=0-1')
+      .expect(206);
+    expect(partialMedia.headers['accept-ranges']).toBe('bytes');
+    expect(partialMedia.headers['content-range']).toBe(`bytes 0-1/${storedMedia.byteLength}`);
+    expect(partialMedia.body).toEqual(storedMedia.subarray(0, 2));
+    await request(httpServer)
+      .get(url(`/me/stories/${captionStoryId}/media`))
+      .set('Authorization', `Bearer ${viewer.accessToken}`)
+      .set('Range', `bytes=${storedMedia.byteLength + 10}-`)
+      .expect(416);
+
+    // Caché privada con ETag: la segunda petición condicional no baja bytes.
+    const cachedMedia = await request(httpServer)
+      .get(url(`/me/stories/${captionStoryId}/media`))
+      .set('Authorization', `Bearer ${viewer.accessToken}`)
+      .expect(200);
+    expect(cachedMedia.headers['cache-control']).toBe('private, max-age=600');
+    const etag = String(cachedMedia.headers.etag);
+    expect(etag).toMatch(/^"[0-9a-f]{32}"$/);
+    await request(httpServer)
+      .get(url(`/me/stories/${captionStoryId}/media`))
+      .set('Authorization', `Bearer ${viewer.accessToken}`)
+      .set('If-None-Match', etag)
+      .expect(304);
+  }, 120000);
 });

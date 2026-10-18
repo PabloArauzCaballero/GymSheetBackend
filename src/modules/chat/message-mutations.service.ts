@@ -1,15 +1,18 @@
 import { chatRequestFingerprint } from "./chat-request-fingerprint";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
+import { Op } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { ChatRepository } from "./chat.repository";
 import { ChatEventsService } from "./chat-events.service";
-import { mapMessageToResponse } from "./chat.mapper";
-import { DeleteMessageInput, deleteMessageSchema, EditMessageInput, editMessageSchema } from "./chat.schemas";
+import { mapMessageToResponse, MessageReaction } from "./chat.mapper";
+import { DeleteMessageInput, deleteMessageSchema, EditMessageInput, editMessageSchema, setReactionSchema } from "./chat.schemas";
+import { MessageReactionModel } from "./message-reaction.model";
 import { ConversationModel } from "./conversation.model";
 import { ConversationParticipantModel } from "./conversation-participant.model";
 import { MessageVisibilityModel } from "./message-visibility.model";
 import { MessageModel } from "./message.model";
+import { isExpired } from "./chat-disappearing";
 
 /** Como WhatsApp: «Eliminar para todos» dura unos dos días (60 h); editar, 15 minutos. */
 export const DELETE_FOR_EVERYONE_WINDOW_MS = 60 * 60 * 60 * 1000;
@@ -25,6 +28,7 @@ export class MessageMutationsService {
     private readonly events: ChatEventsService,
     @InjectModel(MessageVisibilityModel) private readonly visibility: typeof MessageVisibilityModel,
     private readonly repository: ChatRepository,
+    @InjectModel(MessageReactionModel) private readonly reactions: typeof MessageReactionModel,
   ) {}
 
   async deleteMessage(conversationId: string, messageId: string, userId: string, input: DeleteMessageInput) {
@@ -36,7 +40,7 @@ export class MessageMutationsService {
       const participant = await this.participants.findOne({ where: { conversationId, userId }, transaction });
       if (!participant) throw new NotFoundException("Conversación no encontrada.");
       const message = await this.messages.findOne({ where: { id: messageId, conversationId }, transaction, lock: transaction.LOCK.UPDATE });
-      if (!message) throw new NotFoundException("Mensaje no encontrado.");
+      if (!message || isExpired(message)) throw new NotFoundException("Mensaje no encontrado.");
       if (input.scope === "EVERYONE") {
         if (message.senderId !== userId) throw new NotFoundException("Mensaje no encontrado.");
         if (message.deletedAt) return { message, changed: false };
@@ -51,8 +55,10 @@ export class MessageMutationsService {
         await message.update({ deletedAt: now, deletedRequestHash, body: null, idempotencyBody: null,
           type: "text", editedAt: null, mediaProvider: null, mediaKey: null, mediaUrl: null,
           mediaMimeType: null, mediaSizeBytes: null, locationLat: null, locationLng: null,
-          viewOnce: false, viewedAt: null, storyId: null,
+          viewOnce: false, viewedAt: null, storyId: null, replyToId: null, forwarded: false,
         }, { transaction });
+        // Un mensaje eliminado para todos no conserva ni sus reacciones ni su cita.
+        await this.reactions.destroy({ where: { messageId }, transaction });
         return { message, changed: true };
       }
       // Local hiding is available to recipients and read-only participants, with no deadline.
@@ -79,7 +85,7 @@ export class MessageMutationsService {
       const message = await this.messages.findOne({
         where: { id: messageId, conversationId, senderId: userId }, transaction, lock: transaction.LOCK.UPDATE,
       });
-      if (!message || message.deletedAt || await this.visibility.findOne({ where: { messageId, userId }, transaction })) {
+      if (!message || message.deletedAt || isExpired(message) || await this.visibility.findOne({ where: { messageId, userId }, transaction })) {
         throw new NotFoundException("Mensaje no encontrado.");
       }
       if (!participant.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
@@ -92,9 +98,43 @@ export class MessageMutationsService {
       return message;
     });
     // The same guard protects initial messages, edits and push initiation.
+    const extras = (await this.repository.messageExtras([edited], userId)).get(edited.id);
     await this.repository.publishMessageIfVisible(conversationId, messageId, () => {
-      this.events.emitMessageUpdated(mapMessageToResponse(edited));
+      this.events.emitMessageUpdated(mapMessageToResponse(edited, { extras }));
     });
-    return mapMessageToResponse(await this.repository.refreshMessageForResponse(edited));
+    return mapMessageToResponse(await this.repository.refreshMessageForResponse(edited), { extras });
+  }
+
+  /**
+   * Reaccionar como en WhatsApp: una reacción por persona y mensaje; otra la
+   * reemplaza y `null` la quita. Solo sobre algo que quien reacciona todavía
+   * ve, y solo si puede escribir en la conversación. Se emite el estado
+   * completo de las reacciones del mensaje para que el cliente lo reemplace.
+   */
+  async setReaction(conversationId: string, messageId: string, userId: string, emoji: string | null) {
+    if (!setReactionSchema.safeParse({ emoji }).success) throw new BadRequestException("La reacción debe ser un emoji.");
+    const reactions = await this.sequelize.transaction(async (transaction): Promise<MessageReaction[]> => {
+      const conversation = await this.conversations.findByPk(conversationId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!conversation || conversation.revokedAt) throw new NotFoundException("Conversación no encontrada.");
+      const participant = await this.participants.findOne({ where: { conversationId, userId }, transaction });
+      if (!participant) throw new NotFoundException("Conversación no encontrada.");
+      const message = await this.messages.findOne({
+        where: { id: messageId, conversationId, deletedAt: null, [Op.and]: this.repository.visibleTo(userId) },
+        transaction,
+      });
+      if (!message) throw new NotFoundException("Mensaje no encontrado.");
+      if (!participant.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
+      if (emoji === null) {
+        await this.reactions.destroy({ where: { messageId, userId }, transaction });
+      } else {
+        await this.reactions.upsert({ messageId, userId, emoji }, { transaction });
+      }
+      return this.repository.listReactions(messageId, transaction);
+    });
+    const payload = { conversationId, messageId, reactions };
+    await this.repository.publishIfMessageAlive(conversationId, messageId, () => {
+      this.events.emitMessageReaction(payload);
+    });
+    return payload;
   }
 }

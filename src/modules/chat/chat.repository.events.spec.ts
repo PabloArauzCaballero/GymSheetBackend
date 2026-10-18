@@ -1,4 +1,4 @@
-import { ChatRepository, TrainingInviteConversationEvent } from "./chat.repository";
+import { ChatRepository, DisappearingTimerEvent, TrainingInviteConversationEvent } from "./chat.repository";
 import { mapChatHistoryItem } from "./chat.mapper";
 import { ConversationParticipantModel } from "./conversation-participant.model";
 import { ConversationModel } from "./conversation.model";
@@ -10,8 +10,9 @@ const eventId = "00000000-0000-4000-8000-000000000020";
 const createdAt = new Date("2026-10-12T12:00:00.000Z");
 
 describe("ChatRepository training event history", () => {
-  function setup(events: TrainingInviteConversationEvent[]) {
-    const query = jest.fn().mockResolvedValue(events);
+  function setup(events: TrainingInviteConversationEvent[], timerEvents: DisappearingTimerEvent[] = []) {
+    const query = jest.fn().mockImplementation((sql: string) =>
+      Promise.resolve(sql.includes("chat.conversation_timer_events") ? timerEvents : events));
     const messages = {
       findAll: jest.fn().mockResolvedValue([
         { id: messageId, conversationId, createdAt: new Date(createdAt.getTime() + 1000) },
@@ -49,6 +50,25 @@ describe("ChatRepository training event history", () => {
       expect.objectContaining({
         replacements: expect.objectContaining({ conversationId, limit: 2 }),
       }),
+    );
+  });
+
+  it("interleaves disappearing-messages notices with messages by timestamp", async () => {
+    const timer: DisappearingTimerEvent = {
+      id: "00000000-0000-4000-8000-000000000030",
+      conversationId,
+      changedByUserId: "00000000-0000-4000-8000-000000000003",
+      seconds: 86_400,
+      createdAt: new Date(createdAt.getTime() + 2000),
+    };
+    const { repository, query } = setup([], [timer]);
+
+    const history = await repository.listMessages(conversationId, 5);
+
+    expect(history.map((item) => item.kind)).toEqual(["message", "timer"]);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("FROM chat.conversation_timer_events"),
+      expect.objectContaining({ replacements: expect.objectContaining({ conversationId, limit: 5 }) }),
     );
   });
 
