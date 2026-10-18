@@ -5,12 +5,26 @@ import { exerciseVisibleSql, routineVisibleSql } from '../../common/sql/content-
 import { authorPhotoSql } from '../training/routine-catalog.repository';
 import { ContentCommentModel } from './content-comment.model';
 import { ContentRatingModel } from './content-rating.model';
-import { AttachmentInput, ContentKind } from './community.schemas';
+import { AttachmentInput, CommentOrder, ContentKind } from './community.schemas';
 
 export type TargetInfo = { ownerId: string | null; title: string };
 
 /** Cuántas valoraciones hay de cada nota; siempre trae las cinco claves. */
 export type RatingDistribution = Record<'1' | '2' | '3' | '4' | '5', number>;
+
+/**
+ * El bloqueo es mutuo: ni veo lo que escribe quien bloqueé, ni quien me bloqueó
+ * ve lo mío. `author` es una expresión SQL de columna; el lector va enlazado.
+ */
+const notBlockedSql = (author: string): string => `NOT EXISTS (
+  SELECT 1 FROM social.user_blocks b
+   WHERE (b.blocker_id = :viewerId AND b.blocked_id = ${author})
+      OR (b.blocker_id = ${author} AND b.blocked_id = :viewerId))`;
+
+const ORDER_BY: Record<CommentOrder, string> = {
+  recientes: 'ORDER BY c.created_at DESC, c.id',
+  utiles: 'ORDER BY likes DESC, c.created_at DESC, c.id',
+};
 
 const TABLE: Record<ContentKind, string> = {
   ROUTINE: 'training.routines',
@@ -132,13 +146,47 @@ export class CommunityRepository {
     return this.comments.findByPk(id);
   }
 
-  /** Comentarios de primer nivel visibles (más nuevos primero) con su autor y sus me gusta. */
-  async listTopLevel(kind: ContentKind, id: string, viewerId: string, limitPlusOne: number, offset: number) {
+  /** Comentarios de primer nivel visibles (en el `order` pedido) con su autor y sus me gusta. */
+  async listTopLevel(
+    kind: ContentKind,
+    id: string,
+    viewerId: string,
+    limitPlusOne: number,
+    offset: number,
+    order: CommentOrder = 'recientes',
+  ) {
     return this.listRows(
       `c.target_kind = :kind AND c.target_id = :id AND c.respuesta_a IS NULL AND c.estado = 'VISIBLE'`,
       { kind, id, viewerId, limitPlusOne, offset },
-      'ORDER BY c.created_at DESC, c.id LIMIT :limitPlusOne OFFSET :offset',
+      `${ORDER_BY[order]} LIMIT :limitPlusOne OFFSET :offset`,
     );
+  }
+
+  /**
+   * Cuántos comentarios ve esta persona en el contenido: los de primer nivel y
+   * las respuestas cuyo hilo sigue a la vista, sin los de autores bloqueados.
+   * Es el contador de la ficha; cuadra con lo que la lista puede llegar a enseñar.
+   */
+  async countVisible(kind: ContentKind, id: string, viewerId: string): Promise<number> {
+    const [row] = await this.comments.sequelize!.query<{ total: number }>(
+      `SELECT count(*)::int AS total
+         FROM community.content_comments c
+         LEFT JOIN community.content_comments p ON p.id = c.respuesta_a
+        WHERE c.target_kind = :kind AND c.target_id = :id AND c.estado = 'VISIBLE'
+          AND ${notBlockedSql('c.autor_id')}
+          AND (c.respuesta_a IS NULL OR (p.estado = 'VISIBLE' AND ${notBlockedSql('p.autor_id')}))`,
+      { type: QueryTypes.SELECT, replacements: { kind, id, viewerId } },
+    );
+    return row?.total ?? 0;
+  }
+
+  /** ¿Hay un bloqueo, en cualquier sentido, entre estas dos personas? */
+  async isBlockedBetween(viewerId: string, otherId: string): Promise<boolean> {
+    const rows = await this.comments.sequelize!.query<{ blocked: boolean }>(
+      `SELECT NOT ${notBlockedSql(':otherId')} AS blocked`,
+      { type: QueryTypes.SELECT, replacements: { viewerId, otherId } },
+    );
+    return rows[0]?.blocked === true;
   }
 
   listReplies(parentIds: readonly string[], viewerId: string) {
@@ -187,7 +235,7 @@ export class CommunityRepository {
               EXISTS (SELECT 1 FROM community.comment_likes l
                        WHERE l.comentario_id = c.id AND l.usuario_id = :viewerId) AS "likedByViewer"
          FROM community.content_comments c JOIN public.usuarios u ON u.id = c.autor_id
-        WHERE ${where} ${tail}`,
+        WHERE ${where} AND ${notBlockedSql('c.autor_id')} ${tail}`,
       { type: QueryTypes.SELECT, replacements },
     );
   }

@@ -1,5 +1,5 @@
 import type { MediaStorageProvider } from '../media/media-storage.port';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { RoutineNotifier } from '../training/routine-notifier';
 import { CommentRow, CommunityRepository } from './community.repository';
 import { CommunityService } from './community.service';
@@ -31,6 +31,8 @@ describe('CommunityService · me gusta de comentarios', () => {
     setCommentLike: jest.fn(),
     listTopLevel: jest.fn(),
     listReplies: jest.fn(),
+    countVisible: jest.fn(),
+    isBlockedBetween: jest.fn(),
   };
   const service = new CommunityService(
     repository as unknown as CommunityRepository,
@@ -80,15 +82,85 @@ describe('CommunityService · me gusta de comentarios', () => {
     repository.listReplies.mockResolvedValue([
       row({ id: 'c2', replyToId: 'c1', authorPhotoUrl: null, likes: 0, likedByViewer: false }),
     ]);
-    const { items } = await service.list(actor, 'ROUTINE', 'r1', { limit: 20 });
+    repository.countVisible.mockResolvedValue(2);
+    const { items, total } = await service.list(actor, 'ROUTINE', 'r1', { limit: 20, orden: 'recientes' });
+    expect(total).toBe(2);
     expect(items[0]).toMatchObject({
       autor: { id: 'u1', nombre: 'Ana', fotoUrl: 'https://media/ana.webp' },
       likes: 2,
       meGusta: true,
     });
     expect(items[0].respuestas[0]).toMatchObject({ autor: { fotoUrl: null }, likes: 0, meGusta: false });
-    expect(repository.listTopLevel).toHaveBeenCalledWith('ROUTINE', 'r1', 'viewer', 21, 0);
+    expect(repository.listTopLevel).toHaveBeenCalledWith('ROUTINE', 'r1', 'viewer', 21, 0, 'recientes');
     expect(repository.listReplies).toHaveBeenCalledWith(['c1'], 'viewer');
+  });
+
+  it('pide los más útiles cuando se ordena por «utiles» y el cursor avanza por páginas', async () => {
+    repository.findVisibleTarget.mockResolvedValue({ ownerId: null, title: 'Sentadilla' });
+    repository.listTopLevel.mockResolvedValue([row({ id: 'a' }), row({ id: 'b' }), row({ id: 'c' })]);
+    repository.listReplies.mockResolvedValue([]);
+    repository.countVisible.mockResolvedValue(7);
+    const page = await service.list(actor, 'EXERCISE', 'e1', { limit: 2, orden: 'utiles' });
+    expect(repository.listTopLevel).toHaveBeenCalledWith('EXERCISE', 'e1', 'viewer', 3, 0, 'utiles');
+    expect(page.items.map((i) => i.id)).toEqual(['a', 'b']);
+    expect(page.siguienteCursor).not.toBeNull();
+    await service.list(actor, 'EXERCISE', 'e1', { limit: 2, orden: 'utiles', cursor: page.siguienteCursor! });
+    expect(repository.listTopLevel).toHaveBeenLastCalledWith('EXERCISE', 'e1', 'viewer', 3, 2, 'utiles');
+  });
+
+  it('404 al dar me gusta a alguien con quien hay un bloqueo', async () => {
+    repository.findComment.mockResolvedValue({ status: 'VISIBLE', targetKind: 'EXERCISE', targetId: 'e1', authorId: 'u9' });
+    repository.findVisibleTarget.mockResolvedValue({ ownerId: null, title: 'Ejercicio' });
+    repository.isBlockedBetween.mockResolvedValue(true);
+    await expect(service.setLike(actor, 'c1', true)).rejects.toBeInstanceOf(NotFoundException);
+    expect(repository.isBlockedBetween).toHaveBeenCalledWith('viewer', 'u9');
+    expect(repository.setCommentLike).not.toHaveBeenCalled();
+  });
+});
+
+describe('CommunityService · respuestas', () => {
+  const repository = {
+    findVisibleTarget: jest.fn(),
+    countRecentComments: jest.fn(),
+    findComment: jest.fn(),
+    isBlockedBetween: jest.fn(),
+    createComment: jest.fn(),
+    findVisibleCommentRow: jest.fn(),
+  };
+  const service = new CommunityService(
+    repository as unknown as CommunityRepository,
+    { notify: jest.fn() } as unknown as RoutineNotifier,
+    { upload: jest.fn() } as unknown as MediaStorageProvider,
+  );
+  const actor = { id: 'viewer' };
+  const parent = { id: 'p1', targetKind: 'EXERCISE', targetId: 'e1', replyToId: null, status: 'VISIBLE', authorId: 'u9' };
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    repository.findVisibleTarget.mockResolvedValue({ ownerId: null, title: 'Sentadilla' });
+    repository.countRecentComments.mockResolvedValue(0);
+  });
+
+  it('responde a un comentario visible del mismo ejercicio', async () => {
+    repository.findComment.mockResolvedValue(parent);
+    repository.isBlockedBetween.mockResolvedValue(false);
+    repository.createComment.mockResolvedValue({ id: 'r1' });
+    repository.findVisibleCommentRow.mockResolvedValue(row({ id: 'r1', replyToId: 'p1', authorId: 'viewer' }));
+    const created = await service.create(actor, 'EXERCISE', 'e1', { text: 'Gracias', replyToId: 'p1', attachment: null });
+    expect(created).toMatchObject({ id: 'r1', respuestaA: 'p1', esMio: true });
+  });
+
+  it.each([
+    ['oculto por moderación', { ...parent, status: 'OCULTO_MODERACION' }, false],
+    ['de alguien con quien hay un bloqueo', parent, true],
+    ['de otro ejercicio', { ...parent, targetId: 'e2' }, false],
+  ])('400 al responder un comentario %s', async (_label, comment, blocked) => {
+    repository.findComment.mockResolvedValue(comment);
+    repository.isBlockedBetween.mockResolvedValue(blocked);
+    await expect(
+      service.create(actor, 'EXERCISE', 'e1', { text: 'Hola', replyToId: 'p1', attachment: null }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(repository.createComment).not.toHaveBeenCalled();
   });
 });
 
