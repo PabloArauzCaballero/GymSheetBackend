@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from "@nestjs/common";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { UserRole } from "../../common/enums/domain.enums";
@@ -10,16 +10,22 @@ import { ProgressionService } from "./progression.service";
 import {
   CreateBadgeInput,
   CreateLevelInput,
+  CreatePrizeInput,
   LeaderboardQuery,
+  RedeemPrizeInput,
   RestDaysInput,
   UpdateBadgeInput,
   UpdateLevelInput,
+  UpdatePrizeInput,
   createBadgeSchema,
   createLevelSchema,
+  createPrizeSchema,
   leaderboardQuerySchema,
+  redeemPrizeSchema,
   restDaysSchema,
   updateBadgeSchema,
   updateLevelSchema,
+  updatePrizeSchema,
 } from "./progression.schemas";
 
 /** La senda del usuario autenticado. */
@@ -36,6 +42,12 @@ export class ProgressionController {
   @Get("rules")
   getRules() {
     return this.progressionService.getRules();
+  }
+
+  /** Los cupones del socio («Mis premios»): lo mismo que `progression.prizes`. */
+  @Get("prizes")
+  getMyPrizes(@CurrentUser() user: AuthenticatedUser) {
+    return this.progressionService.getPrizes(user.id);
   }
 
   /** El cliente confirma que ya ha celebrado las novedades. */
@@ -136,5 +148,47 @@ export class ProgressionAdminController {
     @Param("id", UuidParamPipe) id: string,
   ) {
     return this.adminService.deactivateBadge(actor, id);
+  }
+
+  // ─────────────────────────────────────────── premios (P1, 2026-10-18)
+
+  @Get("prizes")
+  listPrizes(@CurrentUser() actor: AuthenticatedUser) {
+    return this.adminService.listPrizes(actor);
+  }
+
+  @Post("prizes")
+  createPrize(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Body(new ZodValidationPipe(createPrizeSchema)) input: CreatePrizeInput,
+  ) {
+    return this.adminService.createPrize(actor, input);
+  }
+
+  /** Canje en recepción. Declarada antes que `prizes/:id` por claridad; los métodos ya difieren. */
+  @Post("prizes/redeem")
+  @HttpCode(200)
+  redeemPrize(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Body(new ZodValidationPipe(redeemPrizeSchema)) input: RedeemPrizeInput,
+  ) {
+    return this.adminService.redeemPrize(actor, input.code);
+  }
+
+  @Patch("prizes/:id")
+  updatePrize(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param("id", UuidParamPipe) id: string,
+    @Body(new ZodValidationPipe(updatePrizeSchema)) input: UpdatePrizeInput,
+  ) {
+    return this.adminService.updatePrize(actor, id, input);
+  }
+
+  @Delete("prizes/:id")
+  deactivatePrize(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param("id", UuidParamPipe) id: string,
+  ) {
+    return this.adminService.deactivatePrize(actor, id);
   }
 }

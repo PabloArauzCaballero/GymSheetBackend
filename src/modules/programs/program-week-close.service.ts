@@ -14,8 +14,11 @@ import { addDays, mondayOf } from './engine/program-calendar';
 import { sessionBasePoints } from './engine/session-diff';
 import {
   BONUS_PROGRAM_COMPLETED,
+  closeWeekWithShield,
+  formatMultiplier,
   isProgramCompleted,
   isWeekFulfilled,
+  multiplierTier,
   nextMultiplier,
   weekBonus,
 } from './engine/week-close';
@@ -23,7 +26,17 @@ import { ProgramWeekModel, TrainingProgramModel } from './program.models';
 import { ProgramsRepository } from './programs.repository';
 import { RewardLedgerRepository } from './reward-ledger.repository';
 
-export type WeekCloseResult = { programId: string; weekNumber: number; fulfilled: boolean | null; multiplier: number; bonus: number };
+export type WeekCloseResult = {
+  programId: string;
+  weekNumber: number;
+  fulfilled: boolean | null;
+  multiplier: number;
+  bonus: number;
+  /** El escudo cubrió esta semana fallida. */
+  shieldUsed: boolean;
+  /** Esta semana cumplida completó cuatro seguidas y dio un escudo. */
+  shieldEarned: boolean;
+};
 
 /**
  * Cierre semanal (04_MOTOR §5). Idempotente por (programa, semana): bloquea el
@@ -31,6 +44,38 @@ export type WeekCloseResult = { programId: string; weekNumber: number; fulfilled
  * Si el trabajo se cae un lunes, la siguiente pasada cierra TODAS las semanas
  * pendientes en orden (caso límite 10).
  */
+/**
+ * Texto del aviso de cierre. Dice el escalón por su nombre y, si se usó, el
+ * escudo; nunca culpa: una semana floja es un hecho, no un reproche.
+ */
+export function weekClosedMessage(input: {
+  weekNumber: number;
+  fulfilled: boolean;
+  multiplier: number;
+  shieldUsed: boolean;
+  shieldEarned: boolean;
+}): { subject: string; body: string } {
+  const level = `${formatMultiplier(input.multiplier)} «${multiplierTier(input.multiplier)}»`;
+  if (input.fulfilled) {
+    return {
+      subject: input.shieldEarned ? 'Semana cumplida · ganaste un escudo' : 'Semana cumplida',
+      body: input.shieldEarned
+        ? `Semana ${input.weekNumber} cumplida · ${level}. Cuatro seguidas: tienes un escudo para una semana difícil.`
+        : `Semana ${input.weekNumber} cumplida · ${level}`,
+    };
+  }
+  if (input.shieldUsed) {
+    return {
+      subject: 'Tu escudo te cubrió',
+      body: `Semana ${input.weekNumber} sin completar: tu escudo mantiene el ${level}. Esta semana no hay bono y no pierdes nada.`,
+    };
+  }
+  return {
+    subject: 'Nueva semana, nuevo comienzo',
+    body: `Semana ${input.weekNumber} sin completar: el multiplicador queda en ${level}. Tus puntos no se pierden.`,
+  };
+}
+
 @Injectable()
 export class ProgramWeekCloseService {
   private readonly logger = new Logger(ProgramWeekCloseService.name);
@@ -86,7 +131,7 @@ export class ProgramWeekCloseService {
     // Una semana sin sesiones planeadas (p. ej. el programa empezó el domingo) no se paga ni se penaliza.
     if (week.sessionsPlan <= 0) {
       await week.update({ closedAt: new Date() }, { transaction });
-      return { programId, weekNumber, fulfilled: null, multiplier: Number(program.multiplier), bonus: 0 };
+      return { programId, weekNumber, fulfilled: null, multiplier: Number(program.multiplier), bonus: 0, shieldUsed: false, shieldEarned: false };
     }
 
     const stats = await this.weekStats(programId, week.weekStart, weekEnd, transaction);
@@ -103,8 +148,16 @@ export class ProgramWeekCloseService {
 
     let multiplier = Number(program.multiplier);
     let bonus = 0;
+    let shieldUsed = false;
+    let shieldEarned = false;
     if (program.mode !== 'NONE') {
-      multiplier = nextMultiplier(multiplier, fulfilled);
+      const outcome = closeWeekWithShield({
+        current: multiplier,
+        fulfilled,
+        shields: program.shields,
+        recentClosed: await this.recentClosedWeeks(programId, weekNumber, transaction),
+      });
+      ({ multiplier, shieldUsed, shieldEarned } = outcome);
       if (fulfilled) {
         const base = program.lane === 'CARDIO' ? week.sessionsDone * 50 + week.cardioMinutes : stats.basePoints;
         bonus = weekBonus(base, multiplier);
@@ -113,26 +166,38 @@ export class ProgramWeekCloseService {
           transaction,
         );
       }
-      await program.update({ multiplier: multiplier.toFixed(2) }, { transaction });
+      await program.update({ multiplier: multiplier.toFixed(2), shields: outcome.shields }, { transaction });
     }
-    await week.update({ fulfilled, multiplier: multiplier.toFixed(2), closedAt: new Date() }, { transaction });
+    await week.update({ fulfilled, multiplier: multiplier.toFixed(2), shieldUsed, closedAt: new Date() }, { transaction });
 
     if (program.mode !== 'NONE') {
       await this.notifier
         .notify({
           to: program.userId,
           type: 'PROGRAM_WEEK_CLOSED',
-          subject: fulfilled ? 'Semana cumplida' : 'Nueva semana, nuevo comienzo',
-          body: fulfilled
-            ? `Semana ${weekNumber} cumplida · multiplicador x${multiplier.toFixed(1).replace('.', ',')}`
-            : `Semana ${weekNumber} sin completar: el multiplicador vuelve a x1,0. Tus puntos no se pierden.`,
+          ...weekClosedMessage({ weekNumber, fulfilled, multiplier, shieldUsed, shieldEarned }),
           dedupeKey: `${programId}:${weekNumber}`,
           refs: { programId, weekNumber },
         })
         .catch(() => false);
     }
-    this.events.emit('program_week_closed', { program_id: programId, semana: weekNumber, cumplida: fulfilled, multiplicador: multiplier, bonus });
-    return { programId, weekNumber, fulfilled, multiplier, bonus };
+    this.events.emit('program_week_closed', {
+      program_id: programId,
+      semana: weekNumber,
+      cumplida: fulfilled,
+      multiplicador: multiplier,
+      bonus,
+      escudo_usado: shieldUsed,
+    });
+    return { programId, weekNumber, fulfilled, multiplier, bonus, shieldUsed, shieldEarned };
+  }
+
+  /** Semanas ya cerradas antes de `weekNumber` que cuentan para el escudo, de la más antigua a la más reciente. */
+  private async recentClosedWeeks(programId: string, weekNumber: number, transaction: Transaction): Promise<boolean[]> {
+    const weeks = await this.programs.listWeeks(programId, transaction);
+    return weeks
+      .filter((w) => w.weekNumber < weekNumber && w.closedAt !== null && w.fulfilled !== null)
+      .map((w) => w.fulfilled === true);
   }
 
   /**

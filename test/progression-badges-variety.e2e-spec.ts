@@ -1,3 +1,4 @@
+import { env } from '../src/config/env';
 import { bootE2eApp, createPersonalExercise, E2eApp } from './support/e2e-app';
 
 /**
@@ -158,5 +159,50 @@ describe('Progression · variedad de insignias (e2e)', () => {
     expect(badge(after.badges, 'PRIMERA_PUBLICA')).toMatchObject({ earned: true });
     expect(after.points).toBe(before.points);
     expect(after.unlockedNow).toEqual([]);
+  });
+
+  /**
+   * Secretas nuevas (2026-10-18): aparecen ya conseguidas y nunca antes. Las
+   * sesiones se siembran por SQL en hora local del negocio para no depender de
+   * la hora a la que corra la prueba.
+   */
+  it('las secretas nuevas (Volviste, Doble turno, Medianoche, Feliz cumpleaños) salen ya conseguidas', async () => {
+    const zoe = await e2e.register('badge-zoe');
+    const hidden = await progression(zoe.token);
+    for (const code of ['VOLVISTE', 'DOBLE_TURNO', 'MEDIANOCHE', 'FELIZ_CUMPLEANOS', 'MARATON', 'MODO_ESCUDO']) {
+      expect(badge(hidden.badges, code)).toBeUndefined();
+    }
+
+    const localDay = (offset: number) => {
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: env.BUSINESS_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+      const date = new Date(`${today}T00:00:00Z`);
+      date.setUTCDate(date.getUTCDate() + offset);
+      return date.toISOString().slice(0, 10);
+    };
+    const seed = (day: string, time: string) =>
+      e2e.sql(
+        `INSERT INTO public.sesiones_entrenamiento (usuario_id, fecha_inicio, fecha_fin, estado)
+         VALUES (:userId, (:day::date + :time::time) AT TIME ZONE :tz, (:day::date + :time::time + interval '40 minutes') AT TIME ZONE :tz, 'FINALIZADA')`,
+        { userId: zoe.id, day, time, tz: env.BUSINESS_TIME_ZONE },
+      );
+    await seed(localDay(-20), '12:00');
+    await seed(localDay(-1), '01:30'); // tras 19 días sin venir, y de madrugada
+    await seed(localDay(-1), '19:00'); // segunda sesión del mismo día
+    // Hoy es su cumpleaños (de hace treinta años).
+    const birthday = `${Number(localDay(0).slice(0, 4)) - 30}${localDay(0).slice(4)}`;
+    await e2e.sql(
+      `INSERT INTO public.perfiles_antropometricos (usuario_id, peso_kg, estatura_cm, objetivo, fecha_nacimiento)
+       VALUES (:userId, 70, 175, 'SALUD_GENERAL', :birthday::date)`,
+      { userId: zoe.id, birthday },
+    );
+    await seed(localDay(0), '10:00');
+
+    const view = await progression(zoe.token);
+    const unlocked = view.unlockedNow.map((entry) => entry.code);
+    expect(unlocked).toEqual(expect.arrayContaining(['VOLVISTE', 'DOBLE_TURNO', 'MEDIANOCHE', 'FELIZ_CUMPLEANOS']));
+    expect(badge(view.badges, 'VOLVISTE')).toMatchObject({ earned: true, secret: true, category: 'SECRETA', illustration: 'first-step' });
+    expect(badge(view.badges, 'DOBLE_TURNO')).toMatchObject({ earned: true, secret: true });
+    // Sin series no hay maratón, por larga que fuera la sesión abierta.
+    expect(badge(view.badges, 'MARATON')).toBeUndefined();
   });
 });

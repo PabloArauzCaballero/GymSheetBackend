@@ -194,6 +194,8 @@ describe('Programs (e2e)', () => {
       const { finished } = await trainSession(leo.token, r.body.data.id, { [g1]: [[3, 100], [3, 100], [3, 100]] });
       const goal = finished.programa.sugerencias.find((s: { accion: string }) => s.accion === 'GOAL_REACHED');
       expect(goal).toBeDefined();
+      // P4: los +300 de la meta salen en el premio de ESTA sesión, no de la siguiente.
+      expect(finished.progression.breakdown.modes).toBeGreaterThanOrEqual(300);
       const inbox = JSON.stringify((await e2e.as(leo.token).get('/notifications/me').expect(200)).body.data);
       expect(inbox).toContain('GOAL_REACHED');
       const progress = await e2e.as(leo.token).get(`/programs/${act.body.data.id}/progress`).expect(200);
