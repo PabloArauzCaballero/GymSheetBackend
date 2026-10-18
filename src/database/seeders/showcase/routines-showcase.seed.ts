@@ -39,6 +39,7 @@ import { TrainingService } from '../../../modules/training/training.service';
 import { ProfilePhotosService } from '../../../modules/profiles/profile-photos.service';
 import { UserModel } from '../../../modules/users/user.model';
 import { SHOWCASE_AVATARS, SHOWCASE_AVATAR_MIME } from './showcase-avatars.data';
+import { SHOWCASE_PRIZES } from './showcase-prizes.data';
 import { createWorkoutSetSchema } from '../../../modules/workouts/workouts.schemas';
 import { WorkoutsService } from '../../../modules/workouts/workouts.service';
 import { EXERCISE_NAMES_ES } from './exercise-names-es.data';
@@ -150,7 +151,31 @@ export class RoutinesShowcaseSeeder {
     await this.seedComments();
     await this.seedLikesAndFavorites();
     for (const program of PROGRAMS) await this.ensureProgram(program);
+    await this.seedPrizes();
     return this.counters;
+  }
+
+  /**
+   * Premios de muestra del gimnasio por defecto. Idempotente por (gimnasio,
+   * hito, título); no toca los que ya existan, para no deshacer lo que el
+   * gimnasio haya editado a mano en TEST.
+   */
+  private async seedPrizes(): Promise<void> {
+    const tenantId = env.DEFAULT_TENANT_ID ?? null;
+    for (const prize of SHOWCASE_PRIZES) {
+      const rows = await this.sequelize.query<{ id: string }>(
+        `INSERT INTO progression.prizes
+           (tenant_id, target_kind, target_code, title, description, instructions, icon, valid_days, stock)
+         SELECT :tenantId, :targetKind, :targetCode, :title, :description, :instructions, :icon, :validDays, :stock
+          WHERE NOT EXISTS (
+            SELECT 1 FROM progression.prizes
+             WHERE tenant_id IS NOT DISTINCT FROM :tenantId AND target_kind = :targetKind
+               AND target_code = :targetCode AND title = :title)
+         RETURNING id`,
+        { type: QueryTypes.SELECT, replacements: { tenantId, ...prize } },
+      );
+      if (rows.length > 0) this.count('premios_creados');
+    }
   }
 
   // ── Catálogo ────────────────────────────────────────────────────────────

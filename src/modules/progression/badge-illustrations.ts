@@ -42,6 +42,18 @@ const BY_CRITERION: Record<BadgeCriterionType, string> = {
   COMMENTS_WRITTEN: "chat-bubble",
   RATINGS_GIVEN: "star",
   COMMENT_LIKES_RECEIVED: "heart",
+  // Tercera tanda: solo claves que los clientes ya dibujan.
+  CHALLENGES_COMPLETED: "target",
+  PERFECT_WEEKS: "calendar-check",
+  COMEBACK_SESSIONS: "first-step",
+  MAX_SESSIONS_IN_DAY: "stack-sets",
+  LONGEST_SESSION_MINUTES: "hourglass",
+  MIDNIGHT_SESSIONS: "moon",
+  NEW_YEAR_SESSIONS: "star",
+  BIRTHDAY_SESSIONS: "medal",
+  MAX_RECORDS_IN_SESSION: "trophy",
+  MODE_SHIELDS_USED: "medal",
+  MODE_MAX_MULTIPLIER_WEEKS: "lightning",
 };
 
 const BY_CODE: Readonly<Record<string, string>> = {
@@ -52,6 +64,8 @@ const BY_CODE: Readonly<Record<string, string>> = {
   CIEN_DESCARGAS: "crown",
   RACHA_100: "crown",
   SEMANAS_52: "crown",
+  RACHA_365: "crown",
+  RETOS_150: "crown",
 };
 
 export function badgeIllustration(code: string, criterion: BadgeCriterionType): string {
