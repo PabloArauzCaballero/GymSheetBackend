@@ -28,7 +28,13 @@ export interface StoryUploadOptions {
   readonly audienceMode?: unknown;
   readonly recipientIds?: unknown;
   readonly requestId?: unknown;
+  readonly caption?: unknown;
 }
+
+/** Tope del pie de foto: coincide con `varchar(200)` de la columna. */
+export const STORY_CAPTION_MAX_LENGTH = 200;
+/** Más de esto deja de ser un pie y tapa la foto. */
+const STORY_CAPTION_MAX_LINES = 4;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -71,6 +77,7 @@ export class StoriesService {
     }
 
     const { audienceMode, recipientIds } = this.parseAudienceOptions(options);
+    const caption = parseStoryCaption(options.caption);
     if (audienceMode === "SELECTED_CONNECTIONS") {
       const validRecipients = await this.repository.validAudienceRecipients(userId, recipientIds);
       if (validRecipients.length !== recipientIds.length) {
@@ -97,6 +104,7 @@ export class StoriesService {
         audienceMode,
         recipientIds,
         requestId && contentHash ? { requestId, contentHash } : undefined,
+        caption,
       );
       return mapStoryToResponse(story);
     } catch (error) {
@@ -145,11 +153,15 @@ export class StoriesService {
     return { recorded: true };
   }
 
-  async downloadMedia(storyId: string, viewerId: string): Promise<{ buffer: Buffer; mimeType: string }> {
+  async downloadMedia(
+    storyId: string,
+    viewerId: string,
+  ): Promise<{ buffer: Buffer; mimeType: string; etag: string }> {
     const story = await this.requireViewableStory(storyId, viewerId);
     return {
       buffer: await this.mediaStorage.download(story.storageKey),
       mimeType: mimeTypeForStorageKey(story.storageKey),
+      etag: storyMediaEtag(story.storageKey),
     };
   }
 
@@ -235,6 +247,36 @@ export class StoriesService {
     }
     return { audienceMode, recipientIds: ids };
   }
+}
+
+/**
+ * Normaliza el pie de foto que llega en el multipart.
+ *
+ * Ausente o en blanco es «sin texto» (NULL), no un error: el campo es opcional
+ * y los clientes viejos no lo mandan. Se quitan los caracteres de control salvo
+ * el salto de línea, se recortan los extremos y se limitan longitud y líneas.
+ */
+export function parseStoryCaption(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") throw new BadRequestException("El texto de la story no es válido.");
+  // eslint-disable-next-line no-control-regex
+  const cleaned = value.replace(/\r\n?/gu, "\n").replace(/[\u0000-\u0009\u000B-\u001F\u007F]/gu, "").trim();
+  if (cleaned === "") return null;
+  if ([...cleaned].length > STORY_CAPTION_MAX_LENGTH) {
+    throw new BadRequestException(`El texto de la story admite hasta ${STORY_CAPTION_MAX_LENGTH} caracteres.`);
+  }
+  if (cleaned.split("\n").length > STORY_CAPTION_MAX_LINES) {
+    throw new BadRequestException(`El texto de la story admite hasta ${STORY_CAPTION_MAX_LINES} líneas.`);
+  }
+  return cleaned;
+}
+
+/**
+ * ETag fuerte de un medio de story. La clave de almacenamiento ya deriva del
+ * SHA-256 del contenido, así que su huella cambia si y solo si cambian los bytes.
+ */
+export function storyMediaEtag(storageKey: string): string {
+  return `"${createHash("sha256").update(storageKey).digest("hex").slice(0, 32)}"`;
 }
 
 function mimeTypeForStorageKey(storageKey: string): string {
