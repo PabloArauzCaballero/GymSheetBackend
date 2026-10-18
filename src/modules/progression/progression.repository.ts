@@ -61,6 +61,26 @@ export interface TrainingMetrics {
   readonly commentsWritten?: number;
   readonly ratingsGiven?: number;
   readonly commentLikesReceived?: number;
+  /**
+   * Tercera tanda (2026-10-18, premios de verdad): comodines de racha, retos de
+   * la semana, secretas nuevas y escudo de modo. Opcionales por lo mismo.
+   */
+  readonly streakFreezes?: number;
+  readonly streakFreezesUsed?: number;
+  readonly streakFreezesEarned?: number;
+  readonly challengesCompleted?: number;
+  readonly perfectWeeks?: number;
+  /** Puntos de los retos cumplidos más los bonos de semana redonda. */
+  readonly challengePoints?: number;
+  readonly comebackSessions?: number;
+  readonly maxSessionsInDay?: number;
+  readonly longestSessionMinutes?: number;
+  readonly midnightSessions?: number;
+  readonly newYearSessions?: number;
+  readonly birthdaySessions?: number;
+  readonly maxRecordsInSession?: number;
+  readonly modeShieldsUsed?: number;
+  readonly modeMaxMultiplierWeeks?: number;
 }
 
 /** Lo que la persona hizo fuera del entreno: crear, publicar, comentar, valorar. */
@@ -87,6 +107,8 @@ interface CommunityMetricsRow {
 
 interface ModeMetricsRow {
   bonus: string;
+  shields_used: string;
+  max_multiplier_weeks: string;
   overload_streak: string;
   multiplier_max: string;
   goals: string;
@@ -115,7 +137,19 @@ interface AggregateRow {
   max_sessions_in_week: string | null;
   geo_verified_sessions: string;
   superset_sessions: string;
+  midnight_sessions: string;
+  new_year_sessions: string;
+  max_sessions_in_day: string | null;
+  longest_session_minutes: string | null;
+  birthday_sessions: string;
+  max_records_in_session: string | null;
 }
+
+/**
+ * «Volviste»: días de calendario entre dos sesiones para que la segunda cuente
+ * como vuelta. Quince = catorce días enteros sin venir.
+ */
+const COMEBACK_GAP_DAYS = 15;
 
 /** Tope por sesión al sumar tiempo entrenado: una sesión olvidada abierta no son 40 horas de gimnasio. */
 const MAX_SESSION_MINUTES = 240;
@@ -383,6 +417,8 @@ export class ProgressionRepository {
       `
       WITH sesion AS (
         SELECT s.id,
+               s.fecha_inicio,
+               s.fecha_fin,
                s.fecha_inicio AT TIME ZONE :timeZone AS local_start,
                s.geo_verified,
                LEAST(GREATEST(EXTRACT(EPOCH FROM (s.fecha_fin - s.fecha_inicio)) / 60, 0), :maxSessionMinutes) AS minutos
@@ -409,21 +445,39 @@ export class ProgressionRepository {
       -- ese mismo ejercicio. La primera serie de un ejercicio no lo es: no hay
       -- marca previa que batir, y contarla convertiría «probar algo nuevo» en
       -- «batir un récord».
+      historial AS (
+        SELECT sesion_id,
+               ejercicio_id,
+               peso_kg,
+               MAX(peso_kg) OVER (
+                 PARTITION BY ejercicio_id
+                 ORDER BY fecha_registro
+                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+               ) AS mejor_previo
+          FROM serie
+         -- Una serie por tiempo (plancha con lastre) no es un récord de carga.
+         WHERE repeticiones IS NOT NULL
+      ),
       records AS (
         SELECT DISTINCT ejercicio_id
-          FROM (
-            SELECT ejercicio_id,
-                   peso_kg,
-                   MAX(peso_kg) OVER (
-                     PARTITION BY ejercicio_id
-                     ORDER BY fecha_registro
-                     ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-                   ) AS mejor_previo
-              FROM serie
-             -- Una serie por tiempo (plancha con lastre) no es un récord de carga.
-             WHERE repeticiones IS NOT NULL
-          ) historial
+          FROM historial
          WHERE mejor_previo IS NOT NULL AND peso_kg > mejor_previo
+      ),
+      -- «Día de récords»: ejercicios distintos con marca nueva dentro de una misma sesión.
+      records_por_sesion AS (
+        SELECT sesion_id, COUNT(DISTINCT ejercicio_id) AS n
+          FROM historial
+         WHERE mejor_previo IS NOT NULL AND peso_kg > mejor_previo
+         GROUP BY sesion_id
+      ),
+      -- «Maratón» se mide hasta la última serie apuntada, no hasta el cierre: una
+      -- sesión olvidada abierta toda la tarde no es una sesión de dos horas.
+      ultima_serie AS (
+        SELECT se.sesion_id, MAX(st.fecha_registro) AS ultima
+          FROM public.sesiones_ejercicios se
+          JOIN sesion ON sesion.id = se.sesion_id
+          JOIN public.series_entrenamiento st ON st.sesion_ejercicio_id = se.id
+         GROUP BY se.sesion_id
       )
       SELECT
         (SELECT COUNT(*) FROM sesion)::text AS total_sessions,
@@ -463,7 +517,20 @@ export class ProgressionRepository {
            FROM public.sesiones_ejercicios se
            JOIN sesion ON sesion.id = se.sesion_id
           WHERE se.grupo IS NOT NULL
-            AND EXISTS (SELECT 1 FROM public.series_entrenamiento st WHERE st.sesion_ejercicio_id = se.id))::text AS superset_sessions
+            AND EXISTS (SELECT 1 FROM public.series_entrenamiento st WHERE st.sesion_ejercicio_id = se.id))::text AS superset_sessions,
+        (SELECT COUNT(*) FROM sesion WHERE EXTRACT(HOUR FROM local_start) < 4)::text AS midnight_sessions,
+        (SELECT COUNT(*) FROM sesion
+          WHERE EXTRACT(MONTH FROM local_start) = 1 AND EXTRACT(DAY FROM local_start) = 1)::text AS new_year_sessions,
+        (SELECT COALESCE(MAX(n), 0) FROM (
+           SELECT COUNT(*) AS n FROM sesion GROUP BY local_start::date) por_dia)::text AS max_sessions_in_day,
+        (SELECT COALESCE(MAX(EXTRACT(EPOCH FROM (LEAST(sesion.fecha_fin, u.ultima) - sesion.fecha_inicio)) / 60), 0)
+           FROM sesion JOIN ultima_serie u ON u.sesion_id = sesion.id)::text AS longest_session_minutes,
+        -- El cumpleaños sale del perfil; sin fecha de nacimiento, simplemente no hay insignia.
+        (SELECT COUNT(*) FROM sesion
+           JOIN public.perfiles_antropometricos p ON p.usuario_id = :userId
+          WHERE p.fecha_nacimiento IS NOT NULL
+            AND to_char(local_start, 'MM-DD') = to_char(p.fecha_nacimiento, 'MM-DD'))::text AS birthday_sessions,
+        (SELECT COALESCE(MAX(n), 0) FROM records_por_sesion)::text AS max_records_in_session
       `,
       {
         type: QueryTypes.SELECT,
@@ -518,6 +585,9 @@ export class ProgressionRepository {
       currentStreakDays: streaks.current,
       longestStreakDays: streaks.longest,
       weeklyStreak: streaks.weeks,
+      streakFreezes: streaks.freezes,
+      streakFreezesUsed: streaks.freezesUsed,
+      streakFreezesEarned: streaks.freezesEarned,
       lastSessionOn: trainingDays.at(-1) ?? null,
       firstSessionOn: trainingDays[0] ?? null,
       ...mode,
@@ -531,6 +601,13 @@ export class ProgressionRepository {
       maxSessionsInWeek: Number(aggregate.max_sessions_in_week ?? 0),
       geoVerifiedSessions: Number(aggregate.geo_verified_sessions),
       supersetSessions: Number(aggregate.superset_sessions),
+      midnightSessions: Number(aggregate.midnight_sessions),
+      newYearSessions: Number(aggregate.new_year_sessions),
+      maxSessionsInDay: Number(aggregate.max_sessions_in_day ?? 0),
+      longestSessionMinutes: Number(aggregate.longest_session_minutes ?? 0),
+      birthdaySessions: Number(aggregate.birthday_sessions),
+      maxRecordsInSession: Number(aggregate.max_records_in_session ?? 0),
+      comebackSessions: countComebacks(trainingDays),
       ...community,
     };
   }
@@ -578,6 +655,10 @@ export class ProgressionRepository {
     const [row] = await this.sequelize.query<ModeMetricsRow>(
       `SELECT
          COALESCE((SELECT SUM(puntos_bonus) FROM training.mode_reward_ledger WHERE usuario_id = :userId), 0) AS bonus,
+         (SELECT count(*) FROM training.program_weeks w JOIN training.training_programs p ON p.id = w.program_id
+           WHERE p.usuario_id = :userId AND w.escudo_usado) AS shields_used,
+         (SELECT count(*) FROM training.program_weeks w JOIN training.training_programs p ON p.id = w.program_id
+           WHERE p.usuario_id = :userId AND p.modo <> 'NONE' AND w.cumplida IS TRUE AND w.multiplicador >= 2) AS max_multiplier_weeks,
          COALESCE((SELECT MAX(run) FROM (
             SELECT count(*) AS run FROM (
               SELECT w.program_id, w.semana_numero - row_number() OVER (PARTITION BY w.program_id ORDER BY w.semana_numero) AS grp
@@ -597,6 +678,8 @@ export class ProgressionRepository {
     );
     return {
       modeBonusPoints: Number(row?.bonus ?? 0),
+      modeShieldsUsed: Number(row?.shields_used ?? 0),
+      modeMaxMultiplierWeeks: Number(row?.max_multiplier_weeks ?? 0),
       overloadWeeksStreak: Number(row?.overload_streak ?? 0),
       modeMultiplierMax: Number(row?.multiplier_max ?? 0),
       strengthGoalsReached: Number(row?.goals ?? 0),
@@ -685,13 +768,40 @@ function specificity(
   );
 }
 
-function businessToday(timeZone: string): string {
+/** Sesiones (días) que llegan tras catorce días o más sin venir. La primera de todas no es una vuelta. */
+export function countComebacks(trainingDays: readonly string[]): number {
+  let count = 0;
+  for (let index = 1; index < trainingDays.length; index += 1) {
+    if (dayDistance(trainingDays[index - 1], trainingDays[index]) >= COMEBACK_GAP_DAYS) count += 1;
+  }
+  return count;
+}
+
+export function businessToday(timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+}
+
+/** Cada cuántos días de racha se gana un comodín, y cuántos se pueden guardar. */
+export const STREAK_FREEZE_EVERY_DAYS = 7;
+export const STREAK_MAX_FREEZES = 2;
+
+export interface StreakResult {
+  /** Racha vigente, ya con comodines aplicados. */
+  current: number;
+  longest: number;
+  /** Semanas seguidas con al menos un entrenamiento. */
+  weeks: number;
+  /** Comodines guardados ahora mismo (0..2). */
+  freezes: number;
+  /** Comodines gastados dentro de la racha vigente. */
+  freezesUsed: number;
+  /** Comodines ganados dentro de la racha vigente: sube aunque se gasten, para poder celebrar «ganaste uno». */
+  freezesEarned: number;
 }
 
 /**
@@ -706,51 +816,70 @@ function businessToday(timeZone: string): string {
  * no rompe la racha si todos los días saltados caen en esos días. Vacío por
  * defecto, que reproduce exactamente la tolerancia genérica anterior (un hueco
  * de un día siempre puentea; de dos o más, nunca).
+ *
+ * **Comodines** (P3, 2026-10-18): cada 7 días de racha se gana uno, con un
+ * máximo de dos guardados. Un día que falta y NO es de descanso gasta uno solo,
+ * sin que nadie tenga que pulsar nada, y la racha sigue; el día cubierto no
+ * suma, solo no rompe. Si el hueco pide más comodines de los que hay, la racha
+ * se corta y los comodines se van con ella: eran de esa racha.
+ *
+ * Todo sale del historial, sin estado guardado: recalcular dos veces da lo
+ * mismo, y corregir una sesión mal registrada recoloca los comodines solos.
+ * Los comodines solo pueden alargar rachas, nunca acortarlas, así que la racha
+ * más larga —y los puntos que paga— no baja respecto al cálculo anterior.
  */
 export function computeStreaks(
   trainingDays: readonly string[],
   today: string,
   restWeekdays: ReadonlySet<number> = new Set(),
-): { current: number; longest: number; weeks: number } {
-  if (trainingDays.length === 0) return { current: 0, longest: 0, weeks: 0 };
+): StreakResult {
+  if (trainingDays.length === 0) {
+    return { current: 0, longest: 0, weeks: 0, freezes: 0, freezesUsed: 0, freezesEarned: 0 };
+  }
 
+  let run = { length: 1, freezes: 0, used: 0, earned: 0 };
   let longest = 1;
-  let run = 1;
   for (let index = 1; index < trainingDays.length; index += 1) {
-    const bridged = bridgedByRestDays(trainingDays[index - 1], trainingDays[index], restWeekdays);
-    run = bridged ? run + 1 : 1;
-    if (run > longest) longest = run;
-  }
-
-  const last = trainingDays.at(-1)!;
-  let current = 0;
-  if (bridgedByRestDays(last, today, restWeekdays)) {
-    current = 1;
-    for (let index = trainingDays.length - 1; index > 0; index -= 1) {
-      if (!bridgedByRestDays(trainingDays[index - 1], trainingDays[index], restWeekdays)) break;
-      current += 1;
+    const missing = missedWorkdays(trainingDays[index - 1], trainingDays[index], restWeekdays);
+    run =
+      missing <= run.freezes
+        ? { ...run, length: run.length + 1, freezes: run.freezes - missing, used: run.used + missing }
+        : { length: 1, freezes: 0, used: 0, earned: 0 };
+    if (run.length % STREAK_FREEZE_EVERY_DAYS === 0) {
+      run = { ...run, earned: run.earned + 1, freezes: Math.min(STREAK_MAX_FREEZES, run.freezes + 1) };
     }
+    if (run.length > longest) longest = run.length;
   }
 
-  return { current, longest, weeks: consecutiveWeeks(trainingDays, today) };
+  // Hasta hoy (sin contarlo): los días ya pasados sin entrenar también gastan.
+  const pending = missedWorkdays(trainingDays.at(-1)!, today, restWeekdays);
+  const alive = pending <= run.freezes;
+  const weeks = consecutiveWeeks(trainingDays, today);
+  if (!alive) {
+    return { current: 0, longest, weeks, freezes: 0, freezesUsed: 0, freezesEarned: 0 };
+  }
+  return {
+    current: run.length,
+    longest,
+    weeks,
+    freezes: run.freezes - pending,
+    freezesUsed: run.used + pending,
+    freezesEarned: run.earned,
+  };
 }
 
 /**
- * Si el hueco entre dos días es de uno o cero, siempre son consecutivos — es
- * la tolerancia base que ya existía. Si es mayor, solo lo son cuando cada día
- * saltado en el medio es un día de descanso declarado.
+ * Días estrictamente entre dos fechas que no son de descanso declarado: los
+ * que «faltan». Cero si son consecutivos o si todo el hueco cae en descanso,
+ * que es exactamente la tolerancia que ya existía antes de los comodines.
  */
-function bridgedByRestDays(
-  fromDay: string,
-  toDay: string,
-  restWeekdays: ReadonlySet<number>,
-): boolean {
+function missedWorkdays(fromDay: string, toDay: string, restWeekdays: ReadonlySet<number>): number {
   const gap = dayDistance(fromDay, toDay);
-  if (gap <= 1) return true;
+  let missing = 0;
   for (let offset = 1; offset < gap; offset += 1) {
-    if (!restWeekdays.has(isoWeekday(shiftDays(fromDay, offset)))) return false;
+    if (!restWeekdays.has(isoWeekday(shiftDays(fromDay, offset)))) missing += 1;
   }
-  return true;
+  return missing;
 }
 
 /** 1 = lunes ... 7 = domingo, igual que `EXTRACT(ISODOW ...)` en SQL. */

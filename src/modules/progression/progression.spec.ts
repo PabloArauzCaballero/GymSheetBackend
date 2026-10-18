@@ -1,5 +1,5 @@
 import { UserGender } from "../../common/enums/domain.enums";
-import { computeStreaks } from "./progression.repository";
+import { computeStreaks, countComebacks } from "./progression.repository";
 import type { TrainingMetrics } from "./progression.repository";
 import { badgeIllustration, rarityRank } from "./badge-illustrations";
 import { badgeSeeds, levelSeeds } from "./progression-catalog";
@@ -38,6 +38,9 @@ describe("computeStreaks", () => {
       current: 0,
       longest: 0,
       weeks: 0,
+      freezes: 0,
+      freezesUsed: 0,
+      freezesEarned: 0,
     });
   });
 
@@ -140,6 +143,126 @@ describe("computeStreaks", () => {
       expect(streaks.current).toBe(1);
       expect(streaks.longest).toBe(1);
     });
+  });
+
+  /**
+   * Comodines (P3): cada 7 días de racha se gana uno, máximo dos guardados. Un
+   * día que falta y no es de descanso gasta uno solo y la racha sigue. Agosto
+   * de 2026 empieza en sábado; 2026-08-03 es lunes.
+   */
+  describe("with streak freezes", () => {
+    const run = (from: string, count: number): string[] =>
+      Array.from({ length: count }, (_, index) => shift(from, index));
+
+    it("earns one freeze every seven days and keeps at most two", () => {
+      expect(computeStreaks(run("2026-08-01", 6), "2026-08-06").freezes).toBe(0);
+      expect(computeStreaks(run("2026-08-01", 7), "2026-08-07")).toMatchObject({
+        current: 7,
+        freezes: 1,
+        freezesEarned: 1,
+      });
+      expect(computeStreaks(run("2026-08-01", 21), "2026-08-21")).toMatchObject({
+        current: 21,
+        freezes: 2,
+        freezesEarned: 3,
+      });
+    });
+
+    it("spends a freeze on a missed day and the streak goes on without counting that day", () => {
+      const days = [...run("2026-08-01", 7), "2026-08-09"]; // falta el 8
+      expect(computeStreaks(days, "2026-08-09")).toMatchObject({
+        current: 8,
+        longest: 8,
+        freezes: 0,
+        freezesUsed: 1,
+        freezesEarned: 1,
+      });
+    });
+
+    it("without a freeze the same gap breaks the streak, as before", () => {
+      const days = [...run("2026-08-01", 6), "2026-08-08"]; // falta el 7
+      expect(computeStreaks(days, "2026-08-08")).toMatchObject({ current: 1, longest: 6, freezes: 0 });
+    });
+
+    it("covers a two-day gap with two freezes", () => {
+      const days = [...run("2026-08-01", 14), "2026-08-17"]; // faltan el 15 y el 16
+      expect(computeStreaks(days, "2026-08-17")).toMatchObject({ current: 15, freezes: 0, freezesUsed: 2 });
+    });
+
+    it("breaks when the gap needs more freezes than there are, and the freezes go with the streak", () => {
+      const days = [...run("2026-08-01", 14), "2026-08-18"]; // faltan tres días
+      expect(computeStreaks(days, "2026-08-18")).toMatchObject({
+        current: 1,
+        longest: 14,
+        freezes: 0,
+        freezesUsed: 0,
+        freezesEarned: 0,
+      });
+    });
+
+    it("does not spend a freeze on a declared rest day", () => {
+      // 2026-08-08 es sábado (6): descanso declarado.
+      const days = [...run("2026-08-01", 7), "2026-08-09"];
+      expect(computeStreaks(days, "2026-08-09", new Set([6]))).toMatchObject({
+        current: 8,
+        freezes: 1,
+        freezesUsed: 0,
+      });
+    });
+
+    it("spends freezes on the days already missed up to today, but not on today", () => {
+      const days = run("2026-08-01", 7);
+      expect(computeStreaks(days, "2026-08-08")).toMatchObject({ current: 7, freezes: 1, freezesUsed: 0 });
+      expect(computeStreaks(days, "2026-08-09")).toMatchObject({ current: 7, freezes: 0, freezesUsed: 1 });
+      expect(computeStreaks(days, "2026-08-10").current).toBe(0);
+    });
+
+    it("never shortens a streak compared with the rule without freezes (1000 random histories)", () => {
+      let seed = 42;
+      const random = () => {
+        seed = (seed * 1664525 + 1013904223) % 4294967296;
+        return seed / 4294967296;
+      };
+      for (let history = 0; history < 1000; history += 1) {
+        const days: string[] = [];
+        let cursor = "2026-01-05";
+        for (let step = 0; step < 60; step += 1) {
+          cursor = shift(cursor, random() < 0.75 ? 1 : 2 + Math.floor(random() * 3));
+          days.push(cursor);
+        }
+        const today = shift(cursor, Math.floor(random() * 3));
+        const withFreezes = computeStreaks(days, today);
+        const strict = strictLongest(days);
+        expect(withFreezes.longest).toBeGreaterThanOrEqual(strict);
+        expect(withFreezes.freezes).toBeGreaterThanOrEqual(0);
+        expect(withFreezes.freezes).toBeLessThanOrEqual(2);
+      }
+    });
+  });
+});
+
+function shift(day: string, days: number): string {
+  const date = new Date(`${day}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** La racha más larga con la regla de antes: solo días consecutivos. */
+function strictLongest(days: readonly string[]): number {
+  let longest = days.length > 0 ? 1 : 0;
+  let current = 1;
+  for (let index = 1; index < days.length; index += 1) {
+    current = shift(days[index - 1], 1) === days[index] ? current + 1 : 1;
+    longest = Math.max(longest, current);
+  }
+  return longest;
+}
+
+describe("countComebacks", () => {
+  it("counts a session after fourteen whole days away, not the very first one", () => {
+    expect(countComebacks(["2026-08-01"])).toBe(0);
+    expect(countComebacks(["2026-08-01", "2026-08-15"])).toBe(0); // trece días sin venir
+    expect(countComebacks(["2026-08-01", "2026-08-16", "2026-08-17", "2026-09-10"])).toBe(2);
   });
 });
 
