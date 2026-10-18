@@ -49,7 +49,12 @@ export type CommentResponse = {
   respuestas: CommentResponse[];
 };
 
-/** Valoraciones (1–5) y comentarios de rutinas y ejercicios privados (RF-11, RF-12). */
+/**
+ * Valoraciones (1–5) y comentarios de rutinas y ejercicios (RF-11, RF-12).
+ * Los comentarios de un ejercicio del catálogo (consejos, técnica, dudas) usan
+ * esta misma tabla con `target_kind = 'EXERCISE'`: misma moderación, mismas
+ * denuncias (`COMMENT`), mismos «me gusta» (= «útil») y respuestas de un nivel.
+ */
 @Injectable()
 export class CommunityService {
   constructor(
@@ -99,7 +104,11 @@ export class CommunityService {
   async list(actor: Actor, kind: ContentKind, id: string, query: CommentListQuery) {
     await this.visibleTargetOrFail(kind, id, actor.id);
     const offset = decode(query.cursor);
-    const top = await this.repository.listTopLevel(kind, id, actor.id, query.limit + 1, offset);
+    const order = query.orden ?? 'recientes';
+    const [top, total] = await Promise.all([
+      this.repository.listTopLevel(kind, id, actor.id, query.limit + 1, offset, order),
+      this.repository.countVisible(kind, id, actor.id),
+    ]);
     const page = top.slice(0, query.limit);
     const replies = await this.repository.listReplies(page.map((c) => c.id), actor.id);
     return {
@@ -107,6 +116,7 @@ export class CommunityService {
         this.toResponse(row, actor.id, replies.filter((r) => r.replyToId === row.id)),
       ),
       siguienteCursor: top.length > query.limit ? encode(offset + query.limit) : null,
+      total,
     };
   }
 
@@ -124,7 +134,16 @@ export class CommunityService {
     if (input.replyToId) {
       const parent = await this.repository.findComment(input.replyToId);
       // Un solo nivel de respuestas, y solo al comentario de este mismo contenido.
-      if (!parent || parent.targetId !== id || parent.targetKind !== kind || parent.replyToId) {
+      // Tampoco a uno oculto o borrado, ni al de alguien con quien hay un bloqueo:
+      // ese comentario no se ve, así que responderlo sería escribir a ciegas.
+      if (
+        !parent ||
+        parent.targetId !== id ||
+        parent.targetKind !== kind ||
+        parent.replyToId ||
+        parent.status !== 'VISIBLE' ||
+        (await this.repository.isBlockedBetween(actor.id, parent.authorId))
+      ) {
         throw new BadRequestException('Solo se puede responder a un comentario de este contenido.');
       }
     }
@@ -157,6 +176,9 @@ export class CommunityService {
     const comment = await this.repository.findComment(commentId);
     if (!comment || comment.status !== 'VISIBLE') throw new NotFoundException('Comentario no encontrado.');
     await this.visibleTargetOrFail(comment.targetKind, comment.targetId, actor.id);
+    if (await this.repository.isBlockedBetween(actor.id, comment.authorId)) {
+      throw new NotFoundException('Comentario no encontrado.');
+    }
     return { likes: await this.repository.setCommentLike(commentId, actor.id, liked), meGusta: liked };
   }
 

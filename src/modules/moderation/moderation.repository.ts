@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
 import { Op, QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
+import { exerciseVisibleSql, routineVisibleSql } from "../../common/sql/content-visibility";
 import { ModerationReportModel } from "./report.model";
 import { UserStrikeModel } from "./user-strike.model";
 import {
@@ -441,6 +442,29 @@ export class ModerationRepository {
       replacements: { targetId },
     });
     return rows[0] ?? null;
+  }
+
+  /**
+   * ¿Ve quien denuncia este comentario? Solo si no está borrado y el contenido
+   * donde está (rutina o ejercicio) le es visible. Los comentarios de un
+   * ejercicio global los leen personas de cualquier gimnasio, así que esto, y
+   * no el gimnasio del autor, decide si la denuncia procede.
+   */
+  async canReporterViewComment(commentId: string, reporterUserId: string): Promise<boolean> {
+    const rows = await this.sequelize.query<{ allowed: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM community.content_comments c
+          WHERE c.id = :commentId AND c.estado <> 'BORRADO_AUTOR'
+            AND ((c.target_kind = 'ROUTINE' AND EXISTS (
+                   SELECT 1 FROM training.routines r
+                    WHERE r.id = c.target_id AND ${routineVisibleSql("r", ":userId")}))
+              OR (c.target_kind = 'EXERCISE' AND EXISTS (
+                   SELECT 1 FROM public.ejercicios e
+                    WHERE e.id = c.target_id AND ${exerciseVisibleSql("e", ":userId")})))
+       ) AS allowed`,
+      { type: QueryTypes.SELECT, replacements: { commentId, userId: reporterUserId } },
+    );
+    return rows[0]?.allowed === true;
   }
 
   async canReporterViewChatMessage(

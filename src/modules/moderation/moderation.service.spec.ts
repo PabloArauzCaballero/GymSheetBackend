@@ -34,6 +34,7 @@ describe('ModerationService', () => {
         .fn()
         .mockResolvedValue({ userId: 'author-1', tenantId: 'topfitness' }),
       canReporterSee: jest.fn().mockResolvedValue(true),
+      canReporterViewComment: jest.fn().mockResolvedValue(true),
       createReport: jest.fn().mockResolvedValue({ id: 'report-1', status: 'PENDIENTE' }),
       countDistinctReporters: jest.fn().mockResolvedValue(1),
       setContentHidden: jest.fn().mockResolvedValue(undefined),
@@ -98,6 +99,28 @@ describe('ModerationService', () => {
       await expect(service.report(reporter, reportInput)).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+
+    it('un comentario visible se denuncia aunque su autor sea de otro gimnasio (ejercicio global)', async () => {
+      const { service, repository } = build({
+        findContentOwner: jest.fn().mockResolvedValue({ userId: 'author-1', tenantId: 'vecino' }),
+      });
+      const input = { ...reportInput, targetKind: ModerationTargetKind.COMMENT, targetId: 'comment-1' };
+
+      await expect(service.report(reporter, input)).resolves.toMatchObject({ id: 'report-1' });
+      expect(repository.canReporterViewComment).toHaveBeenCalledWith('comment-1', reporter.id);
+      expect(repository.createReport).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'vecino', targetKind: ModerationTargetKind.COMMENT }),
+        expect.anything(),
+      );
+    });
+
+    it('un comentario que quien denuncia no puede leer responde 404', async () => {
+      const { service, repository } = build({ canReporterViewComment: jest.fn().mockResolvedValue(false) });
+      const input = { ...reportInput, targetKind: ModerationTargetKind.COMMENT, targetId: 'comment-1' };
+
+      await expect(service.report(reporter, input)).rejects.toBeInstanceOf(NotFoundException);
+      expect(repository.createReport).not.toHaveBeenCalled();
     });
 
     it('no deja reportarse a uno mismo', async () => {
