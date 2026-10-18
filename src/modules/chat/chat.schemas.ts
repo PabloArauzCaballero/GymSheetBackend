@@ -20,6 +20,8 @@ const sendTextOrLocationSchema = z
     locationLng: z.number().min(-180).max(180).optional(),
     /** Nombre del lugar elegido en el mapa; solo tiene sentido con `type: "location"`. */
     locationLabel: z.string().trim().min(1).max(180).optional(),
+    /** Responder citando: el mensaje citado, de esta misma conversación. */
+    replyToId: z.string().uuid().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.type === "text" && !value.body) {
@@ -38,6 +40,7 @@ const sendStickerMessageSchema = z.object({
   type: z.literal("sticker"),
   stickerId: z.enum(CHAT_STICKER_IDS),
   clientRequestId: z.string().uuid().optional(),
+  replyToId: z.string().uuid().optional(),
 }).strict();
 
 export const sendMessageSchema = z.union([sendTextOrLocationSchema, sendStickerMessageSchema]);
@@ -49,6 +52,8 @@ export const sendMediaMessageSchema = z.object({
   viewOnce: z
     .preprocess((value) => (typeof value === "string" ? value === "true" : value), z.boolean())
     .default(false),
+  /** Responder citando con una foto, video o nota de voz (campo multipart). */
+  replyToId: z.string().uuid().optional(),
 });
 
 export const messageListQuerySchema = z.object({
@@ -98,3 +103,34 @@ export const setDisappearingMessagesSchema = z.object({
   ]).nullable(),
 }).strict();
 export type SetDisappearingMessagesInput = z.infer<typeof setDisappearingMessagesSchema>;
+
+/**
+ * Un emoji de verdad (o una secuencia: tono de piel, ZWJ, bandera, tecla):
+ * solo se admiten piezas de emoji y al menos una tiene que ser pictográfica,
+ * una bandera (dos indicadores regionales) o una tecla «1️⃣».
+ */
+const EMOJI_PIECES = /^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|\p{Emoji_Modifier}|\p{Regional_Indicator}|\u200d|\ufe0f|\u20e3)+$/u;
+const EMOJI_ANCHOR = /\p{Extended_Pictographic}|\p{Regional_Indicator}{2}|[0-9#*]\ufe0f?\u20e3/u;
+
+export function isReactionEmoji(value: string): boolean {
+  return value.length >= 1 && value.length <= 16 && EMOJI_PIECES.test(value) && EMOJI_ANCHOR.test(value);
+}
+
+/** Reaccionar a un mensaje: `null` quita la reacción propia. */
+export const setReactionSchema = z.object({
+  emoji: z.string().refine(isReactionEmoji, { message: "La reacción debe ser un emoji." }).nullable(),
+}).strict();
+export type SetReactionInput = z.infer<typeof setReactionSchema>;
+
+/** Reenviar un mensaje de otra conversación (o de la misma) a `:id`. */
+export const forwardMessageSchema = z.object({
+  fromConversationId: z.string().uuid(),
+  messageId: z.string().uuid(),
+}).strict();
+export type ForwardMessageInput = z.infer<typeof forwardMessageSchema>;
+
+/** «Escribiendo…» por socket: no se guarda, solo se difunde a la sala. */
+export const typingSchema = z.object({
+  conversationId: z.string().uuid(),
+  typing: z.boolean(),
+}).strict();

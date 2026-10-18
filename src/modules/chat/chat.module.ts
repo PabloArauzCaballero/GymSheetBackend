@@ -18,6 +18,7 @@ import { ConversationParticipantModel } from "./conversation-participant.model";
 import { ConversationModel } from "./conversation.model";
 import { MessageMutationsService } from "./message-mutations.service";
 import { MessageVisibilityModel } from "./message-visibility.model";
+import { MessageReactionModel } from "./message-reaction.model";
 import { MessageModel } from "./message.model";
 import { SystemChatService } from "./system-chat.service";
 import { env } from "../../config/env";
@@ -29,7 +30,7 @@ import { env } from "../../config/env";
     RealtimeModule,
     MediaModule,
     NotificationsModule,
-    SequelizeModule.forFeature([ConversationModel, ConversationParticipantModel, MessageModel, MessageVisibilityModel]),
+    SequelizeModule.forFeature([ConversationModel, ConversationParticipantModel, MessageModel, MessageVisibilityModel, MessageReactionModel]),
   ],
   controllers: [ChatController, ReadReceiptSettingsController],
   providers: [

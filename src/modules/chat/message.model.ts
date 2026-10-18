@@ -77,6 +77,15 @@ export class MessageModel extends Model {
   @Column({ type: DataType.DATE, allowNull: true, field: "expires_at" })
   declare expiresAt: Date | null;
 
+  /** Mensaje citado al responder; `null` si no es respuesta o si el original ya se purgó. */
+  @Column({ type: DataType.UUID, allowNull: true, field: "reply_to_id" })
+  declare replyToId: string | null;
+
+  /** Copia de un mensaje de otra conversación («Reenviado»). */
+  @Default(false)
+  @Column({ type: DataType.BOOLEAN, allowNull: false })
+  declare forwarded: boolean;
+
   @BelongsTo(() => ConversationModel)
   declare conversation?: ConversationModel;
 

@@ -91,10 +91,17 @@ export class ChatService {
     // Traer el historial es, como mínimo, haberlo recibido: adelanta el
     // cursor de entregado aunque el socket nunca haya estado conectado.
     await this.markDelivered(conversationId, userId);
+    const extras = await this.repository.messageExtras(
+      messages.flatMap((record) => (record.kind === "message" ? [record.message] : [])),
+      userId,
+    );
     return messages.map((record) => {
       if (record.kind === "system") return mapTrainingInviteEvent(record.event);
       if (record.kind === "timer") return mapDisappearingTimerEvent(record.event);
-      return mapMessageToResponse(record.message, { storyAvailable: record.storyAvailable });
+      return mapMessageToResponse(record.message, {
+        storyAvailable: record.storyAvailable,
+        extras: extras.get(record.message.id),
+      });
     });
   }
 
@@ -112,14 +119,17 @@ export class ChatService {
     const { message, created } = clientRequestId
       ? await this.repository.createMessageIdempotent(conversationId, senderId, clientRequestId, fields)
       : { message: await this.repository.createMessage(conversationId, senderId, fields), created: true };
-    const response = mapMessageToResponse(message);
+    // Quien envía no puede citar algo que ocultó (lo valida la creación), así
+    // que su vista de la cita sirve también para el evento de la sala.
+    const extras = (await this.repository.messageExtras([message], senderId)).get(message.id);
+    const response = mapMessageToResponse(message, { extras });
     if (created) {
       const published = await this.repository.publishMessageIfVisible(conversationId, message.id, () => {
         this.chatEvents.emitMessage(response);
       });
       if (published) await this.pushToAbsentRecipients(response, senderId);
     }
-    return mapMessageToResponse(await this.repository.refreshMessageForResponse(message));
+    return mapMessageToResponse(await this.repository.refreshMessageForResponse(message), { extras });
   }
 
   /**
@@ -191,8 +201,14 @@ export class ChatService {
     return body.length > 140 ? `${body.slice(0, 139)}…` : body;
   }
 
-  async sendMessage(conversationId: string, senderId: string, body: string, clientRequestId?: string): Promise<MessageResponse> {
-    return this.persistMessage(conversationId, senderId, { type: "text", body }, clientRequestId);
+  async sendMessage(
+    conversationId: string,
+    senderId: string,
+    body: string,
+    clientRequestId?: string,
+    replyToId?: string,
+  ): Promise<MessageResponse> {
+    return this.persistMessage(conversationId, senderId, { type: "text", body, ...(replyToId ? { replyToId } : {}) }, clientRequestId);
   }
 
   async sendStoryReply(
@@ -205,9 +221,15 @@ export class ChatService {
     return this.persistMessage(conversationId, senderId, { type: "text", body, storyId }, clientRequestId);
   }
 
-  async sendStickerMessage(conversationId: string, senderId: string, stickerId: string, clientRequestId?: string): Promise<MessageResponse> {
+  async sendStickerMessage(
+    conversationId: string,
+    senderId: string,
+    stickerId: string,
+    clientRequestId?: string,
+    replyToId?: string,
+  ): Promise<MessageResponse> {
     if (!isChatStickerId(stickerId)) throw new BadRequestException("Sticker de catálogo no válido.");
-    return this.persistMessage(conversationId, senderId, { type: "sticker", body: stickerId }, clientRequestId);
+    return this.persistMessage(conversationId, senderId, { type: "sticker", body: stickerId, ...(replyToId ? { replyToId } : {}) }, clientRequestId);
   }
 
   async sendLocationMessage(
@@ -215,12 +237,14 @@ export class ChatService {
     senderId: string,
     location: { lat: number; lng: number; label?: string },
     clientRequestId?: string,
+    replyToId?: string,
   ): Promise<MessageResponse> {
     return this.persistMessage(conversationId, senderId, {
       type: "location",
       locationLat: location.lat,
       locationLng: location.lng,
       locationLabel: location.label ?? null,
+      ...(replyToId ? { replyToId } : {}),
     }, clientRequestId);
   }
 
@@ -243,7 +267,7 @@ export class ChatService {
     conversationId: string,
     senderId: string,
     file: UploadedChatMedia | undefined,
-    options: { type: "image" | "video" | "audio"; body?: string; viewOnce: boolean },
+    options: { type: "image" | "video" | "audio"; body?: string; viewOnce: boolean; replyToId?: string },
   ): Promise<MessageResponse> {
     if (!file || !file.buffer || file.size === 0) {
       throw new BadRequestException("Se requiere un archivo no vacío.");
@@ -301,7 +325,70 @@ export class ChatService {
       mediaMimeType: mimeType,
       mediaSizeBytes: stored.sizeBytes,
       viewOnce: options.viewOnce,
+      ...(options.replyToId ? { replyToId: options.replyToId } : {}),
     });
+  }
+
+  /**
+   * Reenviar, como WhatsApp: una copia nueva («Reenviado») en `targetConversationId`.
+   * Un adjunto se copia como binario cifrado bajo la carpeta de quien reenvía,
+   * sin descifrarlo ni compartir la clave de storage con el original: borrar o
+   * purgar uno nunca deja al otro sin archivo. La vista única no se reenvía.
+   */
+  async forwardMessage(
+    targetConversationId: string,
+    userId: string,
+    fromConversationId: string,
+    messageId: string,
+  ): Promise<MessageResponse> {
+    await this.assertParticipant(fromConversationId, userId);
+    const source = await this.repository.getMessage(fromConversationId, messageId, userId);
+    if (!source) throw new NotFoundException("Mensaje no encontrado.");
+    if (source.viewOnce) throw new BadRequestException("Los mensajes de vista única no se pueden reenviar.");
+    const target = await this.assertParticipant(targetConversationId, userId);
+    if (!target.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
+
+    if (source.type === "image" || source.type === "video" || source.type === "audio") {
+      if (!source.mediaKey || !source.mediaMimeType || source.mediaProvider !== this.mediaStorage.name) {
+        throw new NotFoundException("Archivo no encontrado.");
+      }
+      let encrypted: Buffer;
+      try {
+        encrypted = await this.mediaStorage.download(source.mediaKey);
+      } catch {
+        throw new NotFoundException("Archivo no encontrado.");
+      }
+      const stored = await this.mediaStorage.upload(
+        {
+          originalName: `reenviado-${source.id}`,
+          mimeType: source.mediaMimeType,
+          sizeBytes: encrypted.byteLength,
+          buffer: encrypted,
+        },
+        { category: "chats", ownerUserId: userId, conversationId: targetConversationId },
+      );
+      return this.persistMessage(targetConversationId, userId, {
+        type: source.type,
+        body: source.body,
+        mediaProvider: stored.provider,
+        mediaKey: stored.key,
+        mediaUrl: stored.url,
+        mediaMimeType: source.mediaMimeType,
+        mediaSizeBytes: stored.sizeBytes,
+        viewOnce: false,
+        forwarded: true,
+      });
+    }
+    if (source.type === "location") {
+      return this.persistMessage(targetConversationId, userId, {
+        type: "location",
+        locationLat: source.locationLat,
+        locationLng: source.locationLng,
+        locationLabel: source.locationLabel ?? null,
+        forwarded: true,
+      });
+    }
+    return this.persistMessage(targetConversationId, userId, { type: source.type, body: source.body, forwarded: true });
   }
 
   async downloadMedia(
@@ -350,7 +437,8 @@ export class ChatService {
       // lock so a global delete or local hide that committed while the caller
       // was waiting cannot leak the stale caption or media URL.
       const current = await this.repository.refreshViewedMessageForResponse(conversationId, messageId, userId);
-      return mapMessageToResponse(current, { revealViewOnce: true });
+      const extras = (await this.repository.messageExtras([current], userId)).get(current.id);
+      return mapMessageToResponse(current, { revealViewOnce: true, extras });
     }
 
     // No se pudo marcar: averiguar por qué, solo para dar el error correcto.
