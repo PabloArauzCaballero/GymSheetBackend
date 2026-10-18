@@ -1,6 +1,14 @@
 import { BadRequestException } from "@nestjs/common";
 
 const MAX_CHAT_AUDIO_DURATION_MS = 120_000;
+/**
+ * El móvil exige mantener pulsado un segundo medido con su reloj, pero en un
+ * iPhone el micrófono tarda unas décimas en entregar audio tras `record()`: una
+ * nota de «1 s» puede llegar con 0,8 s de pista, y exigir aquí 1 000 ms la
+ * rechazaba como «archivo no válido». Medio segundo sigue descartando el toque
+ * accidental sin castigar el arranque del hardware.
+ */
+const MIN_CHAT_AUDIO_DURATION_MS = 500;
 const MAX_MP4_BOXES_PER_FILE = 4_096;
 const MAX_ESDS_DESCRIPTORS = 64;
 const MAX_AUDIO_TABLE_ENTRIES = 100_000;
@@ -55,7 +63,7 @@ export function validateChatAudio(buffer: Buffer, mimeType: string): number {
     }
 
     const durationMs = readTrackDurationMs(buffer, mdhd);
-    if (durationMs < 1_000 || durationMs > MAX_CHAT_AUDIO_DURATION_MS) throw invalidAudio();
+    if (durationMs < MIN_CHAT_AUDIO_DURATION_MS || durationMs > MAX_CHAT_AUDIO_DURATION_MS) throw invalidAudio();
     return durationMs;
   }
 

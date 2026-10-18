@@ -26,6 +26,17 @@ describe("validateChatAudio", () => {
     expect(durationMs).toBeLessThanOrEqual(10_000);
   });
 
+  it("accepts the mono 64 kbps voice-note preset the mobile app records with", () => {
+    // `afconvert -f m4af -d aac@44100 -c 1 -b 64000`: mismo formato que el
+    // preset de nota de voz del móvil (AAC-LC, 44,1 kHz, mono, 64 kbps).
+    const mono = readFileSync(join(__dirname, "fixtures/apple-coreaudio-mono-64k.m4a"));
+
+    const durationMs = validateChatAudio(mono, "audio/mp4");
+
+    expect(durationMs).toBeGreaterThanOrEqual(3000);
+    expect(durationMs).toBeLessThanOrEqual(4000);
+  });
+
   it("still rejects a decoder config whose stream type is not audio", () => {
     const apple = Buffer.from(readFileSync(join(__dirname, "fixtures/apple-coreaudio.m4a")));
     const at = apple.indexOf(Buffer.from([0x04, 0x80, 0x80, 0x80, 0x14, 0x40, 0x14]));
@@ -51,14 +62,24 @@ describe("validateChatAudio", () => {
     expect(() => validateChatAudio(tooLong, "audio/mp4")).toThrow(BadRequestException);
   });
 
-  it("rejects an audio track shorter than one second", () => {
+  it("rejects an audio track shorter than half a second", () => {
     const tooShort = Buffer.from(audio);
     const mdhdType = tooShort.indexOf(Buffer.from("mdhd"));
     const mdhdStart = mdhdType - 4;
     const timescale = tooShort.readUInt32BE(mdhdStart + 20);
-    tooShort.writeUInt32BE(Math.floor(timescale * 0.999), mdhdStart + 24);
+    tooShort.writeUInt32BE(Math.floor(timescale * 0.499), mdhdStart + 24);
 
     expect(() => validateChatAudio(tooShort, "audio/mp4")).toThrow(BadRequestException);
+  });
+
+  it("accepts a voice note whose track is a little under a second (iPhone mic warm-up)", () => {
+    const warmUp = Buffer.from(audio);
+    const mdhdType = warmUp.indexOf(Buffer.from("mdhd"));
+    const mdhdStart = mdhdType - 4;
+    const timescale = warmUp.readUInt32BE(mdhdStart + 20);
+    warmUp.writeUInt32BE(Math.floor(timescale * 0.8), mdhdStart + 24);
+
+    expect(validateChatAudio(warmUp, "audio/mp4")).toBeGreaterThanOrEqual(800);
   });
 
   it("stores the supported audio MIME with an M4A extension", () => {
