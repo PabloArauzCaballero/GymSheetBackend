@@ -104,13 +104,14 @@ interface StorySeed {
   /** Por omisión vigente; se pasa en el pasado para probar la caducidad. */
   expiresAt?: Date;
   tenantId?: string;
+  caption?: string | null;
 }
 
 async function insertStory(seed: StorySeed): Promise<void> {
   await raw(
     `INSERT INTO profile.stories
-       (id, user_id, tenant_id, media_url, storage_provider, storage_key, media_type, created_at, expires_at)
-     VALUES (:id, :userId, :tenantId, :mediaUrl, 'local', :storageKey, 'image', :createdAt, :expiresAt)`,
+       (id, user_id, tenant_id, media_url, storage_provider, storage_key, media_type, created_at, expires_at, caption)
+     VALUES (:id, :userId, :tenantId, :mediaUrl, 'local', :storageKey, 'image', :createdAt, :expiresAt, :caption)`,
     {
       id: seed.id,
       userId: seed.userId,
@@ -119,6 +120,7 @@ async function insertStory(seed: StorySeed): Promise<void> {
       storageKey: `stories/${seed.id}.jpg`,
       createdAt: seed.createdAt,
       expiresAt: seed.expiresAt ?? ahead(6 * HOUR_MS),
+      caption: seed.caption ?? null,
     },
   );
 }
@@ -215,6 +217,23 @@ describe("StoriesRepository.feedForConnections (SQL real)", () => {
     await insertStory({ id: "22222222-0000-4000-8000-000000000003", userId: rejectedId, createdAt: ago(HOUR_MS) });
 
     await expect(repository.feedForConnections(viewerId)).resolves.toEqual([]);
+  });
+
+  it("returns the caption and leaves out expired stories of a match", async () => {
+    if (unavailable) return;
+    await insertUser(matchId, "Match");
+    await insertConnection(viewerId, matchId, ConnectionStatus.ACCEPTED);
+    await insertStory({ id: "22222222-0000-4000-8000-0000000000c1", userId: matchId, createdAt: ago(HOUR_MS), caption: "Día de pierna" });
+    await insertStory({
+      id: "22222222-0000-4000-8000-0000000000c2",
+      userId: matchId,
+      createdAt: ago(25 * HOUR_MS),
+      expiresAt: ago(HOUR_MS),
+    });
+
+    const rows = await repository.feedForConnections(viewerId);
+
+    expect(rows.map((row) => [row.id, row.caption])).toEqual([["22222222-0000-4000-8000-0000000000c1", "Día de pierna"]]);
   });
 
   it("includes an active story from another gym when the author is an accepted connection", async () => {
@@ -410,7 +429,7 @@ describe("StoriesRepository.hasAcceptedConnection (SQL real)", () => {
 describe("StoriesRepository.viewersOf (SQL real)", () => {
   const ownStoryId = "22222222-0000-4000-8000-0000000000a1";
 
-  it("lists matches and the author, never a stranger whose view was recorded earlier", async () => {
+  it("lists matches only: never the author, never a stranger whose view was recorded earlier", async () => {
     if (unavailable) return;
     await insertUser(matchId, "Match");
     await insertUser(strangerId, "Desconocida");
@@ -420,6 +439,9 @@ describe("StoriesRepository.viewersOf (SQL real)", () => {
     // Vista grabada antes del arreglo de `view`: sigue en la tabla y no debe
     // publicar el nombre ni la foto de quien no es match.
     await insertView(ownStoryId, strangerId);
+    // El autor abre su propia story: la vista se graba (apaga su anillo) pero
+    // no le cuenta como espectador.
+    await insertView(ownStoryId, viewerId);
 
     const viewers = await repository.viewersOf(ownStoryId, tenant);
 

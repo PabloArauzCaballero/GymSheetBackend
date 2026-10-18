@@ -9,6 +9,7 @@ export type StoryResponse = {
   id: string;
   mediaUrl: string;
   mediaType: StoryMediaType;
+  caption: string | null;
   createdAt: Date;
   expiresAt: Date;
 };
@@ -18,6 +19,7 @@ export function mapStoryToResponse(story: StoryModel): StoryResponse {
     id: story.id,
     mediaUrl: authorizedMediaUrl(story.id),
     mediaType: story.mediaType,
+    caption: story.caption ?? null,
     createdAt: story.createdAt,
     expiresAt: story.expiresAt,
   };
@@ -32,8 +34,11 @@ export type StoryFeedEntryResponse = {
     id: string;
     mediaUrl: string;
     mediaType: StoryMediaType;
+    caption: string | null;
     /** ISO 8601 — el contrato del frontend espera texto, no un `Date` serializado por el transporte. */
     createdAt: string;
+    /** ISO 8601. Permite al autor ver cuánto le queda a su story. */
+    expiresAt: string;
     viewedByMe: boolean;
   }[];
 };
@@ -60,11 +65,13 @@ export function mapFeedRowsToResponse(rows: StoryFeedRow[]): StoryFeedEntryRespo
       id: row.id,
       mediaUrl: authorizedMediaUrl(row.id),
       mediaType: row.media_type,
+      caption: row.caption ?? null,
       // `new Date(...).toISOString()` y no una copia tal cual: el driver devuelve
       // `Date` para `timestamptz`, así que copiarlo a un campo declarado `string`
       // mentía en el tipo y rompía cualquier `.slice()`/`.startsWith()` río abajo.
       // Mismo criterio que ya se aplicó en el camino de espectadores.
       createdAt: new Date(row.created_at).toISOString(),
+      expiresAt: new Date(row.expires_at).toISOString(),
       viewedByMe: row.viewed_by_me,
     });
     if (!row.viewed_by_me) entry.hasUnviewed = true;

@@ -7,7 +7,7 @@ import { MediaReferencesRepository } from "../media/media-references.repository"
 import { MediaRetentionService } from "../media/media-retention.service";
 import { MediaStorageProvider } from "../media/media-storage.port";
 import { StoriesRepository, StoryFeedRow } from "./stories.repository";
-import { StoriesService } from "./stories.service";
+import { StoriesService, storyMediaEtag } from "./stories.service";
 
 const userId = "00000000-0000-4000-8000-00000000000a";
 const viewerId = "00000000-0000-4000-8000-00000000000a";
@@ -88,7 +88,7 @@ describe("StoriesService.upload", () => {
 
     const result = await service.upload(userId, "default", file);
 
-    expect(create).toHaveBeenCalledWith(userId, "default", expect.any(Object), "image", "ALL_CONNECTIONS", [], undefined);
+    expect(create).toHaveBeenCalledWith(userId, "default", expect.any(Object), "image", "ALL_CONNECTIONS", [], undefined, null);
     expect(result.mediaType).toBe("image");
     expect(result.mediaUrl).toContain("/me/stories/story-1/media");
   });
@@ -104,7 +104,25 @@ describe("StoriesService.upload", () => {
       recipientIds: JSON.stringify([matchId]),
     });
     expect(validAudienceRecipients).toHaveBeenCalledWith(userId, [matchId]);
-    expect(create).toHaveBeenCalledWith(userId, "default", expect.any(Object), "image", "SELECTED_CONNECTIONS", [matchId], undefined);
+    expect(create).toHaveBeenCalledWith(userId, "default", expect.any(Object), "image", "SELECTED_CONNECTIONS", [matchId], undefined, null);
+  });
+
+  it("stores a trimmed caption and returns it", async () => {
+    const create = jest.fn().mockResolvedValue({
+      id: "story-1", mediaType: "image", caption: "Día de pierna", createdAt: new Date(), expiresAt: new Date(Date.now() + 60_000),
+    });
+    const service = createService({ create });
+    const result = await service.upload(userId, "default", file, { caption: "  Día de pierna\u0007  " });
+    expect(create).toHaveBeenCalledWith(userId, "default", expect.any(Object), "image", "ALL_CONNECTIONS", [], undefined, "Día de pierna");
+    expect(result.caption).toBe("Día de pierna");
+  });
+
+  it("rejects a caption that is too long or has too many lines, before uploading the file", async () => {
+    const upload = jest.fn();
+    const service = createService({}, { upload });
+    await expect(service.upload(userId, "default", file, { caption: "x".repeat(201) })).rejects.toThrow(BadRequestException);
+    await expect(service.upload(userId, "default", file, { caption: "a\nb\nc\nd\ne" })).rejects.toThrow(BadRequestException);
+    expect(upload).not.toHaveBeenCalled();
   });
 
   it("returns the prior story for the same owner, request id, and file hash without uploading again", async () => {
@@ -291,7 +309,7 @@ describe("StoriesService.view", () => {
       isSelectedRecipient: jest.fn().mockResolvedValue(true),
       isBlockedEitherWay: jest.fn().mockResolvedValue(false),
     }, { download });
-    await expect(service.downloadMedia("story-1", userId)).resolves.toEqual({ buffer: bytes, mimeType: "image/jpeg" });
+    await expect(service.downloadMedia("story-1", userId)).resolves.toEqual({ buffer: bytes, mimeType: "image/jpeg", etag: storyMediaEtag("users/owner/stories/a.jpg") });
     expect(download).toHaveBeenCalledWith("users/owner/stories/a.jpg");
   });
 
@@ -424,6 +442,7 @@ function feedRepository(fixture: FeedFixture): Partial<StoriesRepository> {
         photo_url: story.photoUrl ?? null,
         media_url: `http://localhost:3000/media/stories/${story.id}.jpg`,
         media_type: "image" as const,
+        caption: null,
         // El driver devuelve `Date` para `timestamptz`: el fake también, o la
         // prueba dejaría de parecerse a producción justo en el campo de D-4.
         created_at: new Date(story.createdAt),
