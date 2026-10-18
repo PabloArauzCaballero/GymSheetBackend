@@ -11,6 +11,7 @@ import { ChatGateway } from "./chat.gateway";
 import { ChatRepository } from "./chat.repository";
 import { ChatService } from "./chat.service";
 import { ChatMediaCipher } from "./chat-media-cipher";
+import { ChatDisappearingPurgeService } from "./chat-disappearing-purge.service";
 import { ReadReceiptSettingsController } from "./read-receipt-settings.controller";
 import { ReadReceiptSettingsService } from "./read-receipt-settings.service";
 import { ConversationParticipantModel } from "./conversation-participant.model";
@@ -40,6 +41,7 @@ import { env } from "../../config/env";
     ChatGateway,
     SystemChatService,
     ReadReceiptSettingsService,
+    ChatDisappearingPurgeService,
   ],
   exports: [ChatService, ChatRepository],
 })

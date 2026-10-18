@@ -105,6 +105,8 @@ import { socialDiscoveryImpressionsMigration } from "./202610130005-social-disco
 import { commentMediaMigration } from "./202610140001-comment-media";
 import { chatEventCancellationMigration } from "./202610150001-chat-event-cancellation";
 import { musicPlaylistsMigration } from "./202610150002-music-playlists";
+import { chatLocationLabelMigration } from "./202610180101-chat-location-label";
+import { chatDisappearingMessagesMigration } from "./202610180102-chat-disappearing-messages";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -216,4 +218,6 @@ export const databaseMigrations: DatabaseMigration[] = [
   commentMediaMigration,
   chatEventCancellationMigration,
   musicPlaylistsMigration,
+  chatLocationLabelMigration,
+  chatDisappearingMessagesMigration,
 ];

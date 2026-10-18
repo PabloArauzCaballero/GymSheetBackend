@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import type { Server } from "socket.io";
-import { MessageResponse } from "./chat.mapper";
+import { MessageResponse, SystemChatEventResponse } from "./chat.mapper";
 
 /**
  * Puente entre el servicio de dominio y el servidor de sockets.
@@ -30,6 +30,12 @@ export class ChatEventsService {
       return;
     }
     this.server.to(ChatEventsService.roomFor(message.conversationId)).emit("message:new", message);
+  }
+
+  /** Un aviso de sistema (p. ej. cambio de mensajes temporales) entra al hilo como un mensaje más. */
+  emitSystemEvent(event: SystemChatEventResponse): void {
+    if (!this.server) return;
+    this.server.to(ChatEventsService.roomFor(event.conversationId)).emit("message:new", event);
   }
 
   emitMessageDeleted(payload: { conversationId: string; messageId: string; scope: "EVERYONE"; deletedAt: Date }): void {

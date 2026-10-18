@@ -243,6 +243,7 @@ describe("ChatService.sendLocationMessage", () => {
       type: "location",
       locationLat: -17.78,
       locationLng: -63.18,
+      locationLabel: null,
     });
     expect(result.locationLat).toBe(-17.78);
   });
