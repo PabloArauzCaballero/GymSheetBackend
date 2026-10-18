@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
-import { Op, Transaction, UniqueConstraintError } from "sequelize";
-import { EntitlementSource, MembershipStatus, PlanStatus } from "../../common/enums/domain.enums";
+import { Op, Transaction } from "sequelize";
+import { MembershipStatus, PlanStatus } from "../../common/enums/domain.enums";
 import { UserModel } from "../users/user.model";
 import { CustomerProfileModel } from "./customer-profile.model";
 import { MembershipPlanModel } from "./membership-plan.model";
@@ -313,53 +313,6 @@ export class MembershipRepository {
       const feature = featureById.get(grant.featureId);
       return feature ? [{ grant, feature }] : [];
     });
-  }
-
-  /** Códigos de feature de las recompensas de racha ya otorgadas a este usuario. */
-  async listGrantedStreakRewardCodes(userId: string): Promise<Set<string>> {
-    const grants = await this.entitlements.findAll({
-      where: { userId, sourceType: EntitlementSource.STREAK_REWARD },
-      attributes: ["featureId"],
-    });
-    if (grants.length === 0) return new Set();
-
-    const features = await this.features.findAll({
-      where: { id: { [Op.in]: grants.map((grant) => grant.featureId) } },
-      attributes: ["code"],
-    });
-    return new Set(features.map((feature) => feature.code));
-  }
-
-  /**
-   * Otorga un beneficio si todavía no existe uno igual, sin lanzar si ya
-   * estaba concedido. `uq_entitlement_source (user_id, feature_id, source_type,
-   * source_id)` es quien de verdad garantiza que no se duplique — esto solo
-   * evita que una carrera entre dos lecturas concurrentes de la senda se vea
-   * como un error en vez de como "ya lo tenía".
-   */
-  async grantEntitlementIfMissing(input: {
-    userId: string;
-    featureId: string;
-    sourceType: EntitlementSource;
-    sourceId: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<boolean> {
-    try {
-      await this.entitlements.create({
-        userId: input.userId,
-        featureId: input.featureId,
-        sourceType: input.sourceType,
-        sourceId: input.sourceId,
-        status: "ACTIVE",
-        startsAt: new Date(),
-        endsAt: null,
-        metadata: input.metadata ?? {},
-      });
-      return true;
-    } catch (error: unknown) {
-      if (error instanceof UniqueConstraintError) return false;
-      throw error;
-    }
   }
 
   findIntentByKey(

@@ -54,6 +54,11 @@ export class TrainingProgramModel extends Model {
   @Column({ type: DataType.DECIMAL(3, 2), allowNull: false, field: 'multiplicador_actual' })
   declare multiplier: string;
 
+  /** Escudos guardados (0..1): una semana fallida con escudo conserva el multiplicador (P4). */
+  @Default(0)
+  @Column({ type: DataType.SMALLINT, allowNull: false, field: 'escudos' })
+  declare shields: number;
+
   @CreatedAt
   @Column({ field: 'created_at' })
   declare createdAt: Date;
@@ -147,4 +152,9 @@ export class ProgramWeekModel extends Model {
 
   @Column({ type: DataType.DATE, allowNull: true, field: 'cerrada_en' })
   declare closedAt: Date | null;
+
+  /** La semana se cerró sin cumplir y el escudo la cubrió. */
+  @Default(false)
+  @Column({ type: DataType.BOOLEAN, allowNull: false, field: 'escudo_usado' })
+  declare shieldUsed: boolean;
 }
