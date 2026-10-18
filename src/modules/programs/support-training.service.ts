@@ -40,6 +40,7 @@ export class SupportTrainingService {
           cardioMinutos: w.cardioMinutes,
           cumplida: w.fulfilled,
           multiplicador: w.multiplier == null ? null : Number(w.multiplier),
+          escudoUsado: w.shieldUsed ?? false,
           cerradaEn: w.closedAt,
         })),
         bonos: await this.ledger.listForProgram(id),

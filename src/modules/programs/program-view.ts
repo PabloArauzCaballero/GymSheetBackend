@@ -1,5 +1,6 @@
 import { ProgramLiftTargetModel, ProgramWeekModel, TrainingProgramModel } from './program.models';
 import { weekNumberOn } from './engine/program-calendar';
+import { multiplierTier, MultiplierTier } from './engine/week-close';
 
 export type LiftTargetView = {
   ejercicioId: string;
@@ -31,7 +32,11 @@ export type ProgramView = {
   semanaActual: number | null;
   semanasTotales: number;
   multiplicador: number;
+  /** Nombre del escalón: «Arrancando» … «Leyenda» (P4). */
+  nivelMultiplicador: MultiplierTier;
   proximoMultiplicador: number;
+  /** Escudos guardados (0..1). */
+  escudos: number;
   sesionesHechasSemana: number;
   sesionesPlanSemana: number;
   esDescarga: boolean;
@@ -83,7 +88,9 @@ export function mapProgram(input: {
     semanaActual: current,
     semanasTotales: weeks.length,
     multiplicador: multiplier,
+    nivelMultiplicador: multiplierTier(multiplier),
     proximoMultiplicador: Math.min(Math.round((multiplier + 0.2) * 100) / 100, 2),
+    escudos: program.shields ?? 0,
     sesionesHechasSemana: week?.sessionsDone ?? 0,
     sesionesPlanSemana: week?.sessionsPlan ?? 0,
     esDescarga: week?.isDeload ?? false,
