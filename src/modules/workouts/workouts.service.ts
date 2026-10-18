@@ -142,8 +142,11 @@ export class WorkoutsService {
     );
     if (!claimed) return this.repeatCloseResult(userId, sessionId);
 
-    const progression = before ? await this.progressionReward(userId, before) : null;
+    // Los enganches (programas) corren ANTES de calcular el premio: la meta
+    // alcanzada (+300) entra en el libro de modo durante el enganche, y solo así
+    // aparece en el desglose de ESTA sesión y no en la siguiente.
     const extras = await this.hooks.runFinished({ session, userId, tenantId });
+    const progression = before ? await this.progressionReward(userId, before) : null;
     const result = { progression, ...extras };
     // Guardarlo no puede tumbar el cierre: sin él, repetir `finish` solo pierde el premio.
     await this.workoutsRepository

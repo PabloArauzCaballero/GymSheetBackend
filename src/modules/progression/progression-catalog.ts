@@ -45,6 +45,7 @@
  */
 
 import { extendedBadgeSeeds } from "./progression-catalog-extended";
+import { premiosBadgeSeeds } from "./progression-catalog-premios";
 
 export type ProgressionAudience = "ANY" | "MALE" | "FEMALE";
 
@@ -82,7 +83,19 @@ export type BadgeCriterionType =
   | "ROUTINE_COPIES_RECEIVED"
   | "COMMENTS_WRITTEN"
   | "RATINGS_GIVEN"
-  | "COMMENT_LIKES_RECEIVED";
+  | "COMMENT_LIKES_RECEIVED"
+  // Tercera tanda (2026-10-18): retos, secretas nuevas y escudo de modo.
+  | "CHALLENGES_COMPLETED"
+  | "PERFECT_WEEKS"
+  | "COMEBACK_SESSIONS"
+  | "MAX_SESSIONS_IN_DAY"
+  | "LONGEST_SESSION_MINUTES"
+  | "MIDNIGHT_SESSIONS"
+  | "NEW_YEAR_SESSIONS"
+  | "BIRTHDAY_SESSIONS"
+  | "MAX_RECORDS_IN_SESSION"
+  | "MODE_SHIELDS_USED"
+  | "MODE_MAX_MULTIPLIER_WEEKS";
 
 export type BadgeCategory =
   | "CONSTANCIA"
@@ -977,4 +990,5 @@ export const badgeSeeds: readonly BadgeSeed[] = [
     sortOrder: 560,
   },
   ...extendedBadgeSeeds,
+  ...premiosBadgeSeeds,
 ];

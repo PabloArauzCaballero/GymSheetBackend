@@ -105,6 +105,7 @@ import { socialDiscoveryImpressionsMigration } from "./202610130005-social-disco
 import { commentMediaMigration } from "./202610140001-comment-media";
 import { chatEventCancellationMigration } from "./202610150001-chat-event-cancellation";
 import { musicPlaylistsMigration } from "./202610150002-music-playlists";
+import { premiosRetosEscudosMigration } from "./202610180001-premios-retos-escudos";
 import { storyCaptionMigration } from "./202610180001-story-caption";
 import { DatabaseMigration } from "./migration.types";
 
@@ -217,5 +218,6 @@ export const databaseMigrations: DatabaseMigration[] = [
   commentMediaMigration,
   chatEventCancellationMigration,
   musicPlaylistsMigration,
+  premiosRetosEscudosMigration,
   storyCaptionMigration,
 ];

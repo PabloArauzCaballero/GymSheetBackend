@@ -104,9 +104,16 @@ PATCH /api/v1/admin/progression/levels/{id}
 puntos = 50 × sesiones finalizadas
        +  2 × series registradas
        +  1 × cada 100 kg de volumen
-       + 10 × días de la racha más larga
+       + 10 × días de la racha más larga (con comodines)
        + recompensa de cada insignia conseguida
+       + bonos de los programas con modo (libro de solo inserción)
+       + retos de la semana cumplidos (60 / 100 / 160) + 150 por semana redonda
 ```
+
+`breakdown` (en la senda y en el premio de cada sesión) desglosa las siete
+partidas: `session`, `sets`, `volume`, `streak`, `badges`, `modes` y
+`challenges`. `GET /me/progression/rules` publica las cifras, incluidas
+`challengePoints`, `perfectWeekBonus`, `freezeEveryDays` y `maxFreezes`.
 
 Calibración: una sesión corriente —veinte series, cinco toneladas— ronda los
 **150 puntos**. Hay una prueba que lo fija; si esa cifra se mueve sin mover los
@@ -161,6 +168,141 @@ Una insignia pendiente muestra su distancia exacta («8 / 9», «24.000 kg /
 métrica de constancia de quien entrena tres días por semana: la racha diaria
 nunca premia a esa persona, aunque lleve un año sin fallar.
 
+### Tercera tanda (2026-10-18)
+
+- **Rachas largas** `RACHA_60`, `RACHA_200`, `RACHA_365`: con las de 3, 7, 14,
+  30 y 100 completan los hitos de racha con carta propia.
+- **Retos**: `CHALLENGES_COMPLETED` (1 / 10 / 50 / 150) y `PERFECT_WEEKS`
+  (4 / 12).
+- **Secretas nuevas**: Volviste (`COMEBACK_SESSIONS`, tras 14 días enteros sin
+  venir; celebra la vuelta sin mencionar la ausencia), Doble turno
+  (`MAX_SESSIONS_IN_DAY` ≥ 2), Maratón (`LONGEST_SESSION_MINUTES` ≥ 120, medido
+  hasta la última serie apuntada para que una sesión olvidada abierta no
+  cuente), Medianoche (`MIDNIGHT_SESSIONS`, inicio entre 00:00 y 04:00), Año
+  nuevo (`NEW_YEAR_SESSIONS`), Feliz cumpleaños (`BIRTHDAY_SESSIONS`, sale de
+  `perfiles_antropometricos.fecha_nacimiento`), Día de récords
+  (`MAX_RECORDS_IN_SESSION` ≥ 3) y Escudo arriba (`MODE_SHIELDS_USED`).
+- **Modo**: Cuatro semanas de leyenda (`MODE_MAX_MULTIPLIER_WEEKS` ≥ 4, semanas
+  cumplidas con el multiplicador en x2,0).
+
+Las ilustraciones de los criterios nuevos reutilizan claves que los clientes ya
+dibujan (`badge-illustrations.ts`).
+
+### Cadenas y «lo más cerca»
+
+Cada `BadgeView` lleva `chain` (su criterio), `chainStep` (posición por umbral,
+desde 1) y `chainLength`: la colección puede agrupar las insignias del mismo
+criterio en una sola ficha «Nivel 2 de 4». Las secretas forman cadena aparte
+para no delatar que existen.
+
+`nearest` son hasta tres insignias sin conseguir y no secretas, de más a menos
+progreso: «te faltan 2 sesiones para Medio centenar» es lo que trae de vuelta.
+
+## 6.1 La racha que perdona: comodines
+
+Cada **7 días** de racha diaria se gana un **comodín**, con un máximo de **dos**
+guardados. Si falta un día que no es de descanso declarado, se gasta uno solo y
+la racha sigue; el día cubierto no suma, solo no rompe. Si el hueco pide más
+comodines de los que hay, la racha se corta y los comodines se van con ella.
+
+Se calcula entero desde el historial (`computeStreaks`), sin estado guardado:
+recalcular da lo mismo, y corregir una sesión recoloca los comodines solos. Los
+comodines solo alargan rachas, así que la más larga —y sus puntos— nunca baja
+respecto a la regla anterior (hay una prueba de propiedad con 1000 historiales).
+
+`GET /me/progression` → `streak: { current, longest, freezes, freezesUsed,
+nextMilestone, weekly }`, con `nextMilestone` en [3, 7, 14, 30, 60, 100, 200,
+365]. El premio de la sesión añade `freezeEarnedNow` y `milestoneNow`.
+
+## 6.2 Retos de la semana
+
+Cada lunes cada socio tiene **tres retos** (fácil, medio, difícil) que valen
+**60 / 100 / 160** puntos; los tres cumplidos son una **semana redonda**
+(+150). Tipos: `SESSIONS`, `VOLUME_KG`, `SETS`, `NEW_EXERCISE`,
+`PERSONAL_RECORD`, `EARLY_SESSION` (antes de las 9), `CARDIO_MINUTES`,
+`MUSCLE_GROUPS`, `GEO_SESSIONS` y `WEEKEND_SESSION`.
+
+- **Personalizados**: el objetivo sale de la media de las cuatro semanas
+  anteriores (una semana sin entrenar cuenta como cero) por un factor de 0,75 /
+  1 / 1,25, con mínimos para quien empieza y topes donde no tiene sentido
+  crecer. No se propone cardio, fichar en la sede, madrugar ni batir marcas a
+  quien no tiene ese historial.
+- **Deterministas**: la semilla es `usuario:lunes`; la misma semana da siempre
+  los mismos retos.
+- **Guardados** en `progression.weekly_challenges` la primera vez que se ve la
+  semana: cambiar la regla no reescribe retos ya cumplidos y sus puntos nunca
+  bajan (un reto cumplido sigue cumplido aunque luego se borre una sesión).
+- **Medidos en `BUSINESS_TIME_ZONE`**, lunes a domingo. Si la semana pasada
+  quedó con algún reto abierto, la primera lectura de la semana nueva la revisa
+  una vez más: la sesión del domingo que se sincroniza el lunes cuenta donde se
+  entrenó.
+- `isNew` = cumplido y sin celebrar; `perfectIsNew` = semana redonda con algún
+  reto sin celebrar. `POST /me/progression/acknowledge` los limpia.
+
+La foto previa al cierre de una sesión (`snapshot`) mide los retos sin
+escribir, así que `challengesCompletedNow` y `perfectWeekNow` del premio de la
+sesión son exactamente lo que cumplió esa sesión.
+
+## 6.3 Premios del gimnasio
+
+Un **premio** es algo real que da el gimnasio («Batido de proteína gratis»,
+«Pase de un día para un amigo») atado a un hito: una insignia (`BADGE`), un
+rango (`LEVEL`) o la semana redonda (`PERFECT_WEEK`). Sustituye a las
+recompensas por racha `STREAK_REWARD_*`, que **ya no se otorgan**; las que ya se
+dieron siguen en «Accesos».
+
+- Al alcanzar el hito nace un **cupón** (`progression.user_prizes`) con código
+  de 6 caracteres sin 0/O/1/I, estado `DISPONIBLE → CANJEADO | CADUCADO`,
+  caducidad opcional (`validDays`) y stock opcional (`stock`, con bloqueo de fila
+  y `granted_count`). `CADUCADO` se lee al vuelo cuando pasa `expires_at`; no
+  hace falta ningún trabajo nocturno.
+- Se otorga dentro de `getProgression`, como las insignias, y es idempotente
+  por `UNIQUE (prize_id, usuario_id, source_ref)`: `source_ref` es el código de
+  la insignia o del rango, o el lunes de la semana redonda (cada semana redonda
+  da su propio cupón).
+- **No es retroactivo**: una insignia cuenta si se consiguió después de crear el
+  premio; un rango, si se cruza ahora (el guardado en `user_progress` era
+  inferior); una semana redonda, desde la semana en que nació el premio. Un
+  gimnasio que crea un premio no regala de golpe una unidad a cada socio que ya
+  tenía el hito.
+- Un premio de rango se ata a un **código**: con las ramas por género, usa un
+  código común (`MAQUINA`, `INSTINTO_PURO`) o crea uno por rama.
+- Sin premios activos, `prizes` va vacío y la app no promete nada. El seeder de
+  demostración (`yarn db:seed:showcase`) siembra cuatro de muestra en el
+  gimnasio por defecto; la siembra base nunca.
+
+```
+GET    /api/v1/me/progression/prizes                  = progression.prizes
+GET    /api/v1/admin/progression/prizes               del gimnasio + globales (ADMIN) o todos (SYSTEM_ADMIN)
+POST   /api/v1/admin/progression/prizes               {targetKind, targetCode?, title, description?, instructions?, icon?, validDays?, stock?, active?, alcance?}
+PATCH  /api/v1/admin/progression/prizes/{id}
+DELETE /api/v1/admin/progression/prizes/{id}          → active = false
+POST   /api/v1/admin/progression/prizes/redeem        {code} → PrizeView CANJEADO · 404 fuera de su gimnasio · 409 ya canjeado o caducado
+```
+
+`alcance` y la edición siguen las mismas reglas que rangos e insignias
+(`resolveCatalogTenant` / `assertEditable`): el gimnasio sale del token. El
+canje lo hace el gimnasio del premio, o el del socio si el premio es global; un
+código de otro gimnasio responde 404 igual que uno inexistente.
+
+## 6.4 Modo: escudo y caída suave
+
+- **Caída suave**: una semana incumplida baja **dos escalones** (−0,4, mínimo
+  x1,0) en vez de volver a x1,0. Tras ocho semanas buenas, una gripe ya no lo
+  borra todo.
+- **Escudo**: cuatro semanas cumplidas seguidas (sin contar las semanas sin
+  plan) dan un escudo, máximo uno (`training_programs.escudos`). Una semana
+  incumplida con escudo lo gasta y **conserva** el multiplicador, sin bono esa
+  semana (`program_weeks.escudo_usado`).
+- Cada escalón tiene nombre: x1,0 «Arrancando», x1,2 «En marcha», x1,4
+  «Encendido», x1,6 «En llamas», x1,8 «Imparable», x2,0 «Leyenda». Las vistas de
+  programa añaden `nivelMultiplicador` y `escudos`, el avance `escudoUsado` por
+  semana, y los avisos de cierre nombran el escalón y el escudo.
+- La meta alcanzada (+300) se suma en el `finish` de **esa** sesión: el enganche
+  de programas corre antes de calcular el premio de la sesión.
+- El libro de bonos sigue siendo de solo inserción: los puntos de modo nunca
+  bajan (prueba de propiedad con 1000 secuencias, ahora con escudo).
+
 ## 7. Multi-inquilino
 
 **La senda funciona igual sin importar el gimnasio.** El catálogo sembrado es
@@ -204,10 +346,17 @@ el siguiente despliegue se lo devuelva.
 ## 9. API del socio
 
 ```
-GET  /api/v1/me/progression              estado completo
-POST /api/v1/me/progression/acknowledge  las novedades dejan de serlo
+GET  /api/v1/me/progression              estado completo (con streak, challenges, prizes y nearest)
+GET  /api/v1/me/progression/rules        cuánto vale cada cosa
+GET  /api/v1/me/progression/prizes       los cupones del socio
+POST /api/v1/me/progression/acknowledge  las novedades (insignias, retos, cupones) dejan de serlo
 GET  /api/v1/me/progression/leaderboard  clasificación del gimnasio
 ```
+
+El `finish` de una sesión (`PATCH /workouts/{id}/finish`) devuelve en
+`progression` el desglose de la sesión y, además, `challenges` (estado después),
+`challengesCompletedNow`, `perfectWeekNow`, `prizesNow`, `streak` y `nearest`.
+El contrato completo está en `PLAN_RUTINAS_REPP/12_PREMIOS_2026-10-18.md` §3.
 
 La clasificación muestra nombre de pila e inicial («Ana P.»): una tabla pública
 con el nombre completo de cada socio sería una lista de clientes del gimnasio.
@@ -220,3 +369,6 @@ con el nombre completo de cada socio sería una lista de clientes del gimnasio.
 | «Grupos trabajados» siempre 0 | ¿Se ejecutó `yarn db:enrich:exercises`? Sin taxonomía no hay grupos. |
 | Los rangos son los neutros | `usuarios.genero` es nulo; se pregunta en el registro y se edita en el perfil. |
 | La racha se corta cada noche | Zona horaria: los días se agrupan con `BUSINESS_TIME_ZONE`, no en UTC. |
+| Un socio no recibe un premio | ¿Activo, con stock (`granted_count < stock`)? ¿El hito se alcanzó después de crear el premio? Los premios no son retroactivos. |
+| Los retos no cambian en toda la semana | Es lo esperado: se generan una vez por semana y se guardan. |
+| Feliz cumpleaños no salta | Necesita `fecha_nacimiento` en el perfil antropométrico. |
