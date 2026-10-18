@@ -7,7 +7,7 @@ import { SocialService } from "../social/social.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
 import { ChatEventsService } from "./chat-events.service";
 import { ChatPresenceService } from "./chat-presence.service";
-import { ChatHistoryItem, mapConversationSummary, mapMessageToResponse, mapTrainingInviteEvent, MessageResponse } from "./chat.mapper";
+import { ChatHistoryItem, mapConversationSummary, mapDisappearingTimerEvent, mapMessageToResponse, mapTrainingInviteEvent, MessageResponse } from "./chat.mapper";
 import { MessageCreateFields, ChatRepository } from "./chat.repository";
 import { ConversationParticipantModel } from "./conversation-participant.model";
 import { SystemChatService } from "./system-chat.service";
@@ -91,9 +91,11 @@ export class ChatService {
     // Traer el historial es, como mínimo, haberlo recibido: adelanta el
     // cursor de entregado aunque el socket nunca haya estado conectado.
     await this.markDelivered(conversationId, userId);
-    return messages.map((record) => record.kind === "system"
-      ? mapTrainingInviteEvent(record.event)
-      : mapMessageToResponse(record.message, { storyAvailable: record.storyAvailable }));
+    return messages.map((record) => {
+      if (record.kind === "system") return mapTrainingInviteEvent(record.event);
+      if (record.kind === "timer") return mapDisappearingTimerEvent(record.event);
+      return mapMessageToResponse(record.message, { storyAvailable: record.storyAvailable });
+    });
   }
 
   /** Único punto que realmente escribe un mensaje — cada `send*` público arma los campos y pasa por acá. */
@@ -182,7 +184,7 @@ export class ChatService {
   private static previewFor(message: MessageResponse): string {
     if (message.type === "image") return message.viewOnce ? "Te envió una foto de vista única" : "Te envió una foto";
     if (message.type === "video") return message.viewOnce ? "Te envió un video de vista única" : "Te envió un video";
-    if (message.type === "location") return "Compartió su ubicación";
+    if (message.type === "location") return message.locationLabel ? `Compartió un lugar: ${message.locationLabel}` : "Compartió su ubicación";
     if (message.type === "sticker") return "Te envió un sticker";
     const body = message.body?.trim() ?? "";
     if (body.length === 0) return "Te envió un mensaje";
@@ -211,14 +213,30 @@ export class ChatService {
   async sendLocationMessage(
     conversationId: string,
     senderId: string,
-    location: { lat: number; lng: number },
+    location: { lat: number; lng: number; label?: string },
     clientRequestId?: string,
   ): Promise<MessageResponse> {
     return this.persistMessage(conversationId, senderId, {
       type: "location",
       locationLat: location.lat,
       locationLng: location.lng,
+      locationLabel: location.label ?? null,
     }, clientRequestId);
+  }
+
+  /**
+   * Mensajes temporales, como en WhatsApp: cualquiera de los dos lo cambia, el
+   * aviso queda en el historial de ambos y lo que se envíe desde ahora caduca.
+   * Lo ya enviado conserva la caducidad (o la falta de ella) con la que nació.
+   */
+  async setDisappearingMessages(
+    conversationId: string,
+    userId: string,
+    seconds: number | null,
+  ): Promise<{ conversationId: string; disappearingSeconds: number | null }> {
+    const { event } = await this.repository.setDisappearingSeconds(conversationId, userId, seconds);
+    if (event) this.chatEvents.emitSystemEvent(mapDisappearingTimerEvent(event));
+    return { conversationId, disappearingSeconds: seconds };
   }
 
   async sendMediaMessage(

@@ -69,6 +69,14 @@ export class MessageModel extends Model {
   @Column({ type: DataType.DOUBLE, allowNull: true, field: "location_lng" })
   declare locationLng: number | null;
 
+  /** Nombre del lugar elegido en el mapa («Gimnasio X · Calle Y»); `null` para «mi ubicación». */
+  @Column({ type: DataType.STRING(180), allowNull: true, field: "location_label" })
+  declare locationLabel: string | null;
+
+  /** Mensaje temporal: deja de verse para ambos a esta hora y la purga lo borra después. */
+  @Column({ type: DataType.DATE, allowNull: true, field: "expires_at" })
+  declare expiresAt: Date | null;
+
   @BelongsTo(() => ConversationModel)
   declare conversation?: ConversationModel;
 

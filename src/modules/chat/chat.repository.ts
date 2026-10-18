@@ -8,6 +8,7 @@ import { ConversationModel } from "./conversation.model";
 import { MessageVisibilityModel } from "./message-visibility.model";
 import { lockSocialPairUsers } from "../social/social-pair-lock";
 import { MessageModel, MessageType } from "./message.model";
+import { expiryFor } from "./chat-disappearing";
 
 export type SystemConversationKind = "CORPORATE" | "TENANT_ADMIN";
 
@@ -22,6 +23,7 @@ export type MessageCreateFields = {
   viewOnce?: boolean;
   locationLat?: number | null;
   locationLng?: number | null;
+  locationLabel?: string | null;
   storyId?: string | null;
 };
 
@@ -41,6 +43,8 @@ export interface ConversationSummaryRow {
   other_last_delivered_at: string | null;
   other_last_read_at: string | null;
   other_read_receipts_enabled_since: string | Date | null;
+  /** Mensajes temporales vigentes en la conversación; `null` = desactivados. */
+  disappearing_seconds: number | null;
 }
 
 export interface MessageWithStoryAvailability {
@@ -60,9 +64,19 @@ export interface TrainingInviteConversationEvent {
   readonly createdAt: Date;
 }
 
+/** Aviso de sistema «X activó/desactivó los mensajes temporales». */
+export interface DisappearingTimerEvent {
+  readonly id: string;
+  readonly conversationId: string;
+  readonly changedByUserId: string | null;
+  readonly seconds: number | null;
+  readonly createdAt: Date;
+}
+
 export type ConversationHistoryRecord =
   | { readonly kind: "message"; readonly message: MessageModel; readonly storyAvailable?: boolean }
-  | { readonly kind: "system"; readonly event: TrainingInviteConversationEvent };
+  | { readonly kind: "system"; readonly event: TrainingInviteConversationEvent }
+  | { readonly kind: "timer"; readonly event: DisappearingTimerEvent };
 
 @Injectable()
 export class ChatRepository {
@@ -432,7 +446,10 @@ export class ChatRepository {
       });
       if (!participant) throw new NotFoundException("Conversación no encontrada.");
       if (!participant.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
-      return this.messages.create({ conversationId, senderId, ...fields }, { transaction });
+      // El modo temporal se lee bajo el mismo bloqueo que lo cambia: un mensaje
+      // enviado justo después de activarlo ya nace con caducidad.
+      const expiresAt = expiryFor(conversation.disappearingSeconds, new Date());
+      return this.messages.create({ conversationId, senderId, ...fields, expiresAt }, { transaction });
     });
   }
 
@@ -486,6 +503,7 @@ export class ChatRepository {
       }
       const message = await this.messages.create({
         conversationId, senderId, clientRequestId, ...fields, idempotencyBody: fields.body ?? null,
+        expiresAt: expiryFor(conversation.disappearingSeconds, new Date()),
       }, { transaction });
       return { message, created: true };
     });
@@ -537,11 +555,18 @@ export class ChatRepository {
     });
   }
 
-  /** SQL predicate applied before LIMIT; values are escaped by Sequelize. */
+  /**
+   * SQL predicate applied before LIMIT; values are escaped by Sequelize.
+   * A disappearing message stops existing for everyone at `expires_at`, before
+   * the purge removes the row.
+   */
   private visibleTo(userId: string) {
-    return { id: { [Op.notIn]: literal(`(
-      SELECT message_id FROM chat.message_visibility WHERE user_id = ${this.sequelize.escape(userId)}
-    )`) } };
+    return {
+      id: { [Op.notIn]: literal(`(
+        SELECT message_id FROM chat.message_visibility WHERE user_id = ${this.sequelize.escape(userId)}
+      )`) },
+      [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: literal("now()") } }],
+    };
   }
 
   async listMessages(
@@ -580,6 +605,16 @@ export class ChatRepository {
         LIMIT :limit`,
       { type: QueryTypes.SELECT, replacements: { conversationId, before: before ?? null, limit } },
     );
+    const timerEvents = await this.sequelize.query<DisappearingTimerEvent>(
+      `SELECT id, conversation_id AS "conversationId", changed_by_user_id AS "changedByUserId",
+              seconds, created_at AS "createdAt"
+         FROM chat.conversation_timer_events
+        WHERE conversation_id = :conversationId
+          AND (:before IS NULL OR created_at < :before)
+        ORDER BY created_at DESC, id DESC
+        LIMIT :limit`,
+      { type: QueryTypes.SELECT, replacements: { conversationId, before: before ?? null, limit } },
+    );
     const storyIds = [...new Set(ordered.map((message) => message.storyId).filter((id): id is string => Boolean(id)))];
     const availability = new Map<string, boolean>();
     if (storyIds.length > 0) {
@@ -600,13 +635,12 @@ export class ChatRepository {
         ...(message.storyId ? { storyAvailable: availability.get(message.storyId) ?? false } : {}),
       })),
       ...events.map((event) => ({ kind: "system" as const, event })),
+      ...timerEvents.map((event) => ({ kind: "timer" as const, event })),
     ];
+    const createdAtOf = (record: ConversationHistoryRecord) =>
+      new Date(record.kind === "message" ? record.message.createdAt : record.event.createdAt).getTime();
     return history
-      .sort((left, right) => {
-        const leftDate = left.kind === "message" ? left.message.createdAt : left.event.createdAt;
-        const rightDate = right.kind === "message" ? right.message.createdAt : right.event.createdAt;
-        return leftDate.getTime() - rightDate.getTime();
-      })
+      .sort((left, right) => createdAtOf(left) - createdAtOf(right))
       .slice(-limit);
   }
 
@@ -643,7 +677,8 @@ export class ChatRepository {
                 CASE WHEN other.read_receipts_enabled IS NOT NULL
                   THEN CASE WHEN other.read_receipts_enabled THEN other.read_receipts_enabled_since ELSE NULL END
                   ELSE CASE WHEN COALESCE(other_receipts.enabled, true) THEN other_receipts.enabled_since ELSE NULL END END
-              ) AS other_read_receipts_enabled_since
+              ) AS other_read_receipts_enabled_since,
+              c.disappearing_seconds AS disappearing_seconds
          FROM chat.conversations c
          JOIN chat.participants mine ON mine.conversation_id = c.id AND mine.user_id = :userId
          JOIN chat.participants other ON other.conversation_id = c.id AND other.user_id <> :userId
@@ -662,6 +697,7 @@ export class ChatRepository {
                SELECT m.id, m.body, m.type, m.created_at, m.deleted_at
                  FROM chat.messages m
                 WHERE m.conversation_id = c.id
+                  AND (m.expires_at IS NULL OR m.expires_at > now())
                   AND NOT EXISTS (SELECT 1 FROM chat.message_visibility v WHERE v.message_id = m.id AND v.user_id = :userId)
                UNION ALL
                SELECT e.id,
@@ -669,6 +705,12 @@ export class ChatRepository {
                       'system'::text AS type, e.created_at, NULL::timestamptz AS deleted_at
                  FROM chat.conversation_events e
                 WHERE e.conversation_id = c.id
+               UNION ALL
+               SELECT t.id,
+                      CASE WHEN t.seconds IS NULL THEN 'Mensajes temporales desactivados' ELSE 'Mensajes temporales activados' END AS body,
+                      'system'::text AS type, t.created_at, NULL::timestamptz AS deleted_at
+                 FROM chat.conversation_timer_events t
+                WHERE t.conversation_id = c.id
              ) item
             ORDER BY item.created_at DESC, item.id DESC LIMIT 1
          ) last_msg ON true
@@ -678,6 +720,59 @@ export class ChatRepository {
                  COALESCE(last_msg.created_at, c.created_at) DESC`,
       { type: QueryTypes.SELECT, replacements: { userId } },
     );
+  }
+
+  /**
+   * Cambia el modo de mensajes temporales y deja el aviso en el historial, todo
+   * bajo el bloqueo de la conversación (el mismo que usan enviar y revocar).
+   * Volver a elegir el modo vigente no escribe nada ni repite el aviso.
+   */
+  async setDisappearingSeconds(
+    conversationId: string,
+    userId: string,
+    seconds: number | null,
+  ): Promise<{ seconds: number | null; event: DisappearingTimerEvent | null }> {
+    return this.sequelize.transaction(async (transaction) => {
+      const conversation = await this.conversations.findByPk(conversationId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!conversation || conversation.revokedAt) throw new NotFoundException("Conversación no encontrada.");
+      const participant = await this.participants.findOne({ where: { conversationId, userId }, transaction });
+      if (!participant) throw new NotFoundException("Conversación no encontrada.");
+      if (!participant.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
+      if ((conversation.disappearingSeconds ?? null) === seconds) return { seconds, event: null };
+      await conversation.update({ disappearingSeconds: seconds }, { transaction });
+      const [row] = await this.sequelize.query<DisappearingTimerEvent>(
+        `INSERT INTO chat.conversation_timer_events (conversation_id, changed_by_user_id, seconds)
+         VALUES (:conversationId, :userId, :seconds)
+         RETURNING id, conversation_id AS "conversationId", changed_by_user_id AS "changedByUserId",
+                   seconds, created_at AS "createdAt"`,
+        { type: QueryTypes.SELECT, replacements: { conversationId, userId, seconds }, transaction },
+      );
+      return { seconds, event: row ?? null };
+    });
+  }
+
+  /**
+   * Borra un lote de mensajes temporales ya caducados. La lectura ya los oculta
+   * desde `expires_at`; esto es la higiene posterior. Un mensaje denunciado se
+   * conserva para que moderación pueda revisarlo.
+   */
+  async purgeExpiredMessages(batchSize: number): Promise<number> {
+    const rows = await this.sequelize.query<{ id: string }>(
+      `DELETE FROM chat.messages
+        WHERE id IN (
+          SELECT m.id FROM chat.messages m
+           WHERE m.expires_at IS NOT NULL AND m.expires_at <= now()
+             AND NOT EXISTS (
+               SELECT 1 FROM moderation.reports r
+                WHERE r.target_kind = 'CHAT_MESSAGE' AND r.target_id = m.id
+             )
+           ORDER BY m.expires_at
+           LIMIT :batchSize
+        )
+        RETURNING id`,
+      { type: QueryTypes.SELECT, replacements: { batchSize } },
+    );
+    return rows.length;
   }
 
   /** IDs de todas las conversaciones donde participa — para difundir presencia. */

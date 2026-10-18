@@ -1,4 +1,4 @@
-import { ConversationSummaryRow, SystemConversationKind } from "./chat.repository";
+import { ConversationSummaryRow, DisappearingTimerEvent, SystemConversationKind } from "./chat.repository";
 import { MessageModel, MessageType } from "./message.model";
 
 export type MessageResponse = {
@@ -19,10 +19,31 @@ export type MessageResponse = {
   viewed: boolean;
   locationLat: number | null;
   locationLng: number | null;
+  /** Nombre del lugar elegido en el mapa; `null` para «mi ubicación actual» y otros tipos. */
+  locationLabel: string | null;
+  /** Mensaje temporal: a esta hora deja de verse para ambos. */
+  expiresAt: Date | null;
   createdAt: Date;
   /** Clients display «Editado» when present. */
   editedAt: Date | null;
   deletedAt: Date | null;
+};
+
+export type TrainingInviteAcceptedSystemEvent = {
+  kind: "TRAINING_INVITE_ACCEPTED";
+  invitationId: string;
+  acceptedRevision: number;
+  startsAt: string;
+  timeZone: string;
+  placeLabel: string;
+  cancelledAt?: string;
+};
+
+/** «X activó los mensajes temporales: 7 días» / «X los desactivó» (`seconds: null`). */
+export type DisappearingMessagesSystemEvent = {
+  kind: "DISAPPEARING_MESSAGES_CHANGED";
+  seconds: number | null;
+  changedByUserId: string | null;
 };
 
 export type SystemChatEventResponse = {
@@ -30,15 +51,7 @@ export type SystemChatEventResponse = {
   conversationId: string;
   senderId: null;
   type: "system";
-  systemEvent: {
-    kind: "TRAINING_INVITE_ACCEPTED";
-    invitationId: string;
-    acceptedRevision: number;
-    startsAt: string;
-    timeZone: string;
-    placeLabel: string;
-    cancelledAt?: string;
-  };
+  systemEvent: TrainingInviteAcceptedSystemEvent | DisappearingMessagesSystemEvent;
   createdAt: Date;
 };
 
@@ -73,6 +86,21 @@ export function mapTrainingInviteEvent(event: {
   };
 }
 
+export function mapDisappearingTimerEvent(event: DisappearingTimerEvent): SystemChatEventResponse {
+  return {
+    id: event.id,
+    conversationId: event.conversationId,
+    senderId: null,
+    type: "system",
+    systemEvent: {
+      kind: "DISAPPEARING_MESSAGES_CHANGED",
+      seconds: event.seconds,
+      changedByUserId: event.changedByUserId,
+    },
+    createdAt: new Date(event.createdAt),
+  };
+}
+
 export function mapChatHistoryItem(record: {
   kind: "system";
   event: Parameters<typeof mapTrainingInviteEvent>[0];
@@ -98,7 +126,8 @@ export function mapMessageToResponse(
     id: message.id, conversationId: message.conversationId, senderId: message.senderId,
     clientRequestId: message.clientRequestId ?? null, body: "Mensaje eliminado", type: "text",
     stickerId: null, storyReference: null, mediaUrl: null, mediaMimeType: null, viewOnce: false, viewed: false,
-    locationLat: null, locationLng: null, createdAt: message.createdAt, editedAt: null,
+    locationLat: null, locationLng: null, locationLabel: null, expiresAt: message.expiresAt ?? null,
+    createdAt: message.createdAt, editedAt: null,
     deletedAt: message.deletedAt,
   };
   const mediaLocked = message.viewOnce && !revealViewOnce;
@@ -119,6 +148,8 @@ export function mapMessageToResponse(
     viewed: Boolean(message.viewedAt),
     locationLat: message.locationLat,
     locationLng: message.locationLng,
+    locationLabel: message.type === "location" ? message.locationLabel ?? null : null,
+    expiresAt: message.expiresAt ?? null,
     createdAt: message.createdAt,
     editedAt: message.editedAt ?? null,
     deletedAt: null,
@@ -142,6 +173,8 @@ export type ConversationSummaryResponse = {
   otherUserLastDeliveredAt: string | null;
   otherUserLastReadAt: string | null;
   otherUserReadReceiptsSinceAt: string | null;
+  /** Mensajes temporales vigentes (segundos); `null` = desactivados. */
+  disappearingSeconds: number | null;
 };
 
 export function mapConversationSummary(
@@ -165,5 +198,6 @@ export function mapConversationSummary(
     otherUserReadReceiptsSinceAt: row.other_read_receipts_enabled_since instanceof Date
       ? row.other_read_receipts_enabled_since.toISOString()
       : row.other_read_receipts_enabled_since,
+    disappearingSeconds: row.disappearing_seconds ?? null,
   };
 }

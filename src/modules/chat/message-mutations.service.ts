@@ -10,6 +10,7 @@ import { ConversationModel } from "./conversation.model";
 import { ConversationParticipantModel } from "./conversation-participant.model";
 import { MessageVisibilityModel } from "./message-visibility.model";
 import { MessageModel } from "./message.model";
+import { isExpired } from "./chat-disappearing";
 
 /** Como WhatsApp: «Eliminar para todos» dura unos dos días (60 h); editar, 15 minutos. */
 export const DELETE_FOR_EVERYONE_WINDOW_MS = 60 * 60 * 60 * 1000;
@@ -36,7 +37,7 @@ export class MessageMutationsService {
       const participant = await this.participants.findOne({ where: { conversationId, userId }, transaction });
       if (!participant) throw new NotFoundException("Conversación no encontrada.");
       const message = await this.messages.findOne({ where: { id: messageId, conversationId }, transaction, lock: transaction.LOCK.UPDATE });
-      if (!message) throw new NotFoundException("Mensaje no encontrado.");
+      if (!message || isExpired(message)) throw new NotFoundException("Mensaje no encontrado.");
       if (input.scope === "EVERYONE") {
         if (message.senderId !== userId) throw new NotFoundException("Mensaje no encontrado.");
         if (message.deletedAt) return { message, changed: false };
@@ -79,7 +80,7 @@ export class MessageMutationsService {
       const message = await this.messages.findOne({
         where: { id: messageId, conversationId, senderId: userId }, transaction, lock: transaction.LOCK.UPDATE,
       });
-      if (!message || message.deletedAt || await this.visibility.findOne({ where: { messageId, userId }, transaction })) {
+      if (!message || message.deletedAt || isExpired(message) || await this.visibility.findOne({ where: { messageId, userId }, transaction })) {
         throw new NotFoundException("Mensaje no encontrado.");
       }
       if (!participant.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");

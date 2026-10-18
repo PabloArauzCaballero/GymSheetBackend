@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Header, Headers, HttpStatus, Param, Patch, Post, Query, Res, StreamableFile, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Header, Headers, HttpStatus, Param, Patch, Post, Put, Query, Res, StreamableFile, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { parseByteRange } from "./chat-media-range";
@@ -17,11 +17,13 @@ import {
   MessageListQuery,
   SendMediaMessageInput,
   SendMessageInput,
+  SetDisappearingMessagesInput,
   SetNicknameInput,
   StartConversationInput,
   messageListQuerySchema,
   sendMediaMessageSchema,
   sendMessageSchema,
+  setDisappearingMessagesSchema,
   setNicknameSchema,
   startConversationSchema,
 } from "./chat.schemas";
@@ -77,6 +79,7 @@ export class ChatController {
       return this.service.sendLocationMessage(conversationId, user.id, {
         lat: input.locationLat as number,
         lng: input.locationLng as number,
+        ...(input.locationLabel ? { label: input.locationLabel } : {}),
       }, input.clientRequestId);
     }
     return this.service.sendMessage(conversationId, user.id, input.body as string, input.clientRequestId);
@@ -164,6 +167,16 @@ export class ChatController {
     @Body(new ZodValidationPipe(setNicknameSchema)) input: SetNicknameInput,
   ) {
     return this.service.setNickname(conversationId, user.id, input.nickname);
+  }
+
+  /** Mensajes temporales de la conversación; cualquiera de los participantes que pueda escribir lo cambia. */
+  @Put(":id/disappearing")
+  setDisappearing(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", UuidParamPipe) conversationId: string,
+    @Body(new ZodValidationPipe(setDisappearingMessagesSchema)) input: SetDisappearingMessagesInput,
+  ) {
+    return this.service.setDisappearingMessages(conversationId, user.id, input.seconds);
   }
 
   @Post(":id/read")

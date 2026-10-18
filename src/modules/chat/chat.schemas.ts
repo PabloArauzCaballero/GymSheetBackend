@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CHAT_STICKER_IDS } from "./chat-sticker-catalog";
+import { DISAPPEARING_SECONDS } from "./chat-disappearing";
 
 export const startConversationSchema = z.object({
   otherUserId: z.string().uuid(),
@@ -17,6 +18,8 @@ const sendTextOrLocationSchema = z
     clientRequestId: z.string().uuid().optional(),
     locationLat: z.number().min(-90).max(90).optional(),
     locationLng: z.number().min(-180).max(180).optional(),
+    /** Nombre del lugar elegido en el mapa; solo tiene sentido con `type: "location"`. */
+    locationLabel: z.string().trim().min(1).max(180).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.type === "text" && !value.body) {
@@ -24,6 +27,9 @@ const sendTextOrLocationSchema = z
     }
     if (value.type === "location" && (value.locationLat === undefined || value.locationLng === undefined)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["locationLat"], message: "Falta la ubicación." });
+    }
+    if (value.type !== "location" && value.locationLabel !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["locationLabel"], message: "El nombre del lugar solo acompaña a una ubicación." });
     }
   });
 
@@ -82,3 +88,13 @@ export type EditMessageInput = z.infer<typeof editMessageSchema>;
 /** Local hiding or author-only global tombstone. */
 export const deleteMessageSchema = z.object({ scope: z.enum(["ME", "EVERYONE"]) }).strict();
 export type DeleteMessageInput = z.infer<typeof deleteMessageSchema>;
+
+/** Mensajes temporales: `null` los desactiva; si no, 24 h, 7 días o 90 días en segundos. */
+export const setDisappearingMessagesSchema = z.object({
+  seconds: z.union([
+    z.literal(DISAPPEARING_SECONDS[0]),
+    z.literal(DISAPPEARING_SECONDS[1]),
+    z.literal(DISAPPEARING_SECONDS[2]),
+  ]).nullable(),
+}).strict();
+export type SetDisappearingMessagesInput = z.infer<typeof setDisappearingMessagesSchema>;
