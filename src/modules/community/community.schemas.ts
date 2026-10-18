@@ -37,9 +37,14 @@ export const gifSearchQuerySchema = z.object({
 export type AttachmentInput = z.infer<typeof attachmentSchema>;
 export type GifSearchQuery = z.infer<typeof gifSearchQuerySchema>;
 
+/** `recientes`: los más nuevos primero. `utiles`: los que más «me gusta» tienen, y a igualdad los más nuevos. */
+export const commentOrders = ['recientes', 'utiles'] as const;
+export type CommentOrder = (typeof commentOrders)[number];
+
 export const commentListQuerySchema = z.object({
   cursor: z.string().max(64).optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
+  orden: z.enum(commentOrders).default('recientes'),
 });
 
 export type RatingInput = z.infer<typeof ratingSchema>;

@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { Sequelize } from 'sequelize-typescript';
@@ -88,6 +88,30 @@ describe('AuthService login account enumeration resistance', () => {
 
     expect(compare).toHaveBeenCalledTimes(1);
     expect(compare).toHaveBeenCalledWith(submittedPassword, DECOY_HASH);
+  });
+});
+
+describe('AuthService login de una cuenta suspendida', () => {
+  it('responde 403 con el motivo, no el 401 de credenciales inválidas', async () => {
+    const { compare } = jest.requireMock<{ compare: jest.Mock }>('bcryptjs');
+    compare.mockResolvedValueOnce(true);
+    const service = createService({
+      findActiveByEmail: jest.fn().mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        email: registeredEmail,
+        passwordHash: STORED_HASH,
+        fullName: 'Registered User',
+        role: 'CLIENTE',
+        suspendedUntil: new Date(Date.now() + 86_400_000),
+      }),
+    });
+
+    const error = await service
+      .login({ email: registeredEmail, password: 'right-password' })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ForbiddenException);
+    expect((error as ForbiddenException).message).toMatch(/suspendida/u);
   });
 });
 

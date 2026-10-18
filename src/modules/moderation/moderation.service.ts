@@ -107,6 +107,11 @@ export class ModerationService {
       input.targetKind !== ModerationTargetKind.REEL ||
       (await this.reelSocial?.canViewMedia(reporter.id, input.targetId)) ===
         true;
+    // Un comentario se denuncia si quien denuncia lo puede leer; en un
+    // ejercicio global eso cruza gimnasios (la cola es la del gimnasio del autor).
+    const canReportComment =
+      input.targetKind !== ModerationTargetKind.COMMENT ||
+      (await this.repository.canReporterViewComment(input.targetId, reporter.id));
     const canReportChatMessage =
       input.targetKind !== ModerationTargetKind.CHAT_MESSAGE ||
       (await this.repository.canReporterViewChatMessage(
@@ -122,8 +127,10 @@ export class ModerationService {
       (!canReportReel && input.targetKind === ModerationTargetKind.REEL) ||
       (!canReportChatMessage &&
         input.targetKind === ModerationTargetKind.CHAT_MESSAGE) ||
+      !canReportComment ||
       (owner.tenantId !== reporter.tenantId &&
-        !CROSS_TENANT_TARGETS.has(input.targetKind))
+        !CROSS_TENANT_TARGETS.has(input.targetKind) &&
+        input.targetKind !== ModerationTargetKind.COMMENT)
     ) {
       throw new NotFoundException("No encontramos ese contenido.");
     }
