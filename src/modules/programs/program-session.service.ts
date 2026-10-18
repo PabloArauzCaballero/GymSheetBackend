@@ -12,7 +12,7 @@ import { applyDoubleProgression } from './engine/double-progression';
 import { weekNumberOn } from './engine/program-calendar';
 import { diffAgainstRoutine, hasChanges, sessionBasePoints } from './engine/session-diff';
 import { bestE1rm, isGoalReached } from './engine/strength-goals';
-import { BONUS_GOAL_REACHED, isSuspiciousSet, sessionQualifies } from './engine/week-close';
+import { BONUS_GOAL_REACHED, isSuspiciousSet, multiplierTier, sessionQualifies } from './engine/week-close';
 import { ProductEvents } from '../../common/tracking/product-events';
 import { ProgramsRepository } from './programs.repository';
 import { RewardLedgerRepository } from './reward-ledger.repository';
@@ -167,6 +167,8 @@ export class ProgramSessionService implements OnModuleInit {
         motivoNoCuenta: counts ? null : this.whyNot(qualifies, alreadyCountedToday),
         sesionesHechasSemana: doneBefore + (counts ? 1 : 0),
         sesionesPlanSemana: week?.sessionsPlan ?? 0,
+        nivelMultiplicador: multiplierTier(Number(program.multiplier)),
+        escudos: program.shields ?? 0,
         bonusModo:
           program.mode === 'NONE'
             ? null

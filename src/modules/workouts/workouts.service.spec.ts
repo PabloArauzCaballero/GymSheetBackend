@@ -361,6 +361,38 @@ describe('WorkoutsService idempotent close (doble toque)', () => {
     expect(result).not.toHaveProperty('yaFinalizada');
   });
 
+  it('runs the program hooks before computing the reward, so a goal bonus lands in this session', async () => {
+    const order: string[] = [];
+    const hooks = new SessionHooksRegistry();
+    hooks.register('programs', () => {
+      order.push('hook');
+      return Promise.resolve({ programa: { semana: 1 } });
+    });
+    const service = new WorkoutsService(
+      {
+        findSessionByIdForUser: jest.fn().mockResolvedValue(session(WorkoutSessionStatus.IN_PROGRESS)),
+        claimSessionClose: jest.fn().mockResolvedValue(true),
+        saveCloseResult: jest.fn().mockResolvedValue(undefined),
+      } as unknown as WorkoutsRepository,
+      {} as ExercisesService,
+      { findActiveBranchesWithCoordinates: jest.fn().mockResolvedValue([]) } as unknown as FacilitiesRepository,
+      {} as Sequelize,
+      {
+        snapshot: jest.fn().mockResolvedValue({ points: 0 }),
+        recordSessionReward: jest.fn().mockImplementation(() => {
+          order.push('reward');
+          return Promise.resolve({ pointsEarned: 350 });
+        }),
+      } as unknown as ProgressionService,
+      hooks,
+    );
+
+    const result = await service.finishSession(ownerId, tenantId, 'session-1');
+
+    expect(order).toEqual(['hook', 'reward']);
+    expect(result).toMatchObject({ progression: { pointsEarned: 350 }, programa: { semana: 1 } });
+  });
+
   it('still refuses to finish a cancelled session', async () => {
     const service = createService({
       findSessionByIdForUser: jest.fn().mockResolvedValue(session(WorkoutSessionStatus.CANCELLED)),
