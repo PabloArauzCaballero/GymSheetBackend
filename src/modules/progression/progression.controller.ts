@@ -76,6 +76,14 @@ export class ProgressionController {
   ) {
     return this.progressionService.setRestDays(user.id, input.weekdays);
   }
+
+  /**
+   * Canjea 150 puntos acumulados por un strike mensual adicional para proteger la racha.
+   */
+  @Post("strikes/buy")
+  buyStrike(@CurrentUser() user: AuthenticatedUser) {
+    return this.progressionService.buyStrike(user.id);
+  }
 }
 
 /**

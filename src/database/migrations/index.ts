@@ -110,6 +110,7 @@ import { storyCaptionMigration } from "./202610180001-story-caption";
 import { chatLocationLabelMigration } from "./202610180101-chat-location-label";
 import { chatDisappearingMessagesMigration } from "./202610180102-chat-disappearing-messages";
 import { chatRepliesReactionsForwardMigration } from "./202610180201-chat-replies-reactions-forward";
+import { progressionStrikesAndCoachCardsMigration } from "./202610190002-progression-strikes-and-coach-cards";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -226,4 +227,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   chatLocationLabelMigration,
   chatDisappearingMessagesMigration,
   chatRepliesReactionsForwardMigration,
+  progressionStrikesAndCoachCardsMigration,
 ];

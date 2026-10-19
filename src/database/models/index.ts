@@ -91,6 +91,7 @@ import { ProgressionBadgeModel } from "../../modules/progression/progression-bad
 import { UserBadgeModel } from "../../modules/progression/user-badge.model";
 import { UserProgressModel } from "../../modules/progression/user-progress.model";
 import { RestDayPreferenceModel } from "../../modules/progression/rest-day-preference.model";
+import { UserStreakStrikeModel } from "../../modules/progression/user-streak-strike.model";
 import { UserModel } from "../../modules/users/user.model";
 import { WorkoutSessionExerciseModel } from "../../modules/workouts/workout-session-exercise.model";
 import { WorkoutSessionModel } from "../../modules/workouts/workout-session.model";
@@ -188,6 +189,7 @@ export const databaseModels = [
   UserBadgeModel,
   UserProgressModel,
   RestDayPreferenceModel,
+  UserStreakStrikeModel,
   AdminPermissionModel,
   AdminUserPermissionModel,
   AdminAuditLogModel,

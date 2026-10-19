@@ -15,6 +15,7 @@ import { ProgressionService } from "./progression.service";
 import { RestDayPreferenceModel } from "./rest-day-preference.model";
 import { UserBadgeModel } from "./user-badge.model";
 import { UserProgressModel } from "./user-progress.model";
+import { UserStreakStrikeModel } from "./user-streak-strike.model";
 import { WeeklyChallengesService } from "./weekly-challenges.service";
 
 @Module({
@@ -26,6 +27,7 @@ import { WeeklyChallengesService } from "./weekly-challenges.service";
       UserBadgeModel,
       UserProgressModel,
       RestDayPreferenceModel,
+      UserStreakStrikeModel,
     ]),
   ],
   controllers: [ProgressionController, ProgressionAdminController],

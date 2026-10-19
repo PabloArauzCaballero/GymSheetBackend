@@ -46,6 +46,7 @@
 
 import { extendedBadgeSeeds } from "./progression-catalog-extended";
 import { premiosBadgeSeeds } from "./progression-catalog-premios";
+import { coachRrssBadgeSeeds } from "./progression-catalog-coach-rrss";
 
 export type ProgressionAudience = "ANY" | "MALE" | "FEMALE";
 
@@ -95,7 +96,12 @@ export type BadgeCriterionType =
   | "BIRTHDAY_SESSIONS"
   | "MAX_RECORDS_IN_SESSION"
   | "MODE_SHIELDS_USED"
-  | "MODE_MAX_MULTIPLIER_WEEKS";
+  | "MODE_MAX_MULTIPLIER_WEEKS"
+  // Cuarta tanda (2026-10-19): RRSS en el gym y logros de Coach.
+  | "GYM_SOCIAL_PARTNERS"
+  | "COACH_SESSIONS"
+  | "COACH_CLIENTS"
+  | "COACH_CLIENTS_PRS";
 
 export type BadgeCategory =
   | "CONSTANCIA"
@@ -107,7 +113,8 @@ export type BadgeCategory =
   | "MODO"
   | "CARDIO"
   | "SOCIAL"
-  | "CREADOR";
+  | "CREADOR"
+  | "COACH";
 
 export type BadgeRarity = "COMUN" | "RARA" | "EPICA" | "LEGENDARIA";
 
@@ -991,4 +998,5 @@ export const badgeSeeds: readonly BadgeSeed[] = [
   },
   ...extendedBadgeSeeds,
   ...premiosBadgeSeeds,
+  ...coachRrssBadgeSeeds,
 ];
