@@ -121,6 +121,8 @@ export interface LevelSeed {
   readonly sortOrder: number;
   readonly icon: string;
   readonly color: string;
+  readonly arena: string;
+  readonly milestones: readonly string[];
 }
 
 export interface BadgeSeed {
@@ -175,6 +177,143 @@ const LEVEL_ICONS = [
   "sparkles-outline",
 ] as const;
 
+/**
+ * Las arenas: el **lugar** del gimnasio donde vive cada rango.
+ *
+ * El rango dice quién eres («Bestia»); la arena dice dónde estás y qué te
+ * espera allí. Es la estructura del camino de trofeos de los juegos de arenas:
+ * cada tramo es un sitio con nombre propio, y el siguiente siempre se ve.
+ *
+ * Las fases y los hitos salen de lo que la gente del gimnasio reconoce como
+ * suyo, cruzado con los umbrales de arriba (unas 450 puntos por semana):
+ *
+ * - **Principiante → novato → intermedio → avanzado → élite** es la escala que
+ *   comparten los estándares de fuerza (meses 0–6, 6–18, 1–3 años, 3–5+). La
+ *   mayoría de quien entrena con constancia llega a intermedio; élite es
+ *   minoría, y así se nota en los umbrales.
+ * - **66 días** es la mediana medida para que un hábito de salud se vuelva
+ *   automático; cae justo en la cuarta arena.
+ * - **Semana 19** es la mediana de abandono de principiantes en apps de
+ *   entrenamiento: superarla es un hito en sí, y abre la quinta arena.
+ * - **Discos por lado, el doble del peso corporal y el club de los 1000 lb**
+ *   (450 kg entre sentadilla, banca y muerto; 500 lb en la versión femenina)
+ *   son los números que se celebran en cualquier sala.
+ *
+ * Los hitos son orientativos: no los mide el sistema ni bloquean nada. Dicen
+ * qué suele pasar en cada fase para que el camino se lea como un plan.
+ */
+type ArenaSeed = {
+  readonly arena: string;
+  readonly milestones: readonly string[];
+  /** Hitos con cifras que cambian por rama; si falta, valen los de arriba. */
+  readonly byAudience?: Partial<Record<ProgressionAudience, readonly string[]>>;
+};
+
+const ARENAS: readonly ArenaSeed[] = [
+  {
+    arena: "La Puerta",
+    milestones: [
+      "Tu primer entrenamiento registrado",
+      "Moverte por la sala sin pedir permiso",
+      "Elegir tu horario fijo",
+    ],
+  },
+  {
+    arena: "Sala de Máquinas",
+    milestones: [
+      "Los cuatro patrones: sentadilla, bisagra, empuje y tirón",
+      "Tres entrenamientos en una misma semana",
+      "Sobrevivir a las primeras agujetas",
+    ],
+  },
+  {
+    arena: "Zona de Mancuernas",
+    milestones: [
+      "Tu primer mes completo sin soltarlo",
+      "Peso libre sin miedo: mancuernas y barra vacía",
+      "Tu primer récord personal",
+    ],
+  },
+  {
+    arena: "La Jaula",
+    milestones: [
+      "66 días: el hábito ya va solo",
+      "Sentadilla con barra dentro del rack",
+      "Tu primer disco de 20 kg por lado",
+    ],
+    byAudience: {
+      MALE: [
+        "66 días: el hábito ya va solo",
+        "Sentadilla con barra dentro del rack",
+        "Press banca con un disco por lado (60 kg)",
+      ],
+      FEMALE: [
+        "66 días: el hábito ya va solo",
+        "Sentadilla con barra dentro del rack",
+        "Hip thrust con un disco por lado (60 kg)",
+      ],
+    },
+  },
+  {
+    arena: "Templo del Hierro",
+    milestones: [
+      "Pasar la semana 19, donde la mitad abandona",
+      "Tu primera dominada estricta",
+      "Sentadilla con tu peso corporal",
+    ],
+  },
+  {
+    arena: "La Fragua",
+    milestones: [
+      "Romper tu primer estancamiento",
+      "Tu primer bloque de periodización",
+      "Peso muerto con 1,5 veces tu peso corporal",
+    ],
+    byAudience: {
+      MALE: [
+        "Romper tu primer estancamiento",
+        "Tu primer bloque de periodización",
+        "Press banca con dos discos por lado (100 kg)",
+      ],
+    },
+  },
+  {
+    arena: "El Coliseo",
+    milestones: [
+      "Peso muerto con el doble de tu peso corporal",
+      "Entrar en el club de los 1000 lb (o de los 500)",
+      "Una rutina tuya que otros copian",
+    ],
+    byAudience: {
+      MALE: [
+        "Peso muerto con el doble de tu peso corporal",
+        "Club de los 1000 lb: 450 kg entre sentadilla, banca y muerto",
+        "Una rutina tuya que otros copian",
+      ],
+      FEMALE: [
+        "Peso muerto con 1,75 veces tu peso corporal",
+        "Club de las 500 lb: 225 kg entre sentadilla, banca y muerto",
+        "Una rutina tuya que otras copian",
+      ],
+    },
+  },
+  {
+    arena: "El Olimpo",
+    milestones: [
+      "Dos años sin soltar la barra",
+      "Dominadas con lastre de un cuarto de tu peso",
+      "Ser quien enseña a los que acaban de entrar",
+    ],
+    byAudience: {
+      MALE: [
+        "Dos años sin soltar la barra",
+        "Tres, cuatro y cinco discos: banca, sentadilla y muerto",
+        "Ser quien enseña a los que acaban de entrar",
+      ],
+    },
+  },
+];
+
 type LevelCopy = {
   readonly code: string;
   readonly name: string;
@@ -186,17 +325,22 @@ function buildLevels(
   audience: ProgressionAudience,
   copy: readonly LevelCopy[],
 ): readonly LevelSeed[] {
-  return copy.map((entry, index) => ({
-    code: entry.code,
-    audience,
-    name: entry.name,
-    tagline: entry.tagline,
-    description: entry.description,
-    minPoints: LEVEL_THRESHOLDS[index],
-    sortOrder: index + 1,
-    icon: LEVEL_ICONS[index],
-    color: LEVEL_COLORS[index],
-  }));
+  return copy.map((entry, index) => {
+    const arena = ARENAS[index];
+    return {
+      code: entry.code,
+      audience,
+      name: entry.name,
+      tagline: entry.tagline,
+      description: entry.description,
+      minPoints: LEVEL_THRESHOLDS[index],
+      sortOrder: index + 1,
+      icon: LEVEL_ICONS[index],
+      color: LEVEL_COLORS[index],
+      arena: arena.arena,
+      milestones: arena.byAudience?.[audience] ?? arena.milestones,
+    };
+  });
 }
 
 /**

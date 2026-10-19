@@ -143,6 +143,10 @@ export interface LevelView {
   sortOrder: number;
   icon: string;
   color: string;
+  /** El lugar del gimnasio de esta fase, o nulo si el rango no tiene arena. */
+  arena: string | null;
+  /** Los hitos típicos de la fase, en orden. */
+  milestones: string[];
   /** Alcanzado con los puntos actuales. */
   unlocked: boolean;
   /** El rango en el que se está ahora mismo. */
@@ -829,6 +833,8 @@ function buildPath(levels: readonly ProgressionLevelModel[], points: number): Le
     sortOrder: level.sortOrder,
     icon: level.icon,
     color: level.color,
+    arena: level.arena ?? null,
+    milestones: Array.isArray(level.milestones) ? level.milestones : [],
     unlocked: points >= level.minPoints,
     current: index === unlockedCount - 1,
   }));

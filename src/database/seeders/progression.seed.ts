@@ -54,6 +54,8 @@ export async function seedProgression(transaction: Transaction): Promise<{
       sortOrder: seed.sortOrder,
       icon: seed.icon,
       color: seed.color,
+      arena: seed.arena,
+      milestones: [...seed.milestones],
     };
     const existing = levelByKey.get(`${seed.audience}:${seed.code}`);
     if (existing) {

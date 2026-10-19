@@ -47,6 +47,8 @@ export const createLevelSchema = z.object({
   sortOrder: z.number().int().min(1).max(1000),
   icon: iconSchema.default("flame-outline"),
   color: colorSchema.default("#c3f400"),
+  arena: z.string().trim().min(2).max(80).nullable().default(null),
+  milestones: z.array(z.string().trim().min(2).max(120)).max(8).default([]),
   active: z.boolean().default(true),
 });
 
