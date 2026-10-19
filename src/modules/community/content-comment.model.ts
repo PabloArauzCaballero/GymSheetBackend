@@ -10,7 +10,7 @@ export class ContentCommentModel extends Model {
   @Column(DataType.UUID)
   declare id: string;
 
-  @Column({ type: DataType.STRING(12), allowNull: false, field: 'target_kind' })
+  @Column({ type: DataType.STRING(30), allowNull: false, field: 'target_kind' })
   declare targetKind: CommunityTargetKind;
 
   @Column({ type: DataType.UUID, allowNull: false, field: 'target_id' })

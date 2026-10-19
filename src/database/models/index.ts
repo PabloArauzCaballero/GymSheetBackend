@@ -59,6 +59,7 @@ import { RoutineAssignmentModel } from "../../modules/training/routine-assignmen
 import { RoutineDayModel } from "../../modules/training/routine-day.model";
 import { RoutineWeekOverrideModel } from "../../modules/training/routine-week-override.model";
 import { RoutineShareModel } from "../../modules/training/routine-share.model";
+import { RoutineProgressDownloadAuditModel } from "../../modules/export/routine-progress-download-audit.model";
 import {
   ProgramLiftTargetModel,
   ProgramWeekModel,
@@ -84,6 +85,16 @@ import { UserModel } from "../../modules/users/user.model";
 import { WorkoutSessionExerciseModel } from "../../modules/workouts/workout-session-exercise.model";
 import { WorkoutSessionModel } from "../../modules/workouts/workout-session.model";
 import { WorkoutSetModel } from "../../modules/workouts/workout-set.model";
+import { CategoryModel } from "../../modules/directory/category.model";
+import { DirectoryEntityModel } from "../../modules/directory/directory-entity.model";
+import { DirectoryEntityCategoryModel } from "../../modules/directory/directory-entity-category.model";
+import { DirectoryReviewModel } from "../../modules/directory/directory-review.model";
+import { DirectoryReviewReplyModel } from "../../modules/directory/directory-review-reply.model";
+import { DirectoryReviewHelpfulModel } from "../../modules/directory/directory-review-helpful.model";
+import { EntityPaymentConfigModel } from "../../modules/directory/models/entity-payment-config.model";
+import { EntityPlanModel } from "../../modules/directory/models/entity-plan.model";
+import { PlanPriceHistoryModel } from "../../modules/directory/models/plan-price-history.model";
+import { PaymentOrderModel } from "../../modules/directory/models/payment-order.model";
 
 export const databaseModels = [
   UserModel,
@@ -122,6 +133,7 @@ export const databaseModels = [
   RoutineDayModel,
   RoutineWeekOverrideModel,
   RoutineShareModel,
+  RoutineProgressDownloadAuditModel,
   ContentRatingModel,
   TrainingProgramModel,
   CardioPlanModel,
@@ -170,4 +182,14 @@ export const databaseModels = [
   ModerationReportModel,
   UserStrikeModel,
   TenantModel,
+  CategoryModel,
+  DirectoryEntityModel,
+  DirectoryEntityCategoryModel,
+  DirectoryReviewModel,
+  DirectoryReviewReplyModel,
+  DirectoryReviewHelpfulModel,
+  EntityPaymentConfigModel,
+  EntityPlanModel,
+  PlanPriceHistoryModel,
+  PaymentOrderModel,
 ];
