@@ -52,10 +52,88 @@ describe('Routines v2 · catalog (e2e)', () => {
     expect(card.dias.map((d: { diaSemana: number }) => d.diaSemana)).toEqual([1, 3, 5]);
   });
 
+  it('la tarjeta y el detalle traen la foto del autor y la portada; una foto moderada no sale', async () => {
+    type Card = { nombre: string; portadaUrl: string | null; autor: { fotoUrl: string | null } };
+    const card = async (): Promise<Card | undefined> => {
+      const res = await e2e.as(leo.token).get(`/routines?scope=public&q=${tag}&limit=5`).expect(200);
+      return (res.body.data.items as Card[]).find((c) => c.nombre.endsWith('3 días'));
+    };
+    const before = await card();
+    expect(before?.autor.fotoUrl).toBeNull();
+    expect(before?.portadaUrl).toBeNull();
+
+    await e2e.sql(
+      `INSERT INTO profile.photos (id, user_id, url, storage_provider, storage_key, position, created_at)
+       VALUES (gen_random_uuid(), :id, 'https://media.e2e.test/oculta.jpg', 'minio', :k1, 0, now()),
+              (gen_random_uuid(), :id, 'https://media.e2e.test/ana.jpg', 'minio', :k2, 1, now())`,
+      { id: ana.id, k1: `${tag}-a`, k2: `${tag}-b` },
+    );
+    await e2e.sql(`UPDATE profile.photos SET hidden_at = now() WHERE storage_key = :k`, { k: `${tag}-a` });
+    await e2e.sql(
+      `INSERT INTO training.exercise_media (id, ejercicio_id, media_type, provider, url, thumbnail_url, alt_text, is_primary, sort_order, status, created_at, updated_at)
+       SELECT gen_random_uuid(), re.ejercicio_id, 'VIDEO', 'e2e', 'https://media.e2e.test/v.mp4', 'https://media.e2e.test/poster.webp', 'e2e', true, 0, 'ACTIVE', now(), now()
+         FROM training.routine_exercises re WHERE re.routine_id = :r LIMIT 1`,
+      { r: ids.pub3 },
+    );
+    const after = await card();
+    expect(after?.autor.fotoUrl).toBe('https://media.e2e.test/ana.jpg');
+    expect(after?.portadaUrl).toBe('https://media.e2e.test/poster.webp');
+
+    const detail = await e2e.as(leo.token).get(`/routines/${ids.pub3}`).expect(200);
+    expect(detail.body.data.portadaUrl).toBe('https://media.e2e.test/poster.webp');
+    expect(detail.body.data.autor).toEqual({ id: ana.id, nombre: 'E2E cat-ana', fotoUrl: 'https://media.e2e.test/ana.jpg' });
+  });
+
+  it('el detalle da una imagen fija por ejercicio y una portada por día; gana la lámina nítida', async () => {
+    const api = e2e.as(ana.token);
+    const [bare, blurry, sharp] = await Promise.all(['sin', '850', '1700'].map((k) => createPersonalExercise(api, `${tag} still ${k}`)));
+    const created = await api
+      .post('/routines')
+      .send({
+        // Sin `tag`: los demás casos buscan por él y cuentan las rutinas de Ana.
+        nombre: `Láminas e2e ${Date.now().toString(36).split('').reverse().join('')}`,
+        dias: [
+          { diaSemana: 1, ejercicios: [{ ejercicioId: bare }, { ejercicioId: blurry }] },
+          { diaSemana: 3, ejercicios: [{ ejercicioId: sharp }] },
+          { diaSemana: 5, ejercicios: [{ ejercicioId: bare }] },
+        ],
+      })
+      .expect(201);
+    const media = `INSERT INTO training.exercise_media (id, ejercicio_id, media_type, provider, url, thumbnail_url, width, alt_text, is_primary, sort_order, status, created_at, updated_at)
+                   VALUES (gen_random_uuid(), :e, :type, 'e2e', :url, NULL, :width, 'e2e', :primary, :orden, 'ACTIVE', now(), now())`;
+    // Vídeo principal SIN póster + lámina de 850 px: antes el detalle no enseñaba ninguna imagen de este ejercicio.
+    await e2e.sql(media, { e: blurry, type: 'VIDEO', url: 'https://media.e2e.test/sin-poster.mp4', width: null, primary: true, orden: 0 });
+    await e2e.sql(media, { e: blurry, type: 'IMAGE', url: 'https://media.e2e.test/lamina-850.jpg', width: 850, primary: false, orden: 50 });
+    await e2e.sql(media, { e: sharp, type: 'IMAGE', url: 'https://media.e2e.test/lamina-1700.jpg', width: 1700, primary: true, orden: 0 });
+
+    type Item = { ejercicio: { id: string; imagenUrl: string | null; media: Array<{ mediaType: string; thumbnailUrl: string | null }> } };
+    const detail = (await api.get(`/routines/${created.body.data.id}`).expect(200)).body.data as {
+      portadaUrl: string | null;
+      dias: Array<{ portadaUrl: string | null; ejercicios: Item[] }>;
+    };
+    const [monday, wednesday, friday] = detail.dias;
+    expect(monday.ejercicios.map((e) => e.ejercicio.imagenUrl)).toEqual([null, 'https://media.e2e.test/lamina-850.jpg']);
+    expect(monday.ejercicios[1].ejercicio.media[0]).toMatchObject({ mediaType: 'VIDEO', thumbnailUrl: 'https://media.e2e.test/lamina-850.jpg' });
+    // La portada del día salta el ejercicio sin imagen; un día sin ninguna queda en null.
+    expect(monday.portadaUrl).toBe('https://media.e2e.test/lamina-850.jpg');
+    expect(wednesday.portadaUrl).toBe('https://media.e2e.test/lamina-1700.jpg');
+    expect(friday.portadaUrl).toBeNull();
+    // Portada de la rutina: la lámina de ancho nítido antes que la de 850 px, aunque esta vaya primero.
+    expect(detail.portadaUrl).toBe('https://media.e2e.test/lamina-1700.jpg');
+  });
+
   it('Mías incluye también las privadas propias', async () => {
     const res = await e2e.as(ana.token).get(`/routines?scope=mine&q=${tag}&limit=20`).expect(200);
     expect(names(res.body)).toHaveLength(3);
     expect(res.body.data.items.every((c: { esMia: boolean }) => c.esMia)).toBe(true);
+  });
+
+  it('Todas junta lo público con lo propio: Ana ve sus 3, Leo solo las 2 públicas', async () => {
+    const ana3 = await e2e.as(ana.token).get(`/routines?scope=all&q=${tag}&limit=20`).expect(200);
+    expect(names(ana3.body)).toHaveLength(3);
+    const leo2 = await e2e.as(leo.token).get(`/routines?scope=all&q=${tag}&limit=20`).expect(200);
+    expect(names(leo2.body).sort()).toEqual([`${tag} Pública 2 días`, `${tag} Pública 3 días`]);
+    expect(JSON.stringify(leo2.body)).not.toContain('Privada de Ana');
   });
 
   it('filtra por objetivo y por días por semana, y combina los filtros', async () => {

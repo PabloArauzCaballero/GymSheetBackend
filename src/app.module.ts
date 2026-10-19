@@ -26,15 +26,18 @@ import { HealthModule } from './modules/health/health.module';
 import { MediaModule } from './modules/media/media.module';
 import { MembershipModule } from './modules/membership/membership.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
+import { MusicModule } from './modules/music/music.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
 import { ProfileViewsModule } from './modules/profile-views/profile-views.module';
 import { SocialModule } from './modules/social/social.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { StoriesModule } from './modules/stories/stories.module';
+import { ReelsModule } from './modules/reels/reels.module';
 import { ProgramsModule } from './modules/programs/programs.module';
 import { CommunityModule } from './modules/community/community.module';
 import { TrainingModule } from './modules/training/training.module';
+import { TrainingInvitationsModule } from './modules/training-invitations/training-invitations.module';
 import { ProgressionModule } from './modules/progression/progression.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { UsersModule } from './modules/users/users.module';
@@ -107,6 +110,7 @@ import { DirectoryModule } from './modules/directory/directory.module';
     ExercisesModule,
     WorkoutsModule,
     TrainingModule,
+    TrainingInvitationsModule,
     CommunityModule,
     ProgramsModule,
     ProgressionModule,
@@ -115,6 +119,8 @@ import { DirectoryModule } from './modules/directory/directory.module';
     SocialModule,
     ChatModule,
     StoriesModule,
+    ReelsModule,
+    MusicModule,
     ProfileViewsModule,
     AdminAccessModule,
     TenantsModule,

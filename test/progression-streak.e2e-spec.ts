@@ -169,6 +169,42 @@ describe('Progression streaks (e2e)', () => {
     }
   });
 
+  describe('streak freezes (comodines)', () => {
+    it('earns a freeze after seven days and spends it on a missed day, so the streak goes on', async () => {
+      const { accessToken, userId } = await registerUser('freeze');
+      // Siete días seguidos, falta uno (hace dos días) y entrena ayer y hoy.
+      for (let offset = -9; offset <= -3; offset += 1) await seedFinishedSession(userId, offset);
+      await seedFinishedSession(userId, -1);
+      await seedFinishedSession(userId, 0);
+
+      const response = await request(httpServer)
+        .get(url('/me/progression'))
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(response.body.data.stats.currentStreakDays).toBe(9);
+      expect(response.body.data.streak).toEqual({
+        current: 9,
+        longest: 9,
+        freezes: 0,
+        freezesUsed: 1,
+        nextMilestone: 14,
+        weekly: response.body.data.stats.weeklyStreak,
+      });
+    });
+
+    it('keeps the freeze in the bank while nothing is missed', async () => {
+      const { accessToken, userId } = await registerUser('freeze-bank');
+      for (let offset = -6; offset <= 0; offset += 1) await seedFinishedSession(userId, offset);
+
+      const response = await request(httpServer)
+        .get(url('/me/progression'))
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+      expect(response.body.data.streak).toMatchObject({ current: 7, freezes: 1, freezesUsed: 0, nextMilestone: 14 });
+    });
+  });
+
   describe('rest days', () => {
     it('starts with no declared rest days', async () => {
       const { accessToken } = await registerUser('rest-default');
@@ -256,7 +292,12 @@ describe('Progression streaks (e2e)', () => {
       );
     });
 
-    it('grants the 7-day reward once the longest streak reaches it, and does not duplicate it on a later read', async () => {
+    /**
+     * Las recompensas por racha (`STREAK_REWARD_*`) las sustituyen los premios
+     * del gimnasio (P1, 2026-10-18): ya no se otorgan nuevas, pero las que
+     * alguien ya tenía siguen en «Accesos».
+     */
+    it('no longer grants the 7-day reward, but keeps one granted before', async () => {
       const { accessToken, userId } = await registerUser('reward-seven');
       for (let offset = -6; offset <= 0; offset += 1) {
         await seedFinishedSession(userId, offset);
@@ -268,21 +309,31 @@ describe('Progression streaks (e2e)', () => {
         .expect(200);
       expect(progression.body.data.stats.longestStreakDays).toBe(7);
 
-      // Segunda lectura: no debe intentar otorgar el mismo beneficio otra vez.
+      const accessCodes = async () =>
+        (
+          (
+            await request(httpServer)
+              .get(url('/me/accesses'))
+              .set('Authorization', `Bearer ${accessToken}`)
+              .expect(200)
+          ).body.data as Array<{ code: string; source: string }>
+        ).filter((access) => access.code === 'STREAK_REWARD_7');
+      expect(await accessCodes()).toHaveLength(0);
+
+      // Una recompensa otorgada antes del cambio, tal como la dejaba el código anterior.
+      await sessionModel.sequelize!.query(
+        `INSERT INTO membership.entitlements (user_id, feature_id, source_type, source_id, status, starts_at, metadata)
+         SELECT :userId, f.id, 'STREAK_REWARD', :userId, 'ACTIVE', now(), '{"thresholdDays":7}'::jsonb
+           FROM membership.features f WHERE f.code = 'STREAK_REWARD_7'`,
+        { replacements: { userId } },
+      );
       await request(httpServer)
         .get(url('/me/progression'))
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
-
-      const accesses = await request(httpServer)
-        .get(url('/me/accesses'))
-        .set('Authorization', `Bearer ${accessToken}`)
-        .expect(200);
-      const rewards = (accesses.body.data as Array<{ code: string; source: string }>).filter(
-        (access) => access.code === 'STREAK_REWARD_7',
-      );
-      expect(rewards).toHaveLength(1);
-      expect(rewards[0].source).toBe('STREAK_REWARD');
+      const kept = await accessCodes();
+      expect(kept).toHaveLength(1);
+      expect(kept[0].source).toBe('STREAK_REWARD');
     });
   });
 });

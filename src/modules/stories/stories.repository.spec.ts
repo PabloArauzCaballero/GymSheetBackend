@@ -3,6 +3,7 @@ import { Sequelize } from "sequelize-typescript";
 import { ConnectionStatus } from "../../common/enums/domain.enums";
 import { StoryModel } from "./story.model";
 import { StoryViewModel } from "./story-view.model";
+import { StoryAudienceModel } from "./story-audience.model";
 import {
   STORY_FEED_MAX_AUTHORS,
   STORY_FEED_MAX_STORIES_PER_AUTHOR,
@@ -47,6 +48,7 @@ function createRepository() {
     sequelize,
     {} as unknown as typeof StoryModel,
     {} as unknown as typeof StoryViewModel,
+    {} as unknown as typeof StoryAudienceModel,
   );
   return { repository, captured };
 }
@@ -55,13 +57,12 @@ describe("StoriesRepository.feedForConnections", () => {
   it("passes every user-supplied value through replacements, never inlined in the SQL", async () => {
     const { repository, captured } = createRepository();
 
-    await repository.feedForConnections(viewerId, tenantId);
+    await repository.feedForConnections(viewerId);
 
     const { sql, options } = captured[0];
     expect(options.type).toBe(QueryTypes.SELECT);
     expect(options.replacements).toEqual({
       viewerId,
-      tenantId,
       acceptedStatus: ConnectionStatus.ACCEPTED,
       maxAuthors: STORY_FEED_MAX_AUTHORS,
       storiesPerAuthor: STORY_FEED_MAX_STORIES_PER_AUTHOR,
@@ -74,7 +75,7 @@ describe("StoriesRepository.feedForConnections", () => {
   it("keeps the feed to a single query", async () => {
     const { repository, captured } = createRepository();
 
-    await repository.feedForConnections(viewerId, tenantId);
+    await repository.feedForConnections(viewerId);
 
     expect(captured).toHaveLength(1);
   });

@@ -12,6 +12,9 @@ describe('Mode rewards and cardio (e2e)', () => {
     return d === 0 ? 7 : d;
   })();
   const dayOffset = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+  // Cerrar «el lunes siguiente» y no «dentro de 8 días»: en domingo, 8 días
+  // después ya es martes de la semana 2 y se cerraban dos semanas de golpe.
+  const nextMonday = (weeksLater = 0) => dayOffset(8 - todayIso + 7 * weeksLater);
 
   beforeAll(async () => {
     e2e = await bootE2eApp();
@@ -69,31 +72,33 @@ describe('Mode rewards and cardio (e2e)', () => {
       await trainToday(routineId, { [g1]: [[8, 60], [8, 60], [8, 60]], [g2]: [[8, 60], [8, 60], [8, 60]] });
       const before = await points();
 
-      const closed = await closer().closeProgram(programId, dayOffset(8));
+      const closed = await closer().closeProgram(programId, nextMonday());
       const week1 = closed.find((c) => c.weekNumber === 1);
-      expect(week1).toMatchObject({ fulfilled: true, multiplier: 1.2 });
+      expect(week1).toMatchObject({ fulfilled: true, multiplier: 1.2, shieldUsed: false, shieldEarned: false });
       expect(week1!.bonus).toBeGreaterThan(0);
 
       afterWeek1 = await points();
       expect(afterWeek1 - before).toBe(week1!.bonus); // el libro suma una línea propia
       const rewards = (await e2e.as(ana.token).get(`/programs/${programId}/progress`).expect(200)).body.data;
       expect(rewards.programa.multiplicador).toBe(1.2);
-      expect(rewards.semanas[0]).toMatchObject({ cumplida: true, multiplicador: 1.2 });
+      expect(rewards.programa).toMatchObject({ nivelMultiplicador: 'En marcha', escudos: 0 });
+      expect(rewards.semanas[0]).toMatchObject({ cumplida: true, multiplicador: 1.2, escudoUsado: false });
     });
 
     it('cerrar dos veces no paga dos veces (idempotente)', async () => {
-      await closer().closeProgram(programId, dayOffset(8));
-      await closer().closeProgram(programId, dayOffset(8));
+      await closer().closeProgram(programId, nextMonday());
+      await closer().closeProgram(programId, nextMonday());
       expect(await points()).toBe(afterWeek1);
     });
 
-    it('una semana vencida sin cumplir devuelve el multiplicador a 1,0 y NO quita puntos', async () => {
-      const closed = await closer().closeProgram(programId, dayOffset(15));
+    it('una semana vencida sin cumplir baja dos escalones (de x1,2 queda en x1,0) y NO quita puntos', async () => {
+      const closed = await closer().closeProgram(programId, nextMonday(1));
       const week2 = closed.find((c) => c.weekNumber === 2);
       expect(week2).toMatchObject({ fulfilled: false, multiplier: 1, bonus: 0 });
       expect(await points()).toBe(afterWeek1);
       const view = (await e2e.as(ana.token).get('/programs/active').expect(200)).body.data.fuerza;
       expect(view.multiplicador).toBe(1);
+      expect(view.nivelMultiplicador).toBe('Arrancando');
     });
 
     it('si el trabajo estuvo caído, la pasada siguiente cierra todas las semanas pendientes en orden (caso 10)', async () => {
@@ -116,10 +121,61 @@ describe('Mode rewards and cardio (e2e)', () => {
       const act = await e2e.as(ana.token).post('/programs/strength/activate').send({ routineId: r, modo: 'NONE', diasSemana: [todayIso] }).expect(201);
       await trainToday(r, { [g1]: [[8, 60], [8, 60], [8, 60]] });
       const before = await points();
-      await closer().closeProgram(act.body.data.id, dayOffset(8));
+      await closer().closeProgram(act.body.data.id, nextMonday());
       const after = await points();
       expect(after).toBe(before);
       await e2e.as(ana.token).post(`/programs/${act.body.data.id}/stop`).expect(201);
+    });
+  });
+
+  describe('escudo y caída suave (P4)', () => {
+    let leo: { token: string; id: string };
+    let programId = '';
+
+    beforeAll(async () => {
+      leo = await e2e.register('rew-escudo');
+      const routine = await e2e
+        .as(leo.token)
+        .post('/routines')
+        .send({
+          nombre: `Escudo ${Date.now()}`,
+          duracionSemanas: 6,
+          dias: [{ diaSemana: todayIso, ejercicios: [g1].map((id) => ({ ejercicioId: id, seriesObjetivo: 3, repsMin: 6, repsMax: 8, pesoObjetivoKg: 60 })) }],
+        })
+        .expect(201);
+      const act = await e2e
+        .as(leo.token)
+        .post('/programs/strength/activate')
+        .send({ routineId: routine.body.data.id, modo: 'PROGRESSIVE_OVERLOAD', diasSemana: [todayIso], duracionSemanas: 6 })
+        .expect(201);
+      programId = act.body.data.id;
+      // Un programa que ya iba en x1,8 y tenía su escudo: llegar ahí de verdad son cuatro semanas reales.
+      await e2e.sql(`UPDATE training.training_programs SET multiplicador_actual = 1.80, escudos = 1 WHERE id = :programId`, { programId });
+    });
+
+    it('una semana fallida con escudo lo gasta y conserva el multiplicador, sin bono', async () => {
+      const pointsBefore = (await e2e.as(leo.token).get('/me/progression').expect(200)).body.data.points as number;
+      const closed = await closer().closeProgram(programId, nextMonday());
+      expect(closed.find((c) => c.weekNumber === 1)).toMatchObject({ fulfilled: false, multiplier: 1.8, bonus: 0, shieldUsed: true });
+
+      const progress = (await e2e.as(leo.token).get(`/programs/${programId}/progress`).expect(200)).body.data;
+      expect(progress.programa).toMatchObject({ multiplicador: 1.8, nivelMultiplicador: 'Imparable', escudos: 0 });
+      expect(progress.semanas[0]).toMatchObject({ cumplida: false, escudoUsado: true });
+
+      const inbox = JSON.stringify((await e2e.as(leo.token).get('/notifications/me').expect(200)).body.data);
+      expect(inbox).toContain('Tu escudo te cubrió');
+
+      // La insignia secreta del escudo aparece ya conseguida, y sus puntos se suman.
+      const senda = (await e2e.as(leo.token).get('/me/progression').expect(200)).body.data;
+      expect(senda.badges.find((b: { code: string }) => b.code === 'MODO_ESCUDO')).toMatchObject({ earned: true, secret: true });
+      expect(senda.points).toBeGreaterThanOrEqual(pointsBefore);
+    });
+
+    it('sin escudo, la siguiente semana fallida baja dos escalones (x1,8 → x1,4)', async () => {
+      const closed = await closer().closeProgram(programId, nextMonday(1));
+      expect(closed.find((c) => c.weekNumber === 2)).toMatchObject({ fulfilled: false, multiplier: 1.4, shieldUsed: false });
+      const view = (await e2e.as(leo.token).get('/programs/active').expect(200)).body.data.fuerza;
+      expect(view).toMatchObject({ multiplicador: 1.4, nivelMultiplicador: 'Encendido', escudos: 0 });
     });
   });
 

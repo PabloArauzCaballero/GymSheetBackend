@@ -13,6 +13,8 @@ import {
 import { ExerciseModel } from '../exercises/exercise.model';
 import { RoutineModel } from './routine.model';
 
+export type RoutineGroupType = 'SUPERSERIE' | 'CIRCUITO';
+
 /**
  * A prescribed exercise inside a routine, with target volume (series, rep range,
  * load, RIR and rest). Targets are guidance the live session renders; the athlete
@@ -65,6 +67,21 @@ export class RoutineExerciseModel extends Model {
 
   @Column({ type: DataType.TEXT, allowNull: true, field: 'nota' })
   declare note: string | null;
+
+  /** Bloque dentro del día (superserie/circuito): mismos números = mismo bloque, contiguos. */
+  @Column({ type: DataType.SMALLINT, allowNull: true, field: 'grupo' })
+  declare group: number | null;
+
+  @Column({ type: DataType.STRING(12), allowNull: true, field: 'grupo_tipo' })
+  declare groupType: RoutineGroupType | null;
+
+  /** Transición entre ejercicios del bloque (0–60 s). El descanso tras la vuelta es `descanso_seg` del último. */
+  @Column({ type: DataType.SMALLINT, allowNull: true, field: 'descanso_entre_seg' })
+  declare restBetweenSeconds: number | null;
+
+  /** Serie por tiempo (plancha): con duración, las reps son NULL. */
+  @Column({ type: DataType.SMALLINT, allowNull: true, field: 'duracion_seg' })
+  declare durationSeconds: number | null;
 
   @BelongsTo(() => RoutineModel)
   declare routine?: RoutineModel;

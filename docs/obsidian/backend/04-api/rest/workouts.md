@@ -34,5 +34,9 @@ Reglas de negocio:
 - `numeroSerie` único por ejercicio de sesión → duplicado = 409.
 - `WorkoutSetRequest`: `numeroSerie` 1–100, `repeticiones` 1–1000, `pesoKg` 0–2000,
   `rir` 0–10, `descansoSegAnterior` 0–7200.
+- Serie por tiempo (plancha 45 s): `duracionSeg` 1–3600 sin `repeticiones`; `pesoKg` y `rir`
+  opcionales. Solo si el ejercicio de la sesión tiene `duracionSeg` (si no, 400
+  `SET_DURATION_NOT_ALLOWED`). Editar no cambia la forma de la serie (400 `SET_KIND_MISMATCH`).
+  No cuenta en repeticiones, volumen ni récords.
 
 Relacionado: [[training]] · [[export]] · [[04-api/pagination-filtering-sorting]] · [[03-domains/workouts/index]]

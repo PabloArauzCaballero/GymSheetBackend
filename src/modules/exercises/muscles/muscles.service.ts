@@ -203,12 +203,18 @@ export class MusclesService {
        JOIN public.ejercicios e ON e.id = em.ejercicio_id
        LEFT JOIN training.exercise_ratings r ON r.ejercicio_id = e.id
        LEFT JOIN LATERAL (
-         SELECT COALESCE(m.thumbnail_url, m.url) AS url, m.alt_text
+         SELECT CASE WHEN m.media_type = 'VIDEO' THEN m.thumbnail_url
+                     ELSE COALESCE(m.thumbnail_url, m.url) END AS url,
+                m.alt_text
          FROM training.exercise_media m
          WHERE m.ejercicio_id = e.id
            AND m.status = 'ACTIVE'
-           AND m.media_type IN ('IMAGE', 'GIF')
-         ORDER BY m.is_primary DESC, m.sort_order ASC, m.created_at ASC
+           -- La mayoría del catálogo solo tiene vídeo: su póster es la
+           -- miniatura. Sin él, la lista salía con la pesa gris en casi todo.
+           AND (m.media_type IN ('IMAGE', 'GIF')
+                OR (m.media_type = 'VIDEO' AND m.thumbnail_url IS NOT NULL))
+         ORDER BY (m.media_type = 'VIDEO') ASC, m.is_primary DESC,
+                  m.sort_order ASC, m.created_at ASC
          LIMIT 1
        ) img ON TRUE
        WHERE em.muscle_id = :muscleId AND e.estado = 'ACTIVO'

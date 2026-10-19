@@ -12,11 +12,13 @@ import {
   CreatePersonalExerciseInput,
   EquipmentSuggestionQuery,
   ExerciseFilterInput,
+  ExerciseShortcutsInput,
   UpdateExerciseInput,
   createGlobalExerciseSchema,
   createPersonalExerciseSchema,
   equipmentSuggestionQuerySchema,
   exerciseFilterSchema,
+  exerciseShortcutsSchema,
   updateExerciseSchema,
 } from './exercises.schemas';
 
@@ -33,6 +35,15 @@ export class ExercisesController {
     @Query(new ZodValidationPipe(exerciseFilterSchema)) filters: ExerciseFilterInput,
   ) {
     return this.exercisesService.listVisibleForUser(authenticatedUser.id, filters);
+  }
+
+  /** Recientes, más usados y populares para el buscador vacío (D8). Antes de `:id`. */
+  @Get('shortcuts')
+  listShortcuts(
+    @CurrentUser() authenticatedUser: AuthenticatedUser,
+    @Query(new ZodValidationPipe(exerciseShortcutsSchema)) query: ExerciseShortcutsInput,
+  ) {
+    return this.exercisesService.listShortcuts(authenticatedUser.id, query.limit);
   }
 
   /** Debe declararse antes de `:id`, o el parámetro capturaría "taxonomy". */

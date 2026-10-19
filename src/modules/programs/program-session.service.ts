@@ -12,7 +12,7 @@ import { applyDoubleProgression } from './engine/double-progression';
 import { weekNumberOn } from './engine/program-calendar';
 import { diffAgainstRoutine, hasChanges, sessionBasePoints } from './engine/session-diff';
 import { bestE1rm, isGoalReached } from './engine/strength-goals';
-import { BONUS_GOAL_REACHED, isSuspiciousSet, sessionQualifies } from './engine/week-close';
+import { BONUS_GOAL_REACHED, isSuspiciousSet, multiplierTier, sessionQualifies } from './engine/week-close';
 import { ProductEvents } from '../../common/tracking/product-events';
 import { ProgramsRepository } from './programs.repository';
 import { RewardLedgerRepository } from './reward-ledger.repository';
@@ -47,6 +47,12 @@ export class ProgramSessionService implements OnModuleInit {
     if (!session || session.status !== WorkoutSessionStatus.COMPLETED) return null;
 
     const performed = this.collectSets(session);
+    // D1: un ejercicio con series saltadas u omitido no sube ni cuenta como fallo.
+    const skippedExercises = new Set(
+      (session.sessionExercises ?? [])
+        .filter((se) => (se.skippedSets?.length ?? 0) > 0 || se.omittedReason != null)
+        .map((se) => se.exerciseId),
+    );
     const today = this.dates.today();
     const weekNumber = weekNumberOn(today, program.startDate, program.plannedEndDate);
     const week = weekNumber ? await this.programs.findWeek(program.id, weekNumber) : null;
@@ -84,7 +90,7 @@ export class ProgramSessionService implements OnModuleInit {
               consecutiveFails: lift.consecutiveFails,
             },
             sets,
-            { isDeload: week?.isDeload ?? false },
+            { isDeload: week?.isDeload ?? false, hadSkippedSets: skippedExercises.has(lift.exerciseId) },
           );
           await lift.update(
             { suggestedKg: outcome.suggestedKg.toFixed(2), consecutiveFails: outcome.consecutiveFails },
@@ -161,6 +167,8 @@ export class ProgramSessionService implements OnModuleInit {
         motivoNoCuenta: counts ? null : this.whyNot(qualifies, alreadyCountedToday),
         sesionesHechasSemana: doneBefore + (counts ? 1 : 0),
         sesionesPlanSemana: week?.sessionsPlan ?? 0,
+        nivelMultiplicador: multiplierTier(Number(program.multiplier)),
+        escudos: program.shields ?? 0,
         bonusModo:
           program.mode === 'NONE'
             ? null

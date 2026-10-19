@@ -28,7 +28,7 @@ describe('Support training view (e2e)', () => {
     const r = await e2e
       .as(member.token)
       .post('/routines')
-      .send({ nombre: `Soporte ${Date.now()}`, duracionSemanas: 4, dias: [{ diaSemana: todayIso, ejercicios: [{ ejercicioId: g1, seriesObjetivo: 1 + Math.floor(Math.random() * 90) }] }] })
+      .send({ nombre: `Soporte ${Date.now()}`, duracionSemanas: 4, dias: [{ diaSemana: todayIso, ejercicios: [{ ejercicioId: g1, seriesObjetivo: 1 + Math.floor(Math.random() * 10) }] }] })
       .expect(201);
     const act = await e2e.as(member.token).post('/programs/strength/activate').send({ routineId: r.body.data.id, modo: 'PROGRESSIVE_OVERLOAD', diasSemana: [todayIso] }).expect(201);
     programId = act.body.data.id;

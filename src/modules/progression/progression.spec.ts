@@ -1,7 +1,10 @@
 import { UserGender } from "../../common/enums/domain.enums";
-import { computeStreaks } from "./progression.repository";
+import { computeStreaks, countComebacks } from "./progression.repository";
 import type { TrainingMetrics } from "./progression.repository";
+import { badgeIllustration, rarityRank } from "./badge-illustrations";
 import { badgeSeeds, levelSeeds } from "./progression-catalog";
+import { extendedBadgeSeeds } from "./progression-catalog-extended";
+import { criterionTypeSchema } from "./progression.schemas";
 import { restDaysSchema } from "./progression.schemas";
 import {
   computePoints,
@@ -35,6 +38,9 @@ describe("computeStreaks", () => {
       current: 0,
       longest: 0,
       weeks: 0,
+      freezes: 0,
+      freezesUsed: 0,
+      freezesEarned: 0,
     });
   });
 
@@ -138,6 +144,126 @@ describe("computeStreaks", () => {
       expect(streaks.longest).toBe(1);
     });
   });
+
+  /**
+   * Comodines (P3): cada 7 días de racha se gana uno, máximo dos guardados. Un
+   * día que falta y no es de descanso gasta uno solo y la racha sigue. Agosto
+   * de 2026 empieza en sábado; 2026-08-03 es lunes.
+   */
+  describe("with streak freezes", () => {
+    const run = (from: string, count: number): string[] =>
+      Array.from({ length: count }, (_, index) => shift(from, index));
+
+    it("earns one freeze every seven days and keeps at most two", () => {
+      expect(computeStreaks(run("2026-08-01", 6), "2026-08-06").freezes).toBe(0);
+      expect(computeStreaks(run("2026-08-01", 7), "2026-08-07")).toMatchObject({
+        current: 7,
+        freezes: 1,
+        freezesEarned: 1,
+      });
+      expect(computeStreaks(run("2026-08-01", 21), "2026-08-21")).toMatchObject({
+        current: 21,
+        freezes: 2,
+        freezesEarned: 3,
+      });
+    });
+
+    it("spends a freeze on a missed day and the streak goes on without counting that day", () => {
+      const days = [...run("2026-08-01", 7), "2026-08-09"]; // falta el 8
+      expect(computeStreaks(days, "2026-08-09")).toMatchObject({
+        current: 8,
+        longest: 8,
+        freezes: 0,
+        freezesUsed: 1,
+        freezesEarned: 1,
+      });
+    });
+
+    it("without a freeze the same gap breaks the streak, as before", () => {
+      const days = [...run("2026-08-01", 6), "2026-08-08"]; // falta el 7
+      expect(computeStreaks(days, "2026-08-08")).toMatchObject({ current: 1, longest: 6, freezes: 0 });
+    });
+
+    it("covers a two-day gap with two freezes", () => {
+      const days = [...run("2026-08-01", 14), "2026-08-17"]; // faltan el 15 y el 16
+      expect(computeStreaks(days, "2026-08-17")).toMatchObject({ current: 15, freezes: 0, freezesUsed: 2 });
+    });
+
+    it("breaks when the gap needs more freezes than there are, and the freezes go with the streak", () => {
+      const days = [...run("2026-08-01", 14), "2026-08-18"]; // faltan tres días
+      expect(computeStreaks(days, "2026-08-18")).toMatchObject({
+        current: 1,
+        longest: 14,
+        freezes: 0,
+        freezesUsed: 0,
+        freezesEarned: 0,
+      });
+    });
+
+    it("does not spend a freeze on a declared rest day", () => {
+      // 2026-08-08 es sábado (6): descanso declarado.
+      const days = [...run("2026-08-01", 7), "2026-08-09"];
+      expect(computeStreaks(days, "2026-08-09", new Set([6]))).toMatchObject({
+        current: 8,
+        freezes: 1,
+        freezesUsed: 0,
+      });
+    });
+
+    it("spends freezes on the days already missed up to today, but not on today", () => {
+      const days = run("2026-08-01", 7);
+      expect(computeStreaks(days, "2026-08-08")).toMatchObject({ current: 7, freezes: 1, freezesUsed: 0 });
+      expect(computeStreaks(days, "2026-08-09")).toMatchObject({ current: 7, freezes: 0, freezesUsed: 1 });
+      expect(computeStreaks(days, "2026-08-10").current).toBe(0);
+    });
+
+    it("never shortens a streak compared with the rule without freezes (1000 random histories)", () => {
+      let seed = 42;
+      const random = () => {
+        seed = (seed * 1664525 + 1013904223) % 4294967296;
+        return seed / 4294967296;
+      };
+      for (let history = 0; history < 1000; history += 1) {
+        const days: string[] = [];
+        let cursor = "2026-01-05";
+        for (let step = 0; step < 60; step += 1) {
+          cursor = shift(cursor, random() < 0.75 ? 1 : 2 + Math.floor(random() * 3));
+          days.push(cursor);
+        }
+        const today = shift(cursor, Math.floor(random() * 3));
+        const withFreezes = computeStreaks(days, today);
+        const strict = strictLongest(days);
+        expect(withFreezes.longest).toBeGreaterThanOrEqual(strict);
+        expect(withFreezes.freezes).toBeGreaterThanOrEqual(0);
+        expect(withFreezes.freezes).toBeLessThanOrEqual(2);
+      }
+    });
+  });
+});
+
+function shift(day: string, days: number): string {
+  const date = new Date(`${day}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** La racha más larga con la regla de antes: solo días consecutivos. */
+function strictLongest(days: readonly string[]): number {
+  let longest = days.length > 0 ? 1 : 0;
+  let current = 1;
+  for (let index = 1; index < days.length; index += 1) {
+    current = shift(days[index - 1], 1) === days[index] ? current + 1 : 1;
+    longest = Math.max(longest, current);
+  }
+  return longest;
+}
+
+describe("countComebacks", () => {
+  it("counts a session after fourteen whole days away, not the very first one", () => {
+    expect(countComebacks(["2026-08-01"])).toBe(0);
+    expect(countComebacks(["2026-08-01", "2026-08-15"])).toBe(0); // trece días sin venir
+    expect(countComebacks(["2026-08-01", "2026-08-16", "2026-08-17", "2026-09-10"])).toBe(2);
+  });
 });
 
 describe("restDaysSchema", () => {
@@ -187,14 +313,15 @@ describe("computePoints", () => {
     };
     const badges = [{ pointsReward: 25 }];
     const breakdown = computePointsBreakdown(metrics, badges);
-    expect(breakdown).toEqual({ session: 100, sets: 40, volume: 50, streak: 20, badges: 25, modes: 0 });
+    expect(breakdown).toEqual({ session: 100, sets: 40, volume: 50, streak: 20, badges: 25, modes: 0, challenges: 0 });
     const sum =
       breakdown.session +
       breakdown.sets +
       breakdown.volume +
       breakdown.streak +
       breakdown.badges +
-      breakdown.modes;
+      breakdown.modes +
+      breakdown.challenges;
     expect(sum).toBe(computePoints(metrics, badges));
   });
 
@@ -320,5 +447,97 @@ describe("seeded catalogue", () => {
         .map((badge) => badge.criterionThreshold),
     );
     expect(cheapest).toBe(1);
+  });
+});
+
+describe("badge variety for the reward cards (2026-10-13)", () => {
+  const neutral = badgeSeeds.filter((badge) => badge.audience === "ANY");
+
+  it("adds at least thirty badges on top of the original catalogue", () => {
+    expect(extendedBadgeSeeds.length).toBeGreaterThanOrEqual(30);
+    expect(neutral.length).toBeGreaterThanOrEqual(65);
+  });
+
+  it("spreads the new badges over every rarity", () => {
+    const byRarity = new Map<string, number>();
+    for (const badge of extendedBadgeSeeds) {
+      byRarity.set(badge.rarity, (byRarity.get(badge.rarity) ?? 0) + 1);
+    }
+    for (const rarity of ["COMUN", "RARA", "EPICA", "LEGENDARIA"]) {
+      expect(byRarity.get(rarity) ?? 0).toBeGreaterThanOrEqual(6);
+    }
+  });
+
+  it("covers cardio, social and creator next to the training categories", () => {
+    const categories = new Set(extendedBadgeSeeds.map((badge) => badge.category));
+    for (const category of ["HITO", "CONSTANCIA", "FUERZA", "CARDIO", "SOCIAL", "CREADOR"]) {
+      expect(categories.has(category as never)).toBe(true);
+    }
+  });
+
+  it("rewards rarer badges with more points inside the same criterion", () => {
+    const byCriterion = new Map<string, typeof extendedBadgeSeeds[number][]>();
+    for (const badge of neutral) {
+      byCriterion.set(badge.criterionType, [...(byCriterion.get(badge.criterionType) ?? []), badge]);
+    }
+    for (const ladder of byCriterion.values()) {
+      const sorted = [...ladder].sort((a, b) => a.criterionThreshold - b.criterionThreshold);
+      for (let index = 1; index < sorted.length; index += 1) {
+        expect(sorted[index].pointsReward).toBeGreaterThanOrEqual(sorted[index - 1].pointsReward);
+        expect(rarityRank(sorted[index].rarity)).toBeGreaterThanOrEqual(rarityRank(sorted[index - 1].rarity));
+      }
+    }
+  });
+
+  it("gives every badge an illustration and lets the admin create every criterion", () => {
+    for (const badge of badgeSeeds) {
+      expect(badgeIllustration(badge.code, badge.criterionType)).toMatch(/^[a-z]+(-[a-z]+)*$/u);
+      expect(criterionTypeSchema.safeParse(badge.criterionType).success).toBe(true);
+    }
+    expect(badgeIllustration("PRIMERA_SESION", "SESSION_COUNT")).toBe("first-step");
+    expect(badgeIllustration("INVENTADA_POR_UN_GIMNASIO", "STREAK_DAYS")).toBe("streak-flame");
+  });
+
+  it("ranks rarities from common to legendary", () => {
+    expect(["COMUN", "RARA", "EPICA", "LEGENDARIA"].map(rarityRank)).toEqual([1, 2, 3, 4]);
+    expect(rarityRank("DESCONOCIDA")).toBe(1);
+  });
+
+  it("measures the new criteria and treats a missing metric as zero", () => {
+    const metrics: TrainingMetrics = {
+      ...NO_TRAINING,
+      totalTrainingMinutes: 615,
+      maxSetWeightKg: 102.5,
+      timedSecondsTotal: 90,
+      cardioTotalMinutes: 75,
+      cardioTotalKm: 42.3,
+      mondaySessions: 11,
+      distinctWeekdays: 7,
+      maxSessionsInWeek: 5,
+      geoVerifiedSessions: 2,
+      supersetSessions: 1,
+      routinesCreated: 3,
+      routinesPublished: 1,
+      routineCopiesReceived: 6,
+      commentsWritten: 10,
+      ratingsGiven: 1,
+      commentLikesReceived: 5,
+    };
+    const earned = (code: string) => {
+      const badge = extendedBadgeSeeds.find((entry) => entry.code === code)!;
+      return measure(metrics, badge.criterionType) >= badge.criterionThreshold;
+    };
+    for (const code of [
+      "DIEZ_HORAS", "CLUB_100", "PRIMERA_PLANCHA", "CARDIO_1H", "CARDIO_42K", "LUNES_10",
+      "LOS_SIETE_DIAS", "SEMANA_DE_CINCO", "PRESENTE", "PRIMERA_SUPERSERIE", "TRES_RUTINAS",
+      "PRIMERA_PUBLICA", "CINCO_DESCARGAS", "DIEZ_COMENTARIOS", "PRIMERA_VALORACION", "CINCO_ME_GUSTA",
+    ]) {
+      expect([code, earned(code)]).toEqual([code, true]);
+    }
+    for (const code of ["CLUB_140", "CARDIO_100K", "SEMANA_DE_SEIS", "VEINTICINCO_DESCARGAS", "DIEZ_VALORACIONES"]) {
+      expect([code, earned(code)]).toEqual([code, false]);
+    }
+    expect(measure(NO_TRAINING, "COMMENTS_WRITTEN")).toBe(0);
+    expect(measure(NO_TRAINING, "MAX_SET_WEIGHT_KG")).toBe(0);
   });
 });

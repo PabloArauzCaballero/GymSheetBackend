@@ -28,6 +28,10 @@ export class NotificationPreferenceModel extends Model {
   @Column({ type: DataType.BOOLEAN, allowNull: false, field: 'membership_expiry_enabled' })
   declare membershipExpiryEnabled: boolean;
 
+  @Default(false)
+  @Column({ type: DataType.BOOLEAN, allowNull: false, field: 'message_preview_enabled' })
+  declare messagePreviewEnabled: boolean;
+
   @Default(NotificationChannel.IN_APP)
   @Column({ type: DataType.STRING(30), allowNull: false, field: 'preferred_channel' })
   declare preferredChannel: NotificationChannel.IN_APP | NotificationChannel.HTTP_GATEWAY;

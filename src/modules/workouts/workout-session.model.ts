@@ -26,6 +26,9 @@ export class WorkoutSessionModel extends Model {
   @Column({ type: DataType.UUID, allowNull: false, field: 'usuario_id' })
   declare userId: string;
 
+  @Column({ type: DataType.UUID, allowNull: true, field: 'routine_id' })
+  declare routineId: string | null;
+
   @Default(DataType.NOW)
   @Column({ type: DataType.DATE, allowNull: false, field: 'fecha_inicio' })
   declare startedAt: Date;
@@ -56,15 +59,19 @@ export class WorkoutSessionModel extends Model {
   @Column({ type: DataType.UUID, allowNull: true, field: 'verified_branch_id' })
   declare verifiedBranchId: string | null;
 
-  /** Rutina, día y programa que originaron la sesión (nulos en sesiones libres). */
-  @Column({ type: DataType.UUID, allowNull: true, field: 'routine_id' })
-  declare routineId: string | null;
-
   @Column({ type: DataType.UUID, allowNull: true, field: 'routine_day_id' })
   declare routineDayId: string | null;
 
   @Column({ type: DataType.UUID, allowNull: true, field: 'program_id' })
   declare programId: string | null;
+
+  /**
+   * Lo que respondió `finish` (premio de la senda y extras de programa). Un
+   * segundo `finish` devuelve esto mismo: cerrar dos veces no es un error ni un
+   * premio vacío.
+   */
+  @Column({ type: DataType.JSONB, allowNull: true, field: 'resultado_cierre' })
+  declare closeResult: Record<string, unknown> | null;
 
   @BelongsTo(() => UserModel)
   declare user?: UserModel;

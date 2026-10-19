@@ -8,6 +8,7 @@ import { ExercisesService } from '../exercises/exercises.service';
 import { RoutineNotifier } from './routine-notifier';
 import { RoutineAccessService } from './routine-access.service';
 import { RoutineDaysRepository } from './routine-days.repository';
+import { normalizeDayGroups } from './routine-groups';
 import { RoutineDayInput, WeekOverrideInput } from './routine-v2.schemas';
 import { RoutineModel } from './routine.model';
 import { TrainingRepository } from './training.repository';
@@ -37,6 +38,18 @@ export class RoutineStructureService {
     }
   }
 
+  /**
+   * Valida y normaliza los bloques (superserie/circuito) de cada día:
+   * contiguos, de 2 o más, renumerados y con `grupoTipo` derivado.
+   * Lanza 400 ROUTINE_GROUP_INVALID.
+   */
+  normalizeGroups(days: readonly RoutineDayInput[]): RoutineDayInput[] {
+    return days.map((day, index) => ({
+      ...day,
+      exercises: normalizeDayGroups(day.exercises, day.name ?? `#${index + 1}`),
+    }));
+  }
+
   /** Todos los ejercicios deben existir y ser visibles para quien edita (propios o globales). */
   async assertExercisesUsable(
     userId: string,
@@ -53,11 +66,12 @@ export class RoutineStructureService {
   async replace(
     actor: Actor,
     routineId: string,
-    days: readonly RoutineDayInput[],
+    input: readonly RoutineDayInput[],
   ): Promise<void> {
     const routine = await this.loadRoutine(routineId);
     await this.access.assertCanEdit(actor, routine);
-    this.assertComplete(days);
+    this.assertComplete(input);
+    const days = this.normalizeGroups(input);
     await this.assertExercisesUsable(
       actor.id,
       days,
@@ -149,6 +163,13 @@ export class RoutineStructureService {
             repsMin: e.repsMin,
             repsMax: e.repsMax,
             targetWeightKg: e.targetWeightKg == null ? null : Number(e.targetWeightKg),
+            restSeconds: e.restSeconds,
+            targetRir: e.targetRir,
+            note: e.note,
+            group: e.group,
+            groupType: e.groupType,
+            restBetweenSeconds: e.restBetweenSeconds,
+            durationSeconds: e.durationSeconds,
           })),
       })),
     });

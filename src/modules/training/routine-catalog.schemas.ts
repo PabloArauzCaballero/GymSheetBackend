@@ -11,7 +11,7 @@ const booleanQuery = z
  * la respuesta paginada por página de siempre (ver `TrainingController.list`).
  */
 export const routineCatalogQuerySchema = z.object({
-  scope: z.enum(['public', 'official', 'mine', 'shared']),
+  scope: z.enum(['all', 'public', 'official', 'mine', 'shared']),
   q: z.string().trim().min(1).max(80).optional(),
   objetivo: z.nativeEnum(TrainingGoal).optional(),
   diasPorSemana: z.coerce.number().int().min(1).max(7).optional(),
@@ -22,6 +22,13 @@ export const routineCatalogQuerySchema = z.object({
 });
 
 export type RoutineCatalogQuery = z.infer<typeof routineCatalogQuerySchema>;
+
+/** `GET /routines/recommended?limit=3` (§C7). */
+export const recommendedQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(10).default(3),
+});
+
+export type RecommendedQuery = z.infer<typeof recommendedQuerySchema>;
 
 export const encodeCursor = (offset: number): string =>
   Buffer.from(JSON.stringify({ o: offset }), 'utf8').toString('base64url');

@@ -4,6 +4,7 @@ import { ExerciseModel } from '../exercises/exercise.model';
 import { ExercisesModule } from '../exercises/exercises.module';
 import { UserModel } from '../users/user.model';
 import { WorkoutsModule } from '../workouts/workouts.module';
+import { OnboardingModel } from '../profiles/onboarding.model';
 import { RoutineAssignmentModel } from './routine-assignment.model';
 import { RoutineDayModel } from './routine-day.model';
 import { RoutineShareModel } from './routine-share.model';
@@ -25,6 +26,8 @@ import { RoutineDaysRepository } from './routine-days.repository';
 import { RoutineCatalogRepository } from './routine-catalog.repository';
 import { RoutineCatalogService } from './routine-catalog.service';
 import { RoutineStructureService } from './routine-structure.service';
+import { SessionRestController } from './session-rest.controller';
+import { SessionRestService } from './session-rest.service';
 import { TrainingController } from './training.controller';
 import { TrainingRepository } from './training.repository';
 import { TrainingService } from './training.service';
@@ -40,6 +43,7 @@ import { TrainingService } from './training.service';
       RoutineWeekOverrideModel,
       ExerciseModel,
       UserModel,
+      OnboardingModel,
     ]),
     ExercisesModule,
     WorkoutsModule,
@@ -50,6 +54,7 @@ import { TrainingService } from './training.service';
     RoutinePublicationController,
     RoutineSharingController,
     RoutineAdminController,
+    SessionRestController,
   ],
   providers: [
     TrainingRepository,
@@ -65,6 +70,7 @@ import { TrainingService } from './training.service';
     RoutinePublicationService,
     RoutineSharesRepository,
     RoutineSharingService,
+    SessionRestService,
   ],
   exports: [
     TrainingService,

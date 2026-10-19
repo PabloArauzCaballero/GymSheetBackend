@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
+import { env } from '../../config/env';
 import { QueryTypes } from 'sequelize';
 import { RoutineModel } from './routine.model';
 import { RoutineCatalogQuery } from './routine-catalog.schemas';
@@ -14,6 +15,8 @@ export type CatalogRow = {
   es_oficial: boolean;
   created_by_user_id: string;
   autor_nombre: string;
+  autor_foto_url: string | null;
+  portada_url: string | null;
   version: number;
   valoracion_promedio: string | null;
   valoracion_total: number;
@@ -21,6 +24,8 @@ export type CatalogRow = {
   publicada_en: Date | null;
   atribucion: { routineName: string; authorId: string | null; authorName: string } | null;
   estado_moderacion: string;
+  basada_en_rutina_id: string | null;
+  numero_copia: number | null;
   ejercicios_total: number;
   dias: Array<{ diaSemana: number | null; nombre: string | null; ejerciciosTotal: number }>;
   share_id: string | null;
@@ -28,6 +33,17 @@ export type CatalogRow = {
   share_origen: string | null;
   share_owner_id: string | null;
   share_owner_nombre: string | null;
+};
+
+export type OfficialTemplateRow = CatalogRow & { metadata: Record<string, unknown> | null };
+
+export type RecommendationProfileRow = {
+  primary_goal: string | null;
+  experience_level: string | null;
+  weekly_frequency: number | null;
+  training_location: string | null;
+  available_equipment: unknown;
+  profile_goal: string | null;
 };
 
 const ORDER_SQL: Record<RoutineCatalogQuery['orden'], string> = {
@@ -39,6 +55,52 @@ const ORDER_SQL: Record<RoutineCatalogQuery['orden'], string> = {
               * EXP(-GREATEST(EXTRACT(EPOCH FROM (now() - COALESCE(r.publicada_en, r.created_at))) / 86400, 0) / 30.0) DESC,
               r.id`,
 };
+
+/**
+ * Primera foto de perfil visible de un usuario (la misma que enseña Comunidad).
+ * Una foto retirada por moderación no reaparece en la tarjeta de su rutina.
+ */
+export const authorPhotoSql = (userIdColumn: string): string => `(SELECT ph.url FROM profile.photos ph
+               WHERE ph.user_id = ${userIdColumn} AND ph.hidden_at IS NULL
+               ORDER BY ph.position ASC, ph.created_at ASC LIMIT 1)`;
+
+/**
+ * Ancho a partir del cual una lámina se ve nítida a sangre en un teléfono a 3×
+ * (402 pt × 3 = 1.206 px). Las láminas originales del catálogo miden 850 px.
+ */
+export const SHARP_COVER_MIN_WIDTH = 1200;
+
+/**
+ * Portada de la tarjeta: la imagen del primer ejercicio (por día y orden) que
+ * tenga una. Gana la lámina (foto o render a 2000 px) sobre el póster del vídeo
+ * (ilustración sobre blanco), que se ve peor a todo el ancho; y entre láminas,
+ * la que llega al ancho nítido antes que una de 850 px que iría ampliada.
+ */
+export const coverSql = (routineIdColumn: string): string => `(SELECT CASE WHEN m.media_type = 'IMAGE' THEN m.url ELSE m.thumbnail_url END
+               FROM training.routine_exercises ce
+               LEFT JOIN training.routine_days cd ON cd.id = ce.routine_day_id
+               JOIN training.exercise_media m ON m.ejercicio_id = ce.ejercicio_id AND m.status = 'ACTIVE'
+                AND (m.media_type = 'IMAGE' OR (m.media_type = 'VIDEO' AND m.thumbnail_url IS NOT NULL))
+              WHERE ce.routine_id = ${routineIdColumn}
+              ORDER BY (m.media_type = 'IMAGE') DESC, (COALESCE(m.width, 0) >= ${SHARP_COVER_MIN_WIDTH}) DESC,
+                       cd.orden NULLS LAST, ce.orden, m.is_primary DESC, m.width DESC NULLS LAST, m.sort_order
+              LIMIT 1)`;
+
+/** Columnas de la tarjeta del catálogo (alias `r` = rutina, `u` = autor). */
+const CARD_COLUMNS = `r.id, r.nombre, r.descripcion, r.objetivo, r.duracion_semanas, r.visibilidad, r.es_oficial,
+             r.created_by_user_id, u.nombre_completo AS autor_nombre,
+             ${authorPhotoSql('r.created_by_user_id')} AS autor_foto_url,
+             ${coverSql('r.id')} AS portada_url, r.version, r.valoracion_promedio,
+             r.valoracion_total, r.copias_total, r.publicada_en, r.atribucion, r.estado_moderacion, r.basada_en_rutina_id, r.numero_copia,
+             (SELECT count(*)::int FROM training.routine_exercises re WHERE re.routine_id = r.id) AS ejercicios_total,
+             COALESCE((SELECT json_agg(json_build_object(
+                         'diaSemana', d.dia_semana, 'nombre', d.nombre,
+                         'ejerciciosTotal', (SELECT count(*)::int FROM training.routine_exercises x WHERE x.routine_day_id = d.id))
+                         ORDER BY d.orden)
+                       FROM training.routine_days d WHERE d.routine_id = r.id), '[]'::json) AS dias`;
+
+/** Rutinas de pruebas automáticas fuera de las pestañas públicas (§C6). */
+const HIDDEN_PREFIX_CONDITION = 'left(r.nombre, length(:hiddenPrefix)) <> :hiddenPrefix';
 
 /** Consulta del catálogo por pestaña. Siempre filtra visibilidad y moderación en SQL. */
 @Injectable()
@@ -55,12 +117,25 @@ export class RoutineCatalogRepository {
     switch (query.scope) {
       case 'public':
         where.push("r.visibilidad = 'PUBLIC'", "r.estado_moderacion = 'VISIBLE'", 'r.es_oficial = false');
+        if (env.CATALOG_HIDDEN_NAME_PREFIX) where.push(HIDDEN_PREFIX_CONDITION);
         break;
       case 'official':
         where.push("r.visibilidad = 'PUBLIC'", "r.estado_moderacion = 'VISIBLE'", 'r.es_oficial = true');
+        if (env.CATALOG_HIDDEN_NAME_PREFIX) where.push(HIDDEN_PREFIX_CONDITION);
         break;
+      case 'all': {
+        // Lo público de la comunidad más lo que creé yo (privado o no). Las
+        // rutinas de REPP tienen su propia pestaña y no se mezclan aquí.
+        const community = `(${[
+          "r.visibilidad = 'PUBLIC'",
+          "r.estado_moderacion = 'VISIBLE'",
+          ...(env.CATALOG_HIDDEN_NAME_PREFIX ? [HIDDEN_PREFIX_CONDITION] : []),
+        ].join(' AND ')})`;
+        where.push('r.es_oficial = false', `(r.created_by_user_id = :userId OR ${community})`);
+        break;
+      }
       case 'mine':
-        where.push('r.created_by_user_id = :userId');
+        where.push('r.created_by_user_id = :userId', 'r.es_oficial = false');
         break;
       case 'shared':
         shareJoin = `JOIN training.routine_shares s ON s.routine_id = r.id AND s.invitado_id = :userId
@@ -81,15 +156,7 @@ export class RoutineCatalogRepository {
         : 'NULL::uuid AS share_id, NULL AS share_estado, NULL AS share_origen, NULL::uuid AS share_owner_id, NULL AS share_owner_nombre';
 
     const sql = `
-      SELECT r.id, r.nombre, r.descripcion, r.objetivo, r.duracion_semanas, r.visibilidad, r.es_oficial,
-             r.created_by_user_id, u.nombre_completo AS autor_nombre, r.version, r.valoracion_promedio,
-             r.valoracion_total, r.copias_total, r.publicada_en, r.atribucion, r.estado_moderacion,
-             (SELECT count(*)::int FROM training.routine_exercises re WHERE re.routine_id = r.id) AS ejercicios_total,
-             COALESCE((SELECT json_agg(json_build_object(
-                         'diaSemana', d.dia_semana, 'nombre', d.nombre,
-                         'ejerciciosTotal', (SELECT count(*)::int FROM training.routine_exercises x WHERE x.routine_day_id = d.id))
-                         ORDER BY d.orden)
-                       FROM training.routine_days d WHERE d.routine_id = r.id), '[]'::json) AS dias,
+      SELECT ${CARD_COLUMNS},
              ${sharedCols}
         FROM training.routines r
         JOIN public.usuarios u ON u.id = r.created_by_user_id
@@ -108,7 +175,43 @@ export class RoutineCatalogRepository {
         diasPorSemana: query.diasPorSemana ?? null,
         limitPlusOne: query.limit + 1,
         offset,
+        hiddenPrefix: env.CATALOG_HIDDEN_NAME_PREFIX ?? null,
       },
     });
+  }
+
+  /**
+   * Plantillas candidatas a «Para ti»: oficiales, públicas, visibles y con
+   * `metadata.plantilla` (las 20 de REPP). Son pocas: se filtran en memoria con
+   * la regla pura de `routine-recommendation.ts`.
+   */
+  listOfficialTemplates(): Promise<OfficialTemplateRow[]> {
+    return this.routineModel.sequelize!.query<OfficialTemplateRow>(
+      `SELECT ${CARD_COLUMNS}, r.metadata,
+              NULL::uuid AS share_id, NULL AS share_estado, NULL AS share_origen,
+              NULL::uuid AS share_owner_id, NULL AS share_owner_nombre
+         FROM training.routines r
+         JOIN public.usuarios u ON u.id = r.created_by_user_id
+        WHERE r.estado = 'ACTIVE' AND r.visibilidad = 'PUBLIC' AND r.estado_moderacion = 'VISIBLE'
+          AND r.es_oficial = true AND r.metadata->>'plantilla' IS NOT NULL
+          ${env.CATALOG_HIDDEN_NAME_PREFIX ? `AND ${HIDDEN_PREFIX_CONDITION}` : ''}
+        ORDER BY r.id
+        LIMIT 200`,
+      { type: QueryTypes.SELECT, replacements: { hiddenPrefix: env.CATALOG_HIDDEN_NAME_PREFIX ?? null } },
+    );
+  }
+
+  /** Lo que la regla necesita de la persona: onboarding y, si no, el objetivo del perfil. */
+  async findRecommendationProfile(userId: string): Promise<RecommendationProfileRow | null> {
+    const rows = await this.routineModel.sequelize!.query<RecommendationProfileRow>(
+      `SELECT o.primary_goal, o.experience_level, o.weekly_frequency, o.training_location,
+              o.available_equipment, p.objetivo AS profile_goal
+         FROM public.usuarios u
+         LEFT JOIN profile.onboarding o ON o.user_id = u.id
+         LEFT JOIN public.perfiles_antropometricos p ON p.usuario_id = u.id
+        WHERE u.id = :userId`,
+      { type: QueryTypes.SELECT, replacements: { userId } },
+    );
+    return rows[0] ?? null;
   }
 }

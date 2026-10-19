@@ -77,6 +77,9 @@ export class RoutineModel extends Model {
   })
   declare status: RoutineStatus;
 
+  @Column({ type: DataType.DATE, allowNull: true, field: 'hidden_at' })
+  declare hiddenAt: Date | null;
+
   @Default({})
   @Column({ type: DataType.JSONB, allowNull: false, field: 'metadata' })
   declare metadata: Record<string, unknown>;
@@ -100,6 +103,10 @@ export class RoutineModel extends Model {
   @Default(1)
   @Column({ type: DataType.INTEGER, allowNull: false, field: 'version' })
   declare version: number;
+
+  /** «vN» de una copia propia (C2): 1 + copias previas del mismo original por el mismo usuario. */
+  @Column({ type: DataType.SMALLINT, allowNull: true, field: 'numero_copia' })
+  declare copyNumber: number | null;
 
   @Column({ type: DataType.CHAR(64), allowNull: true, field: 'huella' })
   declare fingerprint: string | null;

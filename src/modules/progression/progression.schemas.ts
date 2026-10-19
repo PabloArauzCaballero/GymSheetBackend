@@ -77,6 +77,37 @@ export const criterionTypeSchema = z.enum([
   "NIGHT_SESSIONS",
   "WEEKEND_SESSIONS",
   "PERSONAL_RECORDS",
+  "OVERLOAD_WEEKS_STREAK",
+  "MODE_MULTIPLIER_MAX",
+  "STRENGTH_GOAL_REACHED",
+  "CARDIO_WEEKLY_MINUTES",
+  "TOTAL_TRAINING_MINUTES",
+  "MAX_SET_WEIGHT_KG",
+  "TIMED_SECONDS_TOTAL",
+  "CARDIO_TOTAL_MINUTES",
+  "CARDIO_TOTAL_KM",
+  "MONDAY_SESSIONS",
+  "DISTINCT_WEEKDAYS",
+  "MAX_SESSIONS_IN_WEEK",
+  "GEO_VERIFIED_SESSIONS",
+  "SUPERSET_SESSIONS",
+  "ROUTINES_CREATED",
+  "ROUTINES_PUBLISHED",
+  "ROUTINE_COPIES_RECEIVED",
+  "COMMENTS_WRITTEN",
+  "RATINGS_GIVEN",
+  "COMMENT_LIKES_RECEIVED",
+  "CHALLENGES_COMPLETED",
+  "PERFECT_WEEKS",
+  "COMEBACK_SESSIONS",
+  "MAX_SESSIONS_IN_DAY",
+  "LONGEST_SESSION_MINUTES",
+  "MIDNIGHT_SESSIONS",
+  "NEW_YEAR_SESSIONS",
+  "BIRTHDAY_SESSIONS",
+  "MAX_RECORDS_IN_SESSION",
+  "MODE_SHIELDS_USED",
+  "MODE_MAX_MULTIPLIER_WEEKS",
 ]);
 
 export const createBadgeSchema = z.object({
@@ -86,7 +117,18 @@ export const createBadgeSchema = z.object({
   name: z.string().trim().min(2).max(80),
   description: z.string().trim().min(4).max(300),
   flavorText: z.string().trim().max(300).nullable().default(null),
-  category: z.enum(["CONSTANCIA", "VOLUMEN", "FUERZA", "VARIEDAD", "HITO", "SECRETA"]),
+  category: z.enum([
+    "CONSTANCIA",
+    "VOLUMEN",
+    "FUERZA",
+    "VARIEDAD",
+    "HITO",
+    "SECRETA",
+    "MODO",
+    "CARDIO",
+    "SOCIAL",
+    "CREADOR",
+  ]),
   rarity: z.enum(["COMUN", "RARA", "EPICA", "LEGENDARIA"]).default("COMUN"),
   icon: iconSchema.default("ribbon-outline"),
   color: colorSchema.default("#c3f400"),
@@ -130,6 +172,68 @@ export const leaderboardQuerySchema = z.object({
   /** Orden de la clasificación: por puntos totales o por racha vigente. */
   sortBy: z.enum(["points", "streak"]).default("points"),
 });
+
+/**
+ * Premios del gimnasio (P1). `targetCode` es el código de la insignia o del
+ * rango; para la semana redonda no hace falta y se guarda como `SEMANA_REDONDA`.
+ * `alcance` funciona igual que en insignias y rangos: el gimnasio sale del token.
+ */
+const prizeFields = {
+  targetKind: z.enum(["BADGE", "LEVEL", "PERFECT_WEEK"]),
+  targetCode: codeSchema.optional(),
+  title: z.string().trim().min(2).max(80),
+  description: z.string().trim().max(300).nullable().default(null),
+  instructions: z.string().trim().max(300).nullable().default(null),
+  icon: iconSchema.default("gift-outline"),
+  /** Días de validez del cupón desde que nace. Sin valor, no caduca. */
+  validDays: z.number().int().min(1).max(3650).nullable().default(null),
+  /** Cupones que se pueden dar en total. Sin valor, ilimitado. */
+  stock: z.number().int().min(0).max(1_000_000).nullable().default(null),
+  active: z.boolean().default(true),
+};
+
+const targetCodeRequired = (input: { targetKind?: string; targetCode?: string }) =>
+  input.targetKind !== "BADGE" && input.targetKind !== "LEVEL" ? true : Boolean(input.targetCode);
+
+export const createPrizeSchema = z
+  .object({ alcance: alcanceSchema, ...prizeFields })
+  .refine(targetCodeRequired, {
+    message: "Indica `targetCode`: el código de la insignia o del rango.",
+    path: ["targetCode"],
+  });
+
+/**
+ * Edición parcial. Sin valores por defecto: un PATCH que no menciona `stock`
+ * no puede devolverlo a «ilimitado» por la espalda.
+ */
+export const updatePrizeSchema = z
+  .object({
+    targetKind: prizeFields.targetKind.optional(),
+    targetCode: codeSchema.optional(),
+    title: prizeFields.title.optional(),
+    description: z.string().trim().max(300).nullable().optional(),
+    instructions: z.string().trim().max(300).nullable().optional(),
+    icon: iconSchema.optional(),
+    validDays: z.number().int().min(1).max(3650).nullable().optional(),
+    stock: z.number().int().min(0).max(1_000_000).nullable().optional(),
+    active: z.boolean().optional(),
+  })
+  .refine((input) => Object.values(input).some((value) => value !== undefined), {
+    message: "Debe enviar al menos un campo para actualizar.",
+  });
+
+/** El código se dicta en recepción: se admite en minúsculas y con espacios alrededor. */
+export const redeemPrizeSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-HJ-NP-Z2-9]{6}$/u, "El código tiene 6 caracteres, sin 0, O, 1 ni I."),
+});
+
+export type CreatePrizeInput = z.infer<typeof createPrizeSchema>;
+export type UpdatePrizeInput = z.infer<typeof updatePrizeSchema>;
+export type RedeemPrizeInput = z.infer<typeof redeemPrizeSchema>;
 
 export type CreateLevelInput = z.infer<typeof createLevelSchema>;
 export type UpdateLevelInput = z.infer<typeof updateLevelSchema>;

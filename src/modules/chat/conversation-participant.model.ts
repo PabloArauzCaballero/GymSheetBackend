@@ -34,6 +34,14 @@ export class ConversationParticipantModel extends Model {
   @Column({ type: DataType.DATE, allowNull: true, field: "last_read_at" })
   declare lastReadAt: Date | null;
 
+  /** Cursor público de lectura; puede quedar detrás del cursor interno si el visto está apagado. */
+  @Column({ type: DataType.DATE, allowNull: true, field: "last_receipt_read_at" })
+  declare lastReceiptReadAt: Date | null;
+
+  /** No mostrar checks de mensajes anteriores a la última activación del visto. */
+  @Column({ type: DataType.DATE, allowNull: true, field: "read_receipts_enabled_since" })
+  declare readReceiptsEnabledSince: Date | null;
+
   @BelongsTo(() => ConversationModel)
   declare conversation?: ConversationModel;
 }

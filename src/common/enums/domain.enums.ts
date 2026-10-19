@@ -27,6 +27,7 @@ export enum TrainingGoal {
   ENDURANCE = "RESISTENCIA",
   FAT_LOSS = "PERDIDA_GRASA",
   GENERAL_HEALTH = "SALUD_GENERAL",
+  SPORT_PERFORMANCE = "RENDIMIENTO_DEPORTIVO",
   REHABILITATION = "REHABILITACION",
 }
 
@@ -98,8 +99,8 @@ export enum WorkoutSessionStatus {
 export enum RoutineVisibility {
   PRIVATE = "PRIVATE",
   SHARED = "SHARED",
-  TEMPLATE = "TEMPLATE",
   PUBLIC = "PUBLIC",
+  TEMPLATE = "TEMPLATE",
 }
 
 export enum RoutineStatus {
@@ -282,6 +283,7 @@ export enum NotificationStatus {
   FAILED = "FAILED",
   DEAD_LETTER = "DEAD_LETTER",
   READ = "READ",
+  SUPPRESSED = "SUPPRESSED",
 }
 
 export enum LegacyImportBatchStatus {

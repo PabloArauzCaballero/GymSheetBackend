@@ -17,6 +17,16 @@ export class ConversationModel extends Model {
   @Column({ type: DataType.STRING(20), allowNull: true, field: "system_kind" })
   declare systemKind: "CORPORATE" | "TENANT_ADMIN" | null;
 
+  @Column({ type: DataType.DATE, allowNull: true, field: "revoked_at" })
+  declare revokedAt: Date | null;
+
+  @Column({ type: DataType.UUID, allowNull: true, field: "revoked_by_user_id" })
+  declare revokedByUserId: string | null;
+
+  /** Mensajes temporales: segundos de vida de lo que se envíe (24 h, 7 días o 90 días); `null` = desactivado. */
+  @Column({ type: DataType.INTEGER, allowNull: true, field: "disappearing_seconds" })
+  declare disappearingSeconds: number | null;
+
   @HasMany(() => ConversationParticipantModel)
   declare participants?: ConversationParticipantModel[];
 

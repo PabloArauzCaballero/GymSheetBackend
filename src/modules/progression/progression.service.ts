@@ -1,13 +1,30 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { EntitlementSource, UserGender } from "../../common/enums/domain.enums";
+import { UserGender } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
-import { MembershipRepository } from "../membership/membership.repository";
+import { badgeIllustration, rarityRank } from "./badge-illustrations";
 import { UsersRepository } from "../users/users.repository";
+import { ChallengeTotals } from "./challenges.repository";
 import { ProgressionBadgeModel } from "./progression-badge.model";
 import { ProgressionLevelModel } from "./progression-level.model";
-import { ProgressionRepository, TrainingMetrics } from "./progression.repository";
+import {
+  ProgressionRepository,
+  STREAK_FREEZE_EVERY_DAYS,
+  STREAK_MAX_FREEZES,
+  TrainingMetrics,
+} from "./progression.repository";
 import type { BadgeCriterionType, ProgressionAudience } from "./progression-catalog";
+import { PrizeView, toPrizeView } from "./prizes";
+import { PrizeRecord, PrizesRepository } from "./prizes.repository";
 import { UserBadgeModel } from "./user-badge.model";
+import {
+  CHALLENGE_POINTS,
+  ChallengeDifficulty,
+  ChallengeView,
+  PERFECT_WEEK_BONUS,
+  WeeklyChallengesView,
+  mondayOfDate,
+} from "./weekly-challenges";
+import { WeeklyChallengesService } from "./weekly-challenges.service";
 
 /**
  * Cuánto vale cada cosa.
@@ -32,7 +49,13 @@ export const POINTS = {
   perLongestStreakDay: 10,
 } as const;
 
-/** De dónde sale cada punto. La suma de las cinco partes es el total. */
+/**
+ * Hitos de racha con carta propia. La pantalla enseña el siguiente («te faltan
+ * 3 días para 30»): una meta a la vista aprieta el paso, una lejana no.
+ */
+export const STREAK_MILESTONES = [3, 7, 14, 30, 60, 100, 200, 365] as const;
+
+/** De dónde sale cada punto. La suma de las partes es el total. */
 export interface PointsBreakdown {
   session: number;
   sets: number;
@@ -41,6 +64,21 @@ export interface PointsBreakdown {
   badges: number;
   /** Bonos de los programas con modo (multiplicador semanal y metas). Nunca bajan. */
   modes: number;
+  /** Retos de la semana cumplidos más los bonos de semana redonda. Nunca bajan. */
+  challenges: number;
+}
+
+export interface StreakView {
+  /** Días, ya con comodines aplicados. */
+  current: number;
+  longest: number;
+  /** Comodines guardados ahora (0..2). */
+  freezes: number;
+  /** Comodines gastados en la racha vigente. */
+  freezesUsed: number;
+  nextMilestone: number | null;
+  /** = `stats.weeklyStreak`. */
+  weekly: number;
 }
 
 /**
@@ -65,6 +103,14 @@ export interface SessionRewardView {
   levelProgressBefore: number;
   levelProgress: number;
   unlockedNow: BadgeView[];
+  /** Retos de la semana DESPUÉS de la sesión: «2 de 3», con la barra a medio llenar. */
+  challenges: WeeklyChallengesView;
+  challengesCompletedNow: ChallengeView[];
+  perfectWeekNow: boolean;
+  prizesNow: PrizeView[];
+  streak: { current: number; freezes: number; freezeEarnedNow: boolean; milestoneNow: number | null };
+  /** Lo más cerca: lo que trae de vuelta al socio la próxima vez. */
+  nearest: BadgeView[];
 }
 
 /** Las reglas publicadas, para que los clientes las expliquen sin copiarlas. */
@@ -73,6 +119,10 @@ export interface PointRulesView {
   perSet: number;
   perVolumeUnitKg: number;
   perLongestStreakDay: number;
+  challengePoints: Record<ChallengeDifficulty, number>;
+  perfectWeekBonus: number;
+  freezeEveryDays: number;
+  maxFreezes: number;
 }
 
 interface ProgressionSnapshot {
@@ -80,6 +130,8 @@ interface ProgressionSnapshot {
   breakdown: PointsBreakdown;
   level: LevelView | null;
   levelProgress: number;
+  challenges: WeeklyChallengesView;
+  streak: { current: number; freezesEarned: number };
 }
 
 export interface LevelView {
@@ -104,9 +156,17 @@ export interface BadgeView {
   flavorText: string | null;
   category: string;
   rarity: string;
+  /** 1 común … 4 legendaria. */
+  rarityRank: number;
   icon: string;
+  /** Clave de la ilustración grande de la carta (ver `badge-illustrations.ts`). */
+  illustration: string;
   color: string;
   pointsReward: number;
+  secret: boolean;
+  /** Qué mide y cuánto pide, para que la carta pueda pintar la unidad. */
+  criterion: BadgeCriterionType;
+  threshold: number;
   earned: boolean;
   earnedAt: string | null;
   /** Novedad desde la última vez que se abrió la pantalla. */
@@ -114,6 +174,14 @@ export interface BadgeView {
   /** Progreso hacia el umbral, de 0 a 1. Nulo en las secretas no conseguidas. */
   progress: number | null;
   progressLabel: string | null;
+  /**
+   * Cadena a la que pertenece: el criterio. Las insignias del mismo criterio se
+   * ven como una sola ficha «Nivel 2 de 4» en vez de cuatro fichas sueltas.
+   */
+  chain: string;
+  /** Posición en la cadena por umbral, empezando en 1. */
+  chainStep: number;
+  chainLength: number;
 }
 
 export interface ProgressionView {
@@ -141,29 +209,32 @@ export interface ProgressionView {
   };
   /** Insignias conseguidas en este mismo recálculo, para poder celebrarlas. */
   unlockedNow: BadgeView[];
+  streak: StreakView;
+  challenges: WeeklyChallengesView;
+  /** Cupones del socio, del más reciente al más antiguo. */
+  prizes: PrizeView[];
+  /** Hasta tres insignias sin conseguir (ni secretas), de más a menos avanzada. */
+  nearest: BadgeView[];
 }
 
-/**
- * Umbrales de la racha más larga que otorgan una recompensa material.
- *
- * Se pagan sobre `longestStreakDays`, no sobre la vigente: mismo criterio que
- * los puntos, para que una recompensa ya ganada no se pueda perder por
- * descansar. Cada código debe existir en el catálogo de features (sembrado en
- * `202608250005-streak-reward-features`); si una instalación no lo tiene, esa
- * recompensa en particular simplemente no se otorga, sin romper nada más.
- */
-const STREAK_REWARD_THRESHOLDS = [
-  { days: 7, featureCode: "STREAK_REWARD_7" },
-  { days: 30, featureCode: "STREAK_REWARD_30" },
-  { days: 90, featureCode: "STREAK_REWARD_90" },
-] as const;
+/** Lo que `getProgression` calcula además de la vista, para el premio de una sesión. */
+interface ProgressionComputation {
+  view: ProgressionView;
+  breakdown: PointsBreakdown;
+  prizesNowIds: ReadonlySet<string>;
+  freezesEarned: number;
+}
+
+/** Cuántas insignias enseña «Lo más cerca». */
+const NEAREST_LIMIT = 3;
 
 @Injectable()
 export class ProgressionService {
   constructor(
     private readonly progressionRepository: ProgressionRepository,
     private readonly usersRepository: UsersRepository,
-    private readonly membershipRepository: MembershipRepository,
+    private readonly challenges: WeeklyChallengesService,
+    private readonly prizes: PrizesRepository,
   ) {}
 
   /**
@@ -175,7 +246,22 @@ export class ProgressionService {
    * dos casos dejarían el marcador desviado para siempre y sin forma de saberlo.
    */
   async getProgression(userId: string): Promise<ProgressionView> {
-    const { audience, metrics, levels, badges, earned } = await this.loadContext(userId);
+    return (await this.computeProgression(userId)).view;
+  }
+
+  /** Los cupones del socio: lo mismo que `progression.prizes`, ya otorgado lo que tocara. */
+  async getPrizes(userId: string): Promise<PrizeView[]> {
+    return (await this.getProgression(userId)).prizes;
+  }
+
+  private async computeProgression(userId: string): Promise<ProgressionComputation> {
+    const context = await this.loadContext(userId);
+    const { audience, tenantId, levels, badges, earned } = context;
+
+    // Los retos van antes que las insignias: cumplirlos cuenta para las de
+    // «retos cumplidos» y «semanas redondas», y sus puntos entran en el total.
+    const challengeState = await this.challenges.sync(userId);
+    const metrics = withChallengeTotals(context.metrics, challengeState.totals);
 
     const earnedByBadgeId = new Map(earned.map((row) => [row.badgeId, row]));
 
@@ -195,15 +281,36 @@ export class ProgressionService {
         })),
       );
     }
+    const newlyEarnedIds = new Set(newlyEarned.map((badge) => badge.id));
 
-    await this.grantStreakRewards(userId, metrics.longestStreakDays);
-
-    const points = computePoints(metrics, satisfied);
+    // Los puntos de una insignia ya conseguida no se devuelven: archivar una
+    // rutina o borrar un comentario puede dejar de cumplir la regla, pero los
+    // puntos son un historial y no deben bajar.
+    const breakdown = computePointsBreakdown(
+      metrics,
+      badges.filter((badge) => satisfied.includes(badge) || earnedByBadgeId.has(badge.id)),
+    );
+    const points = sumBreakdown(breakdown);
     const path = buildPath(levels, points);
     // El rango vigente es el último desbloqueado. Se busca por índice y no con
     // `findLast` porque la librería de destino de este proyecto no lo incluye.
     const current = path.filter((level) => level.unlocked).at(-1) ?? null;
     const next = path.find((level) => !level.unlocked) ?? null;
+
+    // Los premios se otorgan ANTES de guardar el progreso: el de un rango se
+    // decide comparando con el rango guardado, y si el otorgamiento fallara a
+    // medias, la siguiente lectura todavía vería el cruce y lo reintentaría.
+    const previous = await this.progressionRepository.findProgress(userId);
+    const prizesNowIds = await this.grantPrizes({
+      userId,
+      tenantId,
+      badges,
+      earnedByBadgeId,
+      newlyEarnedIds,
+      path,
+      previousLevelCode: previous?.levelCode ?? null,
+      perfectWeekStarts: challengeState.totals.perfectWeekStarts,
+    });
 
     await this.progressionRepository.saveProgress(userId, {
       points,
@@ -216,36 +323,47 @@ export class ProgressionService {
       totalVolumeKg: metrics.totalVolumeKg,
     });
 
-    const newlyEarnedIds = new Set(newlyEarned.map((badge) => badge.id));
+    const chains = chainPositions(badges);
     const badgeViews = badges.map((badge) =>
-      toBadgeView(badge, metrics, earnedByBadgeId, newlyEarnedIds),
+      toBadgeView(badge, metrics, earnedByBadgeId, newlyEarnedIds, chains),
     );
+    // Las secretas no conseguidas no se listan: anunciarlas las convertiría en
+    // una lista de tareas y perderían lo único que aportan, la sorpresa.
+    const visible = badgeViews.filter((view) => view.earned || !view.secret);
+    const coupons = await this.prizes.listCoupons(userId);
 
     return {
-      points,
-      audience,
-      level: current,
-      nextLevel: next,
-      pointsToNextLevel: next ? Math.max(0, next.minPoints - points) : null,
-      levelProgress: tierProgress(points, current, next),
-      path,
-      // Las secretas no conseguidas no se listan: anunciarlas las convertiría en
-      // una lista de tareas y perderían lo único que aportan, la sorpresa.
-      badges: badgeViews.filter((view) => view.earned || !isSecret(badges, view.code)),
-      stats: {
-        totalSessions: metrics.totalSessions,
-        totalSets: metrics.totalSets,
-        totalReps: metrics.totalReps,
-        totalVolumeKg: Math.round(metrics.totalVolumeKg),
-        currentStreakDays: metrics.currentStreakDays,
-        longestStreakDays: metrics.longestStreakDays,
-        weeklyStreak: metrics.weeklyStreak,
-        distinctExercises: metrics.distinctExercises,
-        distinctMuscleGroups: metrics.distinctMuscleGroups,
-        personalRecords: metrics.personalRecords,
-        lastSessionOn: metrics.lastSessionOn,
+      view: {
+        points,
+        audience,
+        level: current,
+        nextLevel: next,
+        pointsToNextLevel: next ? Math.max(0, next.minPoints - points) : null,
+        levelProgress: tierProgress(points, current, next),
+        path,
+        badges: visible,
+        stats: {
+          totalSessions: metrics.totalSessions,
+          totalSets: metrics.totalSets,
+          totalReps: metrics.totalReps,
+          totalVolumeKg: Math.round(metrics.totalVolumeKg),
+          currentStreakDays: metrics.currentStreakDays,
+          longestStreakDays: metrics.longestStreakDays,
+          weeklyStreak: metrics.weeklyStreak,
+          distinctExercises: metrics.distinctExercises,
+          distinctMuscleGroups: metrics.distinctMuscleGroups,
+          personalRecords: metrics.personalRecords,
+          lastSessionOn: metrics.lastSessionOn,
+        },
+        unlockedNow: badgeViews.filter((view) => newlyEarnedIds.has(idOf(badges, view.code))),
+        streak: toStreakView(metrics),
+        challenges: challengeState.view,
+        prizes: coupons.map((coupon) => toPrizeView(coupon, prizeSourceName(coupon, badges, path))),
+        nearest: pickNearest(visible),
       },
-      unlockedNow: badgeViews.filter((view) => newlyEarnedIds.has(idOf(badges, view.code))),
+      breakdown,
+      prizesNowIds,
+      freezesEarned: metrics.streakFreezesEarned ?? 0,
     };
   }
 
@@ -262,7 +380,7 @@ export class ProgressionService {
       this.progressionRepository.listBadges(tenantId, audience),
       this.progressionRepository.listUserBadges(userId),
     ]);
-    return { audience, metrics, levels, badges, earned };
+    return { audience, tenantId, metrics, levels, badges, earned };
   }
 
   /**
@@ -273,34 +391,54 @@ export class ProgressionService {
    * todavía sin recalcular se contarían como fruto de esta sesión.
    */
   async snapshot(userId: string): Promise<ProgressionSnapshot> {
-    const { metrics, levels, badges } = await this.loadContext(userId);
+    const context = await this.loadContext(userId);
+    const challengeState = await this.challenges.preview(userId);
+    const metrics = withChallengeTotals(context.metrics, challengeState.totals);
+    const { levels, badges, earned } = context;
+    const earnedIds = new Set(earned.map((row) => row.badgeId));
     const satisfied = badges.filter(
-      (badge) => measure(metrics, badge.criterionType) >= Number(badge.criterionThreshold),
+      (badge) =>
+        earnedIds.has(badge.id) ||
+        measure(metrics, badge.criterionType) >= Number(badge.criterionThreshold),
     );
     const breakdown = computePointsBreakdown(metrics, satisfied);
     const points = sumBreakdown(breakdown);
     const path = buildPath(levels, points);
     const level = path.filter((entry) => entry.unlocked).at(-1) ?? null;
     const next = path.find((entry) => !entry.unlocked) ?? null;
-    return { points, breakdown, level, levelProgress: tierProgress(points, level, next) };
+    return {
+      points,
+      breakdown,
+      level,
+      levelProgress: tierProgress(points, level, next),
+      challenges: challengeState.view,
+      streak: { current: metrics.currentStreakDays, freezesEarned: metrics.streakFreezesEarned ?? 0 },
+    };
   }
 
   /**
    * Recalcula la senda tras una sesión y la compara con la foto previa.
    *
-   * Pasa por `getProgression`, así que otorga las insignias recién cumplidas y
-   * guarda el progreso exactamente igual que abrir la pantalla de la senda.
+   * Pasa por `getProgression`, así que otorga las insignias, retos y premios
+   * recién cumplidos y guarda el progreso exactamente igual que abrir la
+   * pantalla de la senda.
    */
   async recordSessionReward(
     userId: string,
     before: ProgressionSnapshot,
   ): Promise<SessionRewardView> {
-    const [after, afterSnapshot] = await Promise.all([
-      this.getProgression(userId),
-      this.snapshot(userId),
-    ]);
-    const delta = (key: keyof PointsBreakdown) =>
-      Math.max(0, afterSnapshot.breakdown[key] - before.breakdown[key]);
+    const { view: after, breakdown, prizesNowIds, freezesEarned } = await this.computeProgression(userId);
+    const delta = (key: keyof PointsBreakdown) => Math.max(0, breakdown[key] - before.breakdown[key]);
+
+    // Si la semana cambió entre la foto y el cálculo (cerrar justo a medianoche
+    // del domingo), todo lo cumplido de la semana nueva es de esta sesión.
+    const sameWeek = before.challenges.weekStart === after.challenges.weekStart;
+    const doneBefore = new Set(
+      sameWeek ? before.challenges.items.filter((item) => item.completed).map((item) => item.code) : [],
+    );
+    const milestoneNow =
+      STREAK_MILESTONES.filter((days) => before.streak.current < days && days <= after.streak.current).at(-1) ??
+      null;
 
     return {
       pointsBefore: before.points,
@@ -313,6 +451,7 @@ export class ProgressionService {
         streak: delta("streak"),
         badges: delta("badges"),
         modes: delta("modes"),
+        challenges: delta("challenges"),
       },
       levelBefore: before.level,
       levelAfter: after.level,
@@ -322,42 +461,83 @@ export class ProgressionService {
       levelProgressBefore: before.levelProgress,
       levelProgress: after.levelProgress,
       unlockedNow: after.unlockedNow,
+      challenges: after.challenges,
+      challengesCompletedNow: after.challenges.items.filter(
+        (item) => item.completed && !doneBefore.has(item.code),
+      ),
+      perfectWeekNow: after.challenges.perfect && !(sameWeek && before.challenges.perfect),
+      prizesNow: after.prizes.filter((prize) => prizesNowIds.has(prize.id)),
+      streak: {
+        current: after.streak.current,
+        freezes: after.streak.freezes,
+        freezeEarnedNow: freezesEarned > before.streak.freezesEarned,
+        milestoneNow,
+      },
+      nearest: after.nearest,
     };
   }
 
   getRules(): PointRulesView {
-    return { ...POINTS };
+    return {
+      ...POINTS,
+      challengePoints: { ...CHALLENGE_POINTS },
+      perfectWeekBonus: PERFECT_WEEK_BONUS,
+      freezeEveryDays: STREAK_FREEZE_EVERY_DAYS,
+      maxFreezes: STREAK_MAX_FREEZES,
+    };
   }
 
   /**
-   * Otorga las recompensas de racha cuyo umbral ya se cruzó y que todavía no
-   * se habían concedido. Ya sembrado el catálogo, esto es aditivo puro: no
-   * cambia nada de lo que la senda calculaba antes.
+   * Otorga los cupones de los premios cuyo hito se acaba de alcanzar.
+   *
+   * Las recompensas por racha antiguas (`STREAK_REWARD_*`) ya no se otorgan:
+   * los premios las sustituyen. Las ya dadas siguen en «Accesos».
+   *
+   * Un premio no es retroactivo: el gimnasio que crea hoy «batido gratis por
+   * Treinta días de fuego» no regala de golpe un batido a cada socio que ya la
+   * tenía (y se quedaría sin stock en una tarde). Cuenta lo conseguido desde
+   * que el premio existe:
+   *
+   * - **Insignia**: conseguida en o después de la creación del premio.
+   * - **Rango**: cruzado ahora (el guardado era inferior).
+   * - **Semana redonda**: cada una desde la semana en que se creó el premio.
+   *
+   * Devuelve los ids de los cupones nacidos en esta llamada.
    */
-  private async grantStreakRewards(userId: string, longestStreakDays: number): Promise<void> {
-    const eligible = STREAK_REWARD_THRESHOLDS.filter((t) => longestStreakDays >= t.days);
-    if (eligible.length === 0) return;
+  private async grantPrizes(input: {
+    userId: string;
+    tenantId: string | null;
+    badges: readonly ProgressionBadgeModel[];
+    earnedByBadgeId: ReadonlyMap<string, UserBadgeModel>;
+    newlyEarnedIds: ReadonlySet<string>;
+    path: readonly LevelView[];
+    previousLevelCode: string | null;
+    perfectWeekStarts: readonly string[];
+  }): Promise<Set<string>> {
+    const granted = new Set<string>();
+    const catalog = await this.prizes.listActiveFor(input.tenantId);
+    if (catalog.length === 0) return granted;
 
-    const granted = await this.membershipRepository.listGrantedStreakRewardCodes(userId);
-    const pending = eligible.filter((t) => !granted.has(t.featureCode));
-    if (pending.length === 0) return;
-
-    for (const threshold of pending) {
-      const feature = await this.membershipRepository.findFeatureByCode(threshold.featureCode);
-      if (!feature) continue;
-      await this.membershipRepository.grantEntitlementIfMissing({
-        userId,
-        featureId: feature.id,
-        sourceType: EntitlementSource.STREAK_REWARD,
-        sourceId: userId,
-        metadata: { thresholdDays: threshold.days },
-      });
+    const existing = new Set(
+      (await this.prizes.listCoupons(input.userId)).map((coupon) => `${coupon.prizeId}:${coupon.sourceRef}`),
+    );
+    for (const prize of catalog) {
+      for (const sourceRef of milestoneRefs(prize, input)) {
+        if (existing.has(`${prize.id}:${sourceRef}`)) continue;
+        const coupon = await this.prizes.grant(prize.id, input.userId, sourceRef);
+        if (coupon) granted.add(coupon.id);
+      }
     }
+    return granted;
   }
 
-  /** Marca como vistas las novedades, para que dejen de celebrarse. */
+  /** Marca como vistas las novedades —insignias, retos y cupones— para que dejen de celebrarse. */
   async acknowledge(userId: string): Promise<{ acknowledged: true }> {
-    await this.progressionRepository.markBadgesSeen(userId);
+    await Promise.all([
+      this.progressionRepository.markBadgesSeen(userId),
+      this.challenges.acknowledge(userId),
+      this.prizes.markSeen(userId),
+    ]);
     return { acknowledged: true };
   }
 
@@ -389,8 +569,115 @@ export class ProgressionService {
   }
 }
 
-function isSecret(badges: readonly ProgressionBadgeModel[], code: string): boolean {
-  return badges.find((badge) => badge.code === code)?.secret ?? false;
+/** Qué cupones pide un premio para este socio ahora (ver `grantPrizes`). */
+function milestoneRefs(
+  prize: PrizeRecord,
+  input: {
+    badges: readonly ProgressionBadgeModel[];
+    earnedByBadgeId: ReadonlyMap<string, UserBadgeModel>;
+    newlyEarnedIds: ReadonlySet<string>;
+    path: readonly LevelView[];
+    previousLevelCode: string | null;
+    perfectWeekStarts: readonly string[];
+  },
+): string[] {
+  const createdAt = new Date(prize.createdAt);
+  switch (prize.targetKind) {
+    case "BADGE": {
+      const badge = input.badges.find((entry) => entry.code === prize.targetCode);
+      if (!badge) return [];
+      const earnedAt = input.newlyEarnedIds.has(badge.id)
+        ? new Date()
+        : input.earnedByBadgeId.get(badge.id)?.awardedAt ?? null;
+      return earnedAt !== null && earnedAt.getTime() >= createdAt.getTime() ? [badge.code] : [];
+    }
+    case "LEVEL": {
+      const level = input.path.find((entry) => entry.code === prize.targetCode);
+      if (!level?.unlocked) return [];
+      const previousOrder =
+        input.path.find((entry) => entry.code === input.previousLevelCode)?.sortOrder ?? -1;
+      return previousOrder < level.sortOrder ? [level.code] : [];
+    }
+    case "PERFECT_WEEK": {
+      const firstWeek = mondayOfDate(createdAt.toISOString().slice(0, 10));
+      return input.perfectWeekStarts.filter((week) => week >= firstWeek);
+    }
+  }
+}
+
+function prizeSourceName(
+  coupon: { targetKind: PrizeRecord["targetKind"]; targetCode: string },
+  badges: readonly ProgressionBadgeModel[],
+  path: readonly LevelView[],
+): string {
+  switch (coupon.targetKind) {
+    case "BADGE":
+      return badges.find((badge) => badge.code === coupon.targetCode)?.name ?? coupon.targetCode;
+    case "LEVEL":
+      return path.find((level) => level.code === coupon.targetCode)?.name ?? coupon.targetCode;
+    case "PERFECT_WEEK":
+      return "Semana redonda";
+  }
+}
+
+function withChallengeTotals(metrics: TrainingMetrics, totals: ChallengeTotals): TrainingMetrics {
+  return {
+    ...metrics,
+    challengesCompleted: totals.completed,
+    perfectWeeks: totals.perfectWeeks,
+    challengePoints: totals.points,
+  };
+}
+
+export function nextStreakMilestone(current: number): number | null {
+  return STREAK_MILESTONES.find((days) => days > current) ?? null;
+}
+
+function toStreakView(metrics: TrainingMetrics): StreakView {
+  return {
+    current: metrics.currentStreakDays,
+    longest: metrics.longestStreakDays,
+    freezes: metrics.streakFreezes ?? 0,
+    freezesUsed: metrics.streakFreezesUsed ?? 0,
+    nextMilestone: nextStreakMilestone(metrics.currentStreakDays),
+    weekly: metrics.weeklyStreak,
+  };
+}
+
+/**
+ * «Lo más cerca»: las insignias sin conseguir con más progreso. Ni secretas
+ * (no se anuncian) ni conseguidas. A igualdad de progreso manda el orden del
+ * catálogo, que pone primero lo más básico.
+ */
+export function pickNearest(badges: readonly BadgeView[], limit: number = NEAREST_LIMIT): BadgeView[] {
+  return badges
+    .filter((badge) => !badge.earned && !badge.secret)
+    .map((badge, index) => ({ badge, index }))
+    .sort((left, right) => (right.badge.progress ?? 0) - (left.badge.progress ?? 0) || left.index - right.index)
+    .slice(0, limit)
+    .map(({ badge }) => badge);
+}
+
+/** Posición de cada insignia en su cadena (mismo criterio, ordenadas por umbral). */
+export function chainPositions(
+  badges: readonly Pick<ProgressionBadgeModel, "code" | "criterionType" | "criterionThreshold" | "secret">[],
+): Map<string, { chain: string; chainStep: number; chainLength: number }> {
+  const byChain = new Map<string, typeof badges[number][]>();
+  for (const badge of badges) {
+    // Las secretas forman cadena aparte: contarlas en la pública delataría que existen.
+    const key = `${badge.criterionType}:${badge.secret ? "S" : "P"}`;
+    byChain.set(key, [...(byChain.get(key) ?? []), badge]);
+  }
+  const positions = new Map<string, { chain: string; chainStep: number; chainLength: number }>();
+  for (const members of byChain.values()) {
+    const sorted = [...members].sort(
+      (left, right) => Number(left.criterionThreshold) - Number(right.criterionThreshold),
+    );
+    sorted.forEach((badge, index) =>
+      positions.set(badge.code, { chain: badge.criterionType, chainStep: index + 1, chainLength: sorted.length }),
+    );
+  }
+  return positions;
 }
 
 function idOf(badges: readonly ProgressionBadgeModel[], code: string): string {
@@ -414,6 +701,7 @@ export function computePointsBreakdown(
     streak: metrics.longestStreakDays * POINTS.perLongestStreakDay,
     badges: earnedBadges.reduce((total, badge) => total + badge.pointsReward, 0),
     modes: metrics.modeBonusPoints ?? 0,
+    challenges: metrics.challengePoints ?? 0,
   };
 }
 
@@ -424,7 +712,8 @@ function sumBreakdown(breakdown: PointsBreakdown): number {
     breakdown.volume +
     breakdown.streak +
     breakdown.badges +
-    breakdown.modes
+    breakdown.modes +
+    breakdown.challenges
   );
 }
 
@@ -472,6 +761,60 @@ export function measure(metrics: TrainingMetrics, criterion: BadgeCriterionType)
       return metrics.strengthGoalsReached ?? 0;
     case "CARDIO_WEEKLY_MINUTES":
       return metrics.cardioWeeklyStreak ?? 0;
+    case "TOTAL_TRAINING_MINUTES":
+      return metrics.totalTrainingMinutes ?? 0;
+    case "MAX_SET_WEIGHT_KG":
+      return metrics.maxSetWeightKg ?? 0;
+    case "TIMED_SECONDS_TOTAL":
+      return metrics.timedSecondsTotal ?? 0;
+    case "CARDIO_TOTAL_MINUTES":
+      return metrics.cardioTotalMinutes ?? 0;
+    case "CARDIO_TOTAL_KM":
+      return metrics.cardioTotalKm ?? 0;
+    case "MONDAY_SESSIONS":
+      return metrics.mondaySessions ?? 0;
+    case "DISTINCT_WEEKDAYS":
+      return metrics.distinctWeekdays ?? 0;
+    case "MAX_SESSIONS_IN_WEEK":
+      return metrics.maxSessionsInWeek ?? 0;
+    case "GEO_VERIFIED_SESSIONS":
+      return metrics.geoVerifiedSessions ?? 0;
+    case "SUPERSET_SESSIONS":
+      return metrics.supersetSessions ?? 0;
+    case "ROUTINES_CREATED":
+      return metrics.routinesCreated ?? 0;
+    case "ROUTINES_PUBLISHED":
+      return metrics.routinesPublished ?? 0;
+    case "ROUTINE_COPIES_RECEIVED":
+      return metrics.routineCopiesReceived ?? 0;
+    case "COMMENTS_WRITTEN":
+      return metrics.commentsWritten ?? 0;
+    case "RATINGS_GIVEN":
+      return metrics.ratingsGiven ?? 0;
+    case "COMMENT_LIKES_RECEIVED":
+      return metrics.commentLikesReceived ?? 0;
+    case "CHALLENGES_COMPLETED":
+      return metrics.challengesCompleted ?? 0;
+    case "PERFECT_WEEKS":
+      return metrics.perfectWeeks ?? 0;
+    case "COMEBACK_SESSIONS":
+      return metrics.comebackSessions ?? 0;
+    case "MAX_SESSIONS_IN_DAY":
+      return metrics.maxSessionsInDay ?? 0;
+    case "LONGEST_SESSION_MINUTES":
+      return metrics.longestSessionMinutes ?? 0;
+    case "MIDNIGHT_SESSIONS":
+      return metrics.midnightSessions ?? 0;
+    case "NEW_YEAR_SESSIONS":
+      return metrics.newYearSessions ?? 0;
+    case "BIRTHDAY_SESSIONS":
+      return metrics.birthdaySessions ?? 0;
+    case "MAX_RECORDS_IN_SESSION":
+      return metrics.maxRecordsInSession ?? 0;
+    case "MODE_SHIELDS_USED":
+      return metrics.modeShieldsUsed ?? 0;
+    case "MODE_MAX_MULTIPLIER_WEEKS":
+      return metrics.modeMaxMultiplierWeeks ?? 0;
   }
 }
 
@@ -509,6 +852,7 @@ function toBadgeView(
   metrics: TrainingMetrics,
   earnedByBadgeId: ReadonlyMap<string, UserBadgeModel>,
   newlyEarnedIds: ReadonlySet<string>,
+  chains: ReadonlyMap<string, { chain: string; chainStep: number; chainLength: number }>,
 ): BadgeView {
   const award = earnedByBadgeId.get(badge.id);
   const isNewAward = newlyEarnedIds.has(badge.id);
@@ -523,9 +867,14 @@ function toBadgeView(
     flavorText: badge.flavorText,
     category: badge.category,
     rarity: badge.rarity,
+    rarityRank: rarityRank(badge.rarity),
     icon: badge.icon,
+    illustration: badgeIllustration(badge.code, badge.criterionType),
     color: badge.color,
     pointsReward: badge.pointsReward,
+    secret: badge.secret,
+    criterion: badge.criterionType,
+    threshold,
     earned,
     earnedAt: award?.awardedAt.toISOString() ?? (isNewAward ? new Date().toISOString() : null),
     // Novedad = conseguida y todavía sin mostrar. Una insignia recién otorgada
@@ -536,15 +885,30 @@ function toBadgeView(
       badge.secret && !earned
         ? null
         : `${formatMetric(value, badge.criterionType)} / ${formatMetric(threshold, badge.criterionType)}`,
+    ...(chains.get(badge.code) ?? { chain: badge.criterionType, chainStep: 1, chainLength: 1 }),
   };
 }
 
 function formatMetric(value: number, criterion: BadgeCriterionType): string {
-  const isKilograms =
-    criterion === "TOTAL_VOLUME_KG" || criterion === "SINGLE_SESSION_VOLUME_KG";
   const rounded = Math.floor(value);
   const formatted = rounded.toLocaleString("es-ES");
-  return isKilograms ? `${formatted} kg` : formatted;
+  switch (criterion) {
+    case "TOTAL_VOLUME_KG":
+    case "SINGLE_SESSION_VOLUME_KG":
+    case "MAX_SET_WEIGHT_KG":
+      return `${formatted} kg`;
+    case "CARDIO_TOTAL_KM":
+      // Un decimal: «42,2 km» no puede quedarse en «42».
+      return `${(Math.floor(value * 10) / 10).toLocaleString("es-ES")} km`;
+    case "TOTAL_TRAINING_MINUTES":
+    case "CARDIO_TOTAL_MINUTES":
+    case "LONGEST_SESSION_MINUTES":
+      return rounded >= 120 ? `${Math.floor(rounded / 60).toLocaleString("es-ES")} h` : `${formatted} min`;
+    case "TIMED_SECONDS_TOTAL":
+      return rounded >= 120 ? `${Math.floor(rounded / 60).toLocaleString("es-ES")} min` : `${formatted} s`;
+    default:
+      return formatted;
+  }
 }
 
 /** «Ana María Pérez Soto» → «Ana P.» */

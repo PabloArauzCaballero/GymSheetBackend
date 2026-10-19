@@ -1,4 +1,5 @@
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
+import { createHash, randomUUID } from "crypto";
 import { Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { ConnectionStatus } from "../../common/enums/domain.enums";
@@ -6,7 +7,7 @@ import { MediaReferencesRepository } from "../media/media-references.repository"
 import { MediaRetentionService } from "../media/media-retention.service";
 import { MediaStorageProvider } from "../media/media-storage.port";
 import { StoriesRepository, StoryFeedRow } from "./stories.repository";
-import { StoriesService } from "./stories.service";
+import { StoriesService, storyMediaEtag } from "./stories.service";
 
 const userId = "00000000-0000-4000-8000-00000000000a";
 const viewerId = "00000000-0000-4000-8000-00000000000a";
@@ -50,7 +51,11 @@ function createService(
   );
 
   return new StoriesService(
-    repositoryOverrides as StoriesRepository,
+    {
+      isBlockedEitherWay: jest.fn().mockResolvedValue(false),
+      isSelectedRecipient: jest.fn().mockResolvedValue(false),
+      ...repositoryOverrides,
+    } as StoriesRepository,
     storage,
     retention,
   );
@@ -83,22 +88,131 @@ describe("StoriesService.upload", () => {
 
     const result = await service.upload(userId, "default", file);
 
-    expect(create).toHaveBeenCalledWith(userId, "default", expect.any(Object), "image");
+    expect(create).toHaveBeenCalledWith(userId, "default", expect.any(Object), "image", "ALL_CONNECTIONS", [], undefined, null);
     expect(result.mediaType).toBe("image");
+    expect(result.mediaUrl).toContain("/me/stories/story-1/media");
+  });
+
+  it("persists only a validated selected audience", async () => {
+    const create = jest.fn().mockResolvedValue({
+      id: "story-1", mediaType: "image", createdAt: new Date(), expiresAt: new Date(Date.now() + 60_000),
+    });
+    const validAudienceRecipients = jest.fn().mockResolvedValue([matchId]);
+    const service = createService({ create, validAudienceRecipients });
+    await service.upload(userId, "default", file, {
+      audienceMode: "SELECTED_CONNECTIONS",
+      recipientIds: JSON.stringify([matchId]),
+    });
+    expect(validAudienceRecipients).toHaveBeenCalledWith(userId, [matchId]);
+    expect(create).toHaveBeenCalledWith(userId, "default", expect.any(Object), "image", "SELECTED_CONNECTIONS", [matchId], undefined, null);
+  });
+
+  it("stores a trimmed caption and returns it", async () => {
+    const create = jest.fn().mockResolvedValue({
+      id: "story-1", mediaType: "image", caption: "Día de pierna", createdAt: new Date(), expiresAt: new Date(Date.now() + 60_000),
+    });
+    const service = createService({ create });
+    const result = await service.upload(userId, "default", file, { caption: "  Día de pierna\u0007  " });
+    expect(create).toHaveBeenCalledWith(userId, "default", expect.any(Object), "image", "ALL_CONNECTIONS", [], undefined, "Día de pierna");
+    expect(result.caption).toBe("Día de pierna");
+  });
+
+  it("rejects a caption that is too long or has too many lines, before uploading the file", async () => {
+    const upload = jest.fn();
+    const service = createService({}, { upload });
+    await expect(service.upload(userId, "default", file, { caption: "x".repeat(201) })).rejects.toThrow(BadRequestException);
+    await expect(service.upload(userId, "default", file, { caption: "a\nb\nc\nd\ne" })).rejects.toThrow(BadRequestException);
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("returns the prior story for the same owner, request id, and file hash without uploading again", async () => {
+    const requestId = randomUUID();
+    const previous = {
+      id: "story-existing",
+      userId,
+      uploadContentHash: createHash("sha256").update(file.buffer).digest("hex"),
+      mediaUrl: "https://localhost/story-existing",
+      mediaType: "image",
+      audienceMode: "SELECTED_CONNECTIONS",
+      createdAt: new Date("2026-10-10T00:00:00.000Z"),
+      expiresAt: new Date("2026-10-11T00:00:00.000Z"),
+    };
+    const findByUploadRequest = jest.fn().mockResolvedValue(previous);
+    const upload = jest.fn();
+    const service = createService({ findByUploadRequest }, { upload });
+
+    const result = await service.upload(userId, "default", file, {
+      requestId,
+      audienceMode: "ALL_CONNECTIONS",
+    });
+
+    expect(result.id).toBe(previous.id);
+    expect(findByUploadRequest).toHaveBeenCalledWith(userId, requestId);
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("rejects a request id reused with different file bytes before uploading", async () => {
+    const requestId = randomUUID();
+    const previous = {
+      id: "story-existing",
+      uploadContentHash: createHash("sha256").update("another file").digest("hex"),
+    };
+    const upload = jest.fn();
+    const service = createService(
+      { findByUploadRequest: jest.fn().mockResolvedValue(previous) },
+      { upload },
+    );
+
+    await expect(service.upload(userId, "default", file, { requestId })).rejects.toThrow(ConflictException);
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed upload request id", async () => {
+    const upload = jest.fn();
+    const service = createService({}, { upload });
+
+    await expect(service.upload(userId, "default", file, { requestId: "not-a-uuid" })).rejects.toThrow(BadRequestException);
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("rejects a selected recipient without a current accepted connection before storing media", async () => {
+    const upload = jest.fn();
+    const service = createService({ validAudienceRecipients: jest.fn().mockResolvedValue([]) }, { upload });
+    await expect(service.upload(userId, "default", file, {
+      audienceMode: "SELECTED_CONNECTIONS", recipientIds: [matchId],
+    })).rejects.toThrow(BadRequestException);
+    expect(upload).not.toHaveBeenCalled();
   });
 });
 
 describe("StoriesService.view", () => {
   it("rejects viewing a story that does not exist", async () => {
     const service = createService({ findById: jest.fn().mockResolvedValue(null) });
-    await expect(service.view("story-1", userId, "default")).rejects.toThrow(NotFoundException);
+    await expect(service.view("story-1", userId)).rejects.toThrow(NotFoundException);
   });
 
-  it("rejects viewing a story from a different tenant", async () => {
+  it("rejects viewing a story from another tenant when there is no accepted connection", async () => {
     const service = createService({
       findById: jest.fn().mockResolvedValue({ id: "story-1", tenantId: "other-gym", userId: matchId }),
+      hasAcceptedConnection: jest.fn().mockResolvedValue(false),
     });
-    await expect(service.view("story-1", userId, "default")).rejects.toThrow(NotFoundException);
+    await expect(service.view("story-1", userId)).rejects.toThrow(NotFoundException);
+  });
+
+  it("rejects an expired story without recording a view", async () => {
+    const recordView = jest.fn().mockResolvedValue(undefined);
+    const service = createService({
+      findById: jest.fn().mockResolvedValue({
+        id: "story-1",
+        tenantId: "default",
+        userId: userId,
+        expiresAt: new Date(Date.now() - 1),
+      }),
+      recordView,
+    });
+
+    await expect(service.view("story-1", userId)).rejects.toThrow(NotFoundException);
+    expect(recordView).not.toHaveBeenCalled();
   });
 
   it("answers 404 — not 403 — when the viewer has no accepted connection with the author", async () => {
@@ -112,7 +226,7 @@ describe("StoriesService.view", () => {
       recordView,
     });
 
-    await expect(service.view("story-1", userId, "default")).rejects.toThrow(NotFoundException);
+    await expect(service.view("story-1", userId)).rejects.toThrow(NotFoundException);
     expect(recordView).not.toHaveBeenCalled();
   });
 
@@ -120,27 +234,95 @@ describe("StoriesService.view", () => {
     const recordView = jest.fn().mockResolvedValue(undefined);
     const hasAcceptedConnection = jest.fn().mockResolvedValue(true);
     const service = createService({
-      findById: jest.fn().mockResolvedValue({ id: "story-1", tenantId: "default", userId: matchId }),
+      findById: jest.fn().mockResolvedValue({ id: "story-1", tenantId: "default", userId: matchId, expiresAt: new Date(Date.now() + 60_000), audienceMode: "ALL_CONNECTIONS", hiddenAt: null }),
       hasAcceptedConnection,
       recordView,
     });
 
-    await expect(service.view("story-1", userId, "default")).resolves.toEqual({ recorded: true });
+    await expect(service.view("story-1", userId)).resolves.toEqual({ recorded: true });
 
     expect(hasAcceptedConnection).toHaveBeenCalledWith(userId, matchId);
     expect(recordView).toHaveBeenCalledWith("story-1", userId);
+  });
+
+  it("records a connected viewer's view of a story from another tenant", async () => {
+    const recordView = jest.fn().mockResolvedValue(undefined);
+    const hasAcceptedConnection = jest.fn().mockResolvedValue(true);
+    const service = createService({
+      findById: jest.fn().mockResolvedValue({
+        id: "story-1",
+        tenantId: "other-gym",
+        userId: matchId,
+        expiresAt: new Date(Date.now() + 60_000),
+        audienceMode: "ALL_CONNECTIONS",
+        hiddenAt: null,
+      }),
+      hasAcceptedConnection,
+      recordView,
+    });
+
+    await expect(service.view("story-1", userId)).resolves.toEqual({ recorded: true });
+    expect(hasAcceptedConnection).toHaveBeenCalledWith(userId, matchId);
+    expect(recordView).toHaveBeenCalledWith("story-1", userId);
+  });
+
+  it("returns 404 to a connected but unselected viewer without recording the view", async () => {
+    const recordView = jest.fn();
+    const service = createService({
+      findById: jest.fn().mockResolvedValue({
+        id: "story-1", userId: matchId, expiresAt: new Date(Date.now() + 60_000),
+        hiddenAt: null, audienceMode: "SELECTED_CONNECTIONS",
+      }),
+      hasAcceptedConnection: jest.fn().mockResolvedValue(true),
+      isSelectedRecipient: jest.fn().mockResolvedValue(false),
+      isBlockedEitherWay: jest.fn().mockResolvedValue(false),
+      recordView,
+    });
+    await expect(service.view("story-1", userId)).rejects.toThrow(NotFoundException);
+    expect(recordView).not.toHaveBeenCalled();
+  });
+
+  it("revalidates audience before loading story bytes", async () => {
+    const download = jest.fn().mockResolvedValue(Buffer.from("private"));
+    const service = createService({
+      findById: jest.fn().mockResolvedValue({
+        id: "story-1", userId: matchId, storageKey: "users/owner/stories/a.jpg",
+        expiresAt: new Date(Date.now() + 60_000), hiddenAt: null, audienceMode: "SELECTED_CONNECTIONS",
+      }),
+      hasAcceptedConnection: jest.fn().mockResolvedValue(true),
+      isSelectedRecipient: jest.fn().mockResolvedValue(false),
+      isBlockedEitherWay: jest.fn().mockResolvedValue(false),
+    }, { download });
+    await expect(service.downloadMedia("story-1", userId)).rejects.toThrow(NotFoundException);
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it("serves bytes to a selected recipient through the authorized media path", async () => {
+    const bytes = Buffer.from("private");
+    const download = jest.fn().mockResolvedValue(bytes);
+    const service = createService({
+      findById: jest.fn().mockResolvedValue({
+        id: "story-1", userId: matchId, storageKey: "users/owner/stories/a.jpg",
+        expiresAt: new Date(Date.now() + 60_000), hiddenAt: null, audienceMode: "SELECTED_CONNECTIONS",
+      }),
+      hasAcceptedConnection: jest.fn().mockResolvedValue(true),
+      isSelectedRecipient: jest.fn().mockResolvedValue(true),
+      isBlockedEitherWay: jest.fn().mockResolvedValue(false),
+    }, { download });
+    await expect(service.downloadMedia("story-1", userId)).resolves.toEqual({ buffer: bytes, mimeType: "image/jpeg", etag: storyMediaEtag("users/owner/stories/a.jpg") });
+    expect(download).toHaveBeenCalledWith("users/owner/stories/a.jpg");
   });
 
   it("records the view of an own story without asking about connections", async () => {
     const recordView = jest.fn().mockResolvedValue(undefined);
     const hasAcceptedConnection = jest.fn();
     const service = createService({
-      findById: jest.fn().mockResolvedValue({ id: "story-1", tenantId: "default", userId }),
+      findById: jest.fn().mockResolvedValue({ id: "story-1", tenantId: "default", userId, expiresAt: new Date(Date.now() + 60_000), audienceMode: "SELECTED_CONNECTIONS", hiddenAt: null }),
       hasAcceptedConnection,
       recordView,
     });
 
-    await service.view("story-1", userId, "default");
+    await service.view("story-1", userId);
 
     expect(hasAcceptedConnection).not.toHaveBeenCalled();
     expect(recordView).toHaveBeenCalledWith("story-1", userId);
@@ -220,7 +402,7 @@ interface FeedFixture {
 }
 
 function feedRepository(fixture: FeedFixture): Partial<StoriesRepository> {
-  const feedForConnections = jest.fn((viewerId: string, _tenantId: string) => {
+  const feedForConnections = jest.fn((viewerId: string) => {
     const accepted = new Set(
       fixture.connections
         .filter((connection) => connection.status === ConnectionStatus.ACCEPTED)
@@ -260,11 +442,13 @@ function feedRepository(fixture: FeedFixture): Partial<StoriesRepository> {
         photo_url: story.photoUrl ?? null,
         media_url: `http://localhost:3000/media/stories/${story.id}.jpg`,
         media_type: "image" as const,
+        caption: null,
         // El driver devuelve `Date` para `timestamptz`: el fake también, o la
         // prueba dejaría de parecerse a producción justo en el campo de D-4.
         created_at: new Date(story.createdAt),
         expires_at: new Date(story.createdAt),
         viewed_by_me: story.viewedByMe === true,
+        audience_mode: "ALL_CONNECTIONS",
       }));
 
     return Promise.resolve(rows);
@@ -285,7 +469,7 @@ describe("StoriesService.feed", () => {
       }),
     );
 
-    await expect(service.feed(viewerId, "default")).resolves.toEqual([]);
+    await expect(service.feed(viewerId)).resolves.toEqual([]);
   });
 
   it("hides the story of a pending connection", async () => {
@@ -299,7 +483,7 @@ describe("StoriesService.feed", () => {
       }),
     );
 
-    await expect(service.feed(viewerId, "default")).resolves.toEqual([]);
+    await expect(service.feed(viewerId)).resolves.toEqual([]);
   });
 
   it("shows the story of an accepted connection", async () => {
@@ -313,7 +497,7 @@ describe("StoriesService.feed", () => {
       }),
     );
 
-    const feed = await service.feed(viewerId, "default");
+    const feed = await service.feed(viewerId);
 
     expect(feed).toHaveLength(1);
     expect(feed[0]).toMatchObject({ userId: matchId, fullName: "Match", hasUnviewed: true });
@@ -334,7 +518,7 @@ describe("StoriesService.feed", () => {
       }),
     );
 
-    const feed = await service.feed(viewerId, "default");
+    const feed = await service.feed(viewerId);
 
     expect(feed.map((entry) => entry.userId)).toEqual([viewerId, matchId]);
     // Dentro de una persona, orden cronológico ascendente: se ven como se publicaron.
@@ -358,7 +542,7 @@ describe("StoriesService.feed", () => {
       }),
     );
 
-    const feed = await service.feed(viewerId, "default");
+    const feed = await service.feed(viewerId);
 
     expect(feed.map((entry) => entry.userId)).toEqual([matchId, otherMatchId]);
     expect(feed.map((entry) => entry.hasUnviewed)).toEqual([true, false]);

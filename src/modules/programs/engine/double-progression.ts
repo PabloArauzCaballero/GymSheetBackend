@@ -26,7 +26,15 @@ export type ProgressionOutcome = {
   message: string;
 };
 
-export type ProgressionOptions = { isDeload: boolean; stepKg?: number };
+export type ProgressionOptions = {
+  isDeload: boolean;
+  stepKg?: number;
+  /**
+   * La persona saltó series de este ejercicio (o lo omitió) en la sesión. No es
+   * un fallo de carga ni una prueba de que pueda con más: se mantiene el peso.
+   */
+  hadSkippedSets?: boolean;
+};
 
 /** Series con carga razonable: se descartan calentamientos (< 80 % del peso sugerido). */
 export function validSets(sets: readonly PerformedSet[], suggestedKg: number): PerformedSet[] {
@@ -60,6 +68,10 @@ export function applyDoubleProgression(
   const valid = validSets(sets, state.suggestedKg);
   if (valid.length === 0) {
     return { ...keep, action: 'NO_DATA', message: 'Sin series válidas para este ejercicio.' };
+  }
+
+  if (options.hadSkippedSets) {
+    return { ...keep, action: 'HOLD', message: 'Saltaste series: mantenemos tu peso.' };
   }
 
   const failed = valid.some((s) => s.reps < state.repsMin);
@@ -102,6 +114,8 @@ export function applyDoubleProgression(
   return { suggestedKg: state.suggestedKg, consecutiveFails: 0, action: 'HOLD', message: 'Sigue sumando repeticiones con este peso.' };
 }
 
+/** «62,5 kg»: coma decimal como el resto de la app (el cliente muestra este texto tal cual). */
 export function formatKg(kg: number): string {
-  return `${Number.isInteger(kg) ? kg : kg.toFixed(2).replace(/0$/u, '')} kg`;
+  const rounded = Math.round(kg * 100) / 100;
+  return `${String(rounded).replace('.', ',')} kg`;
 }

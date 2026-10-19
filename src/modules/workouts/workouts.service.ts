@@ -1,12 +1,14 @@
 import {
   ConflictException,
   ForbiddenException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { UniqueConstraintError } from 'sequelize';
+import { Transaction, UniqueConstraintError } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { WorkoutSessionStatus } from '../../common/enums/domain.enums';
+import { DomainException } from '../../common/errors/domain.exception';
 import { ExercisesService } from '../exercises/exercises.service';
 import { FacilitiesRepository } from '../facilities/facilities.repository';
 import { ProgressionService, SessionRewardView } from '../progression/progression.service';
@@ -15,21 +17,27 @@ import { resolveVerifiedBranch } from './geo-verification.util';
 import {
   mapSessionExerciseToResponse,
   mapWorkoutSessionToResponse,
+  mapSkippedSetToResponse,
   mapWorkoutSetToResponse,
   WorkoutSessionExerciseResponse,
   WorkoutSessionPageResponse,
   WorkoutSessionResponse,
   WorkoutSetResponse,
+  WorkoutSkippedSetResponse,
 } from './workout.mapper';
 import { WorkoutSessionExerciseModel } from './workout-session-exercise.model';
 import { WorkoutSessionModel } from './workout-session.model';
 import { WorkoutSetModel } from './workout-set.model';
-import { WorkoutsRepository } from './workouts.repository';
+import { SessionExerciseTargets, WorkoutsRepository } from './workouts.repository';
 import {
   AddSessionExerciseInput,
   CreateWorkoutSessionInput,
   CreateWorkoutSetInput,
   FinishSessionInput,
+  MAX_TIMED_SET_SECONDS,
+  OmitSessionExerciseInput,
+  RestSettingsInput,
+  SkipSetInput,
   UpdateSessionExerciseInput,
   UpdateWorkoutSetInput,
   WorkoutSessionListInput,
@@ -106,6 +114,12 @@ export class WorkoutsService {
     return mapWorkoutSessionToResponse(session);
   }
 
+  /**
+   * Cierra la sesión. Es idempotente: una sesión ya finalizada devuelve la misma
+   * respuesta que la primera vez (`yaFinalizada: true`) en vez de un 403. El
+   * cierre real lo gana una sola petición (`claimSessionClose`); la otra de un
+   * doble toque espera a que el resultado esté guardado y lo repite.
+   */
   async finishSession(
     userId: string,
     tenantId: string,
@@ -115,17 +129,63 @@ export class WorkoutsService {
     WorkoutSessionResponse & { progression: SessionRewardView | null } & Record<string, unknown>
   > {
     const session = await this.getSessionModelOrFail(userId, sessionId);
+    if (session.status === WorkoutSessionStatus.COMPLETED) {
+      return this.repeatCloseResult(userId, sessionId);
+    }
     this.assertSessionInProgress(session.status);
     const verifiedBranch = await this.resolveGeoVerification(location, tenantId);
     const before = await this.progressionSnapshot(userId);
-    const completedSession = await this.workoutsRepository.changeSessionStatus(
+    const claimed = await this.workoutsRepository.claimSessionClose(
       session,
       WorkoutSessionStatus.COMPLETED,
       { geoVerified: verifiedBranch !== null, verifiedBranchId: verifiedBranch?.id ?? null },
     );
+    if (!claimed) return this.repeatCloseResult(userId, sessionId);
+
+    // Los enganches (programas) corren ANTES de calcular el premio: la meta
+    // alcanzada (+300) entra en el libro de modo durante el enganche, y solo así
+    // aparece en el desglose de ESTA sesión y no en la siguiente.
+    const extras = await this.hooks.runFinished({ session, userId, tenantId });
     const progression = before ? await this.progressionReward(userId, before) : null;
-    const extras = await this.hooks.runFinished({ session: completedSession, userId, tenantId });
-    return { ...mapWorkoutSessionToResponse(completedSession), progression, ...extras };
+    const result = { progression, ...extras };
+    // Guardarlo no puede tumbar el cierre: sin él, repetir `finish` solo pierde el premio.
+    await this.workoutsRepository
+      .saveCloseResult(sessionId, JSON.parse(JSON.stringify(result)) as Record<string, unknown>)
+      .catch(() => undefined);
+    return { ...mapWorkoutSessionToResponse(session), ...result };
+  }
+
+  /**
+   * Respuesta de un `finish` repetido. Si la petición que cerró todavía está
+   * calculando el premio, se espera un momento a que lo guarde: devolver
+   * `progression: null` haría que la app enseñara «+0 puntos» tras un doble toque.
+   */
+  private async repeatCloseResult(
+    userId: string,
+    sessionId: string,
+  ): Promise<
+    WorkoutSessionResponse & { progression: SessionRewardView | null } & Record<string, unknown>
+  > {
+    let stored: Record<string, unknown> | null = null;
+    for (let attempt = 0; attempt < CLOSE_RESULT_ATTEMPTS; attempt += 1) {
+      const row = await this.workoutsRepository.findCloseResult(sessionId);
+      if (row?.closeResult) {
+        stored = row.closeResult;
+        break;
+      }
+      if (attempt < CLOSE_RESULT_ATTEMPTS - 1) await delay(CLOSE_RESULT_WAIT_MS);
+    }
+    const session = await this.getSessionModelOrFail(userId, sessionId);
+    const result = (stored ?? {}) as { progression?: SessionRewardView | null } & Record<
+      string,
+      unknown
+    >;
+    return {
+      ...mapWorkoutSessionToResponse(session),
+      ...result,
+      progression: result.progression ?? null,
+      yaFinalizada: true,
+    };
   }
 
   /**
@@ -189,6 +249,10 @@ export class WorkoutsService {
     sessionId: string,
   ): Promise<WorkoutSessionResponse> {
     const session = await this.getSessionModelOrFail(userId, sessionId);
+    // Cancelar dos veces (doble toque) no es un error: ya está cancelada.
+    if (session.status === WorkoutSessionStatus.CANCELLED) {
+      return mapWorkoutSessionToResponse(session);
+    }
     this.assertSessionInProgress(session.status);
     const cancelledSession = await this.workoutsRepository.changeSessionStatus(
       session,
@@ -201,21 +265,28 @@ export class WorkoutsService {
     userId: string,
     sessionId: string,
     input: AddSessionExerciseInput,
+    targets?: SessionExerciseTargets,
+    options: { exerciseAccessCheckedByRoutine?: boolean } = {},
   ): Promise<WorkoutSessionExerciseResponse> {
     const session = await this.getSessionModelOrFail(userId, sessionId);
     this.assertSessionInProgress(session.status);
-    await this.exercisesService.getVisibleExerciseOrFail(input.exerciseId, userId);
+    // Iniciar desde una rutina ya visible para el usuario basta: un ejercicio personal del autor
+    // de una rutina pública se puede entrenar, aunque no aparezca en el catálogo del que la usa.
+    if (!options.exerciseAccessCheckedByRoutine) {
+      await this.exercisesService.getVisibleExerciseOrFail(input.exerciseId, userId);
+    }
 
     try {
       const sessionExercise = await this.workoutsRepository.addExerciseToSession(
         sessionId,
         input,
+        targets,
       );
       return mapSessionExerciseToResponse(sessionExercise);
     } catch (error: unknown) {
       if (error instanceof UniqueConstraintError) {
         throw new ConflictException(
-          'El ejercicio u orden ya existe en esta sesión de entrenamiento.',
+          'El orden ya existe en esta sesión de entrenamiento.',
         );
       }
       throw error;
@@ -270,6 +341,7 @@ export class WorkoutsService {
       sessionExerciseId,
     );
     this.assertSessionInProgress(sessionExercise.session?.status);
+    assertDurationAllowed(sessionExercise, input);
 
     try {
       const set = await this.sequelize.transaction(async (transaction) => {
@@ -281,11 +353,19 @@ export class WorkoutsService {
           );
 
         if (duplicatedSet) {
+          // Doble toque en «Registrar serie»: la misma serie, hace un momento.
+          if (isSameRecentSet(duplicatedSet, input)) return duplicatedSet;
           throw new ConflictException(
             'Ya existe una serie con ese número para este ejercicio de la sesión.',
           );
         }
 
+        // Si esa serie estaba marcada como saltada, al hacerla deja de estarlo.
+        await this.workoutsRepository.deleteSkippedSetByNumber(
+          sessionExerciseId,
+          input.setNumber,
+          transaction,
+        );
         return this.workoutsRepository.createSet(
           sessionExerciseId,
           input,
@@ -310,6 +390,7 @@ export class WorkoutsService {
   ): Promise<WorkoutSetResponse> {
     const set = await this.getSetOwnedByUserOrFail(userId, setId);
     this.assertSessionInProgress(set.sessionExercise?.session?.status);
+    assertSameSetKind(set, input);
     try {
       const updatedSet = await this.workoutsRepository.updateSet(set, input);
       return mapWorkoutSetToResponse(updatedSet);
@@ -328,6 +409,93 @@ export class WorkoutsService {
     this.assertSessionInProgress(set.sessionExercise?.session?.status);
     await this.workoutsRepository.deleteSet(set.id);
     return { deleted: true };
+  }
+
+  /** Marca una serie como saltada, con su motivo (D1). Repetirlo corrige el motivo. */
+  async skipSet(
+    userId: string,
+    sessionExerciseId: string,
+    input: SkipSetInput,
+  ): Promise<WorkoutSkippedSetResponse> {
+    const sessionExercise = await this.getSessionExerciseOwnedByUserOrFail(
+      userId,
+      sessionExerciseId,
+    );
+    this.assertSessionInProgress(sessionExercise.session?.status);
+    const done = (sessionExercise.sets ?? []).find((set) => set.setNumber === input.setNumber);
+    if (done) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        'SET_NUMBER_TAKEN',
+        'Esa serie ya está registrada; no se puede saltar.',
+        { setId: done.id },
+      );
+    }
+    try {
+      const skipped = await this.workoutsRepository.upsertSkippedSet(sessionExerciseId, input);
+      return mapSkippedSetToResponse(skipped);
+    } catch (error: unknown) {
+      // Dos toques a la vez: el segundo choca con la unicidad y lee la fila del primero.
+      if (!(error instanceof UniqueConstraintError)) throw error;
+      const skipped = await this.workoutsRepository.upsertSkippedSet(sessionExerciseId, input);
+      return mapSkippedSetToResponse(skipped);
+    }
+  }
+
+  async unskipSet(userId: string, skippedSetId: string): Promise<{ deleted: true }> {
+    const skipped = await this.workoutsRepository.findSkippedSetById(skippedSetId);
+    if (!skipped || skipped.sessionExercise?.session?.userId !== userId) {
+      throw new NotFoundException('Serie saltada no encontrada.');
+    }
+    this.assertSessionInProgress(skipped.sessionExercise?.session?.status);
+    await this.workoutsRepository.deleteSkippedSet(skipped.id);
+    return { deleted: true };
+  }
+
+  /** Omite (o recupera, con `null`) un ejercicio entero de la sesión (D1). */
+  async setExerciseOmitted(
+    userId: string,
+    sessionExerciseId: string,
+    input: OmitSessionExerciseInput | null,
+  ): Promise<WorkoutSessionExerciseResponse> {
+    const sessionExercise = await this.getSessionExerciseOwnedByUserOrFail(
+      userId,
+      sessionExerciseId,
+    );
+    this.assertSessionInProgress(sessionExercise.session?.status);
+    await this.workoutsRepository.setOmitted(sessionExercise, input);
+    const fresh = await this.workoutsRepository.findSessionExerciseWithExercise(sessionExerciseId);
+    return mapSessionExerciseToResponse(fresh ?? sessionExercise);
+  }
+
+  /**
+   * Aplica descanso e intervalo a ejercicios de la sesión (D2) y devuelve los
+   * ejercicios tocados, para que quien llama (el módulo de rutinas) decida si
+   * además los guarda en la rutina. Va dentro de la transacción de quien llama.
+   */
+  async applyRestSettings(
+    userId: string,
+    sessionId: string,
+    changes: RestSettingsInput['changes'],
+    transaction: Transaction,
+  ): Promise<{ session: WorkoutSessionModel; touched: WorkoutSessionExerciseModel[] }> {
+    const session = await this.getSessionModelOrFail(userId, sessionId);
+    this.assertSessionInProgress(session.status);
+    const byId = new Map((session.sessionExercises ?? []).map((item) => [item.id, item]));
+    const touched: WorkoutSessionExerciseModel[] = [];
+    for (const { sessionExerciseId, ...change } of changes) {
+      const sessionExercise = byId.get(sessionExerciseId);
+      if (!sessionExercise) throw new NotFoundException('Ejercicio de sesión no encontrado.');
+      assertRestChangeAllowed(sessionExercise, change);
+      await this.workoutsRepository.updateSessionExerciseRest(sessionExercise, change, transaction);
+      touched.push(sessionExercise);
+    }
+    return { session, touched };
+  }
+
+  /** La sesión (con su rutina de origen) de quien llama, o 404. */
+  getSessionModelForUser(userId: string, sessionId: string): Promise<WorkoutSessionModel> {
+    return this.getSessionModelOrFail(userId, sessionId);
   }
 
   private async getSessionModelOrFail(
@@ -379,4 +547,106 @@ export class WorkoutsService {
       throw new ForbiddenException('Solo se puede modificar una sesión en progreso.');
     }
   }
+}
+
+/** Cuánto se espera a que la petición que cerró la sesión guarde su resultado. */
+const CLOSE_RESULT_ATTEMPTS = 12;
+const CLOSE_RESULT_WAIT_MS = 250;
+
+/** Margen para considerar un segundo `POST …/sets` idéntico como un doble toque. */
+const DUPLICATE_SET_WINDOW_MS = 15_000;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * ¿Es la misma serie que se acaba de registrar? Mismo contenido y reciente:
+ * un reintento del cliente, no una serie distinta con el número repetido.
+ */
+function isSameRecentSet(existing: WorkoutSetModel, input: CreateWorkoutSetInput): boolean {
+  if (Date.now() - existing.createdAt.getTime() > DUPLICATE_SET_WINDOW_MS) return false;
+  if ((existing.type ?? 'FUERZA') !== input.type) return false;
+  const sameNumber = (stored: string | number | null | undefined, sent: number | null) =>
+    (stored == null ? null : Number(stored)) === (sent ?? null);
+  if (input.type === 'CARDIO') {
+    return (
+      sameNumber(existing.durationSeconds, input.durationSeconds) &&
+      sameNumber(existing.distanceM, input.distanceM)
+    );
+  }
+  return (
+    sameNumber(existing.repetitions, input.repetitions) &&
+    sameNumber(existing.weightKg, input.weightKg) &&
+    sameNumber(existing.rir, input.rir) &&
+    sameNumber(existing.durationSeconds, input.durationSeconds)
+  );
+}
+
+/**
+ * `descansoEntreSeg` solo tiene sentido dentro de un bloque (superserie o
+ * circuito) y `duracionSeg` solo en un ejercicio por tiempo: aceptarlos en
+ * otro sitio convertiría el ejercicio en algo que no es.
+ */
+function assertRestChangeAllowed(
+  sessionExercise: WorkoutSessionExerciseModel,
+  change: { restBetweenSeconds?: number; durationSeconds?: number },
+): void {
+  const invalid =
+    change.restBetweenSeconds !== undefined && sessionExercise.group == null
+      ? 'descansoEntreSeg'
+      : change.durationSeconds !== undefined && sessionExercise.durationSeconds == null
+        ? 'duracionSeg'
+        : null;
+  if (!invalid) return;
+  throw new DomainException(
+    HttpStatus.BAD_REQUEST,
+    'REST_SETTING_INVALID',
+    invalid === 'descansoEntreSeg'
+      ? 'El descanso entre ejercicios solo aplica a una superserie o circuito.'
+      : 'Este ejercicio se hace por repeticiones, no por tiempo.',
+    { sesionEjercicioId: sessionExercise.id, campo: invalid },
+  );
+}
+
+/**
+ * Una serie de fuerza por tiempo solo vale si el ejercicio de la sesión es por
+ * tiempo (`duracionSeg` copiado de la rutina). Sin objetivo de tiempo el
+ * ejercicio es por repeticiones, y una serie sin repeticiones lo rompería todo
+ * lo que suma kilos por repeticiones.
+ */
+function assertDurationAllowed(
+  sessionExercise: WorkoutSessionExerciseModel,
+  input: CreateWorkoutSetInput,
+): void {
+  if (input.type !== 'FUERZA' || input.durationSeconds == null) return;
+  if (sessionExercise.durationSeconds != null) return;
+  throw new DomainException(
+    HttpStatus.BAD_REQUEST,
+    'SET_DURATION_NOT_ALLOWED',
+    'Este ejercicio se registra por repeticiones, no por tiempo.',
+    { sessionExerciseId: sessionExercise.id },
+  );
+}
+
+/**
+ * Editar una serie no cambia su forma: una serie por repeticiones no acepta
+ * duración ni una por tiempo repeticiones (para cambiarla, se borra y se crea
+ * otra). Así el CHECK `ck_serie_por_tipo` nunca salta como un 500.
+ */
+function assertSameSetKind(set: WorkoutSetModel, input: UpdateWorkoutSetInput): void {
+  if (set.type !== 'FUERZA') return;
+  const timed = set.repetitions == null;
+  const mismatch = timed ? input.repetitions !== undefined : input.durationSeconds !== undefined;
+  const tooLong =
+    timed && input.durationSeconds !== undefined && input.durationSeconds > MAX_TIMED_SET_SECONDS;
+  if (!mismatch && !tooLong) return;
+  throw new DomainException(
+    HttpStatus.BAD_REQUEST,
+    'SET_KIND_MISMATCH',
+    timed
+      ? `Una serie por tiempo solo admite una duración de 1 a ${MAX_TIMED_SET_SECONDS} s.`
+      : 'Una serie por repeticiones no admite duración.',
+    { setId: set.id },
+  );
 }

@@ -134,8 +134,13 @@ export class AuthService {
     // Después de comprobar la contraseña, nunca antes: avisar de la suspensión
     // a quien no ha demostrado ser el dueño de la cuenta convertiría el login
     // en un detector de cuentas sancionadas para cualquiera que pruebe correos.
+    //
+    // 403 y no 401: la contraseña era correcta. Con 401 los clientes —que
+    // traducen todo 401 del acceso a «credenciales inválidas»— le decían a la
+    // persona suspendida que se había equivocado de contraseña, y el motivo y
+    // la fecha que escribimos aquí no llegaban nunca a la pantalla.
     if (activeUser.suspendedUntil && activeUser.suspendedUntil.getTime() > Date.now()) {
-      throw new UnauthorizedException(
+      throw new ForbiddenException(
         `Tu cuenta está suspendida hasta el ${activeUser.suspendedUntil.toLocaleDateString('es')} por incumplir las normas de la comunidad.`,
       );
     }
@@ -286,6 +291,16 @@ export class AuthService {
       tenantId: input.tenantId,
       expiresIn: env.JWT_IMPERSONATION_EXPIRES_IN,
     };
+  }
+
+  /**
+   * Los campos del principal se conservan tal cual (`role`, `tenantScope`…):
+   * hay clientes que ya los leen. `nombreCompleto` y `rol` se añaden con los
+   * mismos nombres que usa `user` en login/registro/refresh.
+   */
+  async me(principal: AuthenticatedUser) {
+    const account = await this.usersRepository.findActiveById(principal.id);
+    return { ...principal, rol: principal.role, nombreCompleto: account?.fullName ?? '' };
   }
 
   private buildAuthResponse(

@@ -3,16 +3,21 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-} from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
-import { Op, QueryTypes } from 'sequelize';
-import { Sequelize } from 'sequelize-typescript';
-import { ConnectionStatus, NotificationChannel } from '../../common/enums/domain.enums';
-import { AuthenticatedUser } from '../../common/types/auth-context.types';
-import { ConnectionModel } from '../social/connection.model';
-import { DiscoveryPassModel } from '../social/discovery-pass.model';
-import { NotificationService } from '../notifications/notification.service';
-import { ModerationRepository } from './moderation.repository';
+  Optional,
+} from "@nestjs/common";
+import { InjectModel } from "@nestjs/sequelize";
+import { Op, QueryTypes } from "sequelize";
+import { Sequelize } from "sequelize-typescript";
+import {
+  ConnectionStatus,
+  NotificationChannel,
+} from "../../common/enums/domain.enums";
+import { AuthenticatedUser } from "../../common/types/auth-context.types";
+import { ConnectionModel } from "../social/connection.model";
+import { DiscoveryPassModel } from "../social/discovery-pass.model";
+import { SocialRecommendationOutboxService } from "../social/social-recommendation-outbox.service";
+import { NotificationService } from "../notifications/notification.service";
+import { ModerationRepository } from "./moderation.repository";
 import {
   AUTO_HIDE_DISTINCT_REPORTERS,
   isHideableTarget,
@@ -25,8 +30,19 @@ import {
   Sanction,
   strikeExpiryFrom,
   StrikeKind,
-} from './moderation.policy';
-import { CreateReportInput, ResolveCaseInput } from './moderation.schemas';
+} from "./moderation.policy";
+import { CreateReportInput, ResolveCaseInput } from "./moderation.schemas";
+import { ReelSocialService } from "../reels/reel-social.service";
+import { ChatEventsService } from "../chat/chat-events.service";
+
+/**
+ * Contenido que se ve entre gimnasios (reels y playlists públicas): quien lo ve
+ * puede denunciarlo aunque el autor sea de otro gimnasio.
+ */
+const CROSS_TENANT_TARGETS: ReadonlySet<ModerationTargetKindValue> = new Set([
+  ModerationTargetKind.REEL,
+  ModerationTargetKind.MUSIC_PLAYLIST,
+]);
 
 /** Lo que se le enseña al moderador antes de que decida. */
 export interface CasePreview {
@@ -45,7 +61,6 @@ export interface CasePreview {
   /** Qué sanción tocaría, calculada antes de aplicarla. */
   pendingSanction: { kind: string; days: number | null };
   contentHidden: boolean;
-  preview: { text: string; targetKind: string; targetId: string } | null;
 }
 
 @Injectable()
@@ -60,6 +75,10 @@ export class ModerationService {
     private readonly connections: typeof ConnectionModel,
     @InjectModel(DiscoveryPassModel)
     private readonly passes: typeof DiscoveryPassModel,
+    @Optional()
+    private readonly recommendationOutbox?: SocialRecommendationOutboxService,
+    @Optional() private readonly reelSocial?: ReelSocialService,
+    @Optional() private readonly chatEvents?: ChatEventsService,
   ) {}
 
   /**
@@ -84,25 +103,46 @@ export class ModerationService {
       input.targetKind,
       input.targetId,
     );
+    const canReportReel =
+      input.targetKind !== ModerationTargetKind.REEL ||
+      (await this.reelSocial?.canViewMedia(reporter.id, input.targetId)) ===
+        true;
+    // Un comentario se denuncia si quien denuncia lo puede leer; en un
+    // ejercicio global eso cruza gimnasios (la cola es la del gimnasio del autor).
+    const canReportComment =
+      input.targetKind !== ModerationTargetKind.COMMENT ||
+      (await this.repository.canReporterViewComment(input.targetId, reporter.id));
+    const canReportChatMessage =
+      input.targetKind !== ModerationTargetKind.CHAT_MESSAGE ||
+      (await this.repository.canReporterViewChatMessage(
+        input.targetId,
+        reporter.id,
+      ));
 
     // 404 y no 403: quien reporta no tiene por qué saber si el contenido existe
     // pero es de otro gimnasio, y distinguir ambos casos confirmaría
     // identificadores ajenos uno a uno.
-    if (!owner || owner.tenantId !== reporter.tenantId) {
-      throw new NotFoundException('No encontramos ese contenido.');
+    if (
+      !owner ||
+      (!canReportReel && input.targetKind === ModerationTargetKind.REEL) ||
+      (!canReportChatMessage &&
+        input.targetKind === ModerationTargetKind.CHAT_MESSAGE) ||
+      !canReportComment ||
+      (owner.tenantId !== reporter.tenantId &&
+        !CROSS_TENANT_TARGETS.has(input.targetKind) &&
+        input.targetKind !== ModerationTargetKind.COMMENT)
+    ) {
+      throw new NotFoundException("No encontramos ese contenido.");
     }
     if (owner.userId === reporter.id) {
-      throw new ConflictException('No puedes reportar tu propio contenido.');
-    }
-    if (!(await this.repository.canReporterSee(input.targetKind, input.targetId, reporter.id))) {
-      throw new NotFoundException('No encontramos ese contenido.');
+      throw new ConflictException("No puedes reportar tu propio contenido.");
     }
 
     const report = await this.sequelize
       .transaction(async (transaction) =>
         this.repository.createReport(
           {
-            tenantId: reporter.tenantId,
+            tenantId: owner.tenantId,
             reporterUserId: reporter.id,
             reportedUserId: owner.userId,
             targetKind: input.targetKind,
@@ -116,9 +156,11 @@ export class ModerationService {
       .catch((error: unknown) => {
         if (
           error instanceof Error &&
-          error.name === 'SequelizeUniqueConstraintError'
+          error.name === "SequelizeUniqueConstraintError"
         ) {
-          throw new ConflictException('Ya reportaste esto; lo estamos revisando.');
+          throw new ConflictException(
+            "Ya reportaste esto; lo estamos revisando.",
+          );
         }
         throw error;
       });
@@ -150,11 +192,30 @@ export class ModerationService {
     reportedUserId: string,
   ): Promise<void> {
     try {
-      await this.sequelize.transaction(async (transaction) => {
+      const revokedConversationIds = await this.sequelize.transaction(async (transaction) => {
         await this.passes.bulkCreate(
           [{ viewerId: reporterId, targetId: reportedUserId }] as never,
           { ignoreDuplicates: true, transaction },
         );
+        const conversations = await this.sequelize.query<{ id: string }>(
+          `SELECT c.id
+             FROM chat.conversations c
+             JOIN chat.participants p1
+               ON p1.conversation_id = c.id AND p1.user_id = :reporterId
+             JOIN chat.participants p2
+               ON p2.conversation_id = c.id AND p2.user_id = :reportedUserId
+            WHERE c.revoked_at IS NULL
+              AND c.system_kind IS NULL
+              AND (SELECT count(*) FROM chat.participants p3
+                    WHERE p3.conversation_id = c.id) = 2
+            FOR UPDATE OF c`,
+          {
+            type: QueryTypes.SELECT,
+            replacements: { reporterId, reportedUserId },
+            transaction,
+          },
+        );
+        const conversationIds = conversations.map(({ id }) => id);
         await this.connections.update(
           { status: ConnectionStatus.REJECTED, respondedAt: new Date() },
           {
@@ -168,14 +229,30 @@ export class ModerationService {
             transaction,
           },
         );
+        if (conversationIds.length > 0) {
+          await this.sequelize.query(
+            `UPDATE chat.conversations
+                SET revoked_at = now(), revoked_by_user_id = :reporterId
+              WHERE id IN (:conversationIds) AND revoked_at IS NULL`,
+            {
+              type: QueryTypes.UPDATE,
+              replacements: { reporterId, conversationIds },
+              transaction,
+            },
+          );
+        }
+        return conversationIds;
       });
+      for (const conversationId of revokedConversationIds) {
+        this.chatEvents?.emitConversationRevoked(conversationId, reporterId);
+      }
     } catch (error) {
       this.logger.warn(
         {
-          event: 'moderation.distance_failed',
+          event: "moderation.distance_failed",
           reporterId,
           reportedUserId,
-          detail: error instanceof Error ? error.message : 'unknown',
+          detail: error instanceof Error ? error.message : "unknown",
         },
         ModerationService.name,
       );
@@ -213,7 +290,7 @@ export class ModerationService {
       ),
     );
     this.logger.log(
-      { event: 'moderation.auto_hidden', targetKind, targetId, reporters },
+      { event: "moderation.auto_hidden", targetKind, targetId, reporters },
       ModerationService.name,
     );
     return true;
@@ -246,7 +323,7 @@ export class ModerationService {
       actor.tenantScope,
     );
     if (reports.length === 0) {
-      throw new NotFoundException('No encontramos ese caso.');
+      throw new NotFoundException("No encontramos ese caso.");
     }
 
     const reportedUserId = reports[0].reportedUserId;
@@ -276,10 +353,6 @@ export class ModerationService {
       activeStrikes,
       pendingSanction: { kind: sanction.kind, days: sanction.days },
       contentHidden,
-      preview:
-        targetKind === ModerationTargetKind.COMMENT
-          ? await this.repository.commentPreview(targetId)
-          : null,
     };
   }
 
@@ -294,15 +367,30 @@ export class ModerationService {
          FROM public.usuarios WHERE id = :userId`,
       { type: QueryTypes.SELECT, replacements: { userId } },
     );
-    return row ?? { name: 'Cuenta eliminada', suspendedUntil: null };
+    return row ?? { name: "Cuenta eliminada", suspendedUntil: null };
   }
 
-  private isContentHidden(
+  private async isContentHidden(
     targetKind: ModerationTargetKindValue,
     targetId: string,
   ): Promise<boolean> {
-    if (!isHideableTarget(targetKind)) return Promise.resolve(false);
-    return this.repository.isContentHidden(targetKind, targetId);
+    if (!isHideableTarget(targetKind)) return false;
+    const queries: Partial<Record<ModerationTargetKindValue, string>> = {
+      STORY: "SELECT (hidden_at IS NOT NULL) AS hidden FROM profile.stories WHERE id = :targetId",
+      PROFILE_PHOTO: "SELECT (hidden_at IS NOT NULL) AS hidden FROM profile.photos WHERE id = :targetId",
+      REEL: "SELECT (hidden_at IS NOT NULL) AS hidden FROM social.reels WHERE id = :targetId",
+      MUSIC_PLAYLIST: "SELECT (hidden_at IS NOT NULL) AS hidden FROM community.music_playlists WHERE id = :targetId",
+      ROUTINE: "SELECT (estado_moderacion <> 'VISIBLE') AS hidden FROM training.routines WHERE id = :targetId",
+      EXERCISE: "SELECT (estado_moderacion <> 'VISIBLE') AS hidden FROM public.ejercicios WHERE id = :targetId",
+      COMMENT: "SELECT (estado IN ('OCULTO_AUTO','OCULTO_MODERACION')) AS hidden FROM community.content_comments WHERE id = :targetId",
+    };
+    const query = queries[targetKind];
+    if (!query) return false;
+    const [row] = await this.sequelize.query<{ hidden: boolean }>(
+      query,
+      { type: QueryTypes.SELECT, replacements: { targetId } },
+    );
+    return row?.hidden ?? false;
   }
 
   async claim(
@@ -318,7 +406,7 @@ export class ModerationService {
     );
     if (affected === 0) {
       throw new ConflictException(
-        'Otra persona ya está revisando este caso. Actualiza la cola.',
+        "Otra persona ya está revisando este caso. Actualiza la cola.",
       );
     }
     return { claimed: true, reports: affected };
@@ -336,7 +424,7 @@ export class ModerationService {
       actor.tenantScope,
     );
     if (affected === 0) {
-      throw new ConflictException('Este caso no estaba asignado a ti.');
+      throw new ConflictException("Este caso no estaba asignado a ti.");
     }
     return { released: true };
   }
@@ -364,7 +452,7 @@ export class ModerationService {
       actor.tenantScope,
     );
     if (openReports.length === 0) {
-      throw new NotFoundException('Este caso ya no está abierto.');
+      throw new NotFoundException("Este caso ya no está abierto.");
     }
 
     const first = openReports[0];
@@ -405,6 +493,10 @@ export class ModerationService {
             sanction.suspendedUntil,
             transaction,
           );
+          await this.recommendationOutbox?.enqueueProfileSnapshot(
+            reportedUserId,
+            transaction,
+          );
         }
         if (sanction.kind === StrikeKind.EXPULSION) {
           // La expulsión no es una fecha lejana: es dar de baja la cuenta. Un
@@ -413,6 +505,10 @@ export class ModerationService {
           await this.sequelize.query(
             `UPDATE public.usuarios SET estado = 'INACTIVO' WHERE id = :userId`,
             { replacements: { userId: reportedUserId }, transaction },
+          );
+          await this.recommendationOutbox?.enqueueProfileSnapshot(
+            reportedUserId,
+            transaction,
           );
         }
       }
@@ -445,13 +541,15 @@ export class ModerationService {
     });
 
     await this.notifyOutcome(openReports, reportedUserId, sanction, input);
-    await this.notifyAuthorIfHidden(targetKind, targetId, reportedUserId, input);
 
     return {
       resolved: true,
       reportsClosed: openReports.length,
       sanction: sanction
-        ? { kind: (sanction as Sanction).kind, days: (sanction as Sanction).days }
+        ? {
+            kind: (sanction as Sanction).kind,
+            days: (sanction as Sanction).days,
+          }
         : null,
       contentHidden: isHideableTarget(targetKind) ? input.hideContent : false,
     };
@@ -489,10 +587,10 @@ export class ModerationService {
       this.notifications.enqueueDirectMessage({
         recipientUserId: report.reporterUserId,
         channel: NotificationChannel.IN_APP,
-        subject: 'Revisamos tu reporte',
+        subject: "Revisamos tu reporte",
         body: input.hideContent
-          ? 'Gracias por avisar. Revisamos el contenido que reportaste y lo retiramos.'
-          : 'Gracias por avisar. Revisamos el contenido que reportaste.',
+          ? "Gracias por avisar. Revisamos el contenido que reportaste y lo retiramos."
+          : "Gracias por avisar. Revisamos el contenido que reportaste.",
         deduplicationKey: `moderation.report-reviewed:${report.id}`,
       }),
     );
@@ -510,63 +608,34 @@ export class ModerationService {
     }
 
     const results = await Promise.allSettled(tasks);
-    const failed = results.filter((result) => result.status === 'rejected').length;
+    const failed = results.filter(
+      (result) => result.status === "rejected",
+    ).length;
     if (failed > 0) {
       this.logger.warn(
-        { event: 'moderation.notify_failed', failed, total: results.length },
+        { event: "moderation.notify_failed", failed, total: results.length },
         ModerationService.name,
       );
     }
   }
 
-  /** CONTENT_HIDDEN: el autor de una rutina, ejercicio o comentario sabe qué pasó y a dónde ir. */
-  private async notifyAuthorIfHidden(
-    targetKind: ModerationTargetKindValue,
-    targetId: string,
-    authorId: string,
-    input: ResolveCaseInput,
-  ): Promise<void> {
-    if (!input.hideContent) return;
-    if (
-      targetKind !== ModerationTargetKind.ROUTINE &&
-      targetKind !== ModerationTargetKind.EXERCISE &&
-      targetKind !== ModerationTargetKind.COMMENT
-    ) {
-      return;
-    }
-    const what = { ROUTINE: 'tu rutina', EXERCISE: 'tu ejercicio', COMMENT: 'tu comentario' }[targetKind];
-    await this.notifications
-      .enqueueDirectMessage({
-        recipientUserId: authorId,
-        channel: NotificationChannel.IN_APP,
-        subject: 'Ocultamos tu contenido',
-        body: `Ocultamos ${what} mientras lo revisamos.`,
-        deduplicationKey: `CONTENT_HIDDEN:${targetKind}:${targetId}`,
-        metadata: { type: 'CONTENT_HIDDEN', refs: { targetKind, targetId } },
-      })
-      .catch((error: unknown) => {
-        this.logger.warn(
-          { event: 'moderation.notify_failed', errorMessage: error instanceof Error ? error.message : String(error) },
-          ModerationService.name,
-        );
-      });
-  }
-
   private sanctionSubject(sanction: Sanction): string {
-    if (sanction.kind === StrikeKind.ADVERTENCIA) return 'Aviso sobre tu contenido';
-    if (sanction.kind === StrikeKind.EXPULSION) return 'Tu cuenta ha sido cerrada';
-    return 'Tu cuenta ha sido suspendida';
+    if (sanction.kind === StrikeKind.ADVERTENCIA)
+      return "Aviso sobre tu contenido";
+    if (sanction.kind === StrikeKind.EXPULSION)
+      return "Tu cuenta ha sido cerrada";
+    return "Tu cuenta ha sido suspendida";
   }
 
   private sanctionBody(sanction: Sanction): string {
     if (sanction.kind === StrikeKind.ADVERTENCIA) {
-      return 'Retiramos contenido tuyo por incumplir las normas de la comunidad. Es un aviso: si vuelve a ocurrir, tu cuenta puede quedar suspendida.';
+      return "Retiramos contenido tuyo por incumplir las normas de la comunidad. Es un aviso: si vuelve a ocurrir, tu cuenta puede quedar suspendida.";
     }
     if (sanction.kind === StrikeKind.EXPULSION) {
-      return 'Cerramos tu cuenta por incumplimientos repetidos de las normas de la comunidad.';
+      return "Cerramos tu cuenta por incumplimientos repetidos de las normas de la comunidad.";
     }
     const days = sanction.days ?? 0;
-    return `Suspendimos tu cuenta ${days === 1 ? 'un día' : `${days} días`} por incumplir las normas de la comunidad. Podrás volver a entrar cuando termine.`;
+    return `Suspendimos tu cuenta ${days === 1 ? "un día" : `${days} días`} por incumplir las normas de la comunidad. Podrás volver a entrar cuando termine.`;
   }
 
   /** Historial de una persona, para la ficha y para decidir con contexto. */
@@ -576,7 +645,7 @@ export class ModerationService {
       userId,
     );
     if (!owner || (actor.tenantScope && owner.tenantId !== actor.tenantScope)) {
-      throw new NotFoundException('Usuario no encontrado.');
+      throw new NotFoundException("Usuario no encontrado.");
     }
     const [strikes, activeStrikes] = await Promise.all([
       this.repository.listStrikes(userId),

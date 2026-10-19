@@ -25,6 +25,27 @@ export class ContentCommentModel extends Model {
   @Column({ type: DataType.STRING(1000), allowNull: false, field: 'texto' })
   declare text: string;
 
+  @Column({ type: DataType.STRING(10), allowNull: true, field: 'adjunto_tipo' })
+  declare attachmentKind: string | null;
+
+  @Column({ type: DataType.TEXT, allowNull: true, field: 'adjunto_url' })
+  declare attachmentUrl: string | null;
+
+  @Column({ type: DataType.STRING(100), allowNull: true, field: 'adjunto_mime' })
+  declare attachmentMime: string | null;
+
+  @Column({ type: DataType.STRING(200), allowNull: true, field: 'adjunto_nombre' })
+  declare attachmentName: string | null;
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'adjunto_bytes' })
+  declare attachmentBytes: number | null;
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'adjunto_ancho' })
+  declare attachmentWidth: number | null;
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'adjunto_alto' })
+  declare attachmentHeight: number | null;
+
   @Default('VISIBLE')
   @Column({ type: DataType.STRING(20), allowNull: false, field: 'estado' })
   declare status: CommentState;

@@ -32,6 +32,7 @@ export function mapNotificationPreference(preference: NotificationPreferenceMode
   return preference
     ? {
         recordatoriosVencimiento: preference.membershipExpiryEnabled,
+        vistaPreviaMensajes: preference.messagePreviewEnabled,
         canalPreferido: preference.preferredChannel,
         consentimientoExternoEn: preference.externalDeliveryConsentAt,
         versionConsentimiento: preference.consentVersion,
@@ -40,6 +41,7 @@ export function mapNotificationPreference(preference: NotificationPreferenceMode
       }
     : {
         recordatoriosVencimiento: true,
+        vistaPreviaMensajes: false,
         canalPreferido: 'IN_APP' as const,
         consentimientoExternoEn: null,
         versionConsentimiento: null,

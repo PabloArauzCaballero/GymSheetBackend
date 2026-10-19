@@ -1,4 +1,7 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { createHash } from "crypto";
+import { extname } from "path";
+import { UniqueConstraintError } from "sequelize";
 import { env } from "../../config/env";
 import { MediaRetentionService } from "../media/media-retention.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
@@ -11,6 +14,8 @@ import {
   StoryViewersResponse,
 } from "./stories.mapper";
 import { StoriesRepository } from "./stories.repository";
+import { canViewStory } from "./story-audience.policy";
+import type { StoryAudienceMode } from "./story-audience.policy";
 
 export interface UploadedStoryMedia {
   readonly originalname: string;
@@ -18,6 +23,20 @@ export interface UploadedStoryMedia {
   readonly size: number;
   readonly buffer: Buffer;
 }
+
+export interface StoryUploadOptions {
+  readonly audienceMode?: unknown;
+  readonly recipientIds?: unknown;
+  readonly requestId?: unknown;
+  readonly caption?: unknown;
+}
+
+/** Tope del pie de foto: coincide con `varchar(200)` de la columna. */
+export const STORY_CAPTION_MAX_LENGTH = 200;
+/** Más de esto deja de ser un pie y tapa la foto. */
+const STORY_CAPTION_MAX_LINES = 4;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 @Injectable()
 export class StoriesService {
@@ -27,7 +46,12 @@ export class StoriesService {
     private readonly retention: MediaRetentionService,
   ) {}
 
-  async upload(userId: string, tenantId: string, file: UploadedStoryMedia | undefined): Promise<StoryResponse> {
+  async upload(
+    userId: string,
+    tenantId: string,
+    file: UploadedStoryMedia | undefined,
+    options: StoryUploadOptions = {},
+  ): Promise<StoryResponse> {
     if (!file || !file.buffer || file.size === 0) {
       throw new BadRequestException("Se requiere una foto o video no vacío.");
     }
@@ -40,6 +64,27 @@ export class StoriesService {
     }
     const mediaType = mimeType.startsWith("video/") ? "video" : "image";
 
+    const requestId = this.parseUploadRequestId(options.requestId);
+    const contentHash = requestId ? createHash("sha256").update(file.buffer).digest("hex") : null;
+    if (requestId && contentHash) {
+      const previous = await this.repository.findByUploadRequest(userId, requestId);
+      if (previous) {
+        if (previous.uploadContentHash !== contentHash) {
+          throw new ConflictException("El requestId de subida ya se usó con otro archivo.");
+        }
+        return mapStoryToResponse(previous);
+      }
+    }
+
+    const { audienceMode, recipientIds } = this.parseAudienceOptions(options);
+    const caption = parseStoryCaption(options.caption);
+    if (audienceMode === "SELECTED_CONNECTIONS") {
+      const validRecipients = await this.repository.validAudienceRecipients(userId, recipientIds);
+      if (validRecipients.length !== recipientIds.length) {
+        throw new BadRequestException("La audiencia incluye personas sin una conexión aceptada vigente.");
+      }
+    }
+
     const stored = await this.mediaStorage.upload(
       {
         originalName: file.originalname,
@@ -50,12 +95,44 @@ export class StoriesService {
       { category: "stories", ownerUserId: userId },
     );
 
-    const story = await this.repository.create(userId, tenantId, stored, mediaType);
-    return mapStoryToResponse(story);
+    try {
+      const story = await this.repository.create(
+        userId,
+        tenantId,
+        stored,
+        mediaType,
+        audienceMode,
+        recipientIds,
+        requestId && contentHash ? { requestId, contentHash } : undefined,
+        caption,
+      );
+      return mapStoryToResponse(story);
+    } catch (error) {
+      if (!(error instanceof UniqueConstraintError) || !requestId || !contentHash) throw error;
+
+      // A concurrent upload may have won the unique (owner, requestId) insert.
+      // Refcount-aware cleanup preserves the winner's shared asset, while
+      // removing a distinct losing upload when no row references it.
+      const previous = await this.repository.findByUploadRequest(userId, requestId);
+      await this.retention.deleteRowAndUnreferencedFile(stored.key, async () => undefined);
+      if (!previous) throw error;
+      if (previous.uploadContentHash !== contentHash) {
+        throw new ConflictException("El requestId de subida ya se usó con otro archivo.");
+      }
+      return mapStoryToResponse(previous);
+    }
   }
 
-  async feed(viewerId: string, tenantId: string): Promise<StoryFeedEntryResponse[]> {
-    const rows = await this.repository.feedForConnections(viewerId, tenantId);
+  private parseUploadRequestId(value: unknown): string | null {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== "string" || !UUID_PATTERN.test(value)) {
+      throw new BadRequestException("El requestId de subida debe ser un UUID válido.");
+    }
+    return value;
+  }
+
+  async feed(viewerId: string): Promise<StoryFeedEntryResponse[]> {
+    const rows = await this.repository.feedForConnections(viewerId);
     return mapFeedRowsToResponse(rows);
   }
 
@@ -70,15 +147,22 @@ export class StoriesService {
    * Quien no cumple recibe 404 y no 403: acceso horizontal no confirma que ese
    * id exista (regla del repo).
    */
-  async view(storyId: string, viewerId: string, tenantId: string): Promise<{ recorded: true }> {
-    const story = await this.repository.findById(storyId);
-    if (!story || story.tenantId !== tenantId) throw new NotFoundException("Story no encontrada.");
-    if (story.userId !== viewerId) {
-      const isMatch = await this.repository.hasAcceptedConnection(viewerId, story.userId);
-      if (!isMatch) throw new NotFoundException("Story no encontrada.");
-    }
+  async view(storyId: string, viewerId: string): Promise<{ recorded: true }> {
+    await this.requireViewableStory(storyId, viewerId);
     await this.repository.recordView(storyId, viewerId);
     return { recorded: true };
+  }
+
+  async downloadMedia(
+    storyId: string,
+    viewerId: string,
+  ): Promise<{ buffer: Buffer; mimeType: string; etag: string }> {
+    const story = await this.requireViewableStory(storyId, viewerId);
+    return {
+      buffer: await this.mediaStorage.download(story.storageKey),
+      mimeType: mimeTypeForStorageKey(story.storageKey),
+      etag: storyMediaEtag(story.storageKey),
+    };
   }
 
   /**
@@ -105,4 +189,100 @@ export class StoriesService {
     );
     return { deleted: true };
   }
+
+  async requireViewableStory(storyId: string, actorId: string) {
+    const story = await this.repository.findById(storyId);
+    if (!story) throw new NotFoundException("Story no encontrada.");
+    const isOwner = story.userId === actorId;
+    const [hasAcceptedConnection, isSelectedRecipient, isBlocked] = isOwner
+      ? [true, true, false]
+      : await Promise.all([
+          this.repository.hasAcceptedConnection(actorId, story.userId),
+          story.audienceMode === "SELECTED_CONNECTIONS"
+            ? this.repository.isSelectedRecipient(storyId, actorId)
+            : Promise.resolve(false),
+          this.repository.isBlockedEitherWay(actorId, story.userId),
+        ]);
+    if (!canViewStory(actorId, {
+      authorId: story.userId,
+      audienceMode: story.audienceMode ?? "ALL_CONNECTIONS",
+      expiresAt: story.expiresAt,
+      hiddenAt: story.hiddenAt,
+      hasAcceptedConnection,
+      isSelectedRecipient,
+      isBlocked,
+    })) {
+      throw new NotFoundException("Story no encontrada.");
+    }
+    return story;
+  }
+
+  private parseAudienceOptions(options: StoryUploadOptions): {
+    audienceMode: StoryAudienceMode;
+    recipientIds: string[];
+  } {
+    const rawMode = options.audienceMode;
+    const audienceMode = rawMode === undefined || rawMode === "" ? "ALL_CONNECTIONS" : rawMode;
+    if (audienceMode !== "ALL_CONNECTIONS" && audienceMode !== "SELECTED_CONNECTIONS") {
+      throw new BadRequestException("Modo de audiencia no válido.");
+    }
+    const rawRecipients = options.recipientIds;
+    let recipientIds: unknown = rawRecipients ?? [];
+    if (typeof recipientIds === "string") {
+      try {
+        recipientIds = JSON.parse(recipientIds) as unknown;
+      } catch {
+        throw new BadRequestException("La lista de audiencia debe ser JSON válido.");
+      }
+    }
+    if (!Array.isArray(recipientIds) || recipientIds.some((id) => typeof id !== "string" || !UUID_PATTERN.test(id))) {
+      throw new BadRequestException("La lista de audiencia debe contener UUID válidos.");
+    }
+    const ids = recipientIds as string[];
+    if (new Set(ids).size !== ids.length || ids.length > 100) {
+      throw new BadRequestException("La lista de audiencia contiene duplicados o excede el máximo de 100 personas.");
+    }
+    if (audienceMode === "ALL_CONNECTIONS" && ids.length > 0) {
+      throw new BadRequestException("No se puede enviar una lista explícita con ALL_CONNECTIONS.");
+    }
+    return { audienceMode, recipientIds: ids };
+  }
+}
+
+/**
+ * Normaliza el pie de foto que llega en el multipart.
+ *
+ * Ausente o en blanco es «sin texto» (NULL), no un error: el campo es opcional
+ * y los clientes viejos no lo mandan. Se quitan los caracteres de control salvo
+ * el salto de línea, se recortan los extremos y se limitan longitud y líneas.
+ */
+export function parseStoryCaption(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") throw new BadRequestException("El texto de la story no es válido.");
+  // eslint-disable-next-line no-control-regex
+  const cleaned = value.replace(/\r\n?/gu, "\n").replace(/[\u0000-\u0009\u000B-\u001F\u007F]/gu, "").trim();
+  if (cleaned === "") return null;
+  if ([...cleaned].length > STORY_CAPTION_MAX_LENGTH) {
+    throw new BadRequestException(`El texto de la story admite hasta ${STORY_CAPTION_MAX_LENGTH} caracteres.`);
+  }
+  if (cleaned.split("\n").length > STORY_CAPTION_MAX_LINES) {
+    throw new BadRequestException(`El texto de la story admite hasta ${STORY_CAPTION_MAX_LINES} líneas.`);
+  }
+  return cleaned;
+}
+
+/**
+ * ETag fuerte de un medio de story. La clave de almacenamiento ya deriva del
+ * SHA-256 del contenido, así que su huella cambia si y solo si cambian los bytes.
+ */
+export function storyMediaEtag(storageKey: string): string {
+  return `"${createHash("sha256").update(storageKey).digest("hex").slice(0, 32)}"`;
+}
+
+function mimeTypeForStorageKey(storageKey: string): string {
+  const mimeTypes: Record<string, string> = {
+    ".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif",
+    ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
+  };
+  return mimeTypes[extname(storageKey).toLowerCase()] ?? "application/octet-stream";
 }

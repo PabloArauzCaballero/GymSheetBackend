@@ -124,6 +124,17 @@ export class MinioStorageAdapter implements MediaStorageProvider {
     return Promise.resolve();
   }
 
+  async download(key: string): Promise<Buffer> {
+    const stream = await this.client.getObject(this.bucket, key);
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      if (typeof chunk === "string") chunks.push(Buffer.from(chunk));
+      else if (chunk instanceof Uint8Array) chunks.push(Buffer.from(Array.from(chunk)));
+      else throw new Error("MinIO devolvió un fragmento de archivo inválido.");
+    }
+    return Buffer.concat(chunks);
+  }
+
   /**
    * `statObject` es la forma barata de preguntar por existencia; el SDK señala
    * el "no está" con un error tipado, así que hay que distinguirlo de un fallo

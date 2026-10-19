@@ -31,6 +31,19 @@ describe('applyDoubleProgression', () => {
     expect(out.suggestedKg).toBe(kg);
   });
 
+  it('con series saltadas mantiene el peso: ni sube ni cuenta como fallo (D1)', () => {
+    const top = applyDoubleProgression(lift(), sets([8, 8]), { isDeload: false, hadSkippedSets: true });
+    expect(top).toMatchObject({ action: 'HOLD', suggestedKg: 60, consecutiveFails: 0 });
+
+    const low = applyDoubleProgression(lift({ consecutiveFails: 1 }), sets([5, 4]), {
+      isDeload: false,
+      hadSkippedSets: true,
+    });
+    // Sin las saltadas, este segundo fallo bajaría el peso un 5 %.
+    expect(low).toMatchObject({ action: 'HOLD', suggestedKg: 60, consecutiveFails: 1 });
+    expect(low.message).toMatch(/Saltaste series/u);
+  });
+
   it('cuenta el primer fallo y no lo cuenta si la siguiente sesión va bien', () => {
     const first = applyDoubleProgression(lift(), sets([8, 8, 5]), { isDeload: false });
     expect(first.consecutiveFails).toBe(1);
@@ -122,8 +135,13 @@ describe('helpers', () => {
   it('validSets descarta reps 0 y cargas livianas', () => {
     expect(validSets([{ reps: 0, weightKg: 60, rir: null }, { reps: 5, weightKg: 47, rir: null }, { reps: 5, weightKg: 48, rir: null }], 60)).toHaveLength(1);
   });
-  it('formatKg', () => {
+  it('formatKg usa coma decimal', () => {
     expect(formatKg(60)).toBe('60 kg');
-    expect(formatKg(62.5)).toBe('62.5 kg');
+    expect(formatKg(62.5)).toBe('62,5 kg');
+    expect(formatKg(53.75)).toBe('53,75 kg');
+  });
+  it('el mensaje de subida sale con coma decimal', () => {
+    const out = applyDoubleProgression(lift(), sets([8, 8, 8]), { isDeload: false });
+    expect(out.message).toBe('¡Sube a 62,5 kg!');
   });
 });

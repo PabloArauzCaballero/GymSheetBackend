@@ -5,9 +5,12 @@ import {
 } from '../../common/enums/domain.enums';
 
 import {
+  duration,
   durationWeeksSchema,
   progressionSchema,
+  reps,
   routineDaySchema,
+  sets,
   uniqueWeekdays,
 } from './routine-v2.schemas';
 
@@ -22,13 +25,14 @@ const routineExerciseInput = z
     ejercicioId: z.string().uuid().optional(),
     ejercicioNombre: z.string().trim().min(1).max(160).optional(),
     orden: z.number().int().min(1).max(500),
-    seriesObjetivo: z.number().int().min(1).max(100).default(3),
-    repsMin: z.number().int().min(1).max(1000).nullable().optional(),
-    repsMax: z.number().int().min(1).max(1000).nullable().optional(),
+    seriesObjetivo: sets.default(3),
+    repsMin: reps.nullable().optional(),
+    repsMax: reps.nullable().optional(),
     pesoObjetivoKg: z.number().min(0).max(2000).nullable().optional(),
     rirObjetivo: z.number().int().min(0).max(10).nullable().optional(),
     descansoSeg: z.number().int().min(0).max(7200).nullable().optional(),
     nota: nullableNote.optional(),
+    duracionSeg: duration.nullable().optional(),
   })
   .refine((value) => Boolean(value.ejercicioId) || Boolean(value.ejercicioNombre), {
     message: 'Cada ejercicio requiere ejercicioId o ejercicioNombre.',
@@ -43,12 +47,14 @@ const routineExerciseInput = z
     exerciseName: value.ejercicioNombre ?? null,
     order: value.orden,
     targetSets: value.seriesObjetivo,
-    repsMin: value.repsMin ?? null,
-    repsMax: value.repsMax ?? null,
+    // Serie por tiempo: la duración manda y las reps quedan vacías.
+    repsMin: value.duracionSeg != null ? null : (value.repsMin ?? null),
+    repsMax: value.duracionSeg != null ? null : (value.repsMax ?? null),
     targetWeightKg: value.pesoObjetivoKg ?? null,
     targetRir: value.rirObjetivo ?? null,
     restSeconds: value.descansoSeg ?? null,
     note: value.nota ?? null,
+    durationSeconds: value.duracionSeg ?? null,
   }));
 
 export const createRoutineSchema = z
@@ -74,6 +80,40 @@ export const createRoutineSchema = z
     progression: value.progresion ?? null,
     days: value.dias ?? null,
   }));
+
+/** Mobile creation is one atomic write, with a stable key for safe retries. */
+export const createCompleteRoutineSchema = z
+  .object({
+    nombre: routineName,
+    descripcion: z.string().trim().max(4000).nullable().optional(),
+    visibilidad: visibility.default(RoutineVisibility.PRIVATE),
+    objetivo: goal.nullable().optional(),
+    creationKey: z.string().uuid(),
+    ejercicios: z.array(routineExerciseInput).min(1).max(100),
+  })
+  .refine((value) => new Set(value.ejercicios.map((exercise) => exercise.order)).size === value.ejercicios.length, {
+    message: 'Cada ejercicio necesita un orden distinto.',
+    path: ['ejercicios'],
+  })
+  .transform((value) => ({
+    name: value.nombre,
+    description: value.descripcion ?? null,
+    visibility: value.visibilidad,
+    goal: value.objetivo ?? null,
+    creationKey: value.creationKey,
+    exercises: value.ejercicios,
+  }));
+
+export const copyRoutineSchema = z.object({ creationKey: z.string().uuid() });
+export type CopyRoutineInput = z.infer<typeof copyRoutineSchema>;
+
+export const recommendRoutineSchema = z.object({
+  objetivo: goal.optional(),
+  lugar: z.enum(['GYM', 'HOME', 'OUTDOORS']).optional(),
+  minutos: z.coerce.number().int().min(20).max(180).default(60),
+  publico: z.enum(['true', 'false']).default('false'),
+});
+export type RecommendRoutineInput = z.infer<typeof recommendRoutineSchema>;
 
 export const updateRoutineSchema = z
   .object({
@@ -103,13 +143,14 @@ export const addRoutineExerciseSchema = routineExerciseInput;
 export const updateRoutineExerciseSchema = z
   .object({
     orden: z.number().int().min(1).max(500).optional(),
-    seriesObjetivo: z.number().int().min(1).max(100).optional(),
-    repsMin: z.number().int().min(1).max(1000).nullable().optional(),
-    repsMax: z.number().int().min(1).max(1000).nullable().optional(),
+    seriesObjetivo: sets.optional(),
+    repsMin: reps.nullable().optional(),
+    repsMax: reps.nullable().optional(),
     pesoObjetivoKg: z.number().min(0).max(2000).nullable().optional(),
     rirObjetivo: z.number().int().min(0).max(10).nullable().optional(),
     descansoSeg: z.number().int().min(0).max(7200).nullable().optional(),
     nota: nullableNote.optional(),
+    duracionSeg: duration.nullable().optional(),
   })
   .refine((value) => Object.values(value).some((entry) => entry !== undefined), {
     message: 'Debe enviar al menos un campo para actualizar.',
@@ -123,7 +164,19 @@ export const updateRoutineExerciseSchema = z
     ...(value.rirObjetivo !== undefined ? { targetRir: value.rirObjetivo } : {}),
     ...(value.descansoSeg !== undefined ? { restSeconds: value.descansoSeg } : {}),
     ...(value.nota !== undefined ? { note: value.nota } : {}),
+    ...durationChange(value),
   }));
+
+/**
+ * Pasar a «por tiempo» vacía las reps; poner reps vuelve a «por repeticiones».
+ * Así nunca se viola el CHECK `duracion_seg IS NULL OR reps IS NULL`.
+ */
+function durationChange(value: { duracionSeg?: number | null; repsMin?: number | null; repsMax?: number | null }) {
+  if (value.duracionSeg != null) return { durationSeconds: value.duracionSeg, repsMin: null, repsMax: null };
+  if (value.duracionSeg === null) return { durationSeconds: null };
+  if (value.repsMin != null || value.repsMax != null) return { durationSeconds: null };
+  return {};
+}
 
 export const assignRoutineSchema = z
   .object({
@@ -172,11 +225,13 @@ export const importRoutinesSchema = z
 export const listRoutinesSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  scope: z.enum(['mine', 'templates']).default('mine'),
+  scope: z.enum(['mine', 'templates', 'public']).default('mine'),
+  goal: goal.optional(),
 });
 
 export type RoutineExerciseInput = z.infer<typeof routineExerciseInput>;
 export type CreateRoutineInput = z.infer<typeof createRoutineSchema>;
+export type CreateCompleteRoutineInput = z.infer<typeof createCompleteRoutineSchema>;
 export type UpdateRoutineInput = z.infer<typeof updateRoutineSchema>;
 export type UpdateRoutineExerciseInput = z.infer<typeof updateRoutineExerciseSchema>;
 

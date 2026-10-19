@@ -1,0 +1,102 @@
+name: Test CI
+
+# CI ligero de la rama `test` (VPS de Contabo). No sustituye al «Hardening CI», que es la
+# canalización pesada de `main` (esquema base, migraciones con rollback, carga, Redis).
+# Aquí solo se valida lo que debe estar verde para desplegar: instalación, lint, tipos,
+# pruebas unitarias, build y que el artefacto tenga la forma que esperan Docker y los workers.
+
+on:
+  pull_request:
+    branches:
+      - test
+  push:
+    branches:
+      - test
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      NODE_ENV: test
+      PORT: 3000
+      API_PREFIX: api/v1
+      CORS_ORIGINS: http://localhost:3000
+      TRUST_PROXY: "false"
+      REQUEST_BODY_LIMIT: 1mb
+      LOG_LEVEL: error
+      BUSINESS_TIME_ZONE: America/La_Paz
+      ACCESS_POLICY_VERSION: ci-policy
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: gym_sheet_ci
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SSL: "false"
+      DB_SSL_REJECT_UNAUTHORIZED: "true"
+      DB_LOGGING: "false"
+      JWT_ACCESS_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_SECRET: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+      JWT_REFRESH_EXPIRES_IN: 7d
+      JWT_ISSUER: gym-sheet-api-ci
+      JWT_AUDIENCE: gym-sheet-ci
+      BCRYPT_SALT_ROUNDS: 10
+      WHATSAPP_MEMBERSHIP_PHONE: "59170000000"
+      GATEWAY_ENABLED: "false"
+      NOTIFICATION_DELIVERY_PROVIDER: IN_APP
+      EXERCISES_DATASET_ENABLED: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Que nadie vuelva a versionar node_modules
+        run: |
+          if git ls-files --error-unmatch node_modules >/dev/null 2>&1; then
+            echo "node_modules está versionado (¿un symlink de worktree?). Quítalo con git rm --cached node_modules."
+            exit 1
+          fi
+
+      - name: Install locked dependencies
+        # Yarn 1 deja el árbol a medias en la primera pasada en un clon limpio y la segunda termina bien.
+        run: yarn install --frozen-lockfile || yarn install --frozen-lockfile
+
+      - name: Production dependency audit (bloquea altas y críticas)
+        # C9 / ADR-0012: 0 críticas y 0 altas. Las 4 moderadas de minio quedan documentadas.
+        run: |
+          set +e
+          yarn audit --groups dependencies --json > /tmp/yarn-audit.json
+          set -e
+          node scripts/verify-yarn-audit.mjs /tmp/yarn-audit.json
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Type check
+        run: yarn type-check
+
+      - name: Unit tests (sin las de integración, que necesitan base de datos migrada)
+        run: yarn test --testPathIgnorePatterns '\.integration\.spec\.ts$'
+
+      - name: Production build
+        run: yarn build
+
+      - name: Verify deployable artifact layout
+        run: |
+          for entrypoint in dist/main.js dist/database/migrate.js \
+            dist/workers/notification-delivery.worker.js dist/workers/program-week-close.worker.js; do
+            test -f "$entrypoint" || { echo "Falta $entrypoint"; exit 1; }
+          done

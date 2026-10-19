@@ -1,13 +1,21 @@
+import type { MessageModel } from "./message.model";
+import type { Transaction } from "sequelize";
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { readFileSync } from "fs";
+import { join } from "path";
+import { env } from "../../config/env";
 import { UserStatus } from "../../common/enums/domain.enums";
 import { SocialService } from "../social/social.service";
 import { UsersRepository } from "../users/users.repository";
 import { MediaStorageProvider } from "../media/media-storage.port";
 import { PushDispatcherService } from "../notifications/delivery/push-dispatcher.service";
+import { NotificationService } from "../notifications/notification.service";
 import { ChatEventsService } from "./chat-events.service";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatRepository } from "./chat.repository";
 import { ChatService } from "./chat.service";
+import { ChatMediaCipher } from "./chat-media-cipher";
+import { stripChatImageMetadata } from "./chat-image-metadata";
 import { SystemChatService } from "./system-chat.service";
 
 const userA = "00000000-0000-4000-8000-00000000000a";
@@ -22,12 +30,28 @@ function createService(
   usersRepositoryOverrides: Partial<UsersRepository> = {},
   pushOverrides: Partial<PushDispatcherService> = {},
   mediaStorageOverrides: Partial<MediaStorageProvider> = {},
+  chatMediaCipher = new ChatMediaCipher("test-secret-that-is-long-enough-to-derive-a-key"),
+  notificationPreferences?: Pick<NotificationService, "allowsMessagePreview">,
 ): ChatService {
   return new ChatService(
     {
       // Por defecto nadie más en la conversación: los casos que no van de
       // avisos no deberían tener que declarar destinatarios.
       listOtherParticipants: jest.fn().mockResolvedValue([]),
+      messageExtras: jest.fn().mockResolvedValue(new Map()),
+      publishMessageIfVisible: async (_conversationId: string, _messageId: string, publish: () => void) => { publish(); return true; },
+      refreshMessageForResponse: async (message: MessageModel) => message,
+      refreshViewedMessageForResponse: async (conversationId: string, messageId: string, _viewerId: string) => ({
+        id: messageId, conversationId, senderId: userB, viewOnce: true, viewedAt: new Date(),
+      } as MessageModel),
+      withActiveConversationLock: async (_conversationId: string, operation: (transaction: Transaction) => Promise<unknown>) =>
+        operation({} as Transaction),
+      withActiveConversationAndReadReceiptLock: async (
+        _conversationId: string,
+        operation: (transaction: Transaction, participantIds: string[]) => Promise<unknown>,
+      ) => operation({} as Transaction, [userA]),
+      lockReadReceiptParticipants: jest.fn().mockResolvedValue([userA]),
+      readReceiptPolicy: jest.fn().mockResolvedValue({ allowed: true, enabledSince: null }),
       ...repositoryOverrides,
     } as unknown as ChatRepository,
     { isConnected: jest.fn().mockResolvedValue(true), ...socialOverrides } as unknown as SocialService,
@@ -63,6 +87,8 @@ function createService(
       remove: jest.fn(),
       ...mediaStorageOverrides,
     } as unknown as MediaStorageProvider,
+    chatMediaCipher,
+    notificationPreferences as NotificationService | undefined,
   );
 }
 
@@ -81,18 +107,19 @@ describe("ChatService.getOrStartConversation", () => {
     );
   });
 
-  it("rejects starting a conversation with someone from a different tenant", async () => {
+  it("allows chat after an explicitly authorized cross-gym connection", async () => {
     const service = createService(
-      {},
+      {
+        findDirectConversation: jest.fn().mockResolvedValue(null),
+        createDirectConversation: jest.fn().mockResolvedValue("cross-gym-conversation"),
+      },
       {},
       {},
       {},
       {},
       { findActiveById: jest.fn().mockResolvedValue({ id: userB, tenantId: "other-gym", status: UserStatus.ACTIVE }) },
     );
-    await expect(service.getOrStartConversation(userA, "default", userB)).rejects.toThrow(
-      ForbiddenException,
-    );
+    await expect(service.getOrStartConversation(userA, "default", userB)).resolves.toBe("cross-gym-conversation");
   });
 
   it("reuses an existing direct conversation instead of creating a duplicate", async () => {
@@ -121,6 +148,36 @@ describe("ChatService.getOrStartConversation", () => {
 });
 
 describe("ChatService.sendMessage", () => {
+  it("H7.S1.M1 returns the persisted message on a retry without broadcasting twice", async () => {
+    let sequence = 0;
+    const emitMessage = jest.fn();
+    let persisted: Record<string, unknown> | undefined;
+    const createMessageIdempotent = jest.fn().mockImplementation(async () => {
+      if (persisted) return { message: persisted, created: false };
+      persisted = {
+        id: `msg-${++sequence}`,
+        conversationId: "conv-1",
+        senderId: userA,
+        body: "hola",
+        type: "text",
+        clientRequestId: "00000000-0000-4000-8000-000000000010",
+        createdAt: new Date("2026-10-09T00:00:00.000Z"),
+      };
+      return { message: persisted, created: true };
+    });
+    const service = createService(
+      { getParticipant: jest.fn().mockResolvedValue({ canWrite: true }), createMessageIdempotent },
+      {}, { emitMessage },
+    );
+
+    const sendWithKey = service.sendMessage.bind(service);
+    const first = await sendWithKey("conv-1", userA, "hola", "00000000-0000-4000-8000-000000000010");
+    const retry = await sendWithKey("conv-1", userA, "hola", "00000000-0000-4000-8000-000000000010");
+
+    expect(retry.id).toBe(first.id);
+    expect(emitMessage).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses to send into a conversation the sender does not belong to", async () => {
     const service = createService({ getParticipant: jest.fn().mockResolvedValue(null) });
     await expect(service.sendMessage("conv-1", userA, "hola")).rejects.toThrow(NotFoundException);
@@ -187,13 +244,20 @@ describe("ChatService.sendLocationMessage", () => {
       type: "location",
       locationLat: -17.78,
       locationLng: -63.18,
+      locationLabel: null,
     });
     expect(result.locationLat).toBe(-17.78);
   });
 });
 
 describe("ChatService.sendMediaMessage", () => {
-  const file = { originalname: "photo.jpg", mimetype: "image/jpeg", size: 1024, buffer: Buffer.from("x") };
+  const photo = readFileSync(join(__dirname, "fixtures/gps-orientation.jpg"));
+  const file = { originalname: "photo.jpg", mimetype: "image/jpeg", size: photo.length, buffer: photo };
+  const originalMaxBytes = env.CHAT_MEDIA_MAX_BYTES;
+
+  afterEach(() => {
+    env.CHAT_MEDIA_MAX_BYTES = originalMaxBytes;
+  });
 
   it("rejects an empty file", async () => {
     const service = createService({});
@@ -209,6 +273,34 @@ describe("ChatService.sendMediaMessage", () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it("rejects an image that exceeds the size limit after re-encoding", async () => {
+    const animation = readFileSync(join(__dirname, "fixtures/two-frame.gif"));
+    const reencoded = await stripChatImageMetadata(animation, "image/gif");
+    expect(animation.length).toBe(66);
+    expect(reencoded.length).toBeGreaterThan(70);
+    env.CHAT_MEDIA_MAX_BYTES = 70;
+    const upload = jest.fn().mockResolvedValue({
+      provider: "local", key: "chat/animation.gif", url: "http://localhost:3000/media/chat/animation.gif",
+      sizeBytes: reencoded.length, checksumSha256: "checksum", reused: false,
+    });
+    const service = createService(
+      {
+        getParticipant: jest.fn().mockResolvedValue({ canWrite: true }),
+        createMessage: jest.fn().mockResolvedValue({
+          id: "animation-message", conversationId: "conv-1", senderId: userA, body: null,
+          type: "image", mediaKey: "chat/animation.gif", mediaMimeType: "image/gif",
+          viewOnce: false, viewedAt: null, locationLat: null, locationLng: null, createdAt: new Date(),
+        }),
+      },
+      {}, {}, {}, {}, {}, {}, { upload },
+    );
+
+    await expect(service.sendMediaMessage("conv-1", userA, {
+      originalname: "animation.gif", mimetype: "image/gif", size: animation.length, buffer: animation,
+    }, { type: "image", viewOnce: false })).rejects.toThrow(BadRequestException);
+    expect(upload).not.toHaveBeenCalled();
+  });
+
   it("rejects a disallowed mime type", async () => {
     const service = createService({});
     await expect(
@@ -222,6 +314,7 @@ describe("ChatService.sendMediaMessage", () => {
   });
 
   it("uploads the file and persists a media message", async () => {
+    const cipher = new ChatMediaCipher("test-secret-that-is-long-enough-to-derive-a-key");
     const upload = jest.fn().mockResolvedValue({
       provider: "local",
       key: "chat/photo.jpg",
@@ -230,12 +323,14 @@ describe("ChatService.sendMediaMessage", () => {
       checksumSha256: "checksum",
       reused: false,
     });
-    const createMessage = jest.fn().mockResolvedValue({
+    const message = {
       id: "msg-3",
       conversationId: "conv-1",
       senderId: userA,
       body: null,
       type: "image",
+      mediaProvider: "local",
+      mediaKey: "chat/photo.jpg",
       mediaUrl: "http://localhost:3000/media/chat/photo.jpg",
       mediaMimeType: "image/jpeg",
       viewOnce: true,
@@ -243,26 +338,46 @@ describe("ChatService.sendMediaMessage", () => {
       locationLat: null,
       locationLng: null,
       createdAt: new Date("2026-08-27T00:00:00.000Z"),
-    });
+    };
+    const createMessage = jest.fn().mockResolvedValue(message);
+    const download = jest.fn(async () => upload.mock.calls[0]?.[0].buffer as Buffer);
     const service = createService(
-      { getParticipant: jest.fn().mockResolvedValue({ canWrite: true }), createMessage },
+      {
+        getParticipant: jest.fn(async (_conversationId: string, userId: string) =>
+          [userA, userB].includes(userId)
+            ? { canWrite: true } as Awaited<ReturnType<ChatRepository["getParticipant"]>>
+            : null),
+        getMessage: jest.fn().mockResolvedValue({ ...message, viewedAt: new Date() }),
+        createMessage,
+      },
       {},
       {},
       {},
       {},
       {},
       {},
-      { upload },
+      { upload, download },
+      cipher,
     );
 
     const result = await service.sendMediaMessage("conv-1", userA, file, { type: "image", viewOnce: true });
 
     expect(upload).toHaveBeenCalledWith(
-      expect.objectContaining({ originalName: "photo.jpg", mimeType: "image/jpeg" }),
+      expect.objectContaining({ originalName: "photo.jpg", mimeType: "image/jpeg", buffer: expect.any(Buffer) }),
       // El adjunto cuelga del perfil de QUIEN LO ENVÍA, dentro de la carpeta de
       // la conversación (ADR-0010).
       { category: "chats", ownerUserId: userA, conversationId: "conv-1" },
     );
+    expect(upload.mock.calls[0]?.[0].buffer).not.toEqual(file.buffer);
+    const recovered = cipher.decrypt(upload.mock.calls[0]?.[0].buffer as Buffer);
+    expect(file.buffer.includes(Buffer.from("Exif\0\0"))).toBe(true);
+    expect(recovered.includes(Buffer.from("Exif\0\0"))).toBe(false);
+    await expect(service.downloadMedia("conv-1", "msg-3", userB)).resolves.toEqual({
+      buffer: recovered,
+      mimeType: "image/jpeg",
+    });
+    await expect(service.downloadMedia("conv-1", "msg-3", "outsider")).rejects.toThrow(NotFoundException);
+    expect(download).toHaveBeenCalledTimes(1);
     expect(createMessage).toHaveBeenCalledWith(
       "conv-1",
       userA,
@@ -270,6 +385,85 @@ describe("ChatService.sendMediaMessage", () => {
     );
     // La vista única nunca revela la URL en la respuesta de "enviar" — recién al abrirla.
     expect(result.mediaUrl).toBeNull();
+  });
+
+  it("keeps video bytes unchanged before encryption", async () => {
+    const cipher = new ChatMediaCipher("test-secret-that-is-long-enough-to-derive-a-key");
+    const video = Buffer.from("synthetic mp4 bytes");
+    const upload = jest.fn().mockResolvedValue({
+      provider: "local", key: "chat/clip.mp4", url: "http://localhost:3000/media/chat/clip.mp4",
+      sizeBytes: video.length, checksumSha256: "checksum", reused: false,
+    });
+    const service = createService(
+      {
+        getParticipant: jest.fn().mockResolvedValue({ canWrite: true }),
+        createMessage: jest.fn().mockResolvedValue({
+          id: "video-message", conversationId: "conv-1", senderId: userA, body: null,
+          type: "video", mediaKey: "chat/clip.mp4", mediaMimeType: "video/mp4",
+          viewOnce: false, viewedAt: null, locationLat: null, locationLng: null, createdAt: new Date(),
+        }),
+      },
+      {}, {}, {}, {}, {}, {}, { upload }, cipher,
+    );
+
+    await service.sendMediaMessage("conv-1", userA, {
+      originalname: "clip.mp4", mimetype: "video/mp4", size: video.length, buffer: video,
+    }, { type: "video", viewOnce: false });
+
+    expect(cipher.decrypt(upload.mock.calls[0]?.[0].buffer as Buffer)).toEqual(video);
+  });
+});
+
+describe("ChatService.downloadMedia", () => {
+  const cipher = new ChatMediaCipher("test-secret-that-is-long-enough-to-derive-a-key");
+
+  it("serves decrypted bytes only after confirming active conversation membership", async () => {
+    const download = jest.fn().mockResolvedValue(cipher.encrypt(Buffer.from("private bytes")));
+    const service = createService({
+      getParticipant: jest.fn().mockResolvedValue({ canWrite: true }),
+      getMessage: jest.fn().mockResolvedValue({
+        id: "msg-1",
+        conversationId: "conv-1",
+        senderId: userB,
+        mediaKey: "users/u/chats/c/file.jpg",
+        mediaProvider: "local",
+        mediaMimeType: "image/jpeg",
+        viewOnce: false,
+      }),
+    }, {}, {}, {}, {}, {}, {}, { download }, cipher);
+
+    await expect(service.downloadMedia("conv-1", "msg-1", userA)).resolves.toEqual({
+      buffer: Buffer.from("private bytes"), mimeType: "image/jpeg",
+    });
+    expect(download).toHaveBeenCalledWith("users/u/chats/c/file.jpg");
+  });
+
+  it("does not fetch media after the conversation has been revoked", async () => {
+    const download = jest.fn();
+    const service = createService({ getParticipant: jest.fn().mockResolvedValue(null) }, {}, {}, {}, {}, {}, {}, { download }, cipher);
+
+    await expect(service.downloadMedia("conv-1", "msg-1", userA)).rejects.toThrow(NotFoundException);
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it("does not serve a view-once file until the recipient opens the message", async () => {
+    const download = jest.fn().mockResolvedValue(cipher.encrypt(Buffer.from("private bytes")));
+    const service = createService({
+      getParticipant: jest.fn().mockResolvedValue({ canWrite: true }),
+      getMessage: jest.fn().mockResolvedValue({
+        id: "msg-1",
+        conversationId: "conv-1",
+        senderId: userB,
+        mediaKey: "users/u/chats/c/file.jpg",
+        mediaProvider: "local",
+        mediaMimeType: "image/jpeg",
+        viewOnce: true,
+        viewedAt: null,
+      }),
+    }, {}, {}, {}, {}, {}, {}, { download }, cipher);
+
+    await expect(service.downloadMedia("conv-1", "msg-1", userA)).rejects.toThrow(ForbiddenException);
+    expect(download).not.toHaveBeenCalled();
   });
 });
 
@@ -307,12 +501,14 @@ describe("ChatService.viewMessage", () => {
   });
 
   it("reveals the media url once, via a single atomic conditional update", async () => {
-    const tryMarkMessageViewed = jest.fn().mockResolvedValue({
+    const viewedMessage = {
       id: "msg-1",
       conversationId: "conv-1",
       senderId: userB,
       body: null,
       type: "image",
+      mediaKey: "users/u/chats/c/photo.jpg",
+      mediaProvider: "local",
       mediaUrl: "http://localhost:3000/media/chat/photo.jpg",
       mediaMimeType: "image/jpeg",
       viewOnce: true,
@@ -320,16 +516,20 @@ describe("ChatService.viewMessage", () => {
       locationLat: null,
       locationLng: null,
       createdAt: new Date("2026-08-27T00:00:00.000Z"),
-    });
+    } as unknown as MessageModel;
+    const tryMarkMessageViewed = jest.fn().mockResolvedValue(viewedMessage);
+    const refreshViewedMessageForResponse = jest.fn().mockResolvedValue(viewedMessage);
     const service = createService({
       getParticipant: jest.fn().mockResolvedValue({ canWrite: true }),
       tryMarkMessageViewed,
+      refreshViewedMessageForResponse,
     });
 
     const result = await service.viewMessage("conv-1", "msg-1", userA);
 
     expect(tryMarkMessageViewed).toHaveBeenCalledWith("conv-1", "msg-1", userA);
-    expect(result.mediaUrl).toBe("http://localhost:3000/media/chat/photo.jpg");
+    expect(refreshViewedMessageForResponse).toHaveBeenCalledWith("conv-1", "msg-1", userA);
+    expect(result.mediaUrl).toBe("/me/conversations/conv-1/messages/msg-1/media");
   });
 
   it("treats a lost race (concurrent opener won) as already viewed, not a crash", async () => {
@@ -456,7 +656,10 @@ describe("ChatService.setNickname", () => {
 
 describe("ChatService.markRead", () => {
   it("rejects marking as read a conversation the caller does not belong to", async () => {
-    const service = createService({ getParticipant: jest.fn().mockResolvedValue(null) });
+    const service = createService({
+      withActiveConversationAndReadReceiptLock: async (_conversationId, operation) =>
+        operation({} as Transaction, []),
+    });
     await expect(service.markRead("conv-1", userA)).rejects.toThrow(NotFoundException);
   });
 
@@ -465,16 +668,41 @@ describe("ChatService.markRead", () => {
     const emitDelivered = jest.fn();
     const emitRead = jest.fn();
     const service = createService(
-      { getParticipant: jest.fn().mockResolvedValue({ canWrite: true }), markRead },
+      {
+        getParticipant: jest.fn().mockResolvedValue({ canWrite: true }),
+        markRead,
+        readReceiptPolicy: jest.fn().mockResolvedValue({ allowed: true, enabledSince: null }),
+      },
       {},
       { emitDelivered, emitRead },
     );
 
     await service.markRead("conv-1", userA);
 
-    expect(markRead).toHaveBeenCalledWith("conv-1", userA);
+    expect(markRead).toHaveBeenCalledWith("conv-1", userA, true, expect.anything());
     expect(emitDelivered).toHaveBeenCalledWith("conv-1", expect.objectContaining({ userId: userA }));
     expect(emitRead).toHaveBeenCalledWith("conv-1", expect.objectContaining({ userId: userA }));
+  });
+
+  it("keeps internal read state but hides the public receipt when either participant opted out", async () => {
+    const markRead = jest.fn().mockResolvedValue(undefined);
+    const emitDelivered = jest.fn();
+    const emitRead = jest.fn();
+    const service = createService(
+      {
+        getParticipant: jest.fn().mockResolvedValue({ canWrite: true }),
+        markRead,
+        readReceiptPolicy: jest.fn().mockResolvedValue({ allowed: false, enabledSince: null }),
+      },
+      {},
+      { emitDelivered, emitRead },
+    );
+
+    await service.markRead("conv-1", userA);
+
+    expect(markRead).toHaveBeenCalledWith("conv-1", userA, false, expect.anything());
+    expect(emitDelivered).toHaveBeenCalledTimes(1);
+    expect(emitRead).not.toHaveBeenCalled();
   });
 });
 
@@ -498,6 +726,7 @@ describe("ChatService avisa por push a quien no está conectado", () => {
     online: boolean,
     sendToUser = jest.fn().mockResolvedValue({ sent: 1, deactivated: 0 }),
     message: Record<string, unknown> = textMessage,
+    previewEnabled = true,
   ) {
     const service = createService(
       {
@@ -511,6 +740,9 @@ describe("ChatService avisa por push a quien no está conectado", () => {
       {},
       { findActiveById: jest.fn().mockResolvedValue({ id: userA, fullName: "Camila Ruiz" }) },
       { sendToUser },
+      {},
+      undefined,
+      { allowsMessagePreview: jest.fn().mockResolvedValue(previewEnabled) },
     );
     return { service, sendToUser };
   }
@@ -535,6 +767,18 @@ describe("ChatService avisa por push a quien no está conectado", () => {
     await service.sendMessage("conv-1", userA, "¿Entrenamos mañana?");
 
     expect(sendToUser).not.toHaveBeenCalled();
+  });
+
+  it("oculta el texto del mensaje cuando el destinatario desactivó la vista previa", async () => {
+    const { service, sendToUser } = serviceWith(false, undefined, textMessage, false);
+
+    await service.sendMessage("conv-1", userA, "¿Entrenamos mañana?");
+
+    expect(sendToUser).toHaveBeenCalledWith(userB, {
+      title: "Camila Ruiz",
+      body: "Tienes un mensaje nuevo.",
+      url: "/chat/conv-1",
+    });
   });
 
   it("no adelanta el contenido de una foto de vista única", async () => {
