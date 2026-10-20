@@ -1,3 +1,4 @@
+import { buildArenas, type ArenaView } from "./progression-arenas";
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { UserGender } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
@@ -193,6 +194,8 @@ export interface ProgressionView {
   /** Avance dentro del tramo actual, de 0 a 1. Uno cuando ya no hay siguiente. */
   levelProgress: number;
   path: LevelView[];
+  /** El camino de arenas (lugares), más fino que los rangos. */
+  arenas: ArenaView[];
   badges: BadgeView[];
   stats: {
     totalSessions: number;
@@ -341,6 +344,7 @@ export class ProgressionService {
         pointsToNextLevel: next ? Math.max(0, next.minPoints - points) : null,
         levelProgress: tierProgress(points, current, next),
         path,
+        arenas: buildArenas(audience, points),
         badges: visible,
         stats: {
           totalSessions: metrics.totalSessions,
