@@ -20,7 +20,6 @@ import {
   MONTHLY_STRIKES_BASE,
   STRIKE_POINT_COST,
   MISSED_SESSION_PENALTY,
-  UserStreakStrikeModel,
 } from "./user-streak-strike.model";
 import {
   CHALLENGE_POINTS,
