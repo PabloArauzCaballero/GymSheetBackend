@@ -164,3 +164,162 @@ describe('ExportService PDF generation', () => {
     expect(countPages(pdf)).toBe(1);
   });
 });
+
+describe('ExportService Routine Progress Export and Audit', () => {
+  const sampleRow = {
+    usuario_id: userId,
+    usuario_email: actor.email,
+    usuario_nombre: 'Atleta Test',
+    rutina_id: '11111111-1111-4000-8000-111111111111',
+    rutina_nombre: 'Torso Pierna Fuerza',
+    rutina_descripcion: 'Plan de 4 días',
+    rutina_visibilidad: 'PUBLICA',
+    rutina_objetivo: 'FUERZA',
+    rutina_duracion_semanas: 8,
+    rutina_version: 1,
+    rutina_es_oficial: true,
+    rutina_estado: 'ACTIVE',
+    rutina_huella: 'abc123hash',
+    rutina_publicada_en: new Date('2026-08-01T10:00:00Z'),
+    rutina_creada_en: new Date('2026-07-01T10:00:00Z'),
+    rutina_autor_id: userId,
+    rutina_autor_nombre: 'Coach Carlos',
+    rutina_autor_email: 'coach@example.test',
+    rutina_atribucion_original: null,
+    dia_id: '22222222-2222-4000-8000-222222222222',
+    dia_nombre: 'Torso A',
+    dia_semana_numero: 1,
+    dia_semana_nombre: 'Lunes',
+    dia_orden: 1,
+    ejercicio_id: '33333333-3333-4000-8000-333333333333',
+    ejercicio_nombre: 'Press Militar con Barra',
+    ejercicio_grupo_muscular: 'Hombros',
+    ejercicio_musculo_objetivo: 'Deltoides anterior',
+    ejercicio_tipo: 'FUERZA',
+    ejercicio_equipamiento: 'Barra olímpica',
+    ejercicio_orden: 1,
+    prescripcion_series: 4,
+    prescripcion_reps_min: 6,
+    prescripcion_reps_max: 8,
+    prescripcion_reps_rango: '6 - 8',
+    prescripcion_peso_objetivo_kg: 60,
+    prescripcion_rir_objetivo: 2,
+    prescripcion_descanso_seg: 180,
+    prescripcion_nota: 'Pausa en pecho 1s',
+    programa_id: '44444444-4444-4000-8000-444444444444',
+    programa_carril: 'STRENGTH',
+    programa_modo: 'PROGRESSIVE_OVERLOAD',
+    programa_estado: 'ACTIVE',
+    programa_multiplicador: 1.05,
+    sobrecarga_peso_trabajo_kg: 62.5,
+    sobrecarga_peso_sugerido_kg: 65,
+    sobrecarga_e1rm_inicial_kg: 75,
+    sobrecarga_e1rm_actual_kg: 80,
+    sobrecarga_marca_meta_kg: 85,
+    sobrecarga_fallos_seguidos: 0,
+    sesion_id: '55555555-5555-4000-8000-555555555555',
+    sesion_fecha_inicio: new Date('2026-09-01T15:00:00Z'),
+    sesion_fecha_fin: new Date('2026-09-01T16:15:00Z'),
+    sesion_duracion_min: 75,
+    sesion_estado: 'FINALIZADA',
+    sesion_observacion: 'Excelente sesión, buena velocidad',
+    sesion_geo_verificada: true,
+    sesion_ejercicio_es_enfasis: true,
+    serie_id: '66666666-6666-4000-8000-666666666666',
+    serie_numero: 1,
+    serie_repeticiones_logradas: 8,
+    serie_peso_levantado_kg: 62.5,
+    serie_volumen_kg: 500,
+    serie_rir_real: 2,
+    serie_rpe_real: 8,
+    serie_descanso_seg_previo: 180,
+    serie_tipo: 'FUERZA',
+    serie_cardio_duracion_seg: null,
+    serie_cardio_distancia_m: null,
+    serie_cardio_fc_media: null,
+    serie_registrada_en: new Date('2026-09-01T15:10:00Z'),
+  };
+
+  it('builds CSV with UTF-8 BOM, correct headers and escaped values', async () => {
+    const service = createService(jest.fn());
+    jest.spyOn(service, 'fetchRoutineProgressRows').mockResolvedValue([sampleRow as never]);
+    const auditSpy = jest.spyOn(service, 'recordRoutineProgressDownloadAudit').mockResolvedValue(undefined);
+
+    const result = await service.buildRoutineProgressCsv(actor, {
+      format: 'csv',
+      routineId: 'ALL',
+      datePreset: 'ALL',
+      includeHistory: true,
+      includeTargets: true,
+      includePrograms: true,
+    });
+
+    expect(result.content.startsWith('\uFEFF')).toBe(true);
+    expect(result.content).toContain('rutina_nombre');
+    expect(result.content).toContain('Torso Pierna Fuerza');
+    expect(result.content).toContain('Press Militar con Barra');
+    expect(result.recordsCount).toBe(1);
+    expect(auditSpy).toHaveBeenCalledWith(
+      actor,
+      expect.objectContaining({
+        format: 'CSV',
+        recordsCount: 1,
+      }),
+    );
+  });
+
+  it('builds Excel (.xlsx) workbook with multiple sheets and styling', async () => {
+    const service = createService(jest.fn());
+    jest.spyOn(service, 'fetchRoutineProgressRows').mockResolvedValue([sampleRow as never]);
+    const auditSpy = jest.spyOn(service, 'recordRoutineProgressDownloadAudit').mockResolvedValue(undefined);
+
+    const result = await service.buildRoutineProgressExcel(actor, {
+      format: 'excel',
+      routineId: 'ALL',
+      datePreset: 'ALL',
+      includeHistory: true,
+      includeTargets: true,
+      includePrograms: true,
+    });
+
+    expect(result.buffer).toBeInstanceOf(Buffer);
+    expect(result.buffer.length).toBeGreaterThan(100);
+    expect(result.fileName).toMatch(/\.xlsx$/);
+    expect(result.recordsCount).toBe(1);
+    expect(auditSpy).toHaveBeenCalledWith(
+      actor,
+      expect.objectContaining({
+        format: 'EXCEL',
+        recordsCount: 1,
+      }),
+    );
+  });
+
+  it('builds PDF with GymSheet branding and KPI summary cards', async () => {
+    const service = createService(jest.fn());
+    jest.spyOn(service, 'fetchRoutineProgressRows').mockResolvedValue([sampleRow as never]);
+    const auditSpy = jest.spyOn(service, 'recordRoutineProgressDownloadAudit').mockResolvedValue(undefined);
+
+    const result = await service.buildRoutineProgressPdf(actor, {
+      format: 'pdf',
+      routineId: 'ALL',
+      datePreset: 'ALL',
+      includeHistory: true,
+      includeTargets: true,
+      includePrograms: true,
+    });
+
+    expect(result.buffer).toBeInstanceOf(Buffer);
+    expect(result.buffer.length).toBeGreaterThan(100);
+    expect(result.fileName).toMatch(/\.pdf$/);
+    expect(result.recordsCount).toBe(1);
+    expect(auditSpy).toHaveBeenCalledWith(
+      actor,
+      expect.objectContaining({
+        format: 'PDF',
+        recordsCount: 1,
+      }),
+    );
+  });
+});
+
