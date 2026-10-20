@@ -4,11 +4,16 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
+import { Sequelize } from 'sequelize-typescript';
 import { AccessDecisionModel } from '../access-control/access-decision.model';
 import { MembershipModel } from '../membership/membership.model';
-import { UserRole } from '../../common/enums/domain.enums';
+import { NotificationChannel, UserRole } from '../../common/enums/domain.enums';
+import { AuthenticatedUser } from '../../common/types/auth-context.types';
+import { ProductEvents } from '../../common/tracking/product-events';
+import { NotificationService } from '../notifications/notification.service';
 import {
   CategoryTreeNodeDto,
   DirectoryEntityDetailDto,
@@ -36,7 +41,12 @@ export class DirectoryService {
     @InjectModel(MembershipModel)
     private readonly membershipModel: typeof MembershipModel,
     @InjectModel(AccessDecisionModel)
-    private readonly accessDecisionModel: typeof AccessDecisionModel
+    private readonly accessDecisionModel: typeof AccessDecisionModel,
+    private readonly sequelize: Sequelize,
+    @Optional()
+    private readonly notificationService?: NotificationService,
+    @Optional()
+    private readonly productEvents?: ProductEvents,
   ) {}
 
   // ==========================================
@@ -73,7 +83,20 @@ export class DirectoryService {
     return mapDirectoryEntityDetail(entity);
   }
 
-  async createEntity(body: CreateEntityBody): Promise<DirectoryEntityDetailDto> {
+  async createEntity(
+    actor: AuthenticatedUser,
+    body: CreateEntityBody
+  ): Promise<DirectoryEntityDetailDto> {
+    const userId =
+      actor.role === UserRole.SYSTEM_ADMIN && body.user_id ? body.user_id : actor.id;
+
+    let tenantId = body.tenant_id ?? null;
+    if (actor.role !== UserRole.SYSTEM_ADMIN) {
+      if (body.entity_type === 'GYM' && actor.tenantId) {
+        tenantId = actor.tenantId;
+      }
+    }
+
     const baseSlug = body.name
       .toLowerCase()
       .normalize('NFD')
@@ -82,9 +105,27 @@ export class DirectoryService {
       .replace(/(^-|-$)+/g, '');
 
     const slug = `${baseSlug}-${Date.now().toString(36)}`;
-    const entity = await this.repository.createEntity(slug, body);
-    const detail = await this.repository.findEntityById(entity.id);
-    return mapDirectoryEntityDetail(detail!);
+
+    return this.sequelize.transaction(async (transaction) => {
+      const entity = await this.repository.createEntity(
+        slug,
+        {
+          ...body,
+          user_id: userId,
+          tenant_id: tenantId ?? undefined,
+        },
+        transaction
+      );
+
+      this.productEvents?.emit('directory_entity_created', {
+        entityId: entity.id,
+        entityType: entity.entityType,
+        userId: entity.userId,
+      });
+
+      const detail = await this.repository.findEntityById(entity.id);
+      return mapDirectoryEntityDetail(detail!);
+    });
   }
 
   // ==========================================
@@ -110,6 +151,14 @@ export class DirectoryService {
     const reviews = await this.repository.listReviewsForEntity(entityId, query);
     const reviewIds = reviews.map((r) => r.id);
 
+    const authorIds = Array.from(
+      new Set([
+        ...reviews.map((r) => r.userId),
+        ...(currentUserId ? [currentUserId] : []),
+      ])
+    );
+    const avatarsMap = await this.repository.getUserAvatars(authorIds);
+
     let votedSet = new Set<string>();
     let userReviewDto: ReviewItemDto | null = null;
 
@@ -117,11 +166,11 @@ export class DirectoryService {
       votedSet = await this.repository.getUserHelpfulVoteIds(reviewIds, currentUserId);
       const userReview = await this.repository.findUserReviewForEntity(entityId, currentUserId);
       if (userReview) {
-        userReviewDto = mapReviewItem(userReview, votedSet);
+        userReviewDto = mapReviewItem(userReview, votedSet, avatarsMap);
       }
     }
 
-    const mappedReviews = reviews.map((r) => mapReviewItem(r, votedSet));
+    const mappedReviews = reviews.map((r) => mapReviewItem(r, votedSet, avatarsMap));
 
     return {
       entityId,
@@ -158,8 +207,30 @@ export class DirectoryService {
       isVerifiedAthlete
     );
 
+    this.productEvents?.emit('directory_review_created', {
+      entityId,
+      reviewId: review.id,
+      rating: body.rating,
+      userId,
+    });
+
+    if (this.notificationService && entity.userId && entity.userId !== userId) {
+      try {
+        await this.notificationService.enqueueDirectMessage({
+          recipientUserId: entity.userId,
+          channel: NotificationChannel.IN_APP,
+          subject: `Nueva reseña recibida en ${entity.name}`,
+          body: `Has recibido una calificación de ${body.rating} estrellas: "${body.title}".`,
+          deduplicationKey: `dir_review_notification:${review.id}`,
+        });
+      } catch {
+        // Ignorar fallo de notificación
+      }
+    }
+
     const populated = await this.repository.findReviewById(review.id);
-    return mapReviewItem(populated!);
+    const avatarsMap = await this.repository.getUserAvatars([userId]);
+    return mapReviewItem(populated!, new Set(), avatarsMap);
   }
 
   async updateReview(
@@ -175,7 +246,8 @@ export class DirectoryService {
 
     const updated = await this.repository.updateReview(reviewId, body);
     const populated = await this.repository.findReviewById(updated.id);
-    return mapReviewItem(populated!);
+    const avatarsMap = await this.repository.getUserAvatars([userId]);
+    return mapReviewItem(populated!, new Set(), avatarsMap);
   }
 
   async deleteReview(reviewId: string, userId: string, role?: UserRole): Promise<void> {
@@ -231,7 +303,8 @@ export class DirectoryService {
 
     await this.repository.createOrUpdateReply(reviewId, authorId, body.reply_text);
     const updated = await this.repository.findReviewById(reviewId);
-    return mapReviewItem(updated!);
+    const avatarsMap = await this.repository.getUserAvatars([review.userId, authorId]);
+    return mapReviewItem(updated!, new Set(), avatarsMap);
   }
 
   async deleteReviewReply(

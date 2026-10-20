@@ -1,8 +1,12 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
+import { ProductEvents } from '../../common/tracking/product-events';
 import { AccessDecisionModel } from '../access-control/access-decision.model';
+import { MembershipPlanModel } from '../membership/membership-plan.model';
+import { PlanAccessScopeModel } from '../membership/plan-access-scope.model';
 import { MembershipModel } from '../membership/membership.model';
 import { MembershipModule } from '../membership/membership.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { CategoryModel } from './category.model';
 import { DirectoryEntityCategoryModel } from './directory-entity-category.model';
 import { DirectoryEntityModel } from './directory-entity.model';
@@ -26,6 +30,7 @@ import { AdminDirectoryPaymentsController } from './admin-directory-payments.con
 @Module({
   imports: [
     MembershipModule,
+    NotificationsModule,
     SequelizeModule.forFeature([
       CategoryModel,
       DirectoryEntityModel,
@@ -38,6 +43,8 @@ import { AdminDirectoryPaymentsController } from './admin-directory-payments.con
       PlanPriceHistoryModel,
       PaymentOrderModel,
       MembershipModel,
+      MembershipPlanModel,
+      PlanAccessScopeModel,
       AccessDecisionModel,
     ]),
   ],
@@ -49,6 +56,7 @@ import { AdminDirectoryPaymentsController } from './admin-directory-payments.con
     AdminDirectoryPaymentsController,
   ],
   providers: [
+    ProductEvents,
     DirectoryRepository,
     DirectoryService,
     DirectoryPaymentsRepository,

@@ -169,35 +169,35 @@ const upStatements = [
   // Raíces
   `INSERT INTO directory.categories (id, parent_id, slug, path, name, description, icon_key, entity_scope, display_order)
    VALUES
-     ('a1000000-0000-0000-0000-000000000001', NULL, 'tiendas', 'tiendas', 'Tiendas y Marcas', 'Tiendas de nutrición, suplementos, ropa y equipamiento de gimnasio', 'store', 'STORE', 10),
-     ('a1000000-0000-0000-0000-000000000002', NULL, 'gimnasios', 'gimnasios', 'Gimnasios y Cadenas', 'Gimnasios comerciales, 24 horas y tradicionales', 'dumbbell', 'GYM', 20),
-     ('a1000000-0000-0000-0000-000000000003', NULL, 'centros', 'centros', 'Centros Especializados', 'Boxes de CrossFit, estudios de pilates, yoga y artes marciales', 'flame', 'CENTER', 30),
-     ('a1000000-0000-0000-0000-000000000004', NULL, 'coaches', 'coaches', 'Coaches y Nutricionistas', 'Entrenadores personales certificados, preparadores y nutricionistas', 'award', 'COACH', 40),
-     ('a1000000-0000-0000-0000-000000000005', NULL, 'servicios', 'servicios', 'Servicios de Salud y Recuperación', 'Fisioterapia deportiva, masajes, crioterapia y meal prep', 'heart', 'SERVICE_PROVIDER', 50)
+     ('a1000000-0000-4000-8000-000000000001', NULL, 'tiendas', 'tiendas', 'Tiendas y Marcas', 'Tiendas de nutrición, suplementos, ropa y equipamiento de gimnasio', 'store', 'STORE', 10),
+     ('a1000000-0000-4000-8000-000000000002', NULL, 'gimnasios', 'gimnasios', 'Gimnasios y Cadenas', 'Gimnasios comerciales, 24 horas y tradicionales', 'dumbbell', 'GYM', 20),
+     ('a1000000-0000-4000-8000-000000000003', NULL, 'centros', 'centros', 'Centros Especializados', 'Boxes de CrossFit, estudios de pilates, yoga y artes marciales', 'flame', 'CENTER', 30),
+     ('a1000000-0000-4000-8000-000000000004', NULL, 'coaches', 'coaches', 'Coaches y Nutricionistas', 'Entrenadores personales certificados, preparadores y nutricionistas', 'award', 'COACH', 40),
+     ('a1000000-0000-4000-8000-000000000005', NULL, 'servicios', 'servicios', 'Servicios de Salud y Recuperación', 'Fisioterapia deportiva, masajes, crioterapia y meal prep', 'heart', 'SERVICE_PROVIDER', 50)
    ON CONFLICT (slug) DO NOTHING`,
 
   // Subcategorías de Tiendas (Nutrición y Equipamiento)
   `INSERT INTO directory.categories (id, parent_id, slug, path, name, description, icon_key, entity_scope, display_order)
    VALUES
-     ('b1000000-0000-0000-0000-000000000001', 'a1000000-0000-0000-0000-000000000001', 'tiendas-nutricion', 'tiendas.nutricion', 'Nutrición y Suplementos', 'Proteínas, creatinas, pre-entrenos y vitaminas', 'flask', 'STORE', 1),
-     ('b1000000-0000-0000-0000-000000000002', 'a1000000-0000-0000-0000-000000000001', 'tiendas-equipamiento', 'tiendas.equipamiento', 'Aparatos y Equipamiento de Gym', 'Máquinas de fuerza, cardio, peso libre y jaulas', 'layers', 'STORE', 2),
-     ('b1000000-0000-0000-0000-000000000003', 'a1000000-0000-0000-0000-000000000001', 'tiendas-indumentaria', 'tiendas.indumentaria', 'Indumentaria y Calzado', 'Ropa técnica, calzado de halterofilia y powerlifting', 'shirt', 'STORE', 3)
+     ('b1000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000001', 'tiendas-nutricion', 'tiendas.nutricion', 'Nutrición y Suplementos', 'Proteínas, creatinas, pre-entrenos y vitaminas', 'flask', 'STORE', 1),
+     ('b1000000-0000-4000-8000-000000000002', 'a1000000-0000-4000-8000-000000000001', 'tiendas-equipamiento', 'tiendas.equipamiento', 'Aparatos y Equipamiento de Gym', 'Máquinas de fuerza, cardio, peso libre y jaulas', 'layers', 'STORE', 2),
+     ('b1000000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000001', 'tiendas-indumentaria', 'tiendas.indumentaria', 'Indumentaria y Calzado', 'Ropa técnica, calzado de halterofilia y powerlifting', 'shirt', 'STORE', 3)
    ON CONFLICT (slug) DO NOTHING`,
 
   // Hojas de Nutrición
   `INSERT INTO directory.categories (id, parent_id, slug, path, name, description, icon_key, entity_scope, display_order)
    VALUES
-     ('c1000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000001', 'proteinas', 'tiendas.nutricion.proteinas', 'Proteínas y Aminoácidos', 'Whey protein, aisladas, caseína y proteínas vegetales', 'sparkles', 'STORE', 1),
-     ('c1000000-0000-0000-0000-000000000002', 'b1000000-0000-0000-0000-000000000001', 'creatinas', 'tiendas.nutricion.creatinas', 'Creatinas y Rendimiento', 'Monohidrato, creapure y pre-entrenos estimulantes', 'zap', 'STORE', 2),
-     ('c1000000-0000-0000-0000-000000000003', 'b1000000-0000-0000-0000-000000000001', 'snacks-saludables', 'tiendas.nutricion.snacks', 'Snacks y Barras Proteicas', 'Barras, mantequillas de maní y bebidas energéticas', 'coffee', 'STORE', 3)
+     ('c1000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000001', 'proteinas', 'tiendas.nutricion.proteinas', 'Proteínas y Aminoácidos', 'Whey protein, aisladas, caseína y proteínas vegetales', 'sparkles', 'STORE', 1),
+     ('c1000000-0000-4000-8000-000000000002', 'b1000000-0000-4000-8000-000000000001', 'creatinas', 'tiendas.nutricion.creatinas', 'Creatinas y Rendimiento', 'Monohidrato, creapure y pre-entrenos estimulantes', 'zap', 'STORE', 2),
+     ('c1000000-0000-4000-8000-000000000003', 'b1000000-0000-4000-8000-000000000001', 'snacks-saludables', 'tiendas.nutricion.snacks', 'Snacks y Barras Proteicas', 'Barras, mantequillas de maní y bebidas energéticas', 'coffee', 'STORE', 3)
    ON CONFLICT (slug) DO NOTHING`,
 
   // Hojas de Equipamiento
   `INSERT INTO directory.categories (id, parent_id, slug, path, name, description, icon_key, entity_scope, display_order)
    VALUES
-     ('c1000000-0000-0000-0000-000000000004', 'b1000000-0000-0000-0000-000000000002', 'maquinaria-fuerza', 'tiendas.equipamiento.fuerza', 'Maquinaria de Fuerza y Racks', 'Prensas, poleas guiadas, jaulas de potencia y bancos', 'grid', 'STORE', 1),
-     ('c1000000-0000-0000-0000-000000000005', 'b1000000-0000-0000-0000-000000000002', 'peso-libre', 'tiendas.equipamiento.peso-libre', 'Peso Libre y Barras', 'Mancuernas hexagonales, discos olímpicos, kettlebells y barras', 'disc', 'STORE', 2),
-     ('c1000000-0000-0000-0000-000000000006', 'b1000000-0000-0000-0000-000000000002', 'accesorios-gym', 'tiendas.equipamiento.accesorios', 'Accesorios de Levantamiento', 'Straps, cinturones lumbares, rodilleras y muñequeras', 'shield', 'STORE', 3)
+     ('c1000000-0000-4000-8000-000000000004', 'b1000000-0000-4000-8000-000000000002', 'maquinaria-fuerza', 'tiendas.equipamiento.fuerza', 'Maquinaria de Fuerza y Racks', 'Prensas, poleas guiadas, jaulas de potencia y bancos', 'grid', 'STORE', 1),
+     ('c1000000-0000-4000-8000-000000000005', 'b1000000-0000-4000-8000-000000000002', 'peso-libre', 'tiendas.equipamiento.peso-libre', 'Peso Libre y Barras', 'Mancuernas hexagonales, discos olímpicos, kettlebells y barras', 'disc', 'STORE', 2),
+     ('c1000000-0000-4000-8000-000000000006', 'b1000000-0000-4000-8000-000000000002', 'accesorios-gym', 'tiendas.equipamiento.accesorios', 'Accesorios de Levantamiento', 'Straps, cinturones lumbares, rodilleras y muñequeras', 'shield', 'STORE', 3)
    ON CONFLICT (slug) DO NOTHING`,
 ] as const;
 

@@ -6,10 +6,15 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { InjectModel } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
-import { UserRole } from '../../common/enums/domain.enums';
+import { NotificationChannel, PlanStatus, PlanType, UserRole } from '../../common/enums/domain.enums';
+import { ProductEvents } from '../../common/tracking/product-events';
+import { MembershipPlanModel } from '../membership/membership-plan.model';
+import { PlanAccessScopeModel } from '../membership/plan-access-scope.model';
 import { MembershipService } from '../membership/membership.service';
+import { NotificationService } from '../notifications/notification.service';
 import { DirectoryPaymentsRepository } from './directory-payments.repository';
 import {
   CreateEntityPlanInput,
@@ -31,8 +36,16 @@ export class DirectoryPaymentsService {
   constructor(
     private readonly repository: DirectoryPaymentsRepository,
     private readonly sequelize: Sequelize,
+    @InjectModel(MembershipPlanModel)
+    private readonly membershipPlanModel: typeof MembershipPlanModel,
+    @InjectModel(PlanAccessScopeModel)
+    private readonly planAccessScopeModel: typeof PlanAccessScopeModel,
     @Optional()
     private readonly membershipService?: MembershipService,
+    @Optional()
+    private readonly notificationService?: NotificationService,
+    @Optional()
+    private readonly productEvents?: ProductEvents,
   ) {}
 
   private slugify(text: string): string {
@@ -208,6 +221,16 @@ export class DirectoryPaymentsService {
       // 3. Actualizar precio vigente en el catálogo
       await this.repository.updatePlan(plan, { currentPrice: newPriceStr, currency }, transaction);
 
+      // 4. Si el comercio es un gimnasio con planes internos, sincronizar tarifa en membership.plans
+      if (plan.entity?.tenantId && this.membershipPlanModel) {
+        const planSlug = plan.slug;
+        const planCode = `dir_${plan.entity.tenantId}_${planSlug}`.slice(0, 80);
+        await this.membershipPlanModel.update(
+          { priceAmount: newPriceStr, currency },
+          { where: { code: planCode }, transaction }
+        );
+      }
+
       return { plan, newPriceHistory };
     });
   }
@@ -264,6 +287,15 @@ export class DirectoryPaymentsService {
       athleteNotes: input.athleteNotes ?? null,
     });
 
+    this.productEvents?.emit('directory_order_created', {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      entityId: plan.entityId,
+      planId: plan.id,
+      athleteUserId: athlete.id,
+      amount: Number(plan.currentPrice) || 0,
+    });
+
     return { order, paymentConfig };
   }
 
@@ -281,14 +313,47 @@ export class DirectoryPaymentsService {
       throw new BadRequestException(`No es posible subir comprobante en una orden con estado ${order.status}.`);
     }
 
-    return this.repository.updateOrder(order, {
-      receiptUrl: input.receiptUrl,
-      receiptStorageKey: input.receiptStorageKey ?? null,
-      receiptReference: input.receiptReference ?? null,
-      athleteNotes: input.athleteNotes ?? order.athleteNotes,
-      submittedAt: new Date(),
-      status: 'PENDING_VERIFICATION',
-      rejectionReason: null,
+    return this.sequelize.transaction(async (transaction) => {
+      const updatedOrder = await this.repository.updateOrder(
+        order,
+        {
+          receiptUrl: input.receiptUrl,
+          receiptStorageKey: input.receiptStorageKey ?? null,
+          receiptReference: input.receiptReference ?? null,
+          athleteNotes: input.athleteNotes ?? order.athleteNotes,
+          submittedAt: new Date(),
+          status: 'PENDING_VERIFICATION',
+          rejectionReason: null,
+        },
+        transaction
+      );
+
+      // Notificar al dueño o personal administrativo del comercio
+      if (this.notificationService && order.entity?.userId) {
+        try {
+          await this.notificationService.enqueueDirectMessage(
+            {
+              recipientUserId: order.entity.userId,
+              channel: NotificationChannel.IN_APP,
+              subject: `Comprobante de pago recibido - ${order.orderNumber}`,
+              body: `Un atleta ha subido su comprobante para "${order.plan?.name ?? 'Plan'}" (${order.amount} ${order.currency}). Revisa y confirma la orden para activar el acceso.`,
+              deduplicationKey: `payment_receipt_submitted:${order.id}:${Date.now()}`,
+            },
+            transaction
+          );
+        } catch {
+          // No abortar transacción por fallo de notificación
+        }
+      }
+
+      this.productEvents?.emit('directory_order_receipt_submitted', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        entityId: order.entityId,
+        athleteUserId: athlete.id,
+      });
+
+      return updatedOrder;
     });
   }
 
@@ -342,32 +407,73 @@ export class DirectoryPaymentsService {
     return this.sequelize.transaction(async (transaction) => {
       let createdMembershipId: string | null = null;
 
-      // Si el comercio está vinculado a un gimnasio y el plan es una membresía, activar en MembershipService
-      if (order.entity?.tenantId && order.plan?.durationDays && this.membershipService) {
-        try {
-          const membership = await this.membershipService.createMembership(
+      // Flujo multientidad y multitabla completo:
+      // Si el comercio es un gimnasio con tenantId y el plan es de membresía, sincronizar con membership.plans y crear la membresía
+      if (order.entity?.tenantId && order.plan && this.membershipService) {
+        const planSlug = order.plan.slug || this.slugify(order.plan.name);
+        const planCode = `dir_${order.entity.tenantId}_${planSlug}`.slice(0, 80);
+
+        let membershipPlan = await this.membershipPlanModel.findOne({
+          where: { code: planCode },
+          transaction,
+        });
+
+        if (!membershipPlan) {
+          membershipPlan = await this.membershipPlanModel.create(
             {
-              userId: order.athleteUserId,
-              planId: order.planId,
-              startsOn: undefined, // hoy
-              externalReference: order.orderNumber,
-              notes: `Activación por pago QR verificado en Marketplace (Orden: ${order.orderNumber})`,
+              code: planCode,
+              name: order.plan.name,
+              description: order.plan.description,
+              planType: PlanType.CUSTOM,
+              durationDays: order.plan.durationDays || 30,
+              reminderDays: [7, 3, 1, 0],
+              status: PlanStatus.ACTIVE,
+              priceAmount: order.amount,
+              currency: order.currency,
+              benefits: order.plan.benefits ?? [],
+              displayOrder: 0,
+              availableNew: true,
+              availableRenewal: true,
+              availableExtension: true,
               metadata: {
-                paymentOrderId: order.id,
-                orderNumber: order.orderNumber,
-                receiptUrl: order.receiptUrl,
-                receiptReference: order.receiptReference,
+                directoryPlanId: order.plan.id,
+                entityId: order.entityId,
               },
             },
-            actor.id,
+            { transaction }
           );
-          createdMembershipId = membership.id;
-        } catch {
-          // Si el planId del directorio no coincide con un plan de membership.plans interno, no se bloquea la orden
+
+          if (order.entity.branchId) {
+            await this.planAccessScopeModel.create(
+              {
+                planId: membershipPlan.id,
+                branchId: order.entity.branchId,
+              },
+              { transaction }
+            );
+          }
         }
+
+        const membership = await this.membershipService.createMembership(
+          {
+            userId: order.athleteUserId,
+            planId: membershipPlan.id,
+            startsOn: undefined, // hoy
+            externalReference: order.orderNumber,
+            notes: `Activación por pago QR verificado en Marketplace (Orden: ${order.orderNumber})`,
+            metadata: {
+              paymentOrderId: order.id,
+              orderNumber: order.orderNumber,
+              receiptUrl: order.receiptUrl,
+              receiptReference: order.receiptReference,
+            },
+          },
+          actor.id
+        );
+        createdMembershipId = membership.id;
       }
 
-      return this.repository.updateOrder(
+      const updatedOrder = await this.repository.updateOrder(
         order,
         {
           status: 'CONFIRMED',
@@ -375,8 +481,37 @@ export class DirectoryPaymentsService {
           verifiedAt: new Date(),
           membershipId: createdMembershipId,
         },
-        transaction,
+        transaction
       );
+
+      // Notificar al atleta en la app (In-App notification persistida en BD)
+      if (this.notificationService) {
+        try {
+          await this.notificationService.enqueueDirectMessage(
+            {
+              recipientUserId: order.athleteUserId,
+              channel: NotificationChannel.IN_APP,
+              subject: '¡Pago confirmado! Tu plan ya está activo',
+              body: `Tu pago de ${order.amount} ${order.currency} para "${order.plan?.name ?? 'Plan'}" en "${order.entity?.name ?? 'el comercio'}" fue verificado exitosamente. ¡Ya puedes disfrutar de tus beneficios!`,
+              deduplicationKey: `payment_order_confirmed:${order.id}`,
+            },
+            transaction
+          );
+        } catch {
+          // No abortar transacción por fallo de notificación
+        }
+      }
+
+      this.productEvents?.emit('directory_order_confirmed', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        entityId: order.entityId,
+        planId: order.planId,
+        athleteUserId: order.athleteUserId,
+        membershipId: createdMembershipId,
+      });
+
+      return updatedOrder;
     });
   }
 
@@ -393,11 +528,44 @@ export class DirectoryPaymentsService {
       throw new BadRequestException('Solo se pueden rechazar órdenes con comprobante en estado PENDING_VERIFICATION.');
     }
 
-    return this.repository.updateOrder(order, {
-      status: 'REJECTED',
-      verifiedByUserId: actor.id,
-      verifiedAt: new Date(),
-      rejectionReason: input.reason,
+    return this.sequelize.transaction(async (transaction) => {
+      const updatedOrder = await this.repository.updateOrder(
+        order,
+        {
+          status: 'REJECTED',
+          verifiedByUserId: actor.id,
+          verifiedAt: new Date(),
+          rejectionReason: input.reason,
+        },
+        transaction
+      );
+
+      if (this.notificationService) {
+        try {
+          await this.notificationService.enqueueDirectMessage(
+            {
+              recipientUserId: order.athleteUserId,
+              channel: NotificationChannel.IN_APP,
+              subject: `Observación en tu comprobante de pago - Orden ${order.orderNumber}`,
+              body: `El comercio ha observado tu comprobante para "${order.plan?.name ?? 'Plan'}": "${input.reason}". Puedes subir un nuevo comprobante corregido desde tu historial.`,
+              deduplicationKey: `payment_order_rejected:${order.id}:${Date.now()}`,
+            },
+            transaction
+          );
+        } catch {
+          // No abortar
+        }
+      }
+
+      this.productEvents?.emit('directory_order_rejected', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        entityId: order.entityId,
+        athleteUserId: order.athleteUserId,
+        reason: input.reason,
+      });
+
+      return updatedOrder;
     });
   }
 }

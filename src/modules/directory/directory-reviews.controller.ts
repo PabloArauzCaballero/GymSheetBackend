@@ -87,9 +87,9 @@ export class DirectoryReviewsController {
   @Post('entities')
   @HttpCode(HttpStatus.CREATED)
   createEntity(
-    @CurrentUser() _user: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser,
     @Body(new ZodValidationPipe(createEntityBodySchema)) body: CreateEntityBody
   ) {
-    return this.service.createEntity(body);
+    return this.service.createEntity(user, body);
   }
 }

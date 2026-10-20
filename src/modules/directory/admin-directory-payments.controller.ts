@@ -1,7 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { UserRole } from '../../common/enums/domain.enums';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
@@ -21,7 +19,6 @@ import {
 } from './directory-payments.schemas';
 import { DirectoryPaymentsService } from './directory-payments.service';
 
-@Roles(UserRole.ADMIN, UserRole.COACH, UserRole.SYSTEM_ADMIN)
 @Controller('admin/directory')
 export class AdminDirectoryPaymentsController {
   constructor(private readonly paymentsService: DirectoryPaymentsService) {}

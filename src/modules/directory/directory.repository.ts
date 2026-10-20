@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Op, Order, Transaction, WhereOptions } from 'sequelize';
+import { Op, Order, QueryTypes, Transaction, WhereOptions } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { UserModel } from '../users/user.model';
 import { CategoryModel } from './category.model';
@@ -189,10 +189,10 @@ export class DirectoryRepository {
   async findReviewById(id: string): Promise<DirectoryReviewModel | null> {
     return this.reviewModel.findByPk(id, {
       include: [
-        { model: UserModel, attributes: ['id', 'nombreCompleto', 'email', 'fotoPerfilUrl'] },
+        { model: UserModel, attributes: ['id', 'fullName', 'email'] },
         {
           model: DirectoryReviewReplyModel,
-          include: [{ model: UserModel, attributes: ['id', 'nombreCompleto'] }],
+          include: [{ model: UserModel, attributes: ['id', 'fullName'] }],
         },
       ],
     });
@@ -205,10 +205,10 @@ export class DirectoryRepository {
     return this.reviewModel.findOne({
       where: { entityId, userId },
       include: [
-        { model: UserModel, attributes: ['id', 'nombreCompleto', 'email', 'fotoPerfilUrl'] },
+        { model: UserModel, attributes: ['id', 'fullName', 'email'] },
         {
           model: DirectoryReviewReplyModel,
-          include: [{ model: UserModel, attributes: ['id', 'nombreCompleto'] }],
+          include: [{ model: UserModel, attributes: ['id', 'fullName'] }],
         },
       ],
     });
@@ -235,10 +235,10 @@ export class DirectoryRepository {
     return this.reviewModel.findAll({
       where: whereConditions as WhereOptions<DirectoryReviewModel>,
       include: [
-        { model: UserModel, attributes: ['id', 'nombreCompleto', 'email', 'fotoPerfilUrl'] },
+        { model: UserModel, attributes: ['id', 'fullName', 'email'] },
         {
           model: DirectoryReviewReplyModel,
-          include: [{ model: UserModel, attributes: ['id', 'nombreCompleto'] }],
+          include: [{ model: UserModel, attributes: ['id', 'fullName'] }],
         },
       ],
       order,
@@ -343,6 +343,29 @@ export class DirectoryRepository {
       attributes: ['reviewId'],
     });
     return new Set(votes.map((v) => v.reviewId));
+  }
+
+  async getUserAvatars(userIds: string[]): Promise<Map<string, string>> {
+    if (userIds.length === 0) return new Map();
+    try {
+      const rows = await this.sequelize.query<{ user_id: string; url: string }>(
+        `SELECT DISTINCT ON (user_id) user_id, url
+           FROM profile.photos
+          WHERE user_id IN (:userIds) AND hidden_at IS NULL
+          ORDER BY user_id, position ASC, created_at ASC`,
+        {
+          type: QueryTypes.SELECT,
+          replacements: { userIds },
+        }
+      );
+      const map = new Map<string, string>();
+      for (const r of rows) {
+        map.set(r.user_id, r.url);
+      }
+      return map;
+    } catch {
+      return new Map();
+    }
   }
 
   // ==========================================

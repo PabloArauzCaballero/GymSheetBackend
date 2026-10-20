@@ -127,6 +127,9 @@ describe('Directory Module - Logic & Service Tests', () => {
     let mockRepo: any;
     let mockMembershipModel: any;
     let mockAccessDecisionModel: any;
+    let mockSequelize: any;
+    let mockNotificationService: any;
+    let mockProductEvents: any;
 
     beforeEach(() => {
       mockRepo = {
@@ -138,11 +141,28 @@ describe('Directory Module - Logic & Service Tests', () => {
         findReviewById: jest.fn(),
         toggleHelpfulVote: jest.fn(),
         createOrUpdateReply: jest.fn(),
+        getUserAvatars: jest.fn().mockResolvedValue(new Map()),
       };
       mockMembershipModel = { findOne: jest.fn() };
       mockAccessDecisionModel = { findOne: jest.fn() };
+      mockSequelize = {
+        transaction: jest.fn(async (cb: (tx: any) => Promise<any>) => cb({})),
+      };
+      mockNotificationService = {
+        enqueueDirectMessage: jest.fn(),
+      };
+      mockProductEvents = {
+        emit: jest.fn(),
+      };
 
-      service = new DirectoryService(mockRepo, mockMembershipModel, mockAccessDecisionModel);
+      service = new DirectoryService(
+        mockRepo,
+        mockMembershipModel,
+        mockAccessDecisionModel,
+        mockSequelize,
+        mockNotificationService,
+        mockProductEvents,
+      );
     });
 
     it('rejects duplicate review creation for the same entity by the same user', async () => {

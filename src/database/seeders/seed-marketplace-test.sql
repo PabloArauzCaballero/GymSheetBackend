@@ -7,15 +7,15 @@ INSERT INTO directory.entities (
     tenant_id, user_id, logo_url, cover_url, is_online_only, city, country,
     rating_average, rating_count, rating_breakdown, is_verified, status
 ) VALUES (
-    'd1000000-0000-0000-0000-000000000001',
+    'd1000000-0000-4000-8000-000000000001',
     'topfitness',
     'GYM',
     'TopFitness Club & Spa',
     'Centro integral de entrenamiento de alto rendimiento y musculación',
     'TopFitness es el centro líder con equipamiento Hammer Strength y Eleiko, zona de peso libre olímpico, clases grupales y sauna.',
-    'a1000000-0000-0000-0000-000000000002', -- gimnasios
+    'a1000000-0000-4000-8000-000000000002', -- gimnasios
     'default',
-    '60af62c1-96ee-4d33-9a81-809cb1798f7e',
+    (SELECT id FROM usuarios LIMIT 1),
     'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=200',
     'https://images.unsplash.com/photo-1540497077202-7c8a3999166f?w=800',
     false,
@@ -27,15 +27,15 @@ INSERT INTO directory.entities (
     true,
     'ACTIVE'
 ), (
-    'd1000000-0000-0000-0000-000000000002',
+    'd1000000-0000-4000-8000-000000000002',
     'nutrizone-store',
     'STORE',
     'NutriZone Suplementos',
     'Distribuidor oficial de las mejores marcas de nutrición deportiva',
     'Tienda especializada en proteínas aisladas, creatinas Creapure, aminoácidos y accesorios de levantamiento pesado.',
-    'b1000000-0000-0000-0000-000000000001', -- tiendas.nutricion
+    'b1000000-0000-4000-8000-000000000001', -- tiendas.nutricion
     NULL,
-    '60af62c1-96ee-4d33-9a81-809cb1798f7e',
+    (SELECT id FROM usuarios LIMIT 1),
     'https://images.unsplash.com/photo-1593095948071-474c5cc2989d?w=200',
     'https://images.unsplash.com/photo-1579722821273-0f6c7d44362f?w=800',
     true,
@@ -56,8 +56,8 @@ INSERT INTO directory.entity_payment_configs (
     id, entity_id, bank_name, account_holder_name, tax_id, account_number,
     alias_or_phone, qr_image_url, qr_payload, instructions, is_active
 ) VALUES (
-    'e1000000-0000-0000-0000-000000000001',
-    'd1000000-0000-0000-0000-000000000001',
+    'e1000000-0000-4000-8000-000000000001',
+    'd1000000-0000-4000-8000-000000000001',
     'Banco Unión / BCP',
     'TopFitness Club S.R.L.',
     '1029384756',
@@ -68,8 +68,8 @@ INSERT INTO directory.entity_payment_configs (
     'Por favor escanea el código QR desde tu banca móvil y pega el número de orden en la glosa. Tras transferir, sube tu comprobante para activación inmediata.',
     true
 ), (
-    'e1000000-0000-0000-0000-000000000002',
-    'd1000000-0000-0000-0000-000000000002',
+    'e1000000-0000-4000-8000-000000000002',
+    'd1000000-0000-4000-8000-000000000002',
     'Banco Mercantil Santa Cruz',
     'NutriZone Bolivia',
     '8392104928',
@@ -89,8 +89,8 @@ INSERT INTO directory.entity_plans (
     id, entity_id, type, name, slug, description, benefits, duration_days,
     current_price, currency, status, display_order, media_urls
 ) VALUES (
-    'f1000000-0000-0000-0000-000000000001',
-    'd1000000-0000-0000-0000-000000000001',
+    'f1000000-0000-4000-8000-000000000001',
+    'd1000000-0000-4000-8000-000000000001',
     'MEMBERSHIP_PLAN',
     'Pase Mensual Full Pass',
     'pase-mensual-full-pass',
@@ -103,8 +103,8 @@ INSERT INTO directory.entity_plans (
     1,
     '[]'::jsonb
 ), (
-    'f1000000-0000-0000-0000-000000000002',
-    'd1000000-0000-0000-0000-000000000001',
+    'f1000000-0000-4000-8000-000000000002',
+    'd1000000-0000-4000-8000-000000000001',
     'MEMBERSHIP_PLAN',
     'Plan Trimestral VIP Black',
     'plan-trimestral-vip-black',
@@ -117,8 +117,8 @@ INSERT INTO directory.entity_plans (
     2,
     '[]'::jsonb
 ), (
-    'f1000000-0000-0000-0000-000000000003',
-    'd1000000-0000-0000-0000-000000000001',
+    'f1000000-0000-4000-8000-000000000003',
+    'd1000000-0000-4000-8000-000000000001',
     'PASS',
     'Tiquetera 10 Entrenamientos',
     'tiquetera-10-entrenamientos',
@@ -131,8 +131,8 @@ INSERT INTO directory.entity_plans (
     3,
     '[]'::jsonb
 ), (
-    'f1000000-0000-0000-0000-000000000004',
-    'd1000000-0000-0000-0000-000000000002',
+    'f1000000-0000-4000-8000-000000000004',
+    'd1000000-0000-4000-8000-000000000002',
     'PRODUCT',
     'Whey Isolate Protein 2kg',
     'whey-isolate-protein-2kg',
@@ -154,23 +154,23 @@ INSERT INTO directory.plan_price_history (
     id, plan_id, price, currency, effective_from, effective_to,
     changed_by_user_id, change_reason, is_promotional
 ) VALUES (
-    'f2000000-0000-0000-0000-000000000001',
-    'f1000000-0000-0000-0000-000000000001',
+    'f2000000-0000-4000-8000-000000000001',
+    'f1000000-0000-4000-8000-000000000001',
     45.00,
     'USD',
     now() - interval '30 days',
     NULL,
-    '60af62c1-96ee-4d33-9a81-809cb1798f7e',
+    (SELECT id FROM usuarios LIMIT 1),
     'Tarifa estándar oficial de temporada',
     false
 ), (
-    'f2000000-0000-0000-0000-000000000002',
-    'f1000000-0000-0000-0000-000000000002',
+    'f2000000-0000-4000-8000-000000000002',
+    'f1000000-0000-4000-8000-000000000002',
     120.00,
     'USD',
     now() - interval '30 days',
     NULL,
-    '60af62c1-96ee-4d33-9a81-809cb1798f7e',
+    (SELECT id FROM usuarios LIMIT 1),
     'Precio promocional trimestral con 15% de descuento',
     true
 ) ON CONFLICT (id) DO NOTHING;
@@ -180,9 +180,9 @@ INSERT INTO directory.reviews (
     id, entity_id, user_id, rating, title, body, is_verified_athlete,
     helpful_count, status
 ) VALUES (
-    'f3000000-0000-0000-0000-000000000001',
-    'd1000000-0000-0000-0000-000000000001',
-    '54a05f8c-0cb8-47fa-98d1-76873b5a59e3',
+    'f3000000-0000-4000-8000-000000000001',
+    'd1000000-0000-4000-8000-000000000001',
+    (SELECT id FROM usuarios LIMIT 1),
     5,
     'El mejor gimnasio de la ciudad sin duda',
     'Las máquinas son de primer nivel y la zona de sentadillas siempre tiene barras olímpicas disponibles. Muy limpio y los vestuarios impecables.',
@@ -195,9 +195,9 @@ INSERT INTO directory.reviews (
 INSERT INTO directory.review_replies (
     id, review_id, author_id, reply_text
 ) VALUES (
-    'f4000000-0000-0000-0000-000000000001',
-    'f3000000-0000-0000-0000-000000000001',
-    '60af62c1-96ee-4d33-9a81-809cb1798f7e',
+    'f4000000-0000-4000-8000-000000000001',
+    'f3000000-0000-4000-8000-000000000001',
+    (SELECT id FROM usuarios LIMIT 1),
     '¡Muchas gracias por tu comentario! Nos alegra que disfrutes el equipamiento Eleiko y las instalaciones. ¡A seguir rompiendo récords!'
 ) ON CONFLICT (review_id) DO NOTHING;
 

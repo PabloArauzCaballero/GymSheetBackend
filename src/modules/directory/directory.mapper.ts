@@ -1,6 +1,15 @@
+import { env } from '../../config/env';
 import { CategoryModel } from './category.model';
 import { DirectoryEntityModel } from './directory-entity.model';
 import { DirectoryReviewModel } from './directory-review.model';
+
+export function resolveMediaUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  const base = env.MEDIA_STORAGE_PUBLIC_BASE_URL.replace(/\/+$/, '');
+  const path = url.replace(/^\/+/, '');
+  return `${base}/${path}`;
+}
 
 export type CategoryTreeNodeDto = {
   id: string;
@@ -117,8 +126,8 @@ export function mapDirectoryEntitySummary(entity: DirectoryEntityModel): Directo
     entityType: entity.entityType,
     name: entity.name,
     headline: entity.headline,
-    logoUrl: entity.logoUrl,
-    coverUrl: entity.coverUrl,
+    logoUrl: resolveMediaUrl(entity.logoUrl),
+    coverUrl: resolveMediaUrl(entity.coverUrl),
     primaryCategory: {
       id: entity.primaryCategory?.id ?? entity.primaryCategoryId,
       name: entity.primaryCategory?.name ?? '',
@@ -148,7 +157,9 @@ export function mapDirectoryEntityDetail(entity: DirectoryEntityModel): Director
   return {
     ...summary,
     description: entity.description,
-    gallery: Array.isArray(entity.gallery) ? entity.gallery : [],
+    gallery: (Array.isArray(entity.gallery) ? entity.gallery : [])
+      .map((item) => resolveMediaUrl(item))
+      .filter((item): item is string => Boolean(item)),
     address: entity.address,
     latitude: entity.latitude ? Number(entity.latitude) : null,
     longitude: entity.longitude ? Number(entity.longitude) : null,
@@ -167,15 +178,17 @@ export function mapDirectoryEntityDetail(entity: DirectoryEntityModel): Director
 
 export function mapReviewItem(
   review: DirectoryReviewModel,
-  votedReviewIds: Set<string> = new Set()
+  votedReviewIds: Set<string> = new Set(),
+  avatarsMap: Map<string, string> = new Map()
 ): ReviewItemDto {
+  const authorId = review.user?.id ?? review.userId;
   return {
     id: review.id,
     entityId: review.entityId,
     author: {
-      id: review.user?.id ?? review.userId,
+      id: authorId,
       displayName: review.user?.fullName ?? review.user?.email ?? 'Atleta GymSheet',
-      avatarUrl: null,
+      avatarUrl: resolveMediaUrl(avatarsMap.get(authorId) ?? null),
     },
     rating: review.rating,
     title: review.title,

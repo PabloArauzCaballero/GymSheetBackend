@@ -36,6 +36,11 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
     impersonating: false,
   };
 
+  let mockMembershipPlanModel: any;
+  let mockPlanAccessScopeModel: any;
+  let mockNotificationService: any;
+  let mockProductEvents: any;
+
   beforeEach(() => {
     mockSequelize = {
       transaction: jest.fn(async (cb: (tx: any) => Promise<any>) => cb({})),
@@ -61,11 +66,37 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
       updateOrder: jest.fn(),
     };
 
+    mockMembershipPlanModel = {
+      findOne: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    };
+
+    mockPlanAccessScopeModel = {
+      create: jest.fn(),
+    };
+
     mockMembershipService = {
       createMembership: jest.fn(),
     };
 
-    service = new DirectoryPaymentsService(mockRepo, mockSequelize, mockMembershipService);
+    mockNotificationService = {
+      enqueueDirectMessage: jest.fn(),
+    };
+
+    mockProductEvents = {
+      emit: jest.fn(),
+    };
+
+    service = new DirectoryPaymentsService(
+      mockRepo,
+      mockSequelize,
+      mockMembershipPlanModel,
+      mockPlanAccessScopeModel,
+      mockMembershipService,
+      mockNotificationService,
+      mockProductEvents,
+    );
   });
 
   describe('Marketplace: Creación de Planes e Histórico de Precios Inicial', () => {
@@ -271,13 +302,16 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
         orderNumber: 'GS-ORD-1234',
         athleteUserId: 'athlete-user-1',
         planId: 'plan-1',
+        amount: '45.00',
+        currency: 'USD',
         status: 'PENDING_VERIFICATION',
         receiptUrl: 'https://storage.gymsheet.com/receipts/voucher.jpg',
         receiptReference: 'REF-111',
-        entity: { userId: 'admin-user-1', tenantId: 'tenant-gym-1' },
-        plan: { durationDays: 30 },
+        entity: { userId: 'admin-user-1', tenantId: 'tenant-gym-1', name: 'Gym Central' },
+        plan: { id: 'plan-1', name: 'Plan Mensual Pro', slug: 'plan-mensual-pro', durationDays: 30, price: '45.00', currency: 'USD', benefits: [] },
       };
       mockRepo.findOrderById.mockResolvedValue(order);
+      mockMembershipPlanModel.findOne.mockResolvedValue({ id: 'membership-plan-id' });
       mockMembershipService.createMembership.mockResolvedValue({ id: 'membership-activated-id' });
       mockRepo.updateOrder.mockImplementation(async (_ord: any, data: any) => ({ ...order, ...data }));
 
@@ -290,11 +324,13 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
       expect(mockMembershipService.createMembership).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: 'athlete-user-1',
-          planId: 'plan-1',
+          planId: 'membership-plan-id',
           externalReference: 'GS-ORD-1234',
         }),
         mockAdminUser.id,
       );
+      expect(mockNotificationService.enqueueDirectMessage).toHaveBeenCalled();
+      expect(mockProductEvents.emit).toHaveBeenCalledWith('directory_order_confirmed', expect.any(Object));
     });
 
     it('rechaza el comprobante con motivo si el administrador detecta datos no válidos', async () => {

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op, Transaction } from 'sequelize';
+import { MembershipModel } from '../membership/membership.model';
 import { UserModel } from '../users/user.model';
 import { DirectoryEntityModel } from './directory-entity.model';
 import { EntityPaymentConfigModel } from './models/entity-payment-config.model';
@@ -138,6 +139,7 @@ export class DirectoryPaymentsRepository {
       include: [
         { model: DirectoryEntityModel },
         { model: EntityPlanModel },
+        { model: MembershipModel },
         { model: UserModel, as: 'athlete', attributes: ['id', 'email', 'fullName'] },
         { model: UserModel, as: 'verifiedBy', attributes: ['id', 'email', 'fullName'] },
       ],
