@@ -21,7 +21,6 @@ import {
   MONTHLY_STRIKES_BASE,
   STRIKE_POINT_COST,
   MISSED_SESSION_PENALTY,
-  UserStreakStrikeModel,
 } from "./user-streak-strike.model";
 import {
   CHALLENGE_POINTS,
@@ -32,6 +31,7 @@ import {
   mondayOfDate,
 } from "./weekly-challenges";
 import { WeeklyChallengesService } from "./weekly-challenges.service";
+import { buildArenas, earnedPoints, type ArenaView } from "./progression-arenas";
 
 /**
  * Cuánto vale cada cosa.
@@ -216,6 +216,10 @@ export interface ProgressionView {
   /** Avance dentro del tramo actual, de 0 a 1. Uno cuando ya no hay siguiente. */
   levelProgress: number;
   path: LevelView[];
+  /** Puntos ganados en total (sin descontar canjes ni penalizaciones): lo que mueve el camino. */
+  arenaPoints: number;
+  /** El camino de arenas (lugares), más fino que los rangos. */
+  arenas: ArenaView[];
   badges: BadgeView[];
   stats: {
     totalSessions: number;
@@ -376,6 +380,10 @@ export class ProgressionService {
         pointsToNextLevel: next ? Math.max(0, next.minPoints - points) : null,
         levelProgress: tierProgress(points, current, next),
         path,
+        // El camino sube con lo ganado, no con el saldo: canjear o perder puntos
+        // no puede devolver a nadie a una arena anterior.
+        arenaPoints: earnedPoints(breakdown),
+        arenas: buildArenas(audience, earnedPoints(breakdown)),
         badges: visible,
         stats: {
           totalSessions: metrics.totalSessions,
