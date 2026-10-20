@@ -28,6 +28,8 @@ import {
   updatePrizeSchema,
 } from "./progression.schemas";
 
+import { Public } from "../../common/decorators/public.decorator";
+
 /** La senda del usuario autenticado. */
 @Controller("me/progression")
 export class ProgressionController {
@@ -39,10 +41,12 @@ export class ProgressionController {
   }
 
   /** Cuánto vale cada cosa, para que la pantalla lo explique con las cifras reales. */
+  @Public()
   @Get("rules")
   getRules() {
     return this.progressionService.getRules();
   }
+
 
   /** Los cupones del socio («Mis premios»): lo mismo que `progression.prizes`. */
   @Get("prizes")
@@ -198,5 +202,17 @@ export class ProgressionAdminController {
     @Param("id", UuidParamPipe) id: string,
   ) {
     return this.adminService.deactivatePrize(actor, id);
+  }
+}
+
+/** Acceso público a las tarifas y reglas del sistema de progresión. */
+@Controller("progression")
+export class ProgressionPublicController {
+  constructor(private readonly progressionService: ProgressionService) {}
+
+  @Public()
+  @Get("rules")
+  getRules() {
+    return this.progressionService.getRules();
   }
 }

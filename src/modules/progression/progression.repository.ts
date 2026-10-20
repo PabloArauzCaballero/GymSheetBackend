@@ -682,7 +682,7 @@ export class ProgressionRepository {
          -- Sesiones completadas por el socio con una rutina asignada por un Coach
          (SELECT COUNT(DISTINCT s.id)
             FROM public.sesiones_entrenamiento s
-            JOIN training.routine_assignments ra ON ra.routine_id = s.rutina_id
+            JOIN training.routine_assignments ra ON (ra.id = s.routine_assignment_id OR ra.routine_id = s.routine_id)
                                                AND ra.cliente_user_id = :userId
            WHERE s.usuario_id = :userId AND s.estado = :finished) AS coach_sessions,
          -- Atletas a los que este coach ha asignado rutinas

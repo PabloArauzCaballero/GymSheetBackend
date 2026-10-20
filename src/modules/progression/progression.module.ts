@@ -9,6 +9,7 @@ import { ProgressionLevelModel } from "./progression-level.model";
 import {
   ProgressionAdminController,
   ProgressionController,
+  ProgressionPublicController,
 } from "./progression.controller";
 import { ProgressionRepository } from "./progression.repository";
 import { ProgressionService } from "./progression.service";
@@ -30,7 +31,11 @@ import { WeeklyChallengesService } from "./weekly-challenges.service";
       UserStreakStrikeModel,
     ]),
   ],
-  controllers: [ProgressionController, ProgressionAdminController],
+  controllers: [
+    ProgressionController,
+    ProgressionAdminController,
+    ProgressionPublicController,
+  ],
   providers: [
     ProgressionRepository,
     ProgressionService,
