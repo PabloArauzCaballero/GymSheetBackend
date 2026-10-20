@@ -18,7 +18,14 @@ export type ProductEventName =
   | 'program_week_closed'
   | 'overload_load_changed'
   | 'strength_goal_reached'
-  | 'cardio_session_logged';
+  | 'cardio_session_logged'
+  | 'routine_progress_downloaded'
+  | 'directory_entity_created'
+  | 'directory_review_created'
+  | 'directory_order_created'
+  | 'directory_order_receipt_submitted'
+  | 'directory_order_confirmed'
+  | 'directory_order_rejected';
 
 @Injectable()
 export class ProductEvents {

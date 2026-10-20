@@ -1,11 +1,11 @@
 import { Column, CreatedAt, DataType, Model, PrimaryKey, Table, UpdatedAt } from 'sequelize-typescript';
 
-export type CommunityTargetKind = 'ROUTINE' | 'EXERCISE';
+export type CommunityTargetKind = 'ROUTINE' | 'EXERCISE' | 'DIRECTORY_ENTITY' | 'DIRECTORY_PRODUCT';
 
 @Table({ tableName: 'content_ratings', schema: 'community', underscored: true, timestamps: true })
 export class ContentRatingModel extends Model {
   @PrimaryKey
-  @Column({ type: DataType.STRING(12), field: 'target_kind' })
+  @Column({ type: DataType.STRING(30), field: 'target_kind' })
   declare targetKind: CommunityTargetKind;
 
   @PrimaryKey

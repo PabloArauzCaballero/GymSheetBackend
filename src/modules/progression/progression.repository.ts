@@ -8,6 +8,7 @@ import { ProgressionLevelModel } from "./progression-level.model";
 import { RestDayPreferenceModel } from "./rest-day-preference.model";
 import { UserBadgeModel } from "./user-badge.model";
 import { UserProgressModel } from "./user-progress.model";
+import { UserStreakStrikeModel } from "./user-streak-strike.model";
 import type { ProgressionAudience } from "./progression-catalog";
 
 /**
@@ -81,6 +82,11 @@ export interface TrainingMetrics {
   readonly maxRecordsInSession?: number;
   readonly modeShieldsUsed?: number;
   readonly modeMaxMultiplierWeeks?: number;
+  /** Cuarta tanda (2026-10-19): RRSS gym y Coach */
+  readonly gymSocialPartners?: number;
+  readonly coachSessions?: number;
+  readonly coachClients?: number;
+  readonly coachClientsPrs?: number;
 }
 
 /** Lo que la persona hizo fuera del entreno: crear, publicar, comentar, valorar. */
@@ -178,6 +184,10 @@ const EMPTY_METRICS: TrainingMetrics = {
   weeklyStreak: 0,
   lastSessionOn: null,
   firstSessionOn: null,
+  gymSocialPartners: 0,
+  coachSessions: 0,
+  coachClients: 0,
+  coachClientsPrs: 0,
 };
 
 /**
@@ -203,6 +213,8 @@ export class ProgressionRepository {
     private readonly userProgressModel: typeof UserProgressModel,
     @InjectModel(RestDayPreferenceModel)
     private readonly restDayPreferenceModel: typeof RestDayPreferenceModel,
+    @InjectModel(UserStreakStrikeModel)
+    private readonly userStreakStrikeModel: typeof UserStreakStrikeModel,
   ) {}
 
   // ────────────────────────────────────────────────────────── días de descanso
@@ -547,13 +559,14 @@ export class ProgressionRepository {
     // Crear una rutina o comentar no exige haber entrenado: estas métricas se
     // calculan también para quien todavía no tiene ninguna sesión.
     const community = await this.computeCommunityMetrics(userId);
+    const coachAndSocial = await this.computeCoachAndSocialMetrics(userId);
 
     // Los programas con modo tampoco: una semana fallida cubierta por el escudo
     // existe aunque esa persona no haya terminado ninguna sesión.
     const mode = await this.computeModeMetrics(userId);
 
     if (!aggregate || Number(aggregate.total_sessions) === 0) {
-      return { ...EMPTY_METRICS, ...mode, ...community };
+      return { ...EMPTY_METRICS, ...mode, ...community, ...coachAndSocial };
     }
 
     const days = await this.sequelize.query<SessionDayRow>(
@@ -612,6 +625,7 @@ export class ProgressionRepository {
       maxRecordsInSession: Number(aggregate.max_records_in_session ?? 0),
       comebackSessions: countComebacks(trainingDays),
       ...community,
+      ...coachAndSocial,
     };
   }
 
@@ -647,6 +661,90 @@ export class ProgressionRepository {
       ratingsGiven: Number(row?.ratings ?? 0),
       commentLikesReceived: Number(row?.comment_likes ?? 0),
     };
+  }
+
+  /**
+   * Métricas de socialización en el gimnasio y de interacción con Coach.
+   */
+  private async computeCoachAndSocialMetrics(userId: string) {
+    const [row] = await this.sequelize.query<{
+      gym_social_partners: string | null;
+      coach_sessions: string | null;
+      coach_clients: string | null;
+      coach_clients_prs: string | null;
+    }>(
+      `SELECT
+         -- Compañeros con los que ha conectado/entrenado en el gym
+         (SELECT COUNT(DISTINCT CASE WHEN requester_id = :userId THEN addressee_id ELSE requester_id END)
+            FROM social.connections
+           WHERE (requester_id = :userId OR addressee_id = :userId)
+             AND status = 'ACCEPTED') AS gym_social_partners,
+         -- Sesiones completadas por el socio con una rutina asignada por un Coach
+         (SELECT COUNT(DISTINCT s.id)
+            FROM public.sesiones_entrenamiento s
+            JOIN training.routine_assignments ra ON (ra.id = s.routine_assignment_id OR ra.routine_id = s.routine_id)
+                                               AND ra.cliente_user_id = :userId
+           WHERE s.usuario_id = :userId AND s.estado = :finished) AS coach_sessions,
+         -- Atletas a los que este coach ha asignado rutinas
+         (SELECT COUNT(DISTINCT cliente_user_id)
+            FROM training.routine_assignments
+           WHERE asignado_por_user_id = :userId) AS coach_clients,
+         -- Récords personales alcanzados por atletas de este coach
+         (SELECT COUNT(DISTINCT se.ejercicio_id)
+            FROM public.series_entrenamiento st
+            JOIN public.sesiones_ejercicios se ON se.id = st.sesion_ejercicio_id
+            JOIN public.sesiones_entrenamiento s ON s.id = se.sesion_id
+            JOIN training.routine_assignments ra ON ra.cliente_user_id = s.usuario_id
+           WHERE ra.asignado_por_user_id = :userId
+             AND s.estado = :finished
+             AND st.tipo_serie = 'FUERZA') AS coach_clients_prs`,
+      { type: QueryTypes.SELECT, replacements: { userId, finished: FINISHED } },
+    );
+    return {
+      gymSocialPartners: Number(row?.gym_social_partners ?? 0),
+      coachSessions: Number(row?.coach_sessions ?? 0),
+      coachClients: Number(row?.coach_clients ?? 0),
+      coachClientsPrs: Number(row?.coach_clients_prs ?? 0),
+    };
+  }
+
+  // ────────────────────────────────────────────────────────── strikes de racha
+
+  async getMonthStrikes(userId: string, month: string): Promise<UserStreakStrikeModel> {
+    const [record] = await this.userStreakStrikeModel.findOrCreate({
+      where: { userId, month },
+      defaults: {
+        userId,
+        month,
+        usedStrikes: 0,
+        purchasedStrikes: 0,
+        penaltyPoints: 0,
+      },
+    });
+    return record;
+  }
+
+  async recordUsedStrike(userId: string, month: string, transaction?: Transaction): Promise<UserStreakStrikeModel> {
+    const record = await this.getMonthStrikes(userId, month);
+    await record.increment('usedStrikes', { by: 1, transaction });
+    return record.reload({ transaction });
+  }
+
+  async recordPenaltyPoints(
+    userId: string,
+    month: string,
+    penalty: number,
+    transaction?: Transaction,
+  ): Promise<UserStreakStrikeModel> {
+    const record = await this.getMonthStrikes(userId, month);
+    await record.increment('penaltyPoints', { by: penalty, transaction });
+    return record.reload({ transaction });
+  }
+
+  async buyStrikeWithPoints(userId: string, month: string, transaction?: Transaction): Promise<UserStreakStrikeModel> {
+    const record = await this.getMonthStrikes(userId, month);
+    await record.increment('purchasedStrikes', { by: 1, transaction });
+    return record.reload({ transaction });
   }
 
   /**

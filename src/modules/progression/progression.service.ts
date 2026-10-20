@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { UserGender } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
 import { badgeIllustration, rarityRank } from "./badge-illustrations";
@@ -16,6 +16,12 @@ import type { BadgeCriterionType, ProgressionAudience } from "./progression-cata
 import { PrizeView, toPrizeView } from "./prizes";
 import { PrizeRecord, PrizesRepository } from "./prizes.repository";
 import { UserBadgeModel } from "./user-badge.model";
+import {
+  MONTHLY_STRIKES_BASE,
+  STRIKE_POINT_COST,
+  MISSED_SESSION_PENALTY,
+  UserStreakStrikeModel,
+} from "./user-streak-strike.model";
 import {
   CHALLENGE_POINTS,
   ChallengeDifficulty,
@@ -48,6 +54,12 @@ export const POINTS = {
    * tiene su propio sitio destacado en la pantalla.
    */
   perLongestStreakDay: 10,
+  /** SISTEMA DE PROGRESOS: Puntos por batir un récord personal (PR). */
+  perPersonalRecord: 25,
+  /** Penalización por falta a sesión planificada no repuesta dentro de la semana. */
+  penaltyMissedSession: MISSED_SESSION_PENALTY,
+  /** Coste en puntos para intercambiar/comprar 1 strike cuando se agotan los mensuales. */
+  strikeCost: STRIKE_POINT_COST,
 } as const;
 
 /**
@@ -62,11 +74,17 @@ export interface PointsBreakdown {
   sets: number;
   volume: number;
   streak: number;
+  /** SISTEMA DE PROGRESOS: puntos por récords personales (PRs). */
+  progress: number;
   badges: number;
   /** Bonos de los programas con modo (multiplicador semanal y metas). Nunca bajan. */
   modes: number;
   /** Retos de la semana cumplidos más los bonos de semana redonda. Nunca bajan. */
   challenges: number;
+  /** Penalización por faltas no repuestas a días planificados. */
+  penalties: number;
+  /** Puntos canjeados para recomprar strikes. */
+  strikePurchases: number;
 }
 
 export interface StreakView {
@@ -120,6 +138,10 @@ export interface PointRulesView {
   perSet: number;
   perVolumeUnitKg: number;
   perLongestStreakDay: number;
+  perPersonalRecord: number;
+  penaltyMissedSession: number;
+  strikeCost: number;
+  monthlyStrikes: number;
   challengePoints: Record<ChallengeDifficulty, number>;
   perfectWeekBonus: number;
   freezeEveryDays: number;
@@ -215,6 +237,14 @@ export interface ProgressionView {
   /** Insignias conseguidas en este mismo recálculo, para poder celebrarlas. */
   unlockedNow: BadgeView[];
   streak: StreakView;
+  strikes: {
+    totalMonthly: number;
+    available: number;
+    usedThisMonth: number;
+    purchasedThisMonth: number;
+    strikeCostPoints: number;
+    month: string;
+  };
   challenges: WeeklyChallengesView;
   /** Cupones del socio, del más reciente al más antiguo. */
   prizes: PrizeView[];
@@ -288,12 +318,16 @@ export class ProgressionService {
     }
     const newlyEarnedIds = new Set(newlyEarned.map((badge) => badge.id));
 
+    const currentMonth = currentMonthString();
+    const strikeRecord = await this.progressionRepository.getMonthStrikes(userId, currentMonth);
+
     // Los puntos de una insignia ya conseguida no se devuelven: archivar una
     // rutina o borrar un comentario puede dejar de cumplir la regla, pero los
     // puntos son un historial y no deben bajar.
     const breakdown = computePointsBreakdown(
       metrics,
       badges.filter((badge) => satisfied.includes(badge) || earnedByBadgeId.has(badge.id)),
+      strikeRecord,
     );
     const points = sumBreakdown(breakdown);
     const path = buildPath(levels, points);
@@ -366,6 +400,14 @@ export class ProgressionService {
         },
         unlockedNow: badgeViews.filter((view) => newlyEarnedIds.has(idOf(badges, view.code))),
         streak: toStreakView(metrics),
+        strikes: {
+          totalMonthly: MONTHLY_STRIKES_BASE,
+          available: strikeRecord.availableStrikes,
+          usedThisMonth: strikeRecord.usedStrikes,
+          purchasedThisMonth: strikeRecord.purchasedStrikes,
+          strikeCostPoints: STRIKE_POINT_COST,
+          month: currentMonth,
+        },
         challenges: challengeState.view,
         prizes: coupons.map((coupon) => toPrizeView(coupon, prizeSourceName(coupon, badges, path))),
         nearest: pickNearest(visible),
@@ -404,13 +446,16 @@ export class ProgressionService {
     const challengeState = await this.challenges.preview(userId);
     const metrics = withChallengeTotals(context.metrics, challengeState.totals);
     const { levels, badges, earned } = context;
+    const currentMonth = currentMonthString();
+    const strikeRecord = await this.progressionRepository.getMonthStrikes(userId, currentMonth);
+
     const earnedIds = new Set(earned.map((row) => row.badgeId));
     const satisfied = badges.filter(
       (badge) =>
         earnedIds.has(badge.id) ||
         measure(metrics, badge.criterionType) >= Number(badge.criterionThreshold),
     );
-    const breakdown = computePointsBreakdown(metrics, satisfied);
+    const breakdown = computePointsBreakdown(metrics, satisfied, strikeRecord);
     const points = sumBreakdown(breakdown);
     const path = buildPath(levels, points);
     const level = path.filter((entry) => entry.unlocked).at(-1) ?? null;
@@ -458,9 +503,12 @@ export class ProgressionService {
         sets: delta("sets"),
         volume: delta("volume"),
         streak: delta("streak"),
+        progress: delta("progress"),
         badges: delta("badges"),
         modes: delta("modes"),
         challenges: delta("challenges"),
+        penalties: delta("penalties"),
+        strikePurchases: delta("strikePurchases"),
       },
       levelBefore: before.level,
       levelAfter: after.level,
@@ -489,11 +537,27 @@ export class ProgressionService {
   getRules(): PointRulesView {
     return {
       ...POINTS,
+      monthlyStrikes: MONTHLY_STRIKES_BASE,
       challengePoints: { ...CHALLENGE_POINTS },
       perfectWeekBonus: PERFECT_WEEK_BONUS,
       freezeEveryDays: STREAK_FREEZE_EVERY_DAYS,
       maxFreezes: STREAK_MAX_FREEZES,
     };
+  }
+
+  /**
+   * Canjea puntos acumulados por un strike mensual adicional (150 puntos por strike).
+   */
+  async buyStrike(userId: string): Promise<ProgressionView> {
+    const currentMonth = currentMonthString();
+    const state = await this.computeProgression(userId);
+    if (state.view.points < POINTS.strikeCost) {
+      throw new BadRequestException(
+        `No tienes suficientes puntos para canjear un strike (requiere ${POINTS.strikeCost} puntos).`,
+      );
+    }
+    await this.progressionRepository.buyStrikeWithPoints(userId, currentMonth);
+    return (await this.computeProgression(userId)).view;
   }
 
   /**
@@ -702,35 +766,44 @@ export function toAudience(gender: UserGender | null): ProgressionAudience {
 export function computePointsBreakdown(
   metrics: TrainingMetrics,
   earnedBadges: readonly { pointsReward: number }[],
+  strikes?: { penaltyPoints?: number; purchasedStrikes?: number },
 ): PointsBreakdown {
+  const penaltyPoints = strikes?.penaltyPoints ?? 0;
+  const purchasedStrikes = strikes?.purchasedStrikes ?? 0;
   return {
     session: metrics.totalSessions * POINTS.perSession,
     sets: metrics.totalSets * POINTS.perSet,
     volume: Math.floor(metrics.totalVolumeKg / POINTS.perVolumeUnitKg),
     streak: metrics.longestStreakDays * POINTS.perLongestStreakDay,
+    progress: (metrics.personalRecords ?? 0) * POINTS.perPersonalRecord,
     badges: earnedBadges.reduce((total, badge) => total + badge.pointsReward, 0),
     modes: metrics.modeBonusPoints ?? 0,
     challenges: metrics.challengePoints ?? 0,
+    penalties: penaltyPoints,
+    strikePurchases: purchasedStrikes * POINTS.strikeCost,
   };
 }
 
 function sumBreakdown(breakdown: PointsBreakdown): number {
-  return (
+  const positive =
     breakdown.session +
     breakdown.sets +
     breakdown.volume +
     breakdown.streak +
+    (breakdown.progress ?? 0) +
     breakdown.badges +
     breakdown.modes +
-    breakdown.challenges
-  );
+    breakdown.challenges;
+  const negative = (breakdown.penalties ?? 0) + (breakdown.strikePurchases ?? 0);
+  return Math.max(0, positive - negative);
 }
 
 export function computePoints(
   metrics: TrainingMetrics,
   earnedBadges: readonly { pointsReward: number }[],
+  strikes?: { penaltyPoints?: number; purchasedStrikes?: number },
 ): number {
-  return sumBreakdown(computePointsBreakdown(metrics, earnedBadges));
+  return sumBreakdown(computePointsBreakdown(metrics, earnedBadges, strikes));
 }
 
 /** Métrica que mide cada criterio. Un `switch` exhaustivo: si se añade un criterio al catálogo, el compilador obliga a medirlo. */
@@ -824,6 +897,14 @@ export function measure(metrics: TrainingMetrics, criterion: BadgeCriterionType)
       return metrics.modeShieldsUsed ?? 0;
     case "MODE_MAX_MULTIPLIER_WEEKS":
       return metrics.modeMaxMultiplierWeeks ?? 0;
+    case "GYM_SOCIAL_PARTNERS":
+      return metrics.gymSocialPartners ?? 0;
+    case "COACH_SESSIONS":
+      return metrics.coachSessions ?? 0;
+    case "COACH_CLIENTS":
+      return metrics.coachClients ?? 0;
+    case "COACH_CLIENTS_PRS":
+      return metrics.coachClientsPrs ?? 0;
   }
 }
 
@@ -926,4 +1007,14 @@ function shortenName(fullName: string): string {
   const first = parts[0] ?? "";
   const surnameInitial = parts.length > 1 ? `${parts[1].charAt(0).toUpperCase()}.` : "";
   return [first, surnameInitial].filter(Boolean).join(" ");
+}
+
+function currentMonthString(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: env.BUSINESS_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+  })
+    .format(new Date())
+    .slice(0, 7);
 }

@@ -42,6 +42,7 @@ import { ProgressionModule } from './modules/progression/progression.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
+import { DirectoryModule } from './modules/directory/directory.module';
 
 @Module({
   imports: [
@@ -123,6 +124,7 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
     ProfileViewsModule,
     AdminAccessModule,
     TenantsModule,
+    DirectoryModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

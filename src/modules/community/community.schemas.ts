@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const contentKindParam = z.enum(['ROUTINE', 'EXERCISE']);
+export const contentKindParam = z.enum(['ROUTINE', 'EXERCISE', 'DIRECTORY_ENTITY', 'DIRECTORY_PRODUCT']);
 export type ContentKind = z.infer<typeof contentKindParam>;
 
 export const ratingSchema = z

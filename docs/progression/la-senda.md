@@ -105,15 +105,20 @@ puntos = 50 × sesiones finalizadas
        +  2 × series registradas
        +  1 × cada 100 kg de volumen
        + 10 × días de la racha más larga (con comodines)
+       + 25 × récords personales (PR y progresos en el plan)
        + recompensa de cada insignia conseguida
        + bonos de los programas con modo (libro de solo inserción)
        + retos de la semana cumplidos (60 / 100 / 160) + 150 por semana redonda
+       - penalizaciones por sesiones no repuestas (50 pts / falta en la semana)
+       - puntos intercambiados por strikes (150 pts / strike mensual de racha)
 ```
 
-`breakdown` (en la senda y en el premio de cada sesión) desglosa las siete
-partidas: `session`, `sets`, `volume`, `streak`, `badges`, `modes` y
-`challenges`. `GET /me/progression/rules` publica las cifras, incluidas
-`challengePoints`, `perfectWeekBonus`, `freezeEveryDays` y `maxFreezes`.
+`breakdown` (en la senda y en el premio de cada sesión) desglosa las diez
+partidas: `session`, `sets`, `volume`, `streak`, `progress`, `badges`, `modes`,
+`challenges`, `penalties` y `strikePurchases`. `GET /me/progression/rules`
+publica las cifras, incluidas `perPersonalRecord`, `penaltyMissedSession`,
+`strikeCost`, `monthlyStrikes`, `challengePoints`, `perfectWeekBonus`,
+`freezeEveryDays` y `maxFreezes`.
 
 Calibración: una sesión corriente —veinte series, cinco toneladas— ronda los
 **150 puntos**. Hay una prueba que lo fija; si esa cifra se mueve sin mover los
@@ -302,6 +307,26 @@ código de otro gimnasio responde 404 igual que uno inexistente.
   de programas corre antes de calcular el premio de la sesión.
 - El libro de bonos sigue siendo de solo inserción: los puntos de modo nunca
   bajan (prueba de propiedad con 1000 secuencias, ahora con escudo).
+
+## 6.5 Sistema de racha con strikes, penalizaciones y cards de Coach y RRSS
+
+### Racha con propio plan, strikes mensuales y reposición
+- **Mantener tu racha con tu plan**: Tu racha se mantiene activa mientras asistas a tus entrenamientos programados. Si no puedes acudir un día programado, tienes toda la semana en curso (lunes a domingo en `BUSINESS_TIME_ZONE`) para reponer la sesión.
+- **3 Strikes mensuales**: Cada mes calendario el usuario dispone de **3 strikes base** (`progression.user_streak_strikes`) que amortiguan un fallo al cierre de la semana sin romper la racha.
+- **Penalización por falta no repuesta**: Si la semana concluye sin reponer la sesión y ya no quedan strikes disponibles en el mes, se aplica una penalización de **50 puntos** (equivalente a una sesión completa) y la racha se reinicia a cero.
+- **Intercambio de puntos por strikes**: Si el socio agota sus 3 strikes mensuales, puede intercambiar **150 puntos** por un strike adicional de protección (`POST /api/v1/me/progression/strikes/buy`), permitiéndole recuperar strikes acumulados para salvar su racha ante imprevistos.
+
+### Cards de logros: RRSS en el gym y Coach
+- **Comunidad y RRSS en el gym (`GYM_SOCIAL_PARTNERS`)**:
+  - `HABLAR_3_PERSONAS` ("Rompehielos del gym", 100 pts, RARA): Conectar o entrenar con 3 personas en el gimnasio.
+  - `COMUNIDAD_GYM_10` ("Comunidad activa", 250 pts, EPICA): Conectar con 10 compañeros de entrenamiento.
+- **Logros de Coach (`COACH_SESSIONS`, `COACH_CLIENTS`, `COACH_CLIENTS_PRS`)**:
+  - Para el alumno:
+    - `COACH_PRIMERA_SESION` ("Bajo tutela", 50 pts, COMUN): Primera sesión con rutina guiada por coach.
+    - `COACH_DIEZ_SESIONES` ("Alumno constante", 150 pts, RARA): 10 sesiones con coach.
+  - Para el coach:
+    - `COACH_TRES_ATLETAS` ("Mentor del gimnasio", 200 pts, RARA): 3 atletas activos con rutinas asignadas.
+    - `COACH_DIEZ_RECORDS` ("Forjador de marcas", 400 pts, LEGENDARIA): 10 récords personales batidos por sus atletas.
 
 ## 7. Multi-inquilino
 

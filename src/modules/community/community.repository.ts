@@ -29,6 +29,8 @@ const ORDER_BY: Record<CommentOrder, string> = {
 const TABLE: Record<ContentKind, string> = {
   ROUTINE: 'training.routines',
   EXERCISE: 'public.ejercicios',
+  DIRECTORY_ENTITY: 'directory.entities',
+  DIRECTORY_PRODUCT: 'directory.entity_plans',
 };
 
 @Injectable()
@@ -40,12 +42,21 @@ export class CommunityRepository {
 
   /** Quien lo ve, o `null` si no existe / no es visible para esa persona (→ 404). */
   async findVisibleTarget(kind: ContentKind, id: string, userId: string): Promise<TargetInfo | null> {
-    const sql =
-      kind === 'ROUTINE'
-        ? `SELECT r.created_by_user_id AS "ownerId", r.nombre AS title FROM training.routines r
-            WHERE r.id = :id AND r.estado_moderacion = 'VISIBLE' AND ${routineVisibleSql('r', ':userId')}`
-        : `SELECT e.created_by_usuario_id AS "ownerId", e.nombre AS title FROM public.ejercicios e
-            WHERE e.id = :id AND e.estado_moderacion = 'VISIBLE' AND ${exerciseVisibleSql('e', ':userId')}`;
+    let sql: string;
+    if (kind === 'ROUTINE') {
+      sql = `SELECT r.created_by_user_id AS "ownerId", r.nombre AS title FROM training.routines r
+              WHERE r.id = :id AND r.estado_moderacion = 'VISIBLE' AND ${routineVisibleSql('r', ':userId')}`;
+    } else if (kind === 'EXERCISE') {
+      sql = `SELECT e.created_by_usuario_id AS "ownerId", e.nombre AS title FROM public.ejercicios e
+              WHERE e.id = :id AND e.estado_moderacion = 'VISIBLE' AND ${exerciseVisibleSql('e', ':userId')}`;
+    } else if (kind === 'DIRECTORY_ENTITY') {
+      sql = `SELECT de.user_id AS "ownerId", de.name AS title FROM directory.entities de
+              WHERE de.id = :id AND de.status = 'ACTIVE'`;
+    } else {
+      sql = `SELECT de.user_id AS "ownerId", ep.name AS title FROM directory.entity_plans ep
+              JOIN directory.entities de ON de.id = ep.entity_id
+              WHERE ep.id = :id AND ep.status = 'ACTIVE'`;
+    }
     const rows = await this.ratings.sequelize!.query<TargetInfo>(sql, {
       type: QueryTypes.SELECT,
       replacements: { id, userId },
@@ -69,6 +80,26 @@ export class CommunityRepository {
   }
 
   private async recompute(kind: ContentKind, id: string, transaction: Transaction) {
+    if (kind === 'DIRECTORY_ENTITY') {
+      const [row] = await this.ratings.sequelize!.query<{ promedio: string | null; total: number }>(
+        `UPDATE directory.entities t
+            SET rating_count = s.total, rating_average = COALESCE(s.promedio, 0.00)
+           FROM (SELECT count(*)::int AS total, round(avg(estrellas)::numeric, 2) AS promedio
+                   FROM community.content_ratings WHERE target_kind = :kind AND target_id = :id) s
+          WHERE t.id = :id
+          RETURNING t.rating_average AS promedio, t.rating_count AS total`,
+        { type: QueryTypes.SELECT, replacements: { kind, id }, transaction },
+      );
+      return { promedio: row?.promedio == null ? null : Number(row.promedio), total: row?.total ?? 0 };
+    }
+    if (kind === 'DIRECTORY_PRODUCT') {
+      const [row] = await this.ratings.sequelize!.query<{ promedio: string | null; total: number }>(
+        `SELECT count(*)::int AS total, round(avg(estrellas)::numeric, 2) AS promedio
+           FROM community.content_ratings WHERE target_kind = :kind AND target_id = :id`,
+        { type: QueryTypes.SELECT, replacements: { kind, id }, transaction },
+      );
+      return { promedio: row?.promedio == null ? null : Number(row.promedio), total: row?.total ?? 0 };
+    }
     const [row] = await this.ratings.sequelize!.query<{ promedio: string | null; total: number }>(
       `UPDATE ${TABLE[kind]} t
           SET valoracion_total = s.total, valoracion_promedio = s.promedio
@@ -101,6 +132,21 @@ export class CommunityRepository {
   }
 
   async summary(kind: ContentKind, id: string) {
+    if (kind === 'DIRECTORY_ENTITY') {
+      const [row] = await this.ratings.sequelize!.query<{ promedio: string | null; total: number }>(
+        `SELECT rating_average AS promedio, rating_count AS total FROM directory.entities WHERE id = :id`,
+        { type: QueryTypes.SELECT, replacements: { id } },
+      );
+      return { promedio: row?.promedio == null ? null : Number(row.promedio), total: row?.total ?? 0 };
+    }
+    if (kind === 'DIRECTORY_PRODUCT') {
+      const [row] = await this.ratings.sequelize!.query<{ promedio: string | null; total: number }>(
+        `SELECT round(avg(estrellas)::numeric, 2) AS promedio, count(*)::int AS total
+           FROM community.content_ratings WHERE target_kind = :kind AND target_id = :id`,
+        { type: QueryTypes.SELECT, replacements: { kind, id } },
+      );
+      return { promedio: row?.promedio == null ? null : Number(row.promedio), total: row?.total ?? 0 };
+    }
     const [row] = await this.ratings.sequelize!.query<{ promedio: string | null; total: number }>(
       `SELECT valoracion_promedio AS promedio, valoracion_total AS total FROM ${TABLE[kind]} WHERE id = :id`,
       { type: QueryTypes.SELECT, replacements: { id } },
