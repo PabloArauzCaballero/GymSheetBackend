@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { UserGender } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
+import { resolveMediaUrl } from "../../common/media/media-url";
 import { badgeIllustration, rarityRank } from "./badge-illustrations";
 import { UsersRepository } from "../users/users.repository";
 import { ChallengeTotals } from "./challenges.repository";
@@ -622,12 +623,15 @@ export class ProgressionService {
     const rows = await this.progressionRepository.leaderboard(tenantId, limit, sortBy);
     return rows.map((row, index) => ({
       position: index + 1,
+      userId: row.userId,
       points: Number(row.points),
       levelCode: row.levelCode,
       streakDays: Number(row.currentStreakDays),
       // Solo el nombre de pila y la inicial: una tabla pública con el nombre
       // completo de cada socio es una lista de clientes del gimnasio.
       displayName: shortenName(row.fullName),
+      photoUrl: resolveMediaUrl(row.photoUrl),
+      badges: Array.isArray(row.badges) ? row.badges : [],
       isMe: row.userId === userId,
     }));
   }

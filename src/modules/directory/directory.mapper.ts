@@ -1,15 +1,9 @@
-import { env } from '../../config/env';
+import { resolveMediaUrl, resolveMediaUrls } from '../../common/media/media-url';
 import { CategoryModel } from './category.model';
 import { DirectoryEntityModel } from './directory-entity.model';
 import { DirectoryReviewModel } from './directory-review.model';
 
-export function resolveMediaUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (/^https?:\/\//i.test(url)) return url;
-  const base = env.MEDIA_STORAGE_PUBLIC_BASE_URL.replace(/\/+$/, '');
-  const path = url.replace(/^\/+/, '');
-  return `${base}/${path}`;
-}
+export { resolveMediaUrl, resolveMediaUrls };
 
 export type CategoryTreeNodeDto = {
   id: string;

@@ -1,6 +1,7 @@
 import { ConversationSummaryRow, DisappearingTimerEvent, SystemConversationKind } from "./chat.repository";
 import { MessageModel, MessageType } from "./message.model";
 import { isExpired } from "./chat-disappearing";
+import { resolveMediaUrl } from "../../common/media/media-url";
 
 /** Lo que se ve de la cita dentro de la burbuja de una respuesta. */
 export type ReplyPreview = {
@@ -244,7 +245,7 @@ export function mapConversationSummary(
     conversationId: row.conversation_id,
     otherUserId: row.other_user_id,
     otherUserName: row.other_user_name,
-    otherUserPhotoUrl: row.other_user_photo_url,
+    otherUserPhotoUrl: resolveMediaUrl(row.other_user_photo_url),
     otherUserOnline,
     otherUserLastSeenAt: row.other_user_last_seen_at,
     lastMessage: row.last_message_body,

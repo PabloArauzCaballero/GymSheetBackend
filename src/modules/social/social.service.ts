@@ -548,7 +548,22 @@ export class SocialService {
     tenantId: string,
     query: DiscoveryDeckQuery,
   ): Promise<{ items: DirectoryEntryResponse[]; nextCursor: string | null }> {
-    const preferences = await this.repository.discoveryPreferences(viewerId);
+    let preferences = await this.repository.discoveryPreferences(viewerId);
+    if (!preferences.configured) {
+      const created = await this.repository.updateDiscoveryPreferences(viewerId, {
+        genders: ["MALE", "FEMALE"],
+        intents: ["TRAINING", "FRIENDSHIP"],
+        minAge: 18,
+        maxAge: 99,
+        radiusKm: 50,
+        flexibleAge: true,
+        flexibleDistance: true,
+        expectedVersion: 0,
+      });
+      if (created) {
+        preferences = created;
+      }
+    }
     if (!preferences.configured) {
       throw new BadRequestException(
         "Configura tus preferencias de Conocer antes de recibir recomendaciones.",

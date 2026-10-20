@@ -1,6 +1,7 @@
 import { ConnectionStatus } from "../../common/enums/domain.enums";
 import { ConnectionModel } from "./connection.model";
 import { DirectoryRow, EarnedBadgeRow, InteractionCountsRow } from "./social.repository";
+import { resolveMediaUrl } from "../../common/media/media-url";
 
 export type ConnectionResponse = {
   id: string;
@@ -62,8 +63,8 @@ export function mapDirectoryRowToResponse(row: DirectoryRow): DirectoryEntryResp
     connectionStatus: row.connectionStatus,
     connectionId: row.connectionId,
     socialStatus: row.socialStatus,
-    photoUrl: row.photoUrl,
-    photos: row.photos,
+    photoUrl: resolveMediaUrl(row.photoUrl),
+    photos: (row.photos ?? []).map((p) => ({ ...p, url: resolveMediaUrl(p.url) ?? p.url })),
     age: row.age,
     gender: row.gender,
     experienceLevel: row.experienceLevel,

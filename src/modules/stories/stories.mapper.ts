@@ -1,5 +1,6 @@
 import { StoryFeedRow, StoryViewerRow } from "./stories.repository";
 import { StoryModel, StoryMediaType } from "./story.model";
+import { resolveMediaUrl } from "../../common/media/media-url";
 
 function authorizedMediaUrl(storyId: string): string {
   return `/me/stories/${storyId}/media`;
@@ -58,7 +59,7 @@ export function mapFeedRowsToResponse(rows: StoryFeedRow[]): StoryFeedEntryRespo
   for (const row of rows) {
     let entry = byUser.get(row.user_id);
     if (!entry) {
-      entry = { userId: row.user_id, fullName: row.full_name, photoUrl: row.photo_url, hasUnviewed: false, stories: [] };
+      entry = { userId: row.user_id, fullName: row.full_name, photoUrl: resolveMediaUrl(row.photo_url), hasUnviewed: false, stories: [] };
       byUser.set(row.user_id, entry);
     }
     entry.stories.push({
@@ -104,7 +105,7 @@ export function mapStoryViewersToResponse(
     viewers: rows.map((row) => ({
       userId: row.user_id,
       fullName: row.full_name,
-      photoUrl: row.photo_url,
+      photoUrl: resolveMediaUrl(row.photo_url),
       // `new Date(...)` y no `row.viewed_at.toISOString()`: el driver devuelve
       // `Date` para timestamptz, pero normalizar aquí evita que un cambio de
       // driver o un mock con texto rompa el contrato en producción.

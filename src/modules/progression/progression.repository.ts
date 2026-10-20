@@ -805,6 +805,14 @@ export class ProgressionRepository {
       points: number;
       levelCode: string | null;
       currentStreakDays: number;
+      photoUrl: string | null;
+      badges: Array<{
+        code: string;
+        name: string;
+        icon: string;
+        color: string;
+        rarity?: string;
+      }>;
     }>
   > {
     const orderBy =
@@ -816,9 +824,37 @@ export class ProgressionRepository {
               u.nombre_completo AS "fullName",
               p.points,
               p.level_code AS "levelCode",
-              p.current_streak_days AS "currentStreakDays"
+              p.current_streak_days AS "currentStreakDays",
+              (
+                SELECT ph.url
+                  FROM profile.photos ph
+                 WHERE ph.user_id = p.usuario_id
+                   AND ph.hidden_at IS NULL
+                 ORDER BY ph.position ASC, ph.created_at ASC
+                 LIMIT 1
+              ) AS "photoUrl",
+              COALESCE(top_badges.items, '[]'::json) AS "badges"
          FROM progression.user_progress p
          JOIN public.usuarios u ON u.id = p.usuario_id
+         LEFT JOIN LATERAL (
+           SELECT json_agg(
+                    json_build_object(
+                      'code', ub.code,
+                      'name', ub.name,
+                      'icon', ub.icon,
+                      'color', ub.color,
+                      'rarity', ub.rarity
+                    ) ORDER BY ub.awarded_at DESC
+                  ) AS items
+             FROM (
+               SELECT b.code, b.name, b.icon, b.color, b.rarity, ub.awarded_at
+                 FROM progression.user_badges ub
+                 JOIN progression.badges b ON b.id = ub.badge_id
+                WHERE ub.usuario_id = p.usuario_id
+                ORDER BY ub.awarded_at DESC
+                LIMIT 3
+             ) ub
+         ) top_badges ON true
         WHERE u.estado = 'ACTIVO'
           AND (:tenantId::text IS NULL OR u.tenant_id IS NOT DISTINCT FROM :tenantId)
           AND p.points > 0

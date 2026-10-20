@@ -1,5 +1,6 @@
 import { BranchModel } from './branch.model';
 import { publicRoomTypes } from './public-facilities.schemas';
+import { resolveMediaUrl, resolveMediaUrls } from '../../common/media/media-url';
 
 /**
  * Proyección pública de una sede: solo lo que alguien eligiendo gimnasio
@@ -33,7 +34,7 @@ export function mapPublicBranchSummary(branch: BranchModel): PublicBranchSummary
     latitud: branch.latitude === null ? null : Number(branch.latitude),
     longitud: branch.longitude === null ? null : Number(branch.longitude),
     servicios,
-    imagenUrl: branch.coverImageUrl,
+    imagenUrl: resolveMediaUrl(branch.coverImageUrl),
     amenidades: branch.amenities,
     marca: branch.brandName,
   };
@@ -67,7 +68,7 @@ export function mapPublicBranchDetail(
     zonaHoraria: branch.timeZone,
     salas: rooms.map((room) => ({ id: room.id, nombre: room.name, tipo: room.roomType })),
     equipamiento: [...equipmentById.values()],
-    galeria: branch.galleryImageUrls,
+    galeria: resolveMediaUrls(branch.galleryImageUrls),
     sucursales: siblings.map(mapPublicBranchSummary),
   };
 }
