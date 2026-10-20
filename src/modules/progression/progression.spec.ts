@@ -4,6 +4,7 @@ import type { TrainingMetrics } from "./progression.repository";
 import { badgeIllustration, rarityRank } from "./badge-illustrations";
 import { badgeSeeds, levelSeeds } from "./progression-catalog";
 import { extendedBadgeSeeds } from "./progression-catalog-extended";
+import { coachRrssBadgeSeeds } from "./progression-catalog-coach-rrss";
 import { criterionTypeSchema } from "./progression.schemas";
 import { restDaysSchema } from "./progression.schemas";
 import {
@@ -313,16 +314,48 @@ describe("computePoints", () => {
     };
     const badges = [{ pointsReward: 25 }];
     const breakdown = computePointsBreakdown(metrics, badges);
-    expect(breakdown).toEqual({ session: 100, sets: 40, volume: 50, streak: 20, badges: 25, modes: 0, challenges: 0 });
+    expect(breakdown).toEqual({
+      session: 100,
+      sets: 40,
+      volume: 50,
+      streak: 20,
+      progress: 0,
+      badges: 25,
+      modes: 0,
+      challenges: 0,
+      penalties: 0,
+      strikePurchases: 0,
+    });
     const sum =
       breakdown.session +
       breakdown.sets +
       breakdown.volume +
       breakdown.streak +
+      breakdown.progress +
       breakdown.badges +
       breakdown.modes +
-      breakdown.challenges;
+      breakdown.challenges -
+      breakdown.penalties -
+      breakdown.strikePurchases;
     expect(sum).toBe(computePoints(metrics, badges));
+  });
+
+  it("adds progress points for personal records and applies penalties and strike purchases", () => {
+    const metrics: TrainingMetrics = {
+      ...NO_TRAINING,
+      totalSessions: 1,
+      personalRecords: 2,
+    };
+    const breakdown = computePointsBreakdown(metrics, [], {
+      penaltyPoints: 50,
+      purchasedStrikes: 1,
+    });
+    expect(breakdown.session).toBe(50);
+    expect(breakdown.progress).toBe(50); // 2 * 25
+    expect(breakdown.penalties).toBe(50);
+    expect(breakdown.strikePurchases).toBe(150); // 1 * 150
+    // Total: 50 + 50 - 50 - 150 = -100 -> clamped at 0
+    expect(computePoints(metrics, [], { penaltyPoints: 50, purchasedStrikes: 1 })).toBe(0);
   });
 
   it("adds the mode bonuses as their own line, and they only ever add", () => {
@@ -540,4 +573,42 @@ describe("badge variety for the reward cards (2026-10-13)", () => {
     expect(measure(NO_TRAINING, "COMMENTS_WRITTEN")).toBe(0);
     expect(measure(NO_TRAINING, "MAX_SET_WEIGHT_KG")).toBe(0);
   });
+
+  it("validates coach and gym social badges and measures their criteria", () => {
+    for (const badge of coachRrssBadgeSeeds) {
+      expect(badgeIllustration(badge.code, badge.criterionType)).toMatch(/^[a-z]+(-[a-z]+)*$/u);
+      expect(criterionTypeSchema.safeParse(badge.criterionType).success).toBe(true);
+    }
+
+    const metrics: TrainingMetrics = {
+      ...NO_TRAINING,
+      gymSocialPartners: 3,
+      coachSessions: 1,
+      coachClients: 3,
+      coachClientsPrs: 10,
+    };
+
+    expect(measure(metrics, "GYM_SOCIAL_PARTNERS")).toBe(3);
+    expect(measure(metrics, "COACH_SESSIONS")).toBe(1);
+    expect(measure(metrics, "COACH_CLIENTS")).toBe(3);
+    expect(measure(metrics, "COACH_CLIENTS_PRS")).toBe(10);
+
+    const earned = (code: string) => {
+      const badge = coachRrssBadgeSeeds.find((entry) => entry.code === code)!;
+      return measure(metrics, badge.criterionType) >= badge.criterionThreshold;
+    };
+
+    expect(earned("HABLAR_3_PERSONAS")).toBe(true);
+    expect(earned("COMUNIDAD_GYM_10")).toBe(false); // threshold 10
+    expect(earned("COACH_PRIMERA_SESION")).toBe(true);
+    expect(earned("COACH_DIEZ_SESIONES")).toBe(false); // threshold 10
+    expect(earned("COACH_TRES_ATLETAS")).toBe(true);
+    expect(earned("COACH_DIEZ_RECORDS")).toBe(true);
+
+    expect(measure(NO_TRAINING, "GYM_SOCIAL_PARTNERS")).toBe(0);
+    expect(measure(NO_TRAINING, "COACH_SESSIONS")).toBe(0);
+    expect(measure(NO_TRAINING, "COACH_CLIENTS")).toBe(0);
+    expect(measure(NO_TRAINING, "COACH_CLIENTS_PRS")).toBe(0);
+  });
 });
+

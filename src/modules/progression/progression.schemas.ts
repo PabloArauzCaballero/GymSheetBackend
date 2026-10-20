@@ -108,6 +108,11 @@ export const criterionTypeSchema = z.enum([
   "MAX_RECORDS_IN_SESSION",
   "MODE_SHIELDS_USED",
   "MODE_MAX_MULTIPLIER_WEEKS",
+  // Cuarta tanda: RRSS en el gym y Coach
+  "GYM_SOCIAL_PARTNERS",
+  "COACH_SESSIONS",
+  "COACH_CLIENTS",
+  "COACH_CLIENTS_PRS",
 ]);
 
 export const createBadgeSchema = z.object({
@@ -128,6 +133,7 @@ export const createBadgeSchema = z.object({
     "CARDIO",
     "SOCIAL",
     "CREADOR",
+    "COACH",
   ]),
   rarity: z.enum(["COMUN", "RARA", "EPICA", "LEGENDARIA"]).default("COMUN"),
   icon: iconSchema.default("ribbon-outline"),

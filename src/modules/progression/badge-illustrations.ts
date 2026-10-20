@@ -54,6 +54,11 @@ const BY_CRITERION: Record<BadgeCriterionType, string> = {
   MAX_RECORDS_IN_SESSION: "trophy",
   MODE_SHIELDS_USED: "medal",
   MODE_MAX_MULTIPLIER_WEEKS: "lightning",
+  // Cuarta tanda: RRSS y Coach
+  GYM_SOCIAL_PARTNERS: "chat-bubble",
+  COACH_SESSIONS: "medal",
+  COACH_CLIENTS: "target",
+  COACH_CLIENTS_PRS: "trophy",
 };
 
 const BY_CODE: Readonly<Record<string, string>> = {
