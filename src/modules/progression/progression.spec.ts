@@ -416,29 +416,6 @@ describe("seeded catalogue", () => {
     expect(thresholdsFor("FEMALE")).toEqual(thresholdsFor("ANY"));
   });
 
-  /**
-   * Las arenas son el mismo camino para las tres ramas: lo único que cambia
-   * por género son los hitos con cifras de fuerza.
-   */
-  it("places every level of every branch in the same arena, with milestones", () => {
-    const arenasFor = (audience: string) =>
-      levelSeeds
-        .filter((level) => level.audience === audience)
-        .sort((left, right) => left.sortOrder - right.sortOrder)
-        .map((level) => level.arena);
-
-    expect(arenasFor("ANY")).toHaveLength(8);
-    expect(new Set(arenasFor("ANY")).size).toBe(8);
-    expect(arenasFor("MALE")).toEqual(arenasFor("ANY"));
-    expect(arenasFor("FEMALE")).toEqual(arenasFor("ANY"));
-    for (const level of levelSeeds) {
-      expect(level.milestones.length).toBeGreaterThanOrEqual(3);
-    }
-    const coliseo = (audience: string) =>
-      levelSeeds.find((level) => level.audience === audience && level.arena === "El Coliseo");
-    expect(coliseo("MALE")?.milestones).not.toEqual(coliseo("FEMALE")?.milestones);
-  });
-
   it("keeps level codes unique inside each branch", () => {
     for (const audience of ["ANY", "MALE", "FEMALE"] as const) {
       const codes = levelSeeds

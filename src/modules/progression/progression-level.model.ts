@@ -55,15 +55,6 @@ export class ProgressionLevelModel extends Model {
   @Column({ type: DataType.STRING(9), allowNull: false })
   declare color: string;
 
-  /** El lugar del gimnasio donde vive este rango («La Jaula»). Nulo = sin arena. */
-  @Column({ type: DataType.STRING(80), allowNull: true })
-  declare arena: string | null;
-
-  /** Lo que suele pasar en esta fase, en el orden en que se consigue. */
-  @Default([])
-  @Column({ type: DataType.JSONB, allowNull: false })
-  declare milestones: string[];
-
   @Default(true)
   @Column({ type: DataType.BOOLEAN, allowNull: false })
   declare active: boolean;
