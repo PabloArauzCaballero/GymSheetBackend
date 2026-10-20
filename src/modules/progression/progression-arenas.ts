@@ -263,6 +263,26 @@ export const ARENAS: readonly ArenaSeed[] = [
   },
 ];
 
+/**
+ * Partidas del desglose que **restan**: lo que el socio gasta (canjes) o
+ * pierde (penalizaciones). Se nombran aquí aunque hoy no existan todas para
+ * que el camino las ignore desde el primer día en que aparezcan.
+ */
+const SPENDING_ENTRIES = new Set(["penalties", "strikePurchases"]);
+
+/**
+ * Los puntos **ganados** en total: la suma del desglose sin lo gastado ni lo
+ * penalizado. El saldo puede bajar (los puntos se canjean); el camino no.
+ * Subir de arena es un logro, y un logro no se devuelve al gastar.
+ */
+export function earnedPoints(breakdown: object): number {
+  return Object.entries(breakdown).reduce(
+    (total, [entry, value]) =>
+      SPENDING_ENTRIES.has(entry) || typeof value !== "number" ? total : total + Math.max(0, value),
+    0,
+  );
+}
+
 export interface ArenaView {
   code: string;
   /** 1 = la primera arena del camino. */

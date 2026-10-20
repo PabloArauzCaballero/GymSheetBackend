@@ -1,4 +1,4 @@
-import { ARENAS, buildArenas } from "./progression-arenas";
+import { ARENAS, buildArenas, earnedPoints } from "./progression-arenas";
 import { levelSeeds } from "./progression-catalog";
 
 describe("camino de arenas", () => {
@@ -40,5 +40,10 @@ describe("camino de arenas", () => {
     expect(arenas.filter((arena) => arena.current).map((arena) => arena.code)).toEqual(["JAULA"]);
     expect(arenas.filter((arena) => arena.unlocked)).toHaveLength(7);
     expect(buildArenas("ANY", 100000).at(-1)?.current).toBe(true);
+  });
+
+  it("no baja de arena al canjear ni al penalizar: cuenta solo lo ganado", () => {
+    const breakdown = { session: 3000, sets: 1200, badges: 500, penalties: 300, strikePurchases: 150 };
+    expect(earnedPoints(breakdown)).toBe(4700);
   });
 });
