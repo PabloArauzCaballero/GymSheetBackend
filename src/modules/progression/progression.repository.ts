@@ -722,15 +722,41 @@ export class ProgressionRepository {
          (SELECT COUNT(DISTINCT cliente_user_id)
             FROM training.routine_assignments
            WHERE asignado_por_user_id = :userId) AS coach_clients,
-         -- Récords personales alcanzados por atletas de este coach
-         (SELECT COUNT(DISTINCT se.ejercicio_id)
-            FROM public.series_entrenamiento st
-            JOIN public.sesiones_ejercicios se ON se.id = st.sesion_ejercicio_id
-            JOIN public.sesiones_entrenamiento s ON s.id = se.sesion_id
-            JOIN training.routine_assignments ra ON ra.cliente_user_id = s.usuario_id
-           WHERE ra.asignado_por_user_id = :userId
-             AND s.estado = :finished
-             AND st.tipo_serie = 'FUERZA') AS coach_clients_prs`,
+         -- Récords personales de los atletas de este coach, con la misma
+         -- definición que los del socio: una serie que supera todo lo levantado
+         -- antes en ese ejercicio (la primera no cuenta). Solo los batidos desde
+         -- que el coach le asignó una rutina; cuenta pares atleta-ejercicio.
+         -- Antes contaba ejercicios hechos, no récords, y regalaba insignias.
+         (WITH clientes AS (
+                SELECT cliente_user_id, MIN(created_at) AS desde
+                  FROM training.routine_assignments
+                 WHERE asignado_por_user_id = :userId
+                 GROUP BY cliente_user_id
+              ),
+              series_clientes AS (
+                SELECT s.usuario_id,
+                       se.ejercicio_id,
+                       st.peso_kg,
+                       st.fecha_registro,
+                       c.desde,
+                       MAX(st.peso_kg) OVER (
+                         PARTITION BY s.usuario_id, se.ejercicio_id
+                         ORDER BY st.fecha_registro
+                         ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                       ) AS mejor_previo
+                  FROM public.series_entrenamiento st
+                  JOIN public.sesiones_ejercicios se ON se.id = st.sesion_ejercicio_id
+                  JOIN public.sesiones_entrenamiento s ON s.id = se.sesion_id
+                  JOIN clientes c ON c.cliente_user_id = s.usuario_id
+                 WHERE s.estado = :finished
+                   AND st.tipo_serie = 'FUERZA'
+                   AND st.repeticiones IS NOT NULL
+              )
+          SELECT COUNT(DISTINCT (usuario_id, ejercicio_id))
+            FROM series_clientes
+           WHERE mejor_previo IS NOT NULL
+             AND peso_kg > mejor_previo
+             AND fecha_registro >= desde) AS coach_clients_prs`,
       { type: QueryTypes.SELECT, replacements: { userId, finished: FINISHED } },
     );
     return {
@@ -872,6 +898,8 @@ export class ProgressionRepository {
     tenantId: string | null,
     limit: number,
     sortBy: "points" | "streak" = "points",
+    /** Quien mira: no ve la foto de quien bloqueó o a quien bloqueó. */
+    viewerId: string | null = null,
   ): Promise<
     Array<{
       userId: string;
@@ -904,6 +932,13 @@ export class ProgressionRepository {
                   FROM profile.photos ph
                  WHERE ph.user_id = p.usuario_id
                    AND ph.hidden_at IS NULL
+                   -- Un bloqueo, en cualquier sentido, oculta la cara: el
+                   -- puesto y los puntos siguen, la foto no.
+                   AND NOT EXISTS (
+                     SELECT 1 FROM social.user_blocks b
+                      WHERE (b.blocker_id = p.usuario_id AND b.blocked_id = :viewerId)
+                         OR (b.blocker_id = :viewerId AND b.blocked_id = p.usuario_id)
+                   )
                  ORDER BY ph.position ASC, ph.created_at ASC
                  LIMIT 1
               ) AS "photoUrl",
@@ -934,7 +969,7 @@ export class ProgressionRepository {
           AND p.points > 0
         ORDER BY ${orderBy}
         LIMIT :limit`,
-      { type: QueryTypes.SELECT, replacements: { tenantId, limit } },
+      { type: QueryTypes.SELECT, replacements: { tenantId, limit, viewerId } },
     );
   }
 }

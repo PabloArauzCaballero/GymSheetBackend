@@ -639,7 +639,7 @@ export class ProgressionService {
     const user = await this.usersRepository.findById(userId);
     if (!user) throw new NotFoundException("Usuario no encontrado.");
     const tenantId = user.tenantId ?? env.DEFAULT_TENANT_ID ?? null;
-    const rows = await this.progressionRepository.leaderboard(tenantId, limit, sortBy);
+    const rows = await this.progressionRepository.leaderboard(tenantId, limit, sortBy, userId);
     return rows.map((row, index) => ({
       position: index + 1,
       userId: row.userId,
