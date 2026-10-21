@@ -345,11 +345,7 @@ export class ProgressionService {
       strikes.ledger,
     );
     const points = sumBreakdown(breakdown);
-    const path = buildPath(levels, points);
-    // El rango vigente es el último desbloqueado. Se busca por índice y no con
-    // `findLast` porque la librería de destino de este proyecto no lo incluye.
-    const current = path.filter((level) => level.unlocked).at(-1) ?? null;
-    const next = path.find((level) => !level.unlocked) ?? null;
+    const { earnedTotal, path, current, next, pointsToNextLevel, levelProgress } = rankOf(levels, breakdown);
 
     // Los premios se otorgan ANTES de guardar el progreso: el de un rango se
     // decide comparando con el rango guardado, y si el otorgamiento fallara a
@@ -392,13 +388,13 @@ export class ProgressionService {
         audience,
         level: current,
         nextLevel: next,
-        pointsToNextLevel: next ? Math.max(0, next.minPoints - points) : null,
-        levelProgress: tierProgress(points, current, next),
+        pointsToNextLevel,
+        levelProgress,
         path,
         // El camino sube con lo ganado, no con el saldo: canjear o perder puntos
         // no puede devolver a nadie a una arena anterior.
-        arenaPoints: earnedPoints(breakdown),
-        arenas: buildArenas(audience, earnedPoints(breakdown)),
+        arenaPoints: earnedTotal,
+        arenas: buildArenas(audience, earnedTotal),
         badges: visible,
         stats: {
           totalSessions: metrics.totalSessions,
@@ -464,14 +460,12 @@ export class ProgressionService {
     );
     const breakdown = computePointsBreakdown(metrics, satisfied, strikes.ledger);
     const points = sumBreakdown(breakdown);
-    const path = buildPath(levels, points);
-    const level = path.filter((entry) => entry.unlocked).at(-1) ?? null;
-    const next = path.find((entry) => !entry.unlocked) ?? null;
+    const { current: level, levelProgress } = rankOf(levels, breakdown);
     return {
       points,
       breakdown,
       level,
-      levelProgress: tierProgress(points, level, next),
+      levelProgress,
       challenges: challengeState.view,
       streak: { current: metrics.currentStreakDays, freezesEarned: metrics.streakFreezesEarned ?? 0 },
     };
@@ -920,6 +914,30 @@ export function measure(metrics: TrainingMetrics, criterion: BadgeCriterionType)
     case "COACH_CLIENTS_PRS":
       return metrics.coachClientsPrs ?? 0;
   }
+}
+
+/**
+ * El rango a partir del desglose de puntos.
+ *
+ * Sube con lo GANADO, igual que el camino de arenas: canjear un strike o
+ * recibir una penalización gasta saldo pero no quita rango, ni vuelve a
+ * disparar el premio de cruzar un umbral que ya se había cruzado.
+ */
+export function rankOf(levels: readonly ProgressionLevelModel[], breakdown: PointsBreakdown) {
+  const earnedTotal = earnedPoints(breakdown);
+  const path = buildPath(levels, earnedTotal);
+  // El rango vigente es el último desbloqueado. Se busca por índice y no con
+  // `findLast` porque la librería de destino de este proyecto no lo incluye.
+  const current = path.filter((level) => level.unlocked).at(-1) ?? null;
+  const next = path.find((level) => !level.unlocked) ?? null;
+  return {
+    earnedTotal,
+    path,
+    current,
+    next,
+    pointsToNextLevel: next ? Math.max(0, next.minPoints - earnedTotal) : null,
+    levelProgress: tierProgress(earnedTotal, current, next),
+  };
 }
 
 function buildPath(levels: readonly ProgressionLevelModel[], points: number): LevelView[] {

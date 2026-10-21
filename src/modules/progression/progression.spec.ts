@@ -11,8 +11,10 @@ import {
   computePoints,
   computePointsBreakdown,
   measure,
+  rankOf,
   toAudience,
 } from "./progression.service";
+import type { ProgressionLevelModel } from "./progression-level.model";
 
 const NO_TRAINING: TrainingMetrics = {
   totalSessions: 0,
@@ -612,3 +614,29 @@ describe("badge variety for the reward cards (2026-10-13)", () => {
   });
 });
 
+
+describe("rankOf", () => {
+  const levels = levelSeeds
+    .filter((level) => level.audience === "ANY")
+    .sort((left, right) => left.sortOrder - right.sortOrder) as unknown as ProgressionLevelModel[];
+  const secondThreshold = levels[1].minPoints;
+
+  it("gastar puntos en strikes o perderlos por faltas no baja el rango", () => {
+    const badge = [{ pointsReward: secondThreshold }];
+    const before = rankOf(levels, computePointsBreakdown(NO_TRAINING, badge));
+    const after = rankOf(
+      levels,
+      computePointsBreakdown(NO_TRAINING, badge, { purchasedStrikes: 1, penaltyPoints: 50 }),
+    );
+
+    // El saldo sí baja…
+    expect(computePoints(NO_TRAINING, badge, { purchasedStrikes: 1, penaltyPoints: 50 })).toBeLessThan(
+      secondThreshold,
+    );
+    // …pero el rango, el avance y lo que falta para el siguiente siguen igual.
+    expect(after.current?.code).toBe(levels[1].code);
+    expect(after.current?.code).toBe(before.current?.code);
+    expect(after.pointsToNextLevel).toBe(before.pointsToNextLevel);
+    expect(after.levelProgress).toBe(before.levelProgress);
+  });
+});
