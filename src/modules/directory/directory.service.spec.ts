@@ -146,7 +146,7 @@ describe('Directory Module - Logic & Service Tests', () => {
       mockMembershipModel = { findOne: jest.fn() };
       mockAccessDecisionModel = { findOne: jest.fn() };
       mockSequelize = {
-        transaction: jest.fn(async (cb: (tx: any) => Promise<any>) => cb({})),
+        transaction: jest.fn((callback: (tx: object) => Promise<unknown>) => callback({})),
       };
       mockNotificationService = {
         enqueueDirectMessage: jest.fn(),

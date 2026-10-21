@@ -88,7 +88,7 @@ export type DiscoveryPreferencesInput = z.infer<
  * y género.
  */
 export const directoryQuerySchema = z.object({
-  objetivo: z.string().trim().max(40).optional(),
+  objetivo: z.string().trim().max(300).optional(),
   sucursalId: z.string().uuid().optional(),
   genero: z.enum(["MALE", "FEMALE"]).optional(),
   /** Búsqueda por nombre, dentro del mismo tenant que el resto del directorio. */

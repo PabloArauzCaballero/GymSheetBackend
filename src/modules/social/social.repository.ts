@@ -1340,7 +1340,7 @@ export class SocialRepository {
               AND s.cross_gym_enabled = true
               AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad, 0) >= 18)
           )
-          AND (:objetivo::text IS NULL OR p.objetivo = :objetivo)
+          AND (:objetivo::text IS NULL OR p.objetivo = ANY(string_to_array(:objetivo, ',')))
           AND (:branchId::uuid IS NULL OR u.sede_id = :branchId)
           AND (:gender::text IS NULL OR u.genero = :gender)
           AND (jsonb_array_length(CAST(:gendersJson AS jsonb)) = 0 OR u.genero IN (
