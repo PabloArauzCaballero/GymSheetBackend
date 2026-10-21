@@ -244,6 +244,10 @@ export interface ProgressionView {
     purchasedThisMonth: number;
     strikeCostPoints: number;
     month: string;
+    /** Faltas de esta semana que aún se pueden reponer entrenando un día de descanso. */
+    pendingThisWeek: number;
+    /** Puntos perdidos por faltas sin strike, en toda la historia. */
+    penaltyPointsTotal: number;
   };
   challenges: WeeklyChallengesView;
   /** Cupones del socio, del más reciente al más antiguo. */
@@ -319,7 +323,18 @@ export class ProgressionService {
     const newlyEarnedIds = new Set(newlyEarned.map((badge) => badge.id));
 
     const currentMonth = currentMonthString();
-    const strikeRecord = await this.progressionRepository.getMonthStrikes(userId, currentMonth);
+    const strikes = strikeStateOf(metrics, currentMonth);
+    // Foto de lo calculado en la tabla de strikes (la verdad es el historial).
+    const settlement = metrics.strikeSettlement;
+    if (settlement) {
+      await this.progressionRepository.syncStrikeLedger(
+        userId,
+        settlement.usedByMonth,
+        Object.fromEntries(
+          Object.entries(settlement.penalizedByMonth).map(([month, count]) => [month, count * MISSED_SESSION_PENALTY]),
+        ),
+      );
+    }
 
     // Los puntos de una insignia ya conseguida no se devuelven: archivar una
     // rutina o borrar un comentario puede dejar de cumplir la regla, pero los
@@ -327,14 +342,10 @@ export class ProgressionService {
     const breakdown = computePointsBreakdown(
       metrics,
       badges.filter((badge) => satisfied.includes(badge) || earnedByBadgeId.has(badge.id)),
-      strikeRecord,
+      strikes.ledger,
     );
     const points = sumBreakdown(breakdown);
-    const path = buildPath(levels, points);
-    // El rango vigente es el último desbloqueado. Se busca por índice y no con
-    // `findLast` porque la librería de destino de este proyecto no lo incluye.
-    const current = path.filter((level) => level.unlocked).at(-1) ?? null;
-    const next = path.find((level) => !level.unlocked) ?? null;
+    const { earnedTotal, path, current, next, pointsToNextLevel, levelProgress } = rankOf(levels, breakdown);
 
     // Los premios se otorgan ANTES de guardar el progreso: el de un rango se
     // decide comparando con el rango guardado, y si el otorgamiento fallara a
@@ -377,13 +388,13 @@ export class ProgressionService {
         audience,
         level: current,
         nextLevel: next,
-        pointsToNextLevel: next ? Math.max(0, next.minPoints - points) : null,
-        levelProgress: tierProgress(points, current, next),
+        pointsToNextLevel,
+        levelProgress,
         path,
         // El camino sube con lo ganado, no con el saldo: canjear o perder puntos
         // no puede devolver a nadie a una arena anterior.
-        arenaPoints: earnedPoints(breakdown),
-        arenas: buildArenas(audience, earnedPoints(breakdown)),
+        arenaPoints: earnedTotal,
+        arenas: buildArenas(audience, earnedTotal),
         badges: visible,
         stats: {
           totalSessions: metrics.totalSessions,
@@ -400,14 +411,7 @@ export class ProgressionService {
         },
         unlockedNow: badgeViews.filter((view) => newlyEarnedIds.has(idOf(badges, view.code))),
         streak: toStreakView(metrics),
-        strikes: {
-          totalMonthly: MONTHLY_STRIKES_BASE,
-          available: strikeRecord.availableStrikes,
-          usedThisMonth: strikeRecord.usedStrikes,
-          purchasedThisMonth: strikeRecord.purchasedStrikes,
-          strikeCostPoints: STRIKE_POINT_COST,
-          month: currentMonth,
-        },
+        strikes: strikes.view,
         challenges: challengeState.view,
         prizes: coupons.map((coupon) => toPrizeView(coupon, prizeSourceName(coupon, badges, path))),
         nearest: pickNearest(visible),
@@ -446,8 +450,7 @@ export class ProgressionService {
     const challengeState = await this.challenges.preview(userId);
     const metrics = withChallengeTotals(context.metrics, challengeState.totals);
     const { levels, badges, earned } = context;
-    const currentMonth = currentMonthString();
-    const strikeRecord = await this.progressionRepository.getMonthStrikes(userId, currentMonth);
+    const strikes = strikeStateOf(metrics, currentMonthString());
 
     const earnedIds = new Set(earned.map((row) => row.badgeId));
     const satisfied = badges.filter(
@@ -455,16 +458,14 @@ export class ProgressionService {
         earnedIds.has(badge.id) ||
         measure(metrics, badge.criterionType) >= Number(badge.criterionThreshold),
     );
-    const breakdown = computePointsBreakdown(metrics, satisfied, strikeRecord);
+    const breakdown = computePointsBreakdown(metrics, satisfied, strikes.ledger);
     const points = sumBreakdown(breakdown);
-    const path = buildPath(levels, points);
-    const level = path.filter((entry) => entry.unlocked).at(-1) ?? null;
-    const next = path.find((entry) => !entry.unlocked) ?? null;
+    const { current: level, levelProgress } = rankOf(levels, breakdown);
     return {
       points,
       breakdown,
       level,
-      levelProgress: tierProgress(points, level, next),
+      levelProgress,
       challenges: challengeState.view,
       streak: { current: metrics.currentStreakDays, freezesEarned: metrics.streakFreezesEarned ?? 0 },
     };
@@ -549,14 +550,18 @@ export class ProgressionService {
    * Canjea puntos acumulados por un strike mensual adicional (150 puntos por strike).
    */
   async buyStrike(userId: string): Promise<ProgressionView> {
-    const currentMonth = currentMonthString();
-    const state = await this.computeProgression(userId);
-    if (state.view.points < POINTS.strikeCost) {
+    const bought = await this.progressionRepository.buyStrikeAtomically(
+      userId,
+      currentMonthString(),
+      // Se evalúa con el candado del socio tomado: dos compras a la vez no
+      // pueden gastar los mismos puntos.
+      async () => (await this.computeProgression(userId)).view.points >= POINTS.strikeCost,
+    );
+    if (!bought) {
       throw new BadRequestException(
         `No tienes suficientes puntos para canjear un strike (requiere ${POINTS.strikeCost} puntos).`,
       );
     }
-    await this.progressionRepository.buyStrikeWithPoints(userId, currentMonth);
     return (await this.computeProgression(userId)).view;
   }
 
@@ -628,7 +633,7 @@ export class ProgressionService {
     const user = await this.usersRepository.findById(userId);
     if (!user) throw new NotFoundException("Usuario no encontrado.");
     const tenantId = user.tenantId ?? env.DEFAULT_TENANT_ID ?? null;
-    const rows = await this.progressionRepository.leaderboard(tenantId, limit, sortBy);
+    const rows = await this.progressionRepository.leaderboard(tenantId, limit, sortBy, userId);
     return rows.map((row, index) => ({
       position: index + 1,
       userId: row.userId,
@@ -911,6 +916,30 @@ export function measure(metrics: TrainingMetrics, criterion: BadgeCriterionType)
   }
 }
 
+/**
+ * El rango a partir del desglose de puntos.
+ *
+ * Sube con lo GANADO, igual que el camino de arenas: canjear un strike o
+ * recibir una penalización gasta saldo pero no quita rango, ni vuelve a
+ * disparar el premio de cruzar un umbral que ya se había cruzado.
+ */
+export function rankOf(levels: readonly ProgressionLevelModel[], breakdown: PointsBreakdown) {
+  const earnedTotal = earnedPoints(breakdown);
+  const path = buildPath(levels, earnedTotal);
+  // El rango vigente es el último desbloqueado. Se busca por índice y no con
+  // `findLast` porque la librería de destino de este proyecto no lo incluye.
+  const current = path.filter((level) => level.unlocked).at(-1) ?? null;
+  const next = path.find((level) => !level.unlocked) ?? null;
+  return {
+    earnedTotal,
+    path,
+    current,
+    next,
+    pointsToNextLevel: next ? Math.max(0, next.minPoints - earnedTotal) : null,
+    levelProgress: tierProgress(earnedTotal, current, next),
+  };
+}
+
 function buildPath(levels: readonly ProgressionLevelModel[], points: number): LevelView[] {
   const unlockedCount = levels.filter((level) => points >= level.minPoints).length;
   return levels.map((level, index) => ({
@@ -1020,4 +1049,36 @@ function currentMonthString(): string {
   })
     .format(new Date())
     .slice(0, 7);
+}
+
+/**
+ * Strikes y penalizaciones a partir de las métricas (ver `streak-strikes.ts`).
+ *
+ * El saldo descuenta **todas** las penalizaciones y **todos** los strikes
+ * comprados de la historia. Antes solo se descontaban los del mes en curso: al
+ * cambiar de mes, los puntos gastados volvían solos.
+ */
+function strikeStateOf(metrics: TrainingMetrics, month: string) {
+  const settlement = metrics.strikeSettlement;
+  const usedThisMonth = settlement?.usedByMonth[month] ?? 0;
+  const purchasedThisMonth = metrics.strikesPurchasedByMonth?.[month] ?? 0;
+  const penalizedCount = Object.values(settlement?.penalizedByMonth ?? {}).reduce((total, count) => total + count, 0);
+  return {
+    ledger: {
+      penaltyPoints: penalizedCount * MISSED_SESSION_PENALTY,
+      purchasedStrikes: metrics.strikesPurchasedTotal ?? 0,
+    },
+    view: {
+      totalMonthly: MONTHLY_STRIKES_BASE,
+      available: Math.max(0, MONTHLY_STRIKES_BASE + purchasedThisMonth - usedThisMonth),
+      usedThisMonth,
+      purchasedThisMonth,
+      strikeCostPoints: STRIKE_POINT_COST,
+      month,
+      /** Faltas de esta semana que aún se pueden reponer entrenando un día de descanso. */
+      pendingThisWeek: settlement?.pendingThisWeek ?? 0,
+      /** Puntos perdidos por faltas sin strike, en toda la historia. */
+      penaltyPointsTotal: penalizedCount * MISSED_SESSION_PENALTY,
+    },
+  };
 }

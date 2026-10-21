@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Op, Transaction } from 'sequelize';
+import { Transaction } from 'sequelize';
 import { MembershipModel } from '../membership/membership.model';
 import { UserModel } from '../users/user.model';
+import { CategoryModel } from './category.model';
 import { DirectoryEntityModel } from './directory-entity.model';
 import { EntityPaymentConfigModel } from './models/entity-payment-config.model';
 import { EntityPlanModel } from './models/entity-plan.model';
@@ -80,8 +81,27 @@ export class DirectoryPaymentsRepository {
     });
   }
 
+  async listAllMarketplacePlans(type?: string, limit = 50, transaction?: Transaction): Promise<EntityPlanModel[]> {
+    const where: Record<string, unknown> = { status: 'ACTIVE' };
+    if (type) {
+      where.type = type;
+    }
+    return this.planModel.findAll({
+      where,
+      include: [
+        {
+          model: DirectoryEntityModel,
+          include: [{ model: CategoryModel, as: 'primaryCategory' }],
+        },
+      ],
+      order: [['displayOrder', 'ASC'], ['createdAt', 'DESC']],
+      limit,
+      transaction,
+    });
+  }
+
   async createPlan(data: Partial<EntityPlanModel>, transaction?: Transaction): Promise<EntityPlanModel> {
-    return this.planModel.create(data as any, { transaction });
+    return this.planModel.create(data as never, { transaction });
   }
 
   async updatePlan(plan: EntityPlanModel, data: Partial<EntityPlanModel>, transaction?: Transaction): Promise<EntityPlanModel> {
@@ -102,7 +122,7 @@ export class DirectoryPaymentsRepository {
     },
     transaction?: Transaction,
   ): Promise<PlanPriceHistoryModel> {
-    return this.priceHistoryModel.create(data as any, { transaction });
+    return this.priceHistoryModel.create(data as never, { transaction });
   }
 
   async findCurrentPriceHistory(planId: string, transaction?: Transaction): Promise<PlanPriceHistoryModel | null> {
@@ -131,7 +151,7 @@ export class DirectoryPaymentsRepository {
 
   // --- ÓRDENES DE PAGO Y COMPROBANTES ---
   async createOrder(data: Partial<PaymentOrderModel>, transaction?: Transaction): Promise<PaymentOrderModel> {
-    return this.orderModel.create(data as any, { transaction });
+    return this.orderModel.create(data as never, { transaction });
   }
 
   async findOrderById(orderId: string, transaction?: Transaction): Promise<PaymentOrderModel | null> {
@@ -189,6 +209,15 @@ export class DirectoryPaymentsRepository {
       offset: filter.offset,
       transaction,
     });
+  }
+
+  /**
+   * Relee la orden con bloqueo de fila (`FOR UPDATE`) dentro de la transacción:
+   * dos confirmaciones o dos comprobantes a la vez se ponen en fila y el
+   * segundo ve el estado que dejó el primero.
+   */
+  async lockOrder(orderId: string, transaction: Transaction): Promise<PaymentOrderModel | null> {
+    return this.orderModel.findByPk(orderId, { transaction, lock: transaction.LOCK.UPDATE });
   }
 
   async updateOrder(

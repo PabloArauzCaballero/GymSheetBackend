@@ -32,6 +32,7 @@ export type DirectoryEntitySummaryDto = {
   };
   city: string | null;
   country: string | null;
+  tenantId?: string | null;
   isOnlineOnly: boolean;
   isVerified: boolean;
   ratingAverage: number;
@@ -130,6 +131,7 @@ export function mapDirectoryEntitySummary(entity: DirectoryEntityModel): Directo
     },
     city: entity.city,
     country: entity.country,
+    tenantId: entity.tenantId ?? null,
     isOnlineOnly: entity.isOnlineOnly,
     isVerified: entity.isVerified,
     ratingAverage: Number(entity.ratingAverage) || 0,

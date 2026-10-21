@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { UserRole } from '../../common/enums/domain.enums';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { DirectoryPaymentsService } from './directory-payments.service';
@@ -36,14 +36,20 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
     impersonating: false,
   };
 
+  const TX = { LOCK: { UPDATE: 'UPDATE' } };
+
   let mockMembershipPlanModel: any;
   let mockPlanAccessScopeModel: any;
   let mockNotificationService: any;
   let mockProductEvents: any;
 
   beforeEach(() => {
+    // Admite `transaction(cb)` y `transaction(opciones, cb)` (puntos de guardado).
     mockSequelize = {
-      transaction: jest.fn(async (cb: (tx: any) => Promise<any>) => cb({})),
+      transaction: jest.fn((...args: unknown[]) => {
+        const callback = args[args.length - 1] as (tx: typeof TX) => Promise<unknown>;
+        return callback(TX);
+      }),
     };
 
     mockRepo = {
@@ -64,6 +70,8 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
       listOrdersForAthlete: jest.fn(),
       listOrdersForEntity: jest.fn(),
       updateOrder: jest.fn(),
+      // Por defecto, la relectura con bloqueo ve lo mismo que la lectura inicial.
+      lockOrder: jest.fn((orderId: string) => mockRepo.findOrderById(orderId) as Promise<unknown>),
     };
 
     mockMembershipPlanModel = {
@@ -181,6 +189,7 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
         isPromotional: false,
       });
 
+      expect(result.newPriceHistory.price).toBe('55.00');
       expect(mockRepo.closePriceHistory).toHaveBeenCalledWith('price-row-old', expect.any(Date), expect.anything());
       expect(mockRepo.createPriceHistory).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -236,7 +245,7 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
         isActive: true,
       });
 
-      mockRepo.createOrder.mockImplementation(async (data: any) => ({
+      mockRepo.createOrder.mockImplementation(async (data: object) => ({
         id: 'order-1',
         ...data,
       }));
@@ -268,7 +277,7 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
         status: 'PENDING_PAYMENT',
       };
       mockRepo.findOrderById.mockResolvedValue(order);
-      mockRepo.updateOrder.mockImplementation(async (_ord: any, data: any) => ({ ...order, ...data }));
+      mockRepo.updateOrder.mockImplementation(async (_ord: unknown, data: object) => ({ ...order, ...data }));
 
       const updated = await service.submitReceipt(mockAthleteUser, 'order-1', {
         receiptUrl: 'https://storage.gymsheet.com/receipts/voucher-99.jpg',
@@ -293,7 +302,7 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
         service.submitReceipt(mockOtherUser, 'order-1', {
           receiptUrl: 'https://storage.gymsheet.com/receipts/fake.jpg',
         }),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('confirma el comprobante, marca la orden como CONFIRMED y activa la membresía en el gimnasio', async () => {
@@ -313,7 +322,7 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
       mockRepo.findOrderById.mockResolvedValue(order);
       mockMembershipPlanModel.findOne.mockResolvedValue({ id: 'membership-plan-id' });
       mockMembershipService.createMembership.mockResolvedValue({ id: 'membership-activated-id' });
-      mockRepo.updateOrder.mockImplementation(async (_ord: any, data: any) => ({ ...order, ...data }));
+      mockRepo.updateOrder.mockImplementation(async (_ord: unknown, data: object) => ({ ...order, ...data }));
 
       const confirmed = await service.confirmOrder(mockAdminUser, 'order-1');
 
@@ -328,6 +337,7 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
           externalReference: 'GS-ORD-1234',
         }),
         mockAdminUser.id,
+        TX,
       );
       expect(mockNotificationService.enqueueDirectMessage).toHaveBeenCalled();
       expect(mockProductEvents.emit).toHaveBeenCalledWith('directory_order_confirmed', expect.any(Object));
@@ -341,7 +351,7 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
         entity: { userId: 'admin-user-1', tenantId: 'tenant-gym-1' },
       };
       mockRepo.findOrderById.mockResolvedValue(order);
-      mockRepo.updateOrder.mockImplementation(async (_ord: any, data: any) => ({ ...order, ...data }));
+      mockRepo.updateOrder.mockImplementation(async (_ord: unknown, data: object) => ({ ...order, ...data }));
 
       const rejected = await service.rejectOrder(mockAdminUser, 'order-1', {
         reason: 'El importe transferido no coincide con la tarifa del plan.',
@@ -350,6 +360,54 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
       expect(rejected.status).toBe('REJECTED');
       expect(rejected.rejectionReason).toBe('El importe transferido no coincide con la tarifa del plan.');
       expect(rejected.verifiedByUserId).toBe(mockAdminUser.id);
+    });
+
+    it('no deja a un socio del mismo gimnasio ver la orden de otro (404)', async () => {
+      const sameGymClient: AuthenticatedUser = { ...mockOtherUser, tenantId: 'tenant-gym-1' };
+      mockRepo.findOrderById.mockResolvedValue({
+        id: 'order-1',
+        athleteUserId: 'athlete-user-1',
+        status: 'PENDING_VERIFICATION',
+        entity: { userId: 'admin-user-1', tenantId: 'tenant-gym-1' },
+      });
+
+      await expect(service.getOrderById(sameGymClient, 'order-1')).rejects.toThrow(NotFoundException);
+      await expect(service.getOrderById(mockAthleteUser, 'order-1')).resolves.toBeDefined();
+      await expect(service.getOrderById(mockAdminUser, 'order-1')).resolves.toBeDefined();
+    });
+
+    it('no confirma dos veces: si otra confirmación ganó la carrera, no crea otra membresía', async () => {
+      const order = {
+        id: 'order-1',
+        athleteUserId: 'athlete-user-1',
+        status: 'PENDING_VERIFICATION',
+        entity: { userId: 'admin-user-1', tenantId: 'tenant-gym-1' },
+        plan: { id: 'plan-1', name: 'Plan', slug: 'plan', durationDays: 30, benefits: [] },
+      };
+      mockRepo.findOrderById.mockResolvedValue(order);
+      // Con la fila bloqueada, la orden ya aparece confirmada por la otra petición.
+      mockRepo.lockOrder.mockResolvedValue({ ...order, status: 'CONFIRMED' });
+
+      await expect(service.confirmOrder(mockAdminUser, 'order-1')).rejects.toThrow(BadRequestException);
+      expect(mockMembershipService.createMembership).not.toHaveBeenCalled();
+      expect(mockRepo.updateOrder).not.toHaveBeenCalled();
+    });
+
+    it('confirma el pago aunque falle el aviso al atleta', async () => {
+      const order = {
+        id: 'order-1',
+        orderNumber: 'GS-ORD-1',
+        athleteUserId: 'athlete-user-1',
+        status: 'PENDING_VERIFICATION',
+        entity: { userId: 'admin-user-1', tenantId: null },
+      };
+      mockRepo.findOrderById.mockResolvedValue(order);
+      mockRepo.updateOrder.mockImplementation(async (_ord: unknown, data: object) => ({ ...order, ...data }));
+      mockNotificationService.enqueueDirectMessage.mockRejectedValue(new Error('cola caída'));
+
+      const confirmed = await service.confirmOrder(mockAdminUser, 'order-1');
+
+      expect(confirmed.status).toBe('CONFIRMED');
     });
   });
 });

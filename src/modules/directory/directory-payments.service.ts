@@ -1,12 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
+import type { Transaction } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { NotificationChannel, PlanStatus, PlanType, UserRole } from '../../common/enums/domain.enums';
@@ -30,6 +30,7 @@ import { EntityPaymentConfigModel } from './models/entity-payment-config.model';
 import { EntityPlanModel } from './models/entity-plan.model';
 import { PaymentOrderModel } from './models/payment-order.model';
 import { PlanPriceHistoryModel } from './models/plan-price-history.model';
+import { mapDirectoryEntitySummary } from './directory.mapper';
 
 @Injectable()
 export class DirectoryPaymentsService {
@@ -64,11 +65,50 @@ export class DirectoryPaymentsService {
     return `GS-ORD-${timestamp}-${random}`;
   }
 
-  private assertEntityOwnership(actor: AuthenticatedUser, entityUserId: string | null, entityTenantId: string | null) {
-    if (actor.role === UserRole.SYSTEM_ADMIN) return;
-    if (entityUserId && entityUserId === actor.id) return;
-    if (entityTenantId && actor.tenantId === entityTenantId && actor.role === UserRole.ADMIN) return;
-    throw new ForbiddenException('No tienes permisos de administración sobre este ente del directorio.');
+  /**
+   * Quién administra un ente del directorio: su dueño, un administrador de su
+   * gimnasio o un administrador del sistema. Un socio del mismo gimnasio NO.
+   */
+  private canManageEntity(
+    actor: AuthenticatedUser,
+    entityUserId: string | null | undefined,
+    entityTenantId: string | null | undefined,
+  ): boolean {
+    if (actor.role === UserRole.SYSTEM_ADMIN) return true;
+    if (entityUserId && entityUserId === actor.id) return true;
+    return Boolean(entityTenantId && actor.tenantId === entityTenantId && actor.role === UserRole.ADMIN);
+  }
+
+  /** Acceso ajeno → 404, no 403: no se confirma que el recurso existe. */
+  private assertEntityOwnership(
+    actor: AuthenticatedUser,
+    entityUserId: string | null | undefined,
+    entityTenantId: string | null | undefined,
+    notFoundMessage = 'Entidad del directorio no encontrada.',
+  ) {
+    if (!this.canManageEntity(actor, entityUserId, entityTenantId)) {
+      throw new NotFoundException(notFoundMessage);
+    }
+  }
+
+  /**
+   * Un aviso que falla no debe tumbar el pago. Dentro de una transacción de
+   * PostgreSQL un error la deja abortada aunque se capture, así que el aviso va
+   * en su propio punto de guardado: si falla, solo se deshace el aviso.
+   */
+  private async notifySafely(
+    transaction: Transaction,
+    message: Parameters<NotificationService['enqueueDirectMessage']>[0],
+  ): Promise<void> {
+    const notifications = this.notificationService;
+    if (!notifications) return;
+    try {
+      await this.sequelize.transaction({ transaction }, (savepoint) =>
+        notifications.enqueueDirectMessage(message, savepoint),
+      );
+    } catch {
+      // El aviso se pierde; el pago sigue adelante. El evento de producto queda.
+    }
   }
 
   // =========================================================================
@@ -101,6 +141,28 @@ export class DirectoryPaymentsService {
     const entity = await this.repository.findEntityById(entityId);
     if (!entity) throw new NotFoundException('Entidad del directorio no encontrada.');
     return this.repository.listPlans(entityId, onlyActive);
+  }
+
+  async listAllMarketplacePlans(type?: string, limit = 50) {
+    const plans = await this.repository.listAllMarketplacePlans(type, limit);
+    return plans.map((plan) => ({
+      id: plan.id,
+      entityId: plan.entityId,
+      type: plan.type,
+      name: plan.name,
+      slug: plan.slug,
+      description: plan.description,
+      benefits: plan.benefits ?? [],
+      durationDays: plan.durationDays,
+      currentPrice: plan.currentPrice,
+      currency: plan.currency,
+      status: plan.status,
+      displayOrder: plan.displayOrder,
+      mediaUrls: plan.mediaUrls ?? [],
+      // Los metadatos internos del comercio no salen en el listado público.
+      metadata: {},
+      entity: plan.entity ? mapDirectoryEntitySummary(plan.entity) : undefined,
+    }));
   }
 
   async getPlanById(planId: string): Promise<EntityPlanModel> {
@@ -238,6 +300,7 @@ export class DirectoryPaymentsService {
   async getPriceHistory(actor: AuthenticatedUser, planId: string): Promise<PlanPriceHistoryModel[]> {
     const plan = await this.repository.findPlanById(planId);
     if (!plan) throw new NotFoundException('Plan o producto no encontrado.');
+    this.assertEntityOwnership(actor, plan.entity?.userId, plan.entity?.tenantId, 'Plan o producto no encontrado.');
     return this.repository.listPriceHistory(planId);
   }
 
@@ -305,70 +368,64 @@ export class DirectoryPaymentsService {
     input: SubmitReceiptInput,
   ): Promise<PaymentOrderModel> {
     const order = await this.repository.findOrderById(orderId);
-    if (!order) throw new NotFoundException('Orden de pago no encontrada.');
-    if (order.athleteUserId !== athlete.id) {
-      throw new ForbiddenException('Esta orden de pago no pertenece a tu usuario.');
-    }
-    if (order.status !== 'PENDING_PAYMENT' && order.status !== 'REJECTED') {
-      throw new BadRequestException(`No es posible subir comprobante en una orden con estado ${order.status}.`);
+    // Una orden ajena se responde igual que una inexistente.
+    if (!order || order.athleteUserId !== athlete.id) {
+      throw new NotFoundException('Orden de pago no encontrada.');
     }
 
-    return this.sequelize.transaction(async (transaction) => {
-      const updatedOrder = await this.repository.updateOrder(
-        order,
+    const updatedOrder = await this.sequelize.transaction(async (transaction) => {
+      const locked = await this.repository.lockOrder(order.id, transaction);
+      if (!locked) throw new NotFoundException('Orden de pago no encontrada.');
+      if (locked.status !== 'PENDING_PAYMENT' && locked.status !== 'REJECTED') {
+        throw new BadRequestException(`No es posible subir comprobante en una orden con estado ${locked.status}.`);
+      }
+      const updated = await this.repository.updateOrder(
+        locked,
         {
           receiptUrl: input.receiptUrl,
           receiptStorageKey: input.receiptStorageKey ?? null,
           receiptReference: input.receiptReference ?? null,
-          athleteNotes: input.athleteNotes ?? order.athleteNotes,
+          athleteNotes: input.athleteNotes ?? locked.athleteNotes,
           submittedAt: new Date(),
           status: 'PENDING_VERIFICATION',
           rejectionReason: null,
         },
-        transaction
+        transaction,
       );
 
-      // Notificar al dueño o personal administrativo del comercio
-      if (this.notificationService && order.entity?.userId) {
-        try {
-          await this.notificationService.enqueueDirectMessage(
-            {
-              recipientUserId: order.entity.userId,
-              channel: NotificationChannel.IN_APP,
-              subject: `Comprobante de pago recibido - ${order.orderNumber}`,
-              body: `Un atleta ha subido su comprobante para "${order.plan?.name ?? 'Plan'}" (${order.amount} ${order.currency}). Revisa y confirma la orden para activar el acceso.`,
-              deduplicationKey: `payment_receipt_submitted:${order.id}:${Date.now()}`,
-            },
-            transaction
-          );
-        } catch {
-          // No abortar transacción por fallo de notificación
-        }
+      // Avisar al dueño del comercio.
+      if (order.entity?.userId) {
+        await this.notifySafely(transaction, {
+          recipientUserId: order.entity.userId,
+          channel: NotificationChannel.IN_APP,
+          subject: `Comprobante de pago recibido - ${order.orderNumber}`,
+          body: `Un atleta ha subido su comprobante para "${order.plan?.name ?? 'Plan'}" (${order.amount} ${order.currency}). Revisa y confirma la orden para activar el acceso.`,
+          deduplicationKey: `payment_receipt_submitted:${order.id}:${Date.now()}`,
+        });
       }
-
-      this.productEvents?.emit('directory_order_receipt_submitted', {
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        entityId: order.entityId,
-        athleteUserId: athlete.id,
-      });
-
-      return updatedOrder;
+      return updated;
     });
+
+    this.productEvents?.emit('directory_order_receipt_submitted', {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      entityId: order.entityId,
+      athleteUserId: athlete.id,
+    });
+
+    return updatedOrder;
   }
 
   async getOrderById(actor: AuthenticatedUser, orderId: string): Promise<PaymentOrderModel> {
     const order = await this.repository.findOrderById(orderId);
     if (!order) throw new NotFoundException('Orden de pago no encontrada.');
 
-    // Acceso permitido al atleta propietario o al administrador del ente
+    // Solo el atleta dueño o quien administra el ente. Antes bastaba con ser
+    // del mismo gimnasio: cualquier socio podía leer el comprobante de otro.
     const isAthlete = order.athleteUserId === actor.id;
-    const isEntityStaff =
-      actor.role === UserRole.SYSTEM_ADMIN ||
-      (order.entity && (order.entity.userId === actor.id || (order.entity.tenantId && actor.tenantId === order.entity.tenantId)));
-
+    const isEntityStaff = this.canManageEntity(actor, order.entity?.userId, order.entity?.tenantId);
     if (!isAthlete && !isEntityStaff) {
-      throw new ForbiddenException('No tienes autorización para ver esta orden de pago.');
+      throw new NotFoundException('Orden de pago no encontrada.');
     }
 
     return order;
@@ -398,26 +455,28 @@ export class DirectoryPaymentsService {
   async confirmOrder(actor: AuthenticatedUser, orderId: string): Promise<PaymentOrderModel> {
     const order = await this.repository.findOrderById(orderId);
     if (!order) throw new NotFoundException('Orden de pago no encontrada.');
-    this.assertEntityOwnership(actor, order.entity?.userId ?? null, order.entity?.tenantId ?? null);
+    this.assertEntityOwnership(actor, order.entity?.userId, order.entity?.tenantId, 'Orden de pago no encontrada.');
 
-    if (order.status !== 'PENDING_VERIFICATION') {
-      throw new BadRequestException('Solo se pueden confirmar órdenes en estado PENDING_VERIFICATION con comprobante subido.');
-    }
+    /*
+     * Todo en una sola transacción: la orden se bloquea (dos confirmaciones a la
+     * vez no crean dos membresías) y la membresía se crea como punto de
+     * guardado dentro de ella (si algo falla después, no queda una membresía
+     * activa con la orden sin confirmar).
+     */
+    const { updatedOrder, createdMembershipId } = await this.sequelize.transaction(async (transaction) => {
+      const locked = await this.repository.lockOrder(order.id, transaction);
+      if (!locked) throw new NotFoundException('Orden de pago no encontrada.');
+      if (locked.status !== 'PENDING_VERIFICATION') {
+        throw new BadRequestException('Solo se pueden confirmar órdenes en estado PENDING_VERIFICATION con comprobante subido.');
+      }
 
-    return this.sequelize.transaction(async (transaction) => {
-      let createdMembershipId: string | null = null;
-
-      // Flujo multientidad y multitabla completo:
-      // Si el comercio es un gimnasio con tenantId y el plan es de membresía, sincronizar con membership.plans y crear la membresía
+      let membershipId: string | null = null;
+      // Si el comercio es un gimnasio y el plan es de membresía, se activa la membresía.
       if (order.entity?.tenantId && order.plan && this.membershipService) {
         const planSlug = order.plan.slug || this.slugify(order.plan.name);
         const planCode = `dir_${order.entity.tenantId}_${planSlug}`.slice(0, 80);
 
-        let membershipPlan = await this.membershipPlanModel.findOne({
-          where: { code: planCode },
-          transaction,
-        });
-
+        let membershipPlan = await this.membershipPlanModel.findOne({ where: { code: planCode }, transaction });
         if (!membershipPlan) {
           membershipPlan = await this.membershipPlanModel.create(
             {
@@ -435,21 +494,14 @@ export class DirectoryPaymentsService {
               availableNew: true,
               availableRenewal: true,
               availableExtension: true,
-              metadata: {
-                directoryPlanId: order.plan.id,
-                entityId: order.entityId,
-              },
+              metadata: { directoryPlanId: order.plan.id, entityId: order.entityId },
             },
-            { transaction }
+            { transaction },
           );
-
           if (order.entity.branchId) {
             await this.planAccessScopeModel.create(
-              {
-                planId: membershipPlan.id,
-                branchId: order.entity.branchId,
-              },
-              { transaction }
+              { planId: membershipPlan.id, branchId: order.entity.branchId },
+              { transaction },
             );
           }
         }
@@ -468,51 +520,40 @@ export class DirectoryPaymentsService {
               receiptReference: order.receiptReference,
             },
           },
-          actor.id
+          actor.id,
+          transaction,
         );
-        createdMembershipId = membership.id;
+        membershipId = membership.id;
       }
 
-      const updatedOrder = await this.repository.updateOrder(
-        order,
-        {
-          status: 'CONFIRMED',
-          verifiedByUserId: actor.id,
-          verifiedAt: new Date(),
-          membershipId: createdMembershipId,
-        },
-        transaction
+      const updated = await this.repository.updateOrder(
+        locked,
+        { status: 'CONFIRMED', verifiedByUserId: actor.id, verifiedAt: new Date(), membershipId },
+        transaction,
       );
 
-      // Notificar al atleta en la app (In-App notification persistida en BD)
-      if (this.notificationService) {
-        try {
-          await this.notificationService.enqueueDirectMessage(
-            {
-              recipientUserId: order.athleteUserId,
-              channel: NotificationChannel.IN_APP,
-              subject: '¡Pago confirmado! Tu plan ya está activo',
-              body: `Tu pago de ${order.amount} ${order.currency} para "${order.plan?.name ?? 'Plan'}" en "${order.entity?.name ?? 'el comercio'}" fue verificado exitosamente. ¡Ya puedes disfrutar de tus beneficios!`,
-              deduplicationKey: `payment_order_confirmed:${order.id}`,
-            },
-            transaction
-          );
-        } catch {
-          // No abortar transacción por fallo de notificación
-        }
-      }
-
-      this.productEvents?.emit('directory_order_confirmed', {
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        entityId: order.entityId,
-        planId: order.planId,
-        athleteUserId: order.athleteUserId,
-        membershipId: createdMembershipId,
+      await this.notifySafely(transaction, {
+        recipientUserId: order.athleteUserId,
+        channel: NotificationChannel.IN_APP,
+        subject: '¡Pago confirmado! Tu plan ya está activo',
+        body: `Tu pago de ${order.amount} ${order.currency} para "${order.plan?.name ?? 'Plan'}" en "${order.entity?.name ?? 'el comercio'}" fue verificado exitosamente. ¡Ya puedes disfrutar de tus beneficios!`,
+        deduplicationKey: `payment_order_confirmed:${order.id}`,
       });
 
-      return updatedOrder;
+      return { updatedOrder: updated, createdMembershipId: membershipId };
     });
+
+    // Fuera de la transacción: un evento de producto no debe contar un pago que no se confirmó.
+    this.productEvents?.emit('directory_order_confirmed', {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      entityId: order.entityId,
+      planId: order.planId,
+      athleteUserId: order.athleteUserId,
+      membershipId: createdMembershipId,
+    });
+
+    return updatedOrder;
   }
 
   async rejectOrder(
@@ -522,50 +563,37 @@ export class DirectoryPaymentsService {
   ): Promise<PaymentOrderModel> {
     const order = await this.repository.findOrderById(orderId);
     if (!order) throw new NotFoundException('Orden de pago no encontrada.');
-    this.assertEntityOwnership(actor, order.entity?.userId ?? null, order.entity?.tenantId ?? null);
+    this.assertEntityOwnership(actor, order.entity?.userId, order.entity?.tenantId, 'Orden de pago no encontrada.');
 
-    if (order.status !== 'PENDING_VERIFICATION') {
-      throw new BadRequestException('Solo se pueden rechazar órdenes con comprobante en estado PENDING_VERIFICATION.');
-    }
-
-    return this.sequelize.transaction(async (transaction) => {
-      const updatedOrder = await this.repository.updateOrder(
-        order,
-        {
-          status: 'REJECTED',
-          verifiedByUserId: actor.id,
-          verifiedAt: new Date(),
-          rejectionReason: input.reason,
-        },
-        transaction
-      );
-
-      if (this.notificationService) {
-        try {
-          await this.notificationService.enqueueDirectMessage(
-            {
-              recipientUserId: order.athleteUserId,
-              channel: NotificationChannel.IN_APP,
-              subject: `Observación en tu comprobante de pago - Orden ${order.orderNumber}`,
-              body: `El comercio ha observado tu comprobante para "${order.plan?.name ?? 'Plan'}": "${input.reason}". Puedes subir un nuevo comprobante corregido desde tu historial.`,
-              deduplicationKey: `payment_order_rejected:${order.id}:${Date.now()}`,
-            },
-            transaction
-          );
-        } catch {
-          // No abortar
-        }
+    const updatedOrder = await this.sequelize.transaction(async (transaction) => {
+      const locked = await this.repository.lockOrder(order.id, transaction);
+      if (!locked) throw new NotFoundException('Orden de pago no encontrada.');
+      if (locked.status !== 'PENDING_VERIFICATION') {
+        throw new BadRequestException('Solo se pueden rechazar órdenes con comprobante en estado PENDING_VERIFICATION.');
       }
-
-      this.productEvents?.emit('directory_order_rejected', {
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        entityId: order.entityId,
-        athleteUserId: order.athleteUserId,
-        reason: input.reason,
+      const updated = await this.repository.updateOrder(
+        locked,
+        { status: 'REJECTED', verifiedByUserId: actor.id, verifiedAt: new Date(), rejectionReason: input.reason },
+        transaction,
+      );
+      await this.notifySafely(transaction, {
+        recipientUserId: order.athleteUserId,
+        channel: NotificationChannel.IN_APP,
+        subject: `Observación en tu comprobante de pago - Orden ${order.orderNumber}`,
+        body: `El comercio ha observado tu comprobante para "${order.plan?.name ?? 'Plan'}": "${input.reason}". Puedes subir un nuevo comprobante corregido desde tu historial.`,
+        deduplicationKey: `payment_order_rejected:${order.id}:${Date.now()}`,
       });
-
-      return updatedOrder;
+      return updated;
     });
+
+    this.productEvents?.emit('directory_order_rejected', {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      entityId: order.entityId,
+      athleteUserId: order.athleteUserId,
+      reason: input.reason,
+    });
+
+    return updatedOrder;
   }
 }

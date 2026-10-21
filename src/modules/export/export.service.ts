@@ -1,10 +1,9 @@
-import { Injectable, Optional, PayloadTooLargeException } from '@nestjs/common';
+import { Injectable, Logger, Optional, PayloadTooLargeException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { QueryTypes } from 'sequelize';
 import ExcelJS from 'exceljs';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
-import { WorkoutSessionStatus } from '../../common/enums/domain.enums';
 import { EquipmentService } from '../equipment/equipment.service';
 import { ProfilesService } from '../profiles/profiles.service';
 import { UsersService } from '../users/users.service';
@@ -17,6 +16,12 @@ import { RoutineProgressExportQuery } from './export.schemas';
 
 const EXPORT_PAGE_SIZE = 100;
 const MAX_EXPORTED_SESSIONS = 1000;
+/**
+ * Tope síncrono de filas del progreso de rutinas (una fila por serie). El
+ * archivo se arma en memoria y viaja en base64 al móvil: sin tope, un socio con
+ * años de historial dejaba el servidor sin memoria. Por encima, se pide filtrar.
+ */
+const MAX_ROUTINE_PROGRESS_ROWS = 20000;
 
 export interface RoutineProgressRow {
   usuario_id: string;
@@ -94,6 +99,8 @@ export interface RoutineProgressRow {
 
 @Injectable()
 export class ExportService {
+  private readonly logger = new Logger(ExportService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly profilesService: ProfilesService,
@@ -143,7 +150,7 @@ export class ExportService {
     const contentWidth = pageWidth - MARGIN * 2;
 
     const chunks: Buffer[] = [];
-    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
     const rendered = new Promise<Buffer>((resolve, reject) => {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
@@ -308,16 +315,22 @@ export class ExportService {
     }
 
     sql += ` ORDER BY rutina_nombre ASC, dia_orden ASC, ejercicio_orden ASC, sesion_fecha_inicio DESC, serie_numero ASC`;
+    // Una fila de más para saber si se pasa del tope sin contar aparte.
+    sql += ` LIMIT :rowLimit`;
+    replacements.rowLimit = MAX_ROUTINE_PROGRESS_ROWS + 1;
 
-    try {
-      const rows = await this.sequelize.query<RoutineProgressRow>(sql, {
-        replacements,
-        type: QueryTypes.SELECT,
-      });
-      return rows;
-    } catch {
-      return [];
+    // Sin try/catch: antes un error de SQL devolvía una lista vacía y el socio
+    // recibía un archivo vacío como si no tuviera progreso.
+    const rows = await this.sequelize.query<RoutineProgressRow>(sql, {
+      replacements,
+      type: QueryTypes.SELECT,
+    });
+    if (rows.length > MAX_ROUTINE_PROGRESS_ROWS) {
+      throw new PayloadTooLargeException(
+        `El progreso supera ${MAX_ROUTINE_PROGRESS_ROWS} series. Filtra por rutina o por fechas para descargarlo.`,
+      );
     }
+    return rows;
   }
 
   async recordRoutineProgressDownloadAudit(
@@ -352,8 +365,13 @@ export class ExportService {
         recordsCount: details.recordsCount,
         hasRoutineFilter: Boolean(details.routineId),
       });
-    } catch (err) {
-      // Ignorar fallo de auditoría para no impedir la descarga
+    } catch (error) {
+      // La descarga no se bloquea, pero un fallo de auditoría no puede pasar en silencio.
+      this.logger.warn({
+        event: 'export.routine_progress_audit_failed',
+        userId: actor.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -737,7 +755,7 @@ export class ExportService {
     const contentWidth = pageWidth - MARGIN * 2;
 
     const chunks: Buffer[] = [];
-    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
     const rendered = new Promise<Buffer>((resolve, reject) => {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);

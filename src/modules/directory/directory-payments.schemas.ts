@@ -1,12 +1,24 @@
 import { z } from 'zod';
 
+/**
+ * Una URL web de verdad (http o https). Antes se aceptaba cualquier texto, y
+ * un comprobante o un QR con `javascript:` o `data:` acababa delante del
+ * administrador del comercio.
+ */
+const webUrl = z
+  .string()
+  .trim()
+  .max(2048)
+  .url()
+  .refine((value) => /^https?:\/\//i.test(value), { message: 'Debe ser una URL http(s).' });
+
 export const entityPaymentConfigSchema = z.object({
   bankName: z.string().trim().min(2).max(100),
   accountHolderName: z.string().trim().min(2).max(180),
   taxId: z.string().trim().min(3).max(50),
   accountNumber: z.string().trim().min(4).max(100),
   aliasOrPhone: z.string().trim().max(100).nullable().optional(),
-  qrImageUrl: z.string().trim().min(5),
+  qrImageUrl: webUrl,
   qrPayload: z.string().trim().nullable().optional(),
   instructions: z.string().trim().max(2000).nullable().optional(),
   isActive: z.boolean().default(true),
@@ -32,7 +44,7 @@ export const createEntityPlanSchema = z.object({
   price: z.number().nonnegative(),
   currency: z.string().trim().length(3).regex(/^[A-Z]{3}$/).optional().default('USD'),
   displayOrder: z.number().int().optional().default(0),
-  mediaUrls: z.array(z.string().trim()).optional().default([]),
+  mediaUrls: z.array(webUrl).max(20).optional().default([]),
   metadata: z.record(z.unknown()).optional().default({}),
   initialReason: z.string().trim().min(3).max(500).optional().default('Precio de lanzamiento inicial'),
 });
@@ -45,7 +57,7 @@ export const updateEntityPlanSchema = z.object({
   durationDays: z.number().int().min(1).max(3650).nullable().optional(),
   status: entityPlanStatusEnum.optional(),
   displayOrder: z.number().int().optional(),
-  mediaUrls: z.array(z.string().trim()).optional(),
+  mediaUrls: z.array(webUrl).max(20).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 export type UpdateEntityPlanInput = z.infer<typeof updateEntityPlanSchema>;
@@ -65,7 +77,7 @@ export const createPaymentOrderSchema = z.object({
 export type CreatePaymentOrderInput = z.infer<typeof createPaymentOrderSchema>;
 
 export const submitReceiptSchema = z.object({
-  receiptUrl: z.string().trim().min(5),
+  receiptUrl: webUrl,
   receiptStorageKey: z.string().trim().nullable().optional(),
   receiptReference: z.string().trim().max(100).nullable().optional(),
   athleteNotes: z.string().trim().max(500).nullable().optional(),
@@ -91,3 +103,10 @@ export const paymentOrderListQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 export type PaymentOrderListQuery = z.infer<typeof paymentOrderListQuerySchema>;
+
+/** Listado público del marketplace: tipo opcional y página acotada. */
+export const marketplacePlanListQuerySchema = z.object({
+  type: entityPlanTypeEnum.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export type MarketplacePlanListQuery = z.infer<typeof marketplacePlanListQuerySchema>;

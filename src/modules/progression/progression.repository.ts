@@ -1,4 +1,6 @@
 import { Injectable } from "@nestjs/common";
+import { MONTHLY_STRIKES_BASE } from "./user-streak-strike.model";
+import { settleStrikes, totalOf, type StrikeSettlement } from "./streak-strikes";
 import { InjectModel } from "@nestjs/sequelize";
 import { Op, QueryTypes, Transaction, WhereOptions } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
@@ -69,6 +71,12 @@ export interface TrainingMetrics {
   readonly streakFreezes?: number;
   readonly streakFreezesUsed?: number;
   readonly streakFreezesEarned?: number;
+  /** Strikes gastados y faltas penalizadas, por mes (`settleStrikes`). */
+  readonly strikeSettlement?: StrikeSettlement;
+  /** Strikes comprados con puntos en toda la historia (los puntos ya gastados). */
+  readonly strikesPurchasedTotal?: number;
+  /** Strikes comprados por mes. */
+  readonly strikesPurchasedByMonth?: Readonly<Record<string, number>>;
   readonly challengesCompleted?: number;
   readonly perfectWeeks?: number;
   /** Puntos de los retos cumplidos más los bonos de semana redonda. */
@@ -218,6 +226,15 @@ export class ProgressionRepository {
   ) {}
 
   // ────────────────────────────────────────────────────────── días de descanso
+
+  /**
+   * El plan semanal declarado: los días de descanso y si el socio llegó a
+   * declararlo. Sin declaración no hay faltas que contar.
+   */
+  async getTrainingPlan(userId: string): Promise<{ declared: boolean; restWeekdays: ReadonlySet<number> }> {
+    const row = await this.restDayPreferenceModel.findByPk(userId);
+    return { declared: row !== null, restWeekdays: new Set(row?.weekdays ?? []) };
+  }
 
   async getRestWeekdays(userId: string): Promise<ReadonlySet<number>> {
     const row = await this.restDayPreferenceModel.findByPk(userId);
@@ -583,8 +600,21 @@ export class ProgressionRepository {
     );
 
     const trainingDays = days.map((row) => row.day);
-    const restWeekdays = await this.getRestWeekdays(userId);
-    const streaks = computeStreaks(trainingDays, businessToday(timeZone), restWeekdays);
+    const today = businessToday(timeZone);
+    const plan = await this.getTrainingPlan(userId);
+    const restWeekdays = plan.restWeekdays;
+    const purchasedByMonth = await this.purchasedStrikesByMonth(userId);
+    // Faltas al plan: repuestas, cubiertas por strike o penalizadas. Las
+    // perdonadas no rompen la racha.
+    const strikeSettlement = settleStrikes({
+      trainingDays,
+      today,
+      restWeekdays,
+      planDeclared: plan.declared,
+      purchasedByMonth,
+      monthlyStrikes: MONTHLY_STRIKES_BASE,
+    });
+    const streaks = computeStreaks(trainingDays, today, restWeekdays, strikeSettlement.forgivenDays);
 
     return {
       totalSessions: Number(aggregate.total_sessions),
@@ -604,6 +634,9 @@ export class ProgressionRepository {
       streakFreezes: streaks.freezes,
       streakFreezesUsed: streaks.freezesUsed,
       streakFreezesEarned: streaks.freezesEarned,
+      strikeSettlement,
+      strikesPurchasedTotal: totalOf(purchasedByMonth),
+      strikesPurchasedByMonth: purchasedByMonth,
       lastSessionOn: trainingDays.at(-1) ?? null,
       firstSessionOn: trainingDays[0] ?? null,
       ...mode,
@@ -689,15 +722,41 @@ export class ProgressionRepository {
          (SELECT COUNT(DISTINCT cliente_user_id)
             FROM training.routine_assignments
            WHERE asignado_por_user_id = :userId) AS coach_clients,
-         -- Récords personales alcanzados por atletas de este coach
-         (SELECT COUNT(DISTINCT se.ejercicio_id)
-            FROM public.series_entrenamiento st
-            JOIN public.sesiones_ejercicios se ON se.id = st.sesion_ejercicio_id
-            JOIN public.sesiones_entrenamiento s ON s.id = se.sesion_id
-            JOIN training.routine_assignments ra ON ra.cliente_user_id = s.usuario_id
-           WHERE ra.asignado_por_user_id = :userId
-             AND s.estado = :finished
-             AND st.tipo_serie = 'FUERZA') AS coach_clients_prs`,
+         -- Récords personales de los atletas de este coach, con la misma
+         -- definición que los del socio: una serie que supera todo lo levantado
+         -- antes en ese ejercicio (la primera no cuenta). Solo los batidos desde
+         -- que el coach le asignó una rutina; cuenta pares atleta-ejercicio.
+         -- Antes contaba ejercicios hechos, no récords, y regalaba insignias.
+         (WITH clientes AS (
+                SELECT cliente_user_id, MIN(created_at) AS desde
+                  FROM training.routine_assignments
+                 WHERE asignado_por_user_id = :userId
+                 GROUP BY cliente_user_id
+              ),
+              series_clientes AS (
+                SELECT s.usuario_id,
+                       se.ejercicio_id,
+                       st.peso_kg,
+                       st.fecha_registro,
+                       c.desde,
+                       MAX(st.peso_kg) OVER (
+                         PARTITION BY s.usuario_id, se.ejercicio_id
+                         ORDER BY st.fecha_registro
+                         ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                       ) AS mejor_previo
+                  FROM public.series_entrenamiento st
+                  JOIN public.sesiones_ejercicios se ON se.id = st.sesion_ejercicio_id
+                  JOIN public.sesiones_entrenamiento s ON s.id = se.sesion_id
+                  JOIN clientes c ON c.cliente_user_id = s.usuario_id
+                 WHERE s.estado = :finished
+                   AND st.tipo_serie = 'FUERZA'
+                   AND st.repeticiones IS NOT NULL
+              )
+          SELECT COUNT(DISTINCT (usuario_id, ejercicio_id))
+            FROM series_clientes
+           WHERE mejor_previo IS NOT NULL
+             AND peso_kg > mejor_previo
+             AND fecha_registro >= desde) AS coach_clients_prs`,
       { type: QueryTypes.SELECT, replacements: { userId, finished: FINISHED } },
     );
     return {
@@ -713,38 +772,79 @@ export class ProgressionRepository {
   async getMonthStrikes(userId: string, month: string): Promise<UserStreakStrikeModel> {
     const [record] = await this.userStreakStrikeModel.findOrCreate({
       where: { userId, month },
-      defaults: {
-        userId,
-        month,
-        usedStrikes: 0,
-        purchasedStrikes: 0,
-        penaltyPoints: 0,
-      },
+      defaults: { userId, month, usedStrikes: 0, purchasedStrikes: 0, penaltyPoints: 0 },
     });
     return record;
   }
 
-  async recordUsedStrike(userId: string, month: string, transaction?: Transaction): Promise<UserStreakStrikeModel> {
-    const record = await this.getMonthStrikes(userId, month);
-    await record.increment('usedStrikes', { by: 1, transaction });
-    return record.reload({ transaction });
+  /** Strikes comprados con puntos, por mes. */
+  async purchasedStrikesByMonth(userId: string): Promise<Record<string, number>> {
+    const rows = await this.userStreakStrikeModel.findAll({
+      where: { userId },
+      attributes: ["month", "purchasedStrikes"],
+    });
+    return Object.fromEntries(
+      rows.filter((row) => row.purchasedStrikes > 0).map((row) => [row.month, row.purchasedStrikes]),
+    );
   }
 
-  async recordPenaltyPoints(
+  /**
+   * Guarda lo calculado por `settleStrikes` (gastados y puntos penalizados por
+   * mes). No es la fuente de verdad —se recalcula del historial—, es la foto
+   * para quien consulte la tabla. Idempotente: escribe valores, no suma.
+   */
+  async syncStrikeLedger(
+    userId: string,
+    usedByMonth: Readonly<Record<string, number>>,
+    penaltyPointsByMonth: Readonly<Record<string, number>>,
+  ): Promise<void> {
+    const months = new Set([...Object.keys(usedByMonth), ...Object.keys(penaltyPointsByMonth)]);
+    for (const month of months) {
+      await this.sequelize.query(
+        `INSERT INTO progression.user_streak_strikes (usuario_id, mes, strikes_usados, puntos_penalizados)
+              VALUES (:userId, :month, :used, :penalty)
+         ON CONFLICT (usuario_id, mes)
+           DO UPDATE SET strikes_usados = EXCLUDED.strikes_usados,
+                         puntos_penalizados = EXCLUDED.puntos_penalizados,
+                         updated_at = now()`,
+        {
+          replacements: {
+            userId,
+            month,
+            used: usedByMonth[month] ?? 0,
+            penalty: penaltyPointsByMonth[month] ?? 0,
+          },
+        },
+      );
+    }
+  }
+
+  /**
+   * Compra de un strike, atómica: un candado por socio pone en fila dos
+   * compras simultáneas y `hasBalance` se evalúa ya con el candado tomado.
+   * Antes, con 150 puntos se podían comprar dos strikes a la vez.
+   */
+  async buyStrikeAtomically(
     userId: string,
     month: string,
-    penalty: number,
-    transaction?: Transaction,
-  ): Promise<UserStreakStrikeModel> {
-    const record = await this.getMonthStrikes(userId, month);
-    await record.increment('penaltyPoints', { by: penalty, transaction });
-    return record.reload({ transaction });
-  }
-
-  async buyStrikeWithPoints(userId: string, month: string, transaction?: Transaction): Promise<UserStreakStrikeModel> {
-    const record = await this.getMonthStrikes(userId, month);
-    await record.increment('purchasedStrikes', { by: 1, transaction });
-    return record.reload({ transaction });
+    hasBalance: () => Promise<boolean>,
+  ): Promise<boolean> {
+    return this.sequelize.transaction(async (transaction) => {
+      await this.sequelize.query(`SELECT pg_advisory_xact_lock(hashtext(:key))`, {
+        replacements: { key: `progression.buy-strike:${userId}` },
+        transaction,
+      });
+      if (!(await hasBalance())) return false;
+      await this.sequelize.query(
+        `INSERT INTO progression.user_streak_strikes (usuario_id, mes, strikes_comprados)
+              VALUES (:userId, :month, 1)
+         ON CONFLICT (usuario_id, mes)
+           DO UPDATE SET strikes_comprados = progression.user_streak_strikes.strikes_comprados + 1,
+                         updated_at = now()`,
+        { replacements: { userId, month }, transaction },
+      );
+      return true;
+    });
   }
 
   /**
@@ -798,6 +898,8 @@ export class ProgressionRepository {
     tenantId: string | null,
     limit: number,
     sortBy: "points" | "streak" = "points",
+    /** Quien mira: no ve la foto de quien bloqueó o a quien bloqueó. */
+    viewerId: string | null = null,
   ): Promise<
     Array<{
       userId: string;
@@ -830,6 +932,13 @@ export class ProgressionRepository {
                   FROM profile.photos ph
                  WHERE ph.user_id = p.usuario_id
                    AND ph.hidden_at IS NULL
+                   -- Un bloqueo, en cualquier sentido, oculta la cara: el
+                   -- puesto y los puntos siguen, la foto no.
+                   AND NOT EXISTS (
+                     SELECT 1 FROM social.user_blocks b
+                      WHERE (b.blocker_id = p.usuario_id AND b.blocked_id = :viewerId)
+                         OR (b.blocker_id = :viewerId AND b.blocked_id = p.usuario_id)
+                   )
                  ORDER BY ph.position ASC, ph.created_at ASC
                  LIMIT 1
               ) AS "photoUrl",
@@ -860,7 +969,7 @@ export class ProgressionRepository {
           AND p.points > 0
         ORDER BY ${orderBy}
         LIMIT :limit`,
-      { type: QueryTypes.SELECT, replacements: { tenantId, limit } },
+      { type: QueryTypes.SELECT, replacements: { tenantId, limit, viewerId } },
     );
   }
 }
@@ -969,6 +1078,8 @@ export function computeStreaks(
   trainingDays: readonly string[],
   today: string,
   restWeekdays: ReadonlySet<number> = new Set(),
+  /** Faltas perdonadas por reposición o por strike (`settleStrikes`): no rompen. */
+  forgivenDays: ReadonlySet<string> = new Set(),
 ): StreakResult {
   if (trainingDays.length === 0) {
     return { current: 0, longest: 0, weeks: 0, freezes: 0, freezesUsed: 0, freezesEarned: 0 };
@@ -977,7 +1088,7 @@ export function computeStreaks(
   let run = { length: 1, freezes: 0, used: 0, earned: 0 };
   let longest = 1;
   for (let index = 1; index < trainingDays.length; index += 1) {
-    const missing = missedWorkdays(trainingDays[index - 1], trainingDays[index], restWeekdays);
+    const missing = missedWorkdays(trainingDays[index - 1], trainingDays[index], restWeekdays, forgivenDays);
     run =
       missing <= run.freezes
         ? { ...run, length: run.length + 1, freezes: run.freezes - missing, used: run.used + missing }
@@ -989,7 +1100,7 @@ export function computeStreaks(
   }
 
   // Hasta hoy (sin contarlo): los días ya pasados sin entrenar también gastan.
-  const pending = missedWorkdays(trainingDays.at(-1)!, today, restWeekdays);
+  const pending = missedWorkdays(trainingDays.at(-1)!, today, restWeekdays, forgivenDays);
   const alive = pending <= run.freezes;
   const weeks = consecutiveWeeks(trainingDays, today);
   if (!alive) {
@@ -1010,11 +1121,17 @@ export function computeStreaks(
  * que «faltan». Cero si son consecutivos o si todo el hueco cae en descanso,
  * que es exactamente la tolerancia que ya existía antes de los comodines.
  */
-function missedWorkdays(fromDay: string, toDay: string, restWeekdays: ReadonlySet<number>): number {
+function missedWorkdays(
+  fromDay: string,
+  toDay: string,
+  restWeekdays: ReadonlySet<number>,
+  forgivenDays: ReadonlySet<string> = new Set(),
+): number {
   const gap = dayDistance(fromDay, toDay);
   let missing = 0;
   for (let offset = 1; offset < gap; offset += 1) {
-    if (!restWeekdays.has(isoWeekday(shiftDays(fromDay, offset)))) missing += 1;
+    const day = shiftDays(fromDay, offset);
+    if (!restWeekdays.has(isoWeekday(day)) && !forgivenDays.has(day)) missing += 1;
   }
   return missing;
 }

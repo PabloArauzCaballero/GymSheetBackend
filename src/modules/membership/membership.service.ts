@@ -1,3 +1,4 @@
+import type { Transaction } from "sequelize";
 import {
   ConflictException,
   Injectable,
@@ -196,8 +197,14 @@ export class MembershipService {
     return this.customerStaff.updateStaffStatus(userId, input, actorUserId);
   }
 
-  async createMembership(input: CreateMembershipInput, actorUserId: string) {
+  /**
+   * @param outer Transacción de quien llama (p. ej. confirmar un pago del
+   *   marketplace): la membresía se crea como punto de guardado dentro de ella
+   *   y se confirma o se deshace junto con todo lo demás. Sin ella, abre la suya.
+   */
+  async createMembership(input: CreateMembershipInput, actorUserId: string, outer?: Transaction) {
     const membershipId = await this.sequelize.transaction(
+      { transaction: outer },
       async (transaction) => {
         const user = await this.usersRepository.findById(
           input.userId,
@@ -263,7 +270,8 @@ export class MembershipService {
 
     return mapMembership(
       this.requireMembership(
-        await this.repository.findMembership(membershipId),
+        // Dentro de una transacción externa, la fila aún no es visible fuera de ella.
+        await this.repository.findMembership(membershipId, outer),
       ),
       this.dates,
     );
