@@ -1,7 +1,6 @@
 import {
   BelongsTo,
   Column,
-  CreatedAt,
   DataType,
   Default,
   ForeignKey,

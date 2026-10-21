@@ -6,7 +6,6 @@ import {
   Headers,
   Ip,
   Post,
-  Query,
   Res,
   StreamableFile,
 } from '@nestjs/common';

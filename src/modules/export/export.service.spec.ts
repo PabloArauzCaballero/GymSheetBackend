@@ -6,6 +6,7 @@ import { ProfilesService } from '../profiles/profiles.service';
 import { UsersService } from '../users/users.service';
 import { WorkoutSessionResponse } from '../workouts/workout.mapper';
 import { WorkoutsService } from '../workouts/workouts.service';
+import type { Sequelize } from 'sequelize-typescript';
 import { ExportService } from './export.service';
 
 const userId = '00000000-0000-4000-8000-000000000001';
@@ -242,7 +243,7 @@ describe('ExportService Routine Progress Export and Audit', () => {
 
   it('builds CSV with UTF-8 BOM, correct headers and escaped values', async () => {
     const service = createService(jest.fn());
-    jest.spyOn(service, 'fetchRoutineProgressRows').mockResolvedValue([sampleRow as never]);
+    jest.spyOn(service, 'fetchRoutineProgressRows').mockResolvedValue([sampleRow]);
     const auditSpy = jest.spyOn(service, 'recordRoutineProgressDownloadAudit').mockResolvedValue(undefined);
 
     const result = await service.buildRoutineProgressCsv(actor, {
@@ -270,7 +271,7 @@ describe('ExportService Routine Progress Export and Audit', () => {
 
   it('builds Excel (.xlsx) workbook with multiple sheets and styling', async () => {
     const service = createService(jest.fn());
-    jest.spyOn(service, 'fetchRoutineProgressRows').mockResolvedValue([sampleRow as never]);
+    jest.spyOn(service, 'fetchRoutineProgressRows').mockResolvedValue([sampleRow]);
     const auditSpy = jest.spyOn(service, 'recordRoutineProgressDownloadAudit').mockResolvedValue(undefined);
 
     const result = await service.buildRoutineProgressExcel(actor, {
@@ -297,7 +298,7 @@ describe('ExportService Routine Progress Export and Audit', () => {
 
   it('builds PDF with GymSheet branding and KPI summary cards', async () => {
     const service = createService(jest.fn());
-    jest.spyOn(service, 'fetchRoutineProgressRows').mockResolvedValue([sampleRow as never]);
+    jest.spyOn(service, 'fetchRoutineProgressRows').mockResolvedValue([sampleRow]);
     const auditSpy = jest.spyOn(service, 'recordRoutineProgressDownloadAudit').mockResolvedValue(undefined);
 
     const result = await service.buildRoutineProgressPdf(actor, {
@@ -323,3 +324,37 @@ describe('ExportService Routine Progress Export and Audit', () => {
   });
 });
 
+
+describe('ExportService routine progress rows', () => {
+  function serviceWithQuery(query: jest.Mock): ExportService {
+    return new ExportService(
+      {} as UsersService,
+      {} as ProfilesService,
+      {} as EquipmentService,
+      {} as WorkoutsService,
+      { query } as unknown as Sequelize,
+    );
+  }
+
+  it('propaga un error de la consulta en vez de devolver un archivo vacío', async () => {
+    const service = serviceWithQuery(jest.fn().mockRejectedValue(new Error('relation does not exist')));
+
+    await expect(service.fetchRoutineProgressRows(actor as never, {} as never)).rejects.toThrow('relation does not exist');
+  });
+
+  it('pide filtrar cuando el progreso supera el tope síncrono de filas', async () => {
+    const tooMany = Array.from({ length: 20001 }, () => ({}));
+    const service = serviceWithQuery(jest.fn().mockResolvedValue(tooMany));
+
+    await expect(service.fetchRoutineProgressRows(actor as never, {} as never)).rejects.toThrow(PayloadTooLargeException);
+  });
+
+  it('limita la consulta en SQL con una fila de margen', async () => {
+    const query = jest.fn().mockResolvedValue([]);
+    await serviceWithQuery(query).fetchRoutineProgressRows(actor, {} as never);
+
+    const [sql, options] = query.mock.calls[0] as [string, { replacements: Record<string, unknown> }];
+    expect(sql).toContain('LIMIT :rowLimit');
+    expect(options.replacements.rowLimit).toBe(20001);
+  });
+});
