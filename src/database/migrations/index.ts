@@ -113,6 +113,7 @@ import { chatRepliesReactionsForwardMigration } from "./202610180201-chat-replie
 import { directoryAndAppstoreReviewsMigration } from "./202610190001-directory-and-appstore-reviews";
 import { directoryMarketplaceAndPaymentsMigration } from "./202610190002-directory-marketplace-and-payments";
 import { routineProgressExportAndAuditMigration } from "./202610190003-routine-progress-export-and-audit";
+import { workoutExerciseSwapsMigration } from "./202610220001-workout-exercise-swaps";
 import { progressionStrikesAndCoachCardsMigration } from "./202610190002-progression-strikes-and-coach-cards";
 import { DatabaseMigration } from "./migration.types";
 
@@ -234,4 +235,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   directoryMarketplaceAndPaymentsMigration,
   routineProgressExportAndAuditMigration,
   progressionStrikesAndCoachCardsMigration,
+  workoutExerciseSwapsMigration,
 ];

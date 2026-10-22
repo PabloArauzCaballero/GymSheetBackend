@@ -108,6 +108,7 @@ import { EntityPlanModel } from "../../modules/directory/models/entity-plan.mode
 import { PlanPriceHistoryModel } from "../../modules/directory/models/plan-price-history.model";
 import { PaymentOrderModel } from "../../modules/directory/models/payment-order.model";
 import { WorkoutSkippedSetModel } from "../../modules/workouts/workout-skipped-set.model";
+import { WorkoutExerciseSwapModel } from "../../modules/workouts/workout-exercise-swap.model";
 
 export const databaseModels = [
   UserModel,
@@ -152,6 +153,7 @@ export const databaseModels = [
   WorkoutSessionExerciseModel,
   WorkoutSetModel,
   WorkoutSkippedSetModel,
+  WorkoutExerciseSwapModel,
   RoutineModel,
   RoutineExerciseModel,
   RoutineAssignmentModel,
