@@ -28,6 +28,8 @@ import { RoutineCatalogService } from './routine-catalog.service';
 import { RoutineStructureService } from './routine-structure.service';
 import { SessionRestController } from './session-rest.controller';
 import { SessionRestService } from './session-rest.service';
+import { SessionSwapController } from './session-swap.controller';
+import { SessionSwapService } from './session-swap.service';
 import { TrainingController } from './training.controller';
 import { TrainingRepository } from './training.repository';
 import { TrainingService } from './training.service';
@@ -55,6 +57,7 @@ import { TrainingService } from './training.service';
     RoutineSharingController,
     RoutineAdminController,
     SessionRestController,
+    SessionSwapController,
   ],
   providers: [
     TrainingRepository,
@@ -71,6 +74,7 @@ import { TrainingService } from './training.service';
     RoutineSharesRepository,
     RoutineSharingService,
     SessionRestService,
+    SessionSwapService,
   ],
   exports: [
     TrainingService,
