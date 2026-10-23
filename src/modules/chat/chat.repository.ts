@@ -54,6 +54,17 @@ export interface ConversationSummaryRow {
   disappearing_seconds: number | null;
 }
 
+/** Un match que espera respuesta mía (ver `listPendingReplies`). */
+export interface PendingReplyRow {
+  other_user_id: string;
+  other_user_name: string;
+  conversation_id: string | null;
+  waiting_since: Date | string;
+}
+
+/** Pasado este plazo, un match en silencio deja de contar como pendiente. */
+export const PENDING_REPLY_WINDOW_DAYS = 14;
+
 export interface MessageWithStoryAvailability {
   readonly message: MessageModel;
   readonly storyAvailable?: boolean;
@@ -807,6 +818,63 @@ export class ChatRepository {
                  CASE c.system_kind WHEN 'CORPORATE' THEN 0 WHEN 'TENANT_ADMIN' THEN 1 ELSE 2 END,
                  COALESCE(last_msg.created_at, c.created_at) DESC`,
       { type: QueryTypes.SELECT, replacements: { userId } },
+    );
+  }
+
+  /**
+   * Matches (conexiones aceptadas) que esperan respuesta mía, del que más
+   * espera al que menos: el último mensaje visible es de la otra persona, o
+   * aún no hay ninguno. Fuera quedan los bloqueos en cualquier sentido, las
+   * conversaciones revocadas y lo que lleva más de
+   * `PENDING_REPLY_WINDOW_DAYS` en silencio (un match viejo sin mensajes no es
+   * un recordatorio, es ruido).
+   */
+  async listPendingReplies(userId: string): Promise<PendingReplyRow[]> {
+    return this.sequelize.query<PendingReplyRow>(
+      `WITH matches AS (
+         SELECT CASE WHEN cn.requester_id = :userId THEN cn.addressee_id ELSE cn.requester_id END AS other_id,
+                COALESCE(cn.responded_at, cn.updated_at) AS matched_at
+           FROM social.connections cn
+          WHERE cn.status = 'ACCEPTED'
+            AND (cn.requester_id = :userId OR cn.addressee_id = :userId)
+       )
+       SELECT m.other_id AS other_user_id,
+              u.nombre_completo AS other_user_name,
+              conv.id AS conversation_id,
+              COALESCE(last_msg.created_at, m.matched_at) AS waiting_since
+         FROM matches m
+         JOIN public.usuarios u ON u.id = m.other_id
+         LEFT JOIN LATERAL (
+           SELECT c.id, c.revoked_at
+             FROM chat.conversations c
+             JOIN chat.participants mine ON mine.conversation_id = c.id AND mine.user_id = :userId
+             JOIN chat.participants other ON other.conversation_id = c.id AND other.user_id = m.other_id
+            WHERE c.system_kind IS NULL
+            ORDER BY c.created_at DESC
+            LIMIT 1
+         ) conv ON true
+         LEFT JOIN LATERAL (
+           SELECT msg.sender_id, msg.created_at
+             FROM chat.messages msg
+            WHERE msg.conversation_id = conv.id
+              AND msg.deleted_at IS NULL
+              AND (msg.expires_at IS NULL OR msg.expires_at > now())
+              AND NOT EXISTS (SELECT 1 FROM chat.message_visibility v WHERE v.message_id = msg.id AND v.user_id = :userId)
+            ORDER BY msg.created_at DESC, msg.id DESC
+            LIMIT 1
+         ) last_msg ON true
+        WHERE conv.revoked_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM social.user_blocks b
+             WHERE (b.blocker_id = :userId AND b.blocked_id = m.other_id)
+                OR (b.blocker_id = m.other_id AND b.blocked_id = :userId)
+          )
+          AND (
+            (last_msg.sender_id IS NULL AND m.matched_at > now() - make_interval(days => :windowDays))
+            OR (last_msg.sender_id = m.other_id AND last_msg.created_at > now() - make_interval(days => :windowDays))
+          )
+        ORDER BY waiting_since ASC, m.other_id ASC`,
+      { type: QueryTypes.SELECT, replacements: { userId, windowDays: PENDING_REPLY_WINDOW_DAYS } },
     );
   }
 
