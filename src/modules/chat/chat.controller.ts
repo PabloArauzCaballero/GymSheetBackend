@@ -50,6 +50,11 @@ export class ChatController {
     return this.service.listConversations(user.id);
   }
 
+  @Get("pending-replies")
+  pendingReplies(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.pendingReplies(user.id);
+  }
+
   @Post()
   start(
     @CurrentUser() user: AuthenticatedUser,

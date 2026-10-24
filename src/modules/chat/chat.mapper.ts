@@ -1,4 +1,4 @@
-import { ConversationSummaryRow, DisappearingTimerEvent, SystemConversationKind } from "./chat.repository";
+import { ConversationSummaryRow, DisappearingTimerEvent, PendingReplyRow, SystemConversationKind } from "./chat.repository";
 import { MessageModel, MessageType } from "./message.model";
 import { isExpired } from "./chat-disappearing";
 import { resolveMediaUrl } from "../../common/media/media-url";
@@ -236,6 +236,27 @@ export type ConversationSummaryResponse = {
   /** Mensajes temporales vigentes (segundos); `null` = desactivados. */
   disappearingSeconds: number | null;
 };
+
+export type PendingRepliesResponse = {
+  count: number;
+  /** Quien espera desde hace más tiempo; solo el nombre de pila (va a un widget). */
+  oldest: { userId: string; firstName: string; conversationId: string | null; waitingSince: string } | null;
+};
+
+export function mapPendingReplies(rows: readonly PendingReplyRow[]): PendingRepliesResponse {
+  const first = rows[0];
+  return {
+    count: rows.length,
+    oldest: first
+      ? {
+          userId: first.other_user_id,
+          firstName: first.other_user_name.trim().split(/\s+/u)[0] ?? "",
+          conversationId: first.conversation_id,
+          waitingSince: new Date(first.waiting_since).toISOString(),
+        }
+      : null,
+  };
+}
 
 export function mapConversationSummary(
   row: ConversationSummaryRow,

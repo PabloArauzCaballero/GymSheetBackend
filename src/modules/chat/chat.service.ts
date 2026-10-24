@@ -7,7 +7,7 @@ import { SocialService } from "../social/social.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
 import { ChatEventsService } from "./chat-events.service";
 import { ChatPresenceService } from "./chat-presence.service";
-import { ChatHistoryItem, mapConversationSummary, mapDisappearingTimerEvent, mapMessageToResponse, mapTrainingInviteEvent, MessageResponse } from "./chat.mapper";
+import { ChatHistoryItem, mapConversationSummary, mapPendingReplies, mapDisappearingTimerEvent, mapMessageToResponse, mapTrainingInviteEvent, MessageResponse } from "./chat.mapper";
 import { MessageCreateFields, ChatRepository } from "./chat.repository";
 import { ConversationParticipantModel } from "./conversation-participant.model";
 import { SystemChatService } from "./system-chat.service";
@@ -83,6 +83,11 @@ export class ChatService {
     await this.systemChat.ensureSystemConversations(userId, tenantId);
     const rows = await this.repository.listConversationsForUser(userId);
     return rows.map((row) => mapConversationSummary(row, this.presence.isOnline(row.other_user_id)));
+  }
+
+  /** Matches que esperan respuesta mía: lo que lee el widget «Matches» de la app. */
+  async pendingReplies(userId: string) {
+    return mapPendingReplies(await this.repository.listPendingReplies(userId));
   }
 
   async listMessages(conversationId: string, userId: string, limit: number, before?: string, beforeId?: string): Promise<ChatHistoryItem[]> {
