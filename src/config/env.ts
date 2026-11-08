@@ -165,7 +165,7 @@ export const environmentSchema = z
     JWT_REFRESH_SECRET: z.string().min(64),
     /** Clave estable e independiente para descifrar medios históricos del chat. */
     CHAT_MEDIA_ENCRYPTION_KEY: optionalSecretSchema,
-    JWT_REFRESH_EXPIRES_IN: jwtDurationSchema.default("7d"),
+    JWT_REFRESH_EXPIRES_IN: jwtDurationSchema.default("180d"),
     JWT_ISSUER: z.string().trim().min(3).default("gym-sheet-api"),
     JWT_AUDIENCE: z.string().trim().min(3).default("gym-sheet-web"),
 
