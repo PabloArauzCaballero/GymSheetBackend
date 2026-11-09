@@ -16,6 +16,35 @@ const metadataSchema = z.record(z.string(), z.unknown()).refine(
   'Los metadatos no pueden superar 16 KiB.',
 );
 
+const addressSchema = z.string().trim().max(300).nullable();
+const latitudeSchema = z.number().finite().min(-90).max(90).nullable();
+const longitudeSchema = z.number().finite().min(-180).max(180).nullable();
+/** Radio para verificar rachas por ubicación; nulo = la sede no verifica. */
+const geofenceRadiusSchema = z.number().int().min(20).max(5000).nullable();
+
+/** Un punto con una sola coordenada no se puede dibujar: van juntas o no van. */
+function coordinatesTogether(
+  input: { latitud?: number | null; longitud?: number | null },
+  context: z.RefinementCtx,
+) {
+  const hasLatitude = input.latitud !== undefined && input.latitud !== null;
+  const hasLongitude = input.longitud !== undefined && input.longitud !== null;
+  if (hasLatitude !== hasLongitude) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Latitud y longitud deben enviarse juntas.',
+      path: [hasLatitude ? 'longitud' : 'latitud'],
+    });
+  }
+  if ((input.latitud === undefined) !== (input.longitud === undefined)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Latitud y longitud deben actualizarse juntas.',
+      path: [input.latitud === undefined ? 'latitud' : 'longitud'],
+    });
+  }
+}
+
 export const updateAccessPointSchema = z
   .object({
     name: nameSchema.optional(),
@@ -38,13 +67,31 @@ export const createBranchSchema = z
     nombre: nameSchema,
     descripcion: descriptionSchema.optional(),
     zonaHoraria: z.string().trim().min(3).max(80).default('America/La_Paz'),
+    direccion: addressSchema.optional(),
+    latitud: latitudeSchema.optional(),
+    longitud: longitudeSchema.optional(),
+    radioGeocercaM: geofenceRadiusSchema.optional(),
     metadata: metadataSchema.default({}),
   })
+  .superRefine((input, context) =>
+    coordinatesTogether(
+      { latitud: input.latitud ?? null, longitud: input.longitud ?? null },
+      context,
+    ),
+  )
+  .refine(
+    (input) => !input.radioGeocercaM || (input.latitud != null && input.longitud != null),
+    { message: 'La geocerca necesita la ubicación de la sede.', path: ['radioGeocercaM'] },
+  )
   .transform((input) => ({
     code: input.codigo.toUpperCase(),
     name: input.nombre,
     description: input.descripcion ?? null,
     timeZone: input.zonaHoraria,
+    address: input.direccion || null,
+    latitude: input.latitud == null ? null : input.latitud.toFixed(6),
+    longitude: input.longitud == null ? null : input.longitud.toFixed(6),
+    geofenceRadiusM: input.radioGeocercaM ?? null,
     metadata: input.metadata,
   }));
 
@@ -53,14 +100,28 @@ export const updateBranchSchema = z
     nombre: nameSchema.optional(),
     descripcion: descriptionSchema.optional(),
     zonaHoraria: z.string().trim().min(3).max(80).optional(),
+    direccion: addressSchema.optional(),
+    latitud: latitudeSchema.optional(),
+    longitud: longitudeSchema.optional(),
+    radioGeocercaM: geofenceRadiusSchema.optional(),
     estado: z.nativeEnum(FacilityStatus).optional(),
     metadata: metadataSchema.optional(),
   })
   .refine((input) => Object.values(input).some((value) => value !== undefined))
+  .superRefine(coordinatesTogether)
   .transform((input) => ({
     ...(input.nombre !== undefined ? { name: input.nombre } : {}),
     ...(input.descripcion !== undefined ? { description: input.descripcion } : {}),
     ...(input.zonaHoraria !== undefined ? { timeZone: input.zonaHoraria } : {}),
+    ...(input.direccion !== undefined ? { address: input.direccion || null } : {}),
+    // `numeric` se escribe como texto exacto para no arrastrar decimales binarios.
+    ...(input.latitud !== undefined
+      ? { latitude: input.latitud === null ? null : input.latitud.toFixed(6) }
+      : {}),
+    ...(input.longitud !== undefined
+      ? { longitude: input.longitud === null ? null : input.longitud.toFixed(6) }
+      : {}),
+    ...(input.radioGeocercaM !== undefined ? { geofenceRadiusM: input.radioGeocercaM } : {}),
     ...(input.estado !== undefined ? { status: input.estado } : {}),
     ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
   }));
