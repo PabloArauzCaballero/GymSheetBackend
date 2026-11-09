@@ -5,7 +5,26 @@ import { MaintenanceEventModel } from './maintenance-event.model';
 import { RoomModel } from './room.model';
 
 export function mapBranch(branch: BranchModel) {
-  return { id: branch.id, codigo: branch.code, nombre: branch.name, descripcion: branch.description, zonaHoraria: branch.timeZone, estado: branch.status, metadata: branch.metadata };
+  return {
+    id: branch.id,
+    codigo: branch.code,
+    nombre: branch.name,
+    descripcion: branch.description,
+    zonaHoraria: branch.timeZone,
+    direccion: branch.address ?? null,
+    latitud: toCoordinate(branch.latitude),
+    longitud: toCoordinate(branch.longitude),
+    radioGeocercaM: branch.geofenceRadiusM ?? null,
+    estado: branch.status,
+    metadata: branch.metadata,
+  };
+}
+
+/** `numeric` llega como texto desde el driver de PostgreSQL. */
+function toCoordinate(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export function mapRoom(room: RoomModel) {
