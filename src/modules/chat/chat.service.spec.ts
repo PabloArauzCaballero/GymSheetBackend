@@ -722,6 +722,11 @@ describe("ChatService avisa por push a quien no está conectado", () => {
     createdAt: new Date("2026-09-13T00:00:00.000Z"),
   };
 
+  /** El push corre fuera del camino crítico del envío: se deja terminar antes de comprobarlo. */
+  async function flushBackgroundPush(): Promise<void> {
+    for (let turn = 0; turn < 10; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+  }
+
   function serviceWith(
     online: boolean,
     sendToUser = jest.fn().mockResolvedValue({ sent: 1, deactivated: 0 }),
@@ -751,6 +756,7 @@ describe("ChatService avisa por push a quien no está conectado", () => {
     const { service, sendToUser } = serviceWith(false);
 
     await service.sendMessage("conv-1", userA, "¿Entrenamos mañana?");
+    await flushBackgroundPush();
 
     expect(sendToUser).toHaveBeenCalledWith(userB, {
       title: "Camila Ruiz",
@@ -765,6 +771,7 @@ describe("ChatService avisa por push a quien no está conectado", () => {
     const { service, sendToUser } = serviceWith(true);
 
     await service.sendMessage("conv-1", userA, "¿Entrenamos mañana?");
+    await flushBackgroundPush();
 
     expect(sendToUser).not.toHaveBeenCalled();
   });
@@ -773,6 +780,7 @@ describe("ChatService avisa por push a quien no está conectado", () => {
     const { service, sendToUser } = serviceWith(false, undefined, textMessage, false);
 
     await service.sendMessage("conv-1", userA, "¿Entrenamos mañana?");
+    await flushBackgroundPush();
 
     expect(sendToUser).toHaveBeenCalledWith(userB, {
       title: "Camila Ruiz",
@@ -797,12 +805,35 @@ describe("ChatService avisa por push a quien no está conectado", () => {
     );
 
     await service.sendMessage("conv-1", userA, "");
+    await flushBackgroundPush();
 
     expect(sendToUser).toHaveBeenCalledWith(userB, {
       title: "Camila Ruiz",
       body: "Te envió una foto de vista única",
       url: "/chat/conv-1",
     });
+  });
+
+  it("no hace esperar a quien envía mientras el proveedor de push responde", async () => {
+    // Un push que nunca contesta: antes el ack del envío quedaba colgado de él.
+    const { service, sendToUser } = serviceWith(false, jest.fn().mockReturnValue(new Promise(() => undefined)));
+
+    await expect(service.sendMessage("conv-1", userA, "¿Entrenamos mañana?")).resolves.toMatchObject({ id: "msg-push-1" });
+    await flushBackgroundPush();
+    expect(sendToUser).toHaveBeenCalledTimes(1);
+  });
+
+  it("anuncia una nota de voz sin adelantar su contenido, también la de escucha única", async () => {
+    const audio = { ...textMessage, id: "msg-push-3", body: null, type: "audio", mediaUrl: "/m", mediaMimeType: "audio/mp4" };
+    const normal = serviceWith(false, undefined, audio);
+    await normal.service.sendMessage("conv-1", userA, "");
+    await flushBackgroundPush();
+    expect(normal.sendToUser).toHaveBeenCalledWith(userB, expect.objectContaining({ body: "Te envió una nota de voz" }));
+
+    const once = serviceWith(false, undefined, { ...audio, viewOnce: true });
+    await once.service.sendMessage("conv-1", userA, "");
+    await flushBackgroundPush();
+    expect(once.sendToUser).toHaveBeenCalledWith(userB, expect.objectContaining({ body: "Te envió una nota de voz de escucha única" }));
   });
 
   it("recorta un mensaje largo en vez de mandarlo entero a la pantalla bloqueada", async () => {
@@ -814,6 +845,7 @@ describe("ChatService avisa por push a quien no está conectado", () => {
     );
 
     await service.sendMessage("conv-1", userA, largo);
+    await flushBackgroundPush();
 
     const [[, notification]] = sendToUser.mock.calls as [[string, { body: string }]];
     expect(notification.body).toHaveLength(140);

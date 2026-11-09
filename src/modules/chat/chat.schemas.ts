@@ -54,6 +54,11 @@ export const sendMediaMessageSchema = z.object({
     .default(false),
   /** Responder citando con una foto, video o nota de voz (campo multipart). */
   replyToId: z.string().uuid().optional(),
+  /**
+   * Lo genera la app para casar su burbuja «enviando…» con el mensaje que
+   * llega por el socket (que suele adelantarse a la respuesta HTTP).
+   */
+  clientRequestId: z.string().uuid().optional(),
 });
 
 export const messageListQuerySchema = z.object({
