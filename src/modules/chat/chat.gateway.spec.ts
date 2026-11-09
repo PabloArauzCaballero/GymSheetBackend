@@ -64,3 +64,24 @@ describe("ChatGateway authentication gate", () => {
     await expect(joining).resolves.toEqual({ joined: true });
   });
 });
+
+describe("ChatGateway message:send", () => {
+  it("acks with the stored message so the sender does not wait for message:new", async () => {
+    const conversationId = "00000000-0000-4000-8000-000000000001";
+    const clientRequestId = "00000000-0000-4000-8000-0000000000aa";
+    const stored = { id: "00000000-0000-4000-8000-000000000010", conversationId, clientRequestId, body: "hola", type: "text" };
+    const chatService = { sendMessage: jest.fn().mockResolvedValue(stored) };
+    const chatGateway = new ChatGateway(
+      {} as never, {} as never, {} as never, chatService as never, {} as never, {} as never,
+    );
+    const client = { data: { userId: "user-1", authenticated: Promise.resolve() } } as unknown as Socket;
+
+    await expect(chatGateway.handleMessage(client, { conversationId, body: "hola", clientRequestId })).resolves.toEqual({
+      ok: true,
+      messageId: stored.id,
+      clientRequestId,
+      message: stored,
+    });
+    expect(chatService.sendMessage).toHaveBeenCalledWith(conversationId, "user-1", "hola", clientRequestId, undefined);
+  });
+});
