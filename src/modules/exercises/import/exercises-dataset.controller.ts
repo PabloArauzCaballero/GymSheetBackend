@@ -8,7 +8,8 @@ import {
 } from "./exercises-dataset.schemas";
 import { ExercisesDatasetService } from "./exercises-dataset.service";
 
-@Roles(UserRole.ADMIN)
+/** Importa al catálogo global, compartido por todos los gimnasios: sólo `SYSTEM_ADMIN`. */
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller("admin/exercises/import")
 export class ExercisesDatasetController {
   constructor(private readonly datasetService: ExercisesDatasetService) {}

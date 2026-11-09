@@ -34,12 +34,17 @@ export class AdminAccessController {
   constructor(private readonly service: AccessControlService) {}
 
   @Get('devices')
-  listDevices() { return this.service.listDevices(); }
+  listDevices(@CurrentUser() actor: AuthenticatedUser) {
+    return this.service.listDevices(actor.tenantScope);
+  }
 
   @Post('devices')
   @Roles(UserRole.ADMIN)
-  createDevice(@Body(new ZodValidationPipe(createDeviceSchema)) input: CreateDeviceInput) {
-    return this.service.createDevice(input);
+  createDevice(
+    @Body(new ZodValidationPipe(createDeviceSchema)) input: CreateDeviceInput,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.service.createDevice(input, actor.tenantScope);
   }
 
   @Patch('devices/:id/status')
@@ -47,8 +52,9 @@ export class AdminAccessController {
   updateDeviceStatus(
     @Param('id', UuidParamPipe) id: string,
     @Body(new ZodValidationPipe(updateDeviceStatusSchema)) input: UpdateDeviceStatusInput,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
-    return this.service.updateDeviceStatus(id, input);
+    return this.service.updateDeviceStatus(id, input, actor.tenantScope);
   }
 
   @Get('events/:id')

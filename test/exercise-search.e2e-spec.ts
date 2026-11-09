@@ -42,7 +42,7 @@ describe('Exercises · búsqueda tolerante (e2e)', () => {
     // Dos ejercicios globales con una palabra rara: alimentan el vocabulario de
     // la sugerencia (una palabra que aparece una sola vez no se propone).
     const admin = await e2e.register('search-admin');
-    await e2e.promote(admin.id, 'ADMIN');
+    await e2e.promote(admin.id, 'SYSTEM_ADMIN');
     for (const nombre of [`${rare} frontal`, `${rare} lateral`]) {
       await e2e.as(admin.token).post('/admin/exercises/global').send({ nombre, grupoMuscular: 'Hombros' }).expect(201);
     }

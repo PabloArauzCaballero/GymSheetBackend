@@ -3,7 +3,9 @@ import { InjectModel } from '@nestjs/sequelize';
 import { Op, QueryTypes, Transaction } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { QueueItemStatus } from '../../common/enums/domain.enums';
+import { tenantScopeWhere } from '../../common/tenancy/tenant-scope';
 import { AccessPointModel } from '../facilities/access-point.model';
+import { BranchModel } from '../facilities/branch.model';
 import { UserModel } from '../users/user.model';
 import { AccessCredentialModel } from './access-credential.model';
 import { AccessDecisionModel } from './access-decision.model';
@@ -54,9 +56,53 @@ export class AccessControlRepository {
     });
   }
 
-  listDevices() {
+  /**
+   * Los dispositivos no guardan gimnasio: el suyo es el de la sede de su punto
+   * de acceso. `required: true` en los dos niveles convierte el JOIN en filtro;
+   * sin él, un `ADMIN` veía —y podía apagar— los tornos de otros gimnasios.
+   */
+  private deviceScopeInclude(tenantScope: string | null) {
+    return [
+      {
+        model: AccessPointModel,
+        required: true,
+        include: [
+          {
+            model: BranchModel,
+            required: true,
+            attributes: [],
+            where: tenantScopeWhere(tenantScope),
+          },
+        ],
+      },
+    ];
+  }
+
+  findDeviceInScope(id: string, tenantScope: string | null) {
+    return this.devices.findOne({
+      where: { id },
+      include: this.deviceScopeInclude(tenantScope),
+    });
+  }
+
+  async accessPointExistsInScope(accessPointId: string, tenantScope: string | null) {
+    const count = await AccessPointModel.count({
+      where: { id: accessPointId },
+      include: [
+        {
+          model: BranchModel,
+          required: true,
+          attributes: [],
+          where: tenantScopeWhere(tenantScope),
+        },
+      ],
+    });
+    return count > 0;
+  }
+
+  listDevices(tenantScope: string | null) {
     return this.devices.findAll({
-      include: [AccessPointModel],
+      include: this.deviceScopeInclude(tenantScope),
       order: [['name', 'ASC']],
     });
   }

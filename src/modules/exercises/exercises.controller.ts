@@ -126,7 +126,12 @@ export class ExercisesController {
   }
 }
 
-@Roles(UserRole.ADMIN)
+/**
+ * El catálogo global no pertenece a ningún gimnasio: un ejercicio que se crea,
+ * edita o retira aquí cambia lo que ven todos los gimnasios de la plataforma.
+ * Por eso es de `SYSTEM_ADMIN` y no de `ADMIN`, que sólo administra el suyo.
+ */
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller('admin/exercises/global')
 export class AdminExercisesController {
   constructor(private readonly exercisesService: ExercisesService) {}

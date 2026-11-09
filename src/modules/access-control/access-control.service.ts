@@ -32,16 +32,24 @@ export class AccessControlService {
     private readonly sequelize: Sequelize,
   ) {}
 
-  async createDevice(input: CreateDeviceInput) {
+  async createDevice(input: CreateDeviceInput, tenantScope: string | null) {
+    // Un punto de acceso de otro gimnasio responde igual que uno inexistente.
+    if (!(await this.repository.accessPointExistsInScope(input.accessPointId, tenantScope))) {
+      throw new NotFoundException('Punto de acceso no encontrado.');
+    }
     return mapDevice(await this.repository.createDevice(input));
   }
 
-  async listDevices() {
-    return (await this.repository.listDevices()).map(mapDevice);
+  async listDevices(tenantScope: string | null) {
+    return (await this.repository.listDevices(tenantScope)).map(mapDevice);
   }
 
-  async updateDeviceStatus(id: string, input: UpdateDeviceStatusInput) {
-    const device = await this.repository.findDevice(id);
+  async updateDeviceStatus(
+    id: string,
+    input: UpdateDeviceStatusInput,
+    tenantScope: string | null,
+  ) {
+    const device = await this.repository.findDeviceInScope(id, tenantScope);
     if (!device) throw new NotFoundException('Dispositivo no encontrado.');
     await device.update(input);
     return mapDevice(device);
