@@ -45,6 +45,10 @@ export class BranchModel extends Model {
   @Column({ type: DataType.DECIMAL(9, 6), allowNull: true })
   declare longitude: string | null;
 
+  /** Dirección legible que acompaña al punto en el mapa de la consola. */
+  @Column({ type: DataType.STRING(300), allowNull: true })
+  declare address: string | null;
+
   @Column({ type: DataType.INTEGER, allowNull: true, field: 'geofence_radius_m' })
   declare geofenceRadiusM: number | null;
 
