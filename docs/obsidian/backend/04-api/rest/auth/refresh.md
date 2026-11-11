@@ -2,41 +2,44 @@
 title: "POST /auth/refresh"
 type: api
 status: verified
-last_reviewed: "2026-08-06"
-source_revision: "27f3fd2"
+last_reviewed: "2026-11-11"
 tags: [backend, api]
 ---
 
 # POST /auth/refresh
 
-> [!warning] Endpoint NO implementado (INFERIDO del requisito, ausente en el código)
-> En la revisión `27f3fd2` **no existe** ninguna ruta `POST /auth/refresh` ni lógica
-> de refresh en `src/modules/auth`. Esta nota documenta la brecha, no un endpoint
-> real.
+Renueva la sesión: canjea un refresh token por un par nuevo (`accessToken` +
+`refreshToken`). Implementado en `AuthController.refresh` → `AuthService.refresh` →
+`RefreshTokenService.rotate` (SEC-02).
 
-## Estado real
+## Contrato
 
-- `AuthController` solo expone `register`, `login`, `me`.
-- `AuthService` solo implementa `register` y `login`; ambos emiten **solo**
-  `accessToken`.
-- El entorno **sí** define `JWT_REFRESH_SECRET` (min 64) y `JWT_REFRESH_EXPIRES_IN`
-  (def. `7d`), y `env.ts` exige que difieran del par de access
-  (`superRefine`). Es decir, la configuración está preparada pero **no cableada**.
-- OpenAPI (`docs/endpoints/openapi.yaml`) **tampoco** documenta `/auth/refresh`.
+- Público (`@Public()`): el access token suele estar vencido cuando se llama.
+- Cuerpo: `{ "refreshToken": string }` (Zod, 20–200 caracteres).
+- `200` con el mismo envelope que el login: `{ ok, data: { accessToken, refreshToken, tokenType, user } }`.
+- `401` si el token no existe, venció, ya fue canjeado o la cuenta no está activa.
+- Límite general de peticiones, **no** el estricto de login: el token tiene 256 bits
+  aleatorios (no se adivina) y muchos socios comparten la IP del Wi-Fi del gimnasio.
 
-## Contrato esperado (cuando se implemente) — INFERIDO
+## Reglas
 
-Un flujo de refresh coherente con el stack sería: cliente presenta un refresh token
-(HS256 con `JWT_REFRESH_SECRET`), el backend lo valida, revalida el principal contra
-PostgreSQL y emite un nuevo access token (y opcionalmente rota el refresh). Debería:
+- **Rotación:** el token presentado muere y se emite otro de la misma familia (sesión).
+- **Ventana deslizante:** el nuevo vence `JWT_REFRESH_EXPIRES_IN` (def. `90d`) después de
+  ESTE uso. La sesión solo termina tras ese tiempo sin uso.
+- **Reuso:** presentar un token ya canjeado o revocado revoca toda la familia, incluido el
+  sucesor del dueño legítimo.
+- **Almacenamiento:** `auth.refresh_tokens` guarda solo un HMAC-SHA256 del token
+  (clave `JWT_REFRESH_SECRET`), nunca el token.
+- La fila se bloquea (`SELECT … FOR UPDATE`) para que dos canjes simultáneos no roten dos veces.
 
-- llevar rate limit estricto como el resto de auth ([[04-api/rate-limits]]);
-- devolver el mismo envelope `{ ok, data: { accessToken, tokenType, user } }`;
-- reflejarse en OpenAPI y en la colección Postman en el mismo PR.
+## Cierre de sesión
 
-## Acción recomendada
+`POST /auth/logout` con el mismo cuerpo revoca la familia. Es idempotente
+(`{ revoked: false }` si ya estaba cerrada).
 
-Implementar el endpoint o retirar `JWT_REFRESH_*` del entorno para evitar la
-falsa señal de que existe refresh. Registrar como hallazgo abierto.
+## Evidencia
+
+- Unitarias: `src/modules/auth/refresh-token.service.spec.ts`.
+- e2e contra PostgreSQL: `test/auth-refresh.e2e-spec.ts`.
 
 Relacionado: [[index]] · [[login]] · [[04-api/authentication]]

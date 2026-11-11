@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { UsersRepository } from '../users/users.repository';
 import { AuthService } from './auth.service';
+import { RefreshTokenService } from './refresh-token.service';
 
 const registeredEmail = 'registered@example.test';
 const unregisteredEmail = 'unregistered@example.test';
@@ -22,7 +23,11 @@ jest.mock('bcryptjs', () => ({
 }));
 
 function createService(usersRepositoryOverrides: Partial<UsersRepository>): AuthService {
-  return new AuthService(usersRepositoryOverrides as UsersRepository, {} as JwtService);
+  return new AuthService(
+    usersRepositoryOverrides as UsersRepository,
+    {} as JwtService,
+    {} as RefreshTokenService,
+  );
 }
 
 describe('AuthService login account enumeration resistance', () => {

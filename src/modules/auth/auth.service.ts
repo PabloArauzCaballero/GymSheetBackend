@@ -7,6 +7,7 @@ import { JwtPayload } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
 import { UsersRepository } from '../users/users.repository';
 import { LoginInput, RegisterInput } from './auth.schemas';
+import { RefreshTokenService } from './refresh-token.service';
 
 /**
  * Decoy hash compared against when no account matches the submitted email.
@@ -20,6 +21,11 @@ const UNKNOWN_ACCOUNT_PASSWORD_HASH = bcrypt.hashSync(
 
 export type AuthResponse = {
   accessToken: string;
+  /**
+   * Opaque, single-use token for `POST /auth/refresh`. Every refresh returns a
+   * new one; the session ends after `JWT_REFRESH_EXPIRES_IN` without use.
+   */
+  refreshToken: string;
   tokenType: 'Bearer';
   user: {
     id: string;
@@ -36,6 +42,7 @@ export class AuthService {
   constructor(
     private readonly usersRepository: UsersRepository,
     private readonly jwtService: JwtService,
+    private readonly refreshTokens: RefreshTokenService,
   ) {}
 
   async register(input: RegisterInput): Promise<AuthResponse> {
@@ -60,6 +67,7 @@ export class AuthService {
         createdUser.role,
         createdUser.fullName,
         createdUser.tenantId,
+        await this.refreshTokens.issueForNewSession(createdUser.id),
       );
     } catch (error: unknown) {
       if (error instanceof UniqueConstraintError) {
@@ -92,7 +100,37 @@ export class AuthService {
       activeUser.role,
       activeUser.fullName,
       activeUser.tenantId,
+      await this.refreshTokens.issueForNewSession(activeUser.id),
     );
+  }
+
+  /**
+   * Exchanges a refresh token for a new access + refresh pair (rotation).
+   * The account is re-read so a blocked user cannot renew, and the response
+   * carries the current role and gym, same as `/auth/me`.
+   */
+  async refresh(refreshToken: string): Promise<AuthResponse> {
+    const rotated = await this.refreshTokens.rotate(
+      refreshToken,
+      async (userId) => (await this.usersRepository.findActiveById(userId)) !== null,
+    );
+    const activeUser = await this.usersRepository.findActiveById(rotated.userId);
+    if (!activeUser) {
+      throw new UnauthorizedException('La sesión ya no es válida. Inicie sesión de nuevo.');
+    }
+    return this.buildAuthResponse(
+      activeUser.id,
+      activeUser.email,
+      activeUser.role,
+      activeUser.fullName,
+      activeUser.tenantId,
+      rotated.refreshToken,
+    );
+  }
+
+  /** Ends the session of [refreshToken]. Idempotent. */
+  async logout(refreshToken: string): Promise<{ revoked: boolean }> {
+    return { revoked: await this.refreshTokens.revokeSession(refreshToken) };
   }
 
   private buildAuthResponse(
@@ -100,7 +138,8 @@ export class AuthService {
     emailAddress: string,
     role: JwtPayload['role'],
     fullName: string,
-    tenantId: string | null = null,
+    tenantId: string | null,
+    refreshToken: string,
   ): AuthResponse {
     const payload: JwtPayload = {
       sub: userId,
@@ -117,6 +156,7 @@ export class AuthService {
 
     return {
       accessToken,
+      refreshToken,
       tokenType: 'Bearer',
       user: {
         id: userId,

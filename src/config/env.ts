@@ -115,7 +115,8 @@ export const environmentSchema = z
     JWT_ACCESS_SECRET: z.string().min(64),
     JWT_ACCESS_EXPIRES_IN: jwtDurationSchema.default("15m"),
     JWT_REFRESH_SECRET: z.string().min(64),
-    JWT_REFRESH_EXPIRES_IN: jwtDurationSchema.default("7d"),
+    // Vida SIN USO de una sesión: cada refresh la vuelve a contar (rotación).
+    JWT_REFRESH_EXPIRES_IN: jwtDurationSchema.default("90d"),
     JWT_ISSUER: z.string().trim().min(3).default("gym-sheet-api"),
     JWT_AUDIENCE: z.string().trim().min(3).default("gym-sheet-web"),
 

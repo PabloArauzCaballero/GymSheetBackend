@@ -474,8 +474,15 @@ infraestructura — ver R-002.
 | **Categoría** | Configuración / Código muerto |
 | **Severidad** | **Baja** |
 | **Prioridad** | **P3** |
-| **Estado** | **Confirmado — documentado, no modificado** |
+| **Estado** | **Resuelto (11/11/2026)** — refresh rotativo + logout implementados (ver abajo) |
 | **Archivo** | `src/config/env.ts:61-62` |
+
+> **Resolución (11/11/2026, decisión del propietario).** `POST /auth/refresh` rota refresh
+> tokens opacos de un solo uso (HMAC con `JWT_REFRESH_SECRET` en `auth.refresh_tokens`,
+> migración `202611110001-auth-refresh-tokens`), con ventana deslizante de
+> `JWT_REFRESH_EXPIRES_IN` (def. `90d`) y revocación de toda la sesión ante reuso.
+> `POST /auth/logout` revoca la sesión. Evidencia: `refresh-token.service.spec.ts` y
+> `test/auth-refresh.e2e-spec.ts` contra PostgreSQL. El texto siguiente describe el estado previo.
 
 **Descripción.** `JWT_REFRESH_SECRET` (mínimo 64 caracteres, obligatoria) y `JWT_REFRESH_EXPIRES_IN`
 se validan y se exige que difieran del secreto de acceso, pero **no se referencian en ningún punto
@@ -1036,7 +1043,7 @@ ciclo de vida completo (`revoked_at`). El recorrido dato → evento → job → 
 | **Motivo** | Decisión funcional del propietario. |
 | **Impacto** | **Bajo.** La revalidación del principal contra PostgreSQL en cada petición ya proporciona revocación efectiva e impide escalada por token obsoleto. El coste es una consulta por petición autenticada. |
 | **Mitigación temporal** | Ninguna necesaria; el modelo actual es seguro. |
-| **Solución definitiva** | Implementar refresh + revocación, o retirar las variables no utilizadas. |
+| **Solución definitiva** | Implementar refresh + revocación, o retirar las variables no utilizadas. **Hecho el 11/11/2026** (ver F-008). |
 | **Responsable** | Propietario |
 | **Dependencia externa** | Ninguna |
 

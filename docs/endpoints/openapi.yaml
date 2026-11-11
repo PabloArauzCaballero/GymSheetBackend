@@ -71,6 +71,60 @@ paths:
         "400": { $ref: "#/components/responses/Problem400" }
         "401": { $ref: "#/components/responses/Problem401" }
         "429": { $ref: "#/components/responses/Problem429" }
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Renovar la sesión (rota el refresh token)
+      description: >-
+        Canjea un refresh token por un par nuevo. El presentado deja de servir; reusar uno
+        ya canjeado revoca toda la sesión. La sesión vence tras JWT_REFRESH_EXPIRES_IN
+        (90d por defecto) sin uso. Usa el límite general, no el estricto del login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshTokenRequest"
+      responses:
+        "200":
+          description: Par nuevo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthEnvelope"
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /auth/logout:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Cerrar la sesión del refresh token
+      description: Revoca la sesión (familia de refresh tokens). Idempotente.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshTokenRequest"
+      responses:
+        "200":
+          description: Sesión cerrada (revoked=false si ya estaba cerrada o no existía)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [revoked]
+                        properties:
+                          revoked: { type: boolean }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "429": { $ref: "#/components/responses/Problem429" }
   /auth/me:
     get:
       tags: [Auth]
@@ -2307,11 +2361,20 @@ components:
           properties:
             data:
               type: object
-              required: [accessToken, tokenType, user]
+              required: [accessToken, refreshToken, tokenType, user]
               properties:
                 accessToken: { type: string }
+                refreshToken:
+                  type: string
+                  description: Opaco y de un solo uso; se canjea en POST /auth/refresh.
                 tokenType: { type: string, enum: [Bearer] }
                 user: { $ref: "#/components/schemas/AuthUser" }
+    RefreshTokenRequest:
+      type: object
+      required: [refreshToken]
+      additionalProperties: false
+      properties:
+        refreshToken: { type: string, minLength: 20, maxLength: 200 }
     AuthenticatedPrincipalEnvelope:
       allOf:
         - $ref: "#/components/schemas/SuccessEnvelope"

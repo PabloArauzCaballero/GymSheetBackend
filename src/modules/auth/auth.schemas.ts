@@ -27,5 +27,11 @@ export const loginSchema = z.object({
   password: z.string().min(8).max(128),
 });
 
+/** Body of `POST /auth/refresh` and `POST /auth/logout`. */
+export const refreshTokenSchema = z.object({
+  refreshToken: z.string().trim().min(20).max(200),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;

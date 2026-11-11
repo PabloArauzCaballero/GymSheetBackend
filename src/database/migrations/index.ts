@@ -12,6 +12,7 @@ import { localExerciseMediaUrlMigration } from "./202608130001-local-exercise-me
 import { exerciseMusclesAndRatingsMigration } from "./202608130002-exercise-muscles-and-ratings";
 import { routineRecurrenceWindowMigration } from "./202608170001-routine-recurrence-window";
 import { userTenantMigration } from "./202608180001-user-tenant";
+import { authRefreshTokensMigration } from "./202611110001-auth-refresh-tokens";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -30,4 +31,5 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
   exerciseMusclesAndRatingsMigration,
   routineRecurrenceWindowMigration,
   userTenantMigration,
+  authRefreshTokensMigration,
 ];
