@@ -30,7 +30,6 @@ import { MusicModule } from './modules/music/music.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
 import { ProfileViewsModule } from './modules/profile-views/profile-views.module';
-import { TutorialProgressModule } from './modules/tutorial-progress/tutorial-progress.module';
 import { SocialModule } from './modules/social/social.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { StoriesModule } from './modules/stories/stories.module';
@@ -123,7 +122,6 @@ import { DirectoryModule } from './modules/directory/directory.module';
     ReelsModule,
     MusicModule,
     ProfileViewsModule,
-    TutorialProgressModule,
     AdminAccessModule,
     TenantsModule,
     DirectoryModule,

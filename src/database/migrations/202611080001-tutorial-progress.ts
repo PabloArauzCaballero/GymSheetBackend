@@ -25,7 +25,7 @@ const upStatements = [
 
 const downStatements = [`DROP TABLE IF EXISTS profile.tutorial_progress`] as const;
 
-export const tutorialProgressMigration: DatabaseMigration = {
+export const tutorialProgressInitialMigration: DatabaseMigration = {
   id: "202611080001-tutorial-progress",
   description: "Adds profile.tutorial_progress, the per-user progress of the web help-center tours.",
   up: (queryInterface, transaction) =>
