@@ -15,6 +15,7 @@ import { WorkoutSessionModel } from './workout-session.model';
 import { WorkoutSetModel } from './workout-set.model';
 import { WorkoutSkippedSetModel } from './workout-skipped-set.model';
 import { SessionHooksRegistry } from './session-hooks';
+import { WorkoutStaleSessionService } from './workout-stale-session.service';
 import { WorkoutsRepository } from './workouts.repository';
 import { WorkoutsService } from './workouts.service';
 
@@ -33,6 +34,7 @@ import { WorkoutsService } from './workouts.service';
     WorkoutCatalogRepository,
     SessionEditsRepository,
     FreeWorkoutService,
+    WorkoutStaleSessionService,
   ],
   exports: [WorkoutsService, WorkoutsRepository, SessionHooksRegistry, FreeWorkoutService],
 })
