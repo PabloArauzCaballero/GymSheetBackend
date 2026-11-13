@@ -64,6 +64,7 @@ import { TrainingInviteModel } from "../../modules/training-invitations/training
 import { TrainingInviteRevisionModel } from "../../modules/training-invitations/training-invite-revision.model";
 import { TrainingMeetingModel } from "../../modules/training-invitations/training-meeting.model";
 import { ProfileViewModel } from "../../modules/profile-views/profile-view.model";
+import { TutorialProgressModel } from "../../modules/tutorial-progress/tutorial-progress.model";
 import { RoutineModel } from "../../modules/training/routine.model";
 import { RoutineExerciseModel } from "../../modules/training/routine-exercise.model";
 import { RoutineAssignmentModel } from "../../modules/training/routine-assignment.model";
@@ -139,6 +140,7 @@ export const databaseModels = [
   TrainingInviteRevisionModel,
   TrainingMeetingModel,
   ProfileViewModel,
+  TutorialProgressModel,
   EquipmentModel,
   ExerciseModel,
   ExerciseEquipmentModel,

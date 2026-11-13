@@ -16,6 +16,23 @@ import { stripChatImageMetadata } from "./chat-image-metadata";
 import { isChatStickerId } from "./chat-sticker-catalog";
 import { validateChatAudio } from "./chat-audio-validation";
 
+/**
+ * Una nota de voz de escucha única se puede descargar solo durante este rato
+ * desde que se abrió: lo justo para reproducirla entera (≤ 120 s) con margen
+ * para una red lenta. Después el archivo deja de servirse aunque quien la
+ * abrió conserve la URL, que es lo que hace que «una sola vez» sea real y no
+ * solo una promesa de la app.
+ */
+export const VIEW_ONCE_AUDIO_PLAYBACK_WINDOW_MS = 5 * 60_000;
+
+export function isViewOnceAudioPlaybackExpired(
+  message: { type: string; viewOnce: boolean; viewedAt: Date | null },
+  nowMs: number,
+): boolean {
+  if (message.type !== "audio" || !message.viewOnce || !message.viewedAt) return false;
+  return nowMs - message.viewedAt.getTime() > VIEW_ONCE_AUDIO_PLAYBACK_WINDOW_MS;
+}
+
 /** Shape de Multer `memoryStorage`, mismo contrato que usa `profile-photos`. */
 export interface UploadedChatMedia {
   readonly originalname: string;
@@ -132,7 +149,11 @@ export class ChatService {
       const published = await this.repository.publishMessageIfVisible(conversationId, message.id, () => {
         this.chatEvents.emitMessage(response);
       });
-      if (published) await this.pushToAbsentRecipients(response, senderId);
+      // El push va fuera del camino crítico: el mensaje ya está escrito y
+      // emitido por el socket, y esperar al proveedor de push (HTTP externo,
+      // a veces segundos) retrasaba el ack de quien envía. `pushToAbsentRecipients`
+      // nunca lanza: captura y registra sus propios fallos.
+      if (published) void this.pushToAbsentRecipients(response, senderId);
     }
     return mapMessageToResponse(await this.repository.refreshMessageForResponse(message), { extras });
   }
@@ -200,6 +221,7 @@ export class ChatService {
     if (message.type === "image") return message.viewOnce ? "Te envió una foto de vista única" : "Te envió una foto";
     if (message.type === "video") return message.viewOnce ? "Te envió un video de vista única" : "Te envió un video";
     if (message.type === "location") return message.locationLabel ? `Compartió un lugar: ${message.locationLabel}` : "Compartió su ubicación";
+    if (message.type === "audio") return message.viewOnce ? "Te envió una nota de voz de escucha única" : "Te envió una nota de voz";
     if (message.type === "sticker") return "Te envió un sticker";
     const body = message.body?.trim() ?? "";
     if (body.length === 0) return "Te envió un mensaje";
@@ -272,7 +294,7 @@ export class ChatService {
     conversationId: string,
     senderId: string,
     file: UploadedChatMedia | undefined,
-    options: { type: "image" | "video" | "audio"; body?: string; viewOnce: boolean; replyToId?: string },
+    options: { type: "image" | "video" | "audio"; body?: string; viewOnce: boolean; replyToId?: string; clientRequestId?: string },
   ): Promise<MessageResponse> {
     if (!file || !file.buffer || file.size === 0) {
       throw new BadRequestException("Se requiere un archivo no vacío.");
@@ -331,7 +353,7 @@ export class ChatService {
       mediaSizeBytes: stored.sizeBytes,
       viewOnce: options.viewOnce,
       ...(options.replyToId ? { replyToId: options.replyToId } : {}),
-    });
+    }, options.clientRequestId);
   }
 
   /**
@@ -410,6 +432,9 @@ export class ChatService {
     }
     if (message.viewOnce && !message.viewedAt) {
       throw new ForbiddenException("Abre el mensaje de vista única antes de descargar el archivo.");
+    }
+    if (isViewOnceAudioPlaybackExpired(message, Date.now())) {
+      throw new ForbiddenException("Este contenido ya no está disponible: se escucha una sola vez.");
     }
 
     try {

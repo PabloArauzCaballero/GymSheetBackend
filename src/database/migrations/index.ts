@@ -115,6 +115,7 @@ import { directoryMarketplaceAndPaymentsMigration } from "./202610190002-directo
 import { routineProgressExportAndAuditMigration } from "./202610190003-routine-progress-export-and-audit";
 import { workoutExerciseSwapsMigration } from "./202610220001-workout-exercise-swaps";
 import { branchLocationMigration } from "./202611080001-branch-location";
+import { tutorialProgressMigration } from "./202611080001-tutorial-progress";
 import { progressionStrikesAndCoachCardsMigration } from "./202610190002-progression-strikes-and-coach-cards";
 import { DatabaseMigration } from "./migration.types";
 
@@ -238,4 +239,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   progressionStrikesAndCoachCardsMigration,
   workoutExerciseSwapsMigration,
   branchLocationMigration,
+  tutorialProgressMigration,
 ];

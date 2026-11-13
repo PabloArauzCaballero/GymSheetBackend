@@ -1,7 +1,7 @@
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ChatMediaCipher } from "./chat-media-cipher";
 import { mapMessageToResponse } from "./chat.mapper";
-import { ChatService } from "./chat.service";
+import { ChatService, VIEW_ONCE_AUDIO_PLAYBACK_WINDOW_MS, isViewOnceAudioPlaybackExpired } from "./chat.service";
 import { MessageModel } from "./message.model";
 
 const cipher = new ChatMediaCipher("chat-media-privacy-local-test-key");
@@ -24,7 +24,7 @@ const message = {
   createdAt: new Date(),
 } as MessageModel;
 
-function fixture(payload = cipher.encrypt(bytes)) {
+function fixture(payload = cipher.encrypt(bytes), stored: MessageModel = message) {
   let active = true;
   let readCount = 0;
   let duringRead: () => void = () => {};
@@ -37,7 +37,7 @@ function fixture(payload = cipher.encrypt(bytes)) {
         : null;
     },
     async getMessage() {
-      return message;
+      return stored;
     },
   };
   const storage = {
@@ -125,5 +125,43 @@ describe("chat media privacy", () => {
       mapMessageToResponse({ ...message, mediaKey: null } as MessageModel)
         .mediaUrl,
     ).toBeNull();
+  });
+
+  describe("view-once voice notes", () => {
+    const voiceNote = (viewedAgoMs: number | null) => ({
+      ...message,
+      type: "audio",
+      senderId: "a",
+      mediaMimeType: "audio/mp4",
+      viewOnce: true,
+      viewedAt: viewedAgoMs === null ? null : new Date(Date.now() - viewedAgoMs),
+    } as MessageModel);
+
+    it("plays for the recipient right after opening it", async () => {
+      const f = fixture(cipher.encrypt(bytes), voiceNote(1_000));
+      await expect(f.service.downloadMedia("c", "m", "b")).resolves.toEqual({ buffer: bytes, mimeType: "audio/mp4" });
+    });
+
+    it("stops being served once the playback window after opening has passed", async () => {
+      const f = fixture(cipher.encrypt(bytes), voiceNote(VIEW_ONCE_AUDIO_PLAYBACK_WINDOW_MS + 1_000));
+      await expect(f.service.downloadMedia("c", "m", "b")).rejects.toThrow(ForbiddenException);
+      expect(f.reads).toBe(0);
+    });
+
+    it("cannot be downloaded before it is opened, nor by its sender", async () => {
+      await expect(fixture(cipher.encrypt(bytes), voiceNote(null)).service.downloadMedia("c", "m", "b"))
+        .rejects.toThrow(ForbiddenException);
+      await expect(fixture(cipher.encrypt(bytes), voiceNote(1_000)).service.downloadMedia("c", "m", "a"))
+        .rejects.toThrow(ForbiddenException);
+    });
+
+    it("the window only applies to view-once audio", () => {
+      const longAgo = new Date(0);
+      const now = Date.now();
+      expect(isViewOnceAudioPlaybackExpired({ type: "audio", viewOnce: true, viewedAt: longAgo }, now)).toBe(true);
+      expect(isViewOnceAudioPlaybackExpired({ type: "image", viewOnce: true, viewedAt: longAgo }, now)).toBe(false);
+      expect(isViewOnceAudioPlaybackExpired({ type: "audio", viewOnce: false, viewedAt: longAgo }, now)).toBe(false);
+      expect(isViewOnceAudioPlaybackExpired({ type: "audio", viewOnce: true, viewedAt: null }, now)).toBe(false);
+    });
   });
 });

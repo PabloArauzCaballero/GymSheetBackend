@@ -149,6 +149,7 @@ export class ChatController {
       body: input.body,
       viewOnce: input.viewOnce,
       ...(input.replyToId ? { replyToId: input.replyToId } : {}),
+      ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
     });
   }
 
