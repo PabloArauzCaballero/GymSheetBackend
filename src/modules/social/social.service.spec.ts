@@ -1208,9 +1208,10 @@ describe("SocialService.discoveryDeck preferences", () => {
         .mockResolvedValue({ configured: false, version: 0 }),
       directory: jest.fn(),
     });
+    // 400 con código estable: los clientes enseñan el formulario de preferencias.
     await expect(
       service.discoveryDeck(userA, "tenant", { limit: 10 }),
-    ).rejects.toThrow(BadRequestException);
+    ).rejects.toMatchObject({ code: "DISCOVERY_PREFERENCES_REQUIRED", status: 400 });
     expect(service["repository"].directory).not.toHaveBeenCalled();
   });
 
