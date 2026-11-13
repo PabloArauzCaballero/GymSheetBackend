@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Transaction } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 import { WorkoutSessionStatus } from '../../common/enums/domain.enums';
 import { ExerciseModel } from '../exercises/exercise.model';
 import { WorkoutSessionExerciseModel } from './workout-session-exercise.model';
@@ -163,6 +163,19 @@ export class WorkoutsRepository {
       attributes: ['id', 'status', 'closeResult'],
     });
     return row ? { status: row.status, closeResult: row.closeResult ?? null } : null;
+  }
+
+  /**
+   * Cancela las sesiones abiertas desde antes de `cutoff`. Una sesión olvidada
+   * no es «el entreno en curso» y, por el índice de una sola abierta por
+   * usuario, impediría empezar la siguiente. Devuelve cuántas cerró.
+   */
+  async cancelStaleOpenSessions(cutoff: Date): Promise<number> {
+    const [affected] = await this.sessionModel.update(
+      { status: WorkoutSessionStatus.CANCELLED, finishedAt: new Date() },
+      { where: { status: WorkoutSessionStatus.IN_PROGRESS, startedAt: { [Op.lt]: cutoff } } },
+    );
+    return affected;
   }
 
   async changeSessionStatus(

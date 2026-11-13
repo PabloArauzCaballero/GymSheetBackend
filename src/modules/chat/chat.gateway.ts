@@ -39,6 +39,7 @@ import { ChatEventsService } from "./chat-events.service";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatRepository } from "./chat.repository";
 import { ChatService } from "./chat.service";
+import type { MessageResponse } from "./chat.mapper";
 import { sendMessageSchema, typingSchema } from "./chat.schemas";
 import { z } from "zod";
 
@@ -190,7 +191,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   async handleMessage(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { conversationId?: string; body?: string; clientRequestId?: string; replyToId?: string },
-  ): Promise<{ ok: boolean; error?: string; messageId?: string; clientRequestId?: string | null }> {
+  ): Promise<{ ok: boolean; error?: string; messageId?: string; clientRequestId?: string | null; message?: MessageResponse }> {
     const userId = await authenticatedUserId(client);
     if (!userId) return { ok: false, error: "unauthenticated" };
     const conversationId = payload?.conversationId;
@@ -207,7 +208,8 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       const message = await this.chatService.sendMessage(
         conversationId, userId, parsed.data.body as string, parsed.data.clientRequestId, parsed.data.replyToId,
       );
-      return { ok: true, messageId: message.id, clientRequestId: message.clientRequestId };
+      // El mensaje completo en el ack: quien envía lo pinta sin esperar a `message:new`.
+      return { ok: true, messageId: message.id, clientRequestId: message.clientRequestId, message };
     } catch (error) {
       if (error instanceof ConflictException) return { ok: false, error: "idempotency_conflict" };
       if (error instanceof BadRequestException) return { ok: false, error: "reply_unavailable" };
