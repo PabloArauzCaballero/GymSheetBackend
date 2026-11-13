@@ -18,7 +18,8 @@ export type DomainErrorCode =
   | 'REST_SETTING_INVALID'
   | 'SWAP_SAME_EXERCISE'
   | 'MUSIC_URL_INVALID'
-  | 'MUSIC_PLAYLIST_DUPLICATE';
+  | 'MUSIC_PLAYLIST_DUPLICATE'
+  | 'DISCOVERY_PREFERENCES_REQUIRED';
 
 /**
  * Error de dominio con `code` estable y `details` opcional (por ejemplo

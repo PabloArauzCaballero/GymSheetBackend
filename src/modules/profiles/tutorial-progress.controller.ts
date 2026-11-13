@@ -4,14 +4,14 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import {
   TutorialProgressUpsertInput,
-  tutorialIdParamSchema,
+  tutorialIdSchema,
   tutorialProgressUpsertSchema,
 } from "./tutorial-progress.schemas";
 import { TutorialProgressService } from "./tutorial-progress.service";
 
 /**
- * El dueño del progreso sale SIEMPRE del JWT, nunca de la ruta ni del cuerpo:
- * no hay forma de leer ni escribir el progreso de otra persona.
+ * `GET/PUT/DELETE /me/tutorial-progress`: el contrato que la web ya consumía
+ * (`apps/web/docs/tutorials.md`). Sin él, «Omitir» no sobrevivía a una recarga.
  */
 @Controller("me/tutorial-progress")
 export class TutorialProgressController {
@@ -25,7 +25,7 @@ export class TutorialProgressController {
   @Put(":tutorialId")
   upsert(
     @CurrentUser() user: AuthenticatedUser,
-    @Param("tutorialId", new ZodValidationPipe(tutorialIdParamSchema)) tutorialId: string,
+    @Param("tutorialId", new ZodValidationPipe(tutorialIdSchema)) tutorialId: string,
     @Body(new ZodValidationPipe(tutorialProgressUpsertSchema)) input: TutorialProgressUpsertInput,
   ) {
     return this.service.upsert(user.id, tutorialId, input);
@@ -34,7 +34,7 @@ export class TutorialProgressController {
   @Delete(":tutorialId")
   reset(
     @CurrentUser() user: AuthenticatedUser,
-    @Param("tutorialId", new ZodValidationPipe(tutorialIdParamSchema)) tutorialId: string,
+    @Param("tutorialId", new ZodValidationPipe(tutorialIdSchema)) tutorialId: string,
   ) {
     return this.service.reset(user.id, tutorialId);
   }
