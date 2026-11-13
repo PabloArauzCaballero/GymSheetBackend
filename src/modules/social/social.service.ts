@@ -2,6 +2,7 @@ import {
   BadGatewayException,
   BadRequestException,
   ConflictException,
+  HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
@@ -15,6 +16,7 @@ import {
   NotificationChannel,
 } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
+import { DomainException } from "../../common/errors/domain.exception";
 import { UserModel } from "../users/user.model";
 import { UsersRepository } from "../users/users.repository";
 import { ChatEventsService } from "../chat/chat-events.service";
@@ -553,7 +555,10 @@ export class SocialService {
     // configurarlas.
     const preferences = await this.repository.discoveryPreferences(viewerId);
     if (!preferences.configured) {
-      throw new BadRequestException(
+      // Código estable: los clientes enseñan el formulario en lugar de un error.
+      throw new DomainException(
+        HttpStatus.BAD_REQUEST,
+        "DISCOVERY_PREFERENCES_REQUIRED",
         "Configura tus preferencias de Conocer antes de recibir recomendaciones.",
       );
     }

@@ -15,6 +15,8 @@ import { ProfilePhotoModel } from "./profile-photo.model";
 import { ProfilePhotosController } from "./profile-photos.controller";
 import { ProfilePhotosRepository } from "./profile-photos.repository";
 import { ProfilePhotosService } from "./profile-photos.service";
+import { TutorialProgressController } from "./tutorial-progress.controller";
+import { TutorialProgressService } from "./tutorial-progress.service";
 
 @Module({
   imports: [
@@ -27,7 +29,7 @@ import { ProfilePhotosService } from "./profile-photos.service";
       ProfilePhotoModel,
     ]),
   ],
-  controllers: [ProfilesController, OnboardingController, ProfilePhotosController],
+  controllers: [ProfilesController, OnboardingController, ProfilePhotosController, TutorialProgressController],
   providers: [
     ProfilesRepository,
     ProfilesService,
@@ -35,6 +37,7 @@ import { ProfilePhotosService } from "./profile-photos.service";
     OnboardingService,
     ProfilePhotosRepository,
     ProfilePhotosService,
+    TutorialProgressService,
   ],
   exports: [ProfilesService],
 })
