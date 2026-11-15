@@ -38,7 +38,7 @@ export class EmailNotificationAdapter implements NotificationDeliveryAdapter {
       to: recipient.email,
       // Un correo sin asunto acaba en spam y, antes de eso, es ilegible en una
       // bandeja de entrada. Si el mensaje no traía uno, se pone el de la marca.
-      subject: request.subject ?? 'GymSheet',
+      subject: request.subject ?? 'REPP',
       text: request.body,
       idempotencyKey: request.idempotencyKey,
     });

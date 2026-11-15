@@ -71,7 +71,7 @@ export class TrainingInvitationCalendarService {
     const lines = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
-      "PRODID:-//GymSheet//Training Invitations//ES",
+      "PRODID:-//REPP//Training Invitations//ES",
       "CALSCALE:GREGORIAN",
       `METHOD:${cancelled ? "CANCEL" : "PUBLISH"}`,
       `X-WR-TIMEZONE:${escapeCalendarText(meeting.time_zone)}`,

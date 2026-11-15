@@ -20,7 +20,7 @@ export const mediaUploadMetadataSchema = z
     name: z.string().trim().min(1).max(180),
     altText: z.string().trim().min(1).max(300),
     license: z.string().trim().min(1).max(160).default("Propietaria"),
-    attribution: z.string().trim().max(500).default("GymSheet"),
+    attribution: z.string().trim().max(500).default("REPP"),
     width: z.coerce.number().int().positive().max(100000).optional(),
     height: z.coerce.number().int().positive().max(100000).optional(),
   })

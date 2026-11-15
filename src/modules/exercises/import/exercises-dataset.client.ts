@@ -48,7 +48,7 @@ export class ExercisesDatasetClient {
         method: "GET",
         headers: {
           Accept: "application/json",
-          "User-Agent": "GymSheetBackend/1.0 exercises-dataset-connector",
+          "User-Agent": "REPP-Backend/1.0 exercises-dataset-connector",
         },
         redirect: "error",
         signal: abortController.signal,
@@ -155,7 +155,7 @@ export class ExercisesDatasetClient {
       const response = await fetch(sourceUrl, {
         headers: {
           Accept: "application/json",
-          "User-Agent": "GymSheetBackend/1.0 open-exercise-media-connector",
+          "User-Agent": "REPP-Backend/1.0 open-exercise-media-connector",
         },
         redirect: "error",
         signal: abortController.signal,

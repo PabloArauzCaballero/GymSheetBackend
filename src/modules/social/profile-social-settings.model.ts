@@ -35,7 +35,7 @@ export class ProfileSocialSettingsModel extends Model {
   @Column({ type: DataType.BOOLEAN, allowNull: false, field: "profile_enabled" })
   declare profileEnabled: boolean;
 
-  /** Independent consent to be discoverable across GymSheet tenants. */
+  /** Independent consent to be discoverable across REPP tenants. */
   @Default(false)
   @Column({ type: DataType.BOOLEAN, allowNull: false, field: "cross_gym_enabled" })
   declare crossGymEnabled: boolean;

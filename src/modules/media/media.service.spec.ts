@@ -40,7 +40,7 @@ const metadata = {
   name: "Portada",
   altText: "alt",
   license: "Propietaria",
-  attribution: "GymSheet",
+  attribution: "REPP",
   width: undefined,
   height: undefined,
 };

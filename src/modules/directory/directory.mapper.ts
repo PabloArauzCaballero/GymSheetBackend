@@ -183,7 +183,7 @@ export function mapReviewItem(
     entityId: review.entityId,
     author: {
       id: authorId,
-      displayName: review.user?.fullName ?? review.user?.email ?? 'Atleta GymSheet',
+      displayName: review.user?.fullName ?? review.user?.email ?? 'Atleta REPP',
       avatarUrl: resolveMediaUrl(avatarsMap.get(authorId) ?? null),
     },
     rating: review.rating,

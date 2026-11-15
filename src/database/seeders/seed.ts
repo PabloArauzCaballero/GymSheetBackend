@@ -81,13 +81,13 @@ export function resolveSeedUsers(
         email: seedEnvironment.SEED_SYSTEM_ADMIN_EMAIL.toLowerCase(),
         fullName:
           seedEnvironment.SEED_SYSTEM_ADMIN_FULL_NAME ??
-          "GymSheet Platform Administrator",
+          "REPP Platform Administrator",
         password: seedEnvironment.SEED_SYSTEM_ADMIN_PASSWORD,
         role: UserRole.SYSTEM_ADMIN,
         status: UserStatus.ACTIVE,
       });
     }
-    // Cuenta de sistema global para el chat fijo "GYM SHEET Corporativo".
+    // Cuenta de sistema global para el chat fijo "REPP Corporativo".
     // Opcional: sin credenciales configuradas, ese chat no se crea para
     // nadie — no hay una cuenta "por defecto" que nadie pidió sembrar.
     if (seedEnvironment.SEED_SYSTEM_CORPORATE_EMAIL && seedEnvironment.SEED_SYSTEM_CORPORATE_PASSWORD) {

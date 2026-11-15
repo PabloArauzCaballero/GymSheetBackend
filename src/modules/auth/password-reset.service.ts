@@ -155,7 +155,7 @@ export class PasswordResetService {
     await this.notifications.enqueueDirectMessage({
       recipientUserId: user.id,
       channel: NotificationChannel.EMAIL,
-      subject: 'Tu contraseña de GymSheet ha cambiado',
+      subject: 'Tu contraseña de REPP ha cambiado',
       body: [
         'Acabas de establecer una contraseña nueva.',
         '',

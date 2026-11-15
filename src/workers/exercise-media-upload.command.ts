@@ -319,7 +319,7 @@ async function processExercise(params: {
           thumbnailUrl: posterUrls.get(piece.variant) ?? null,
           renderVersion: options.renderVersion,
           attribution: options.attribution,
-          license: "Propiedad de GymSheet",
+          license: "Propiedad de REPP",
           isPrimary: piece.isPrimary,
           sortOrder: piece.sortOrder,
           highlight,

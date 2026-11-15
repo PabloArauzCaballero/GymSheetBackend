@@ -138,7 +138,7 @@ export class CustomerStaffService {
       await this.notifications.enqueueDirectMessage({
         recipientUserId: userId,
         channel: NotificationChannel.EMAIL,
-        subject: "Tu cuenta de GymSheet ya está lista",
+        subject: "Tu cuenta de REPP ya está lista",
         body: [
           `Hola ${input.fullName},`,
           "",

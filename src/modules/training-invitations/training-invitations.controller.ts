@@ -54,7 +54,7 @@ export class TrainingInvitationsController {
       .status(200)
       .set({
         "Content-Type": "text/calendar; charset=utf-8",
-        "Content-Disposition": `attachment; filename="gymsheet-training-${inviteId}.ics"`,
+        "Content-Disposition": `attachment; filename="repp-training-${inviteId}.ics"`,
         "Cache-Control": "private, no-store",
       })
       .send(body);

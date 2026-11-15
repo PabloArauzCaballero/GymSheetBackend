@@ -14,7 +14,7 @@ describe("mediaUploadMetadataSchema", () => {
       height: "800",
     });
     expect(parsed.license).toBe("Propietaria");
-    expect(parsed.attribution).toBe("GymSheet");
+    expect(parsed.attribution).toBe("REPP");
     expect(parsed.width).toBe(1200);
     expect(parsed.height).toBe(800);
   });

@@ -502,19 +502,19 @@ export const environmentSchema = z
       .trim()
       .min(2)
       .max(180)
-      .default("GymSheet Platform Administrator"),
+      .default("REPP Platform Administrator"),
     SEED_ADMIN_FULL_NAME: z
       .string()
       .trim()
       .min(2)
       .max(180)
-      .default("GymSheet Administrator"),
+      .default("REPP Administrator"),
     SEED_MOCK_PASSWORD: z.preprocess(
       (value) => (value === "" ? undefined : value),
       z.string().min(12).max(128).optional(),
     ),
     /**
-     * Cuenta de sistema global usada como chat fijo "GYM SHEET Corporativo"
+     * Cuenta de sistema global usada como chat fijo "REPP Corporativo"
      * en la lista de conversaciones de cada usuario. Opcional a propósito:
      * sin ella, ese chat simplemente no se crea (no hay fallback silencioso
      * a una cuenta que nadie sembró).
@@ -532,7 +532,7 @@ export const environmentSchema = z
       .trim()
       .min(2)
       .max(180)
-      .default("GYM SHEET Corporativo"),
+      .default("REPP Corporativo"),
 
     /**
      * Almacenamiento de media (arquitectura de puertos y adaptadores). `local`
