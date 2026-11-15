@@ -30,7 +30,7 @@ export class ExportController {
 
   @Get('workout-history/pdf')
   @Header('Content-Type', 'application/pdf')
-  @Header('Content-Disposition', 'attachment; filename="gymsheet-avance.pdf"')
+  @Header('Content-Disposition', 'attachment; filename="repp-avance.pdf"')
   async exportWorkoutHistoryPdf(@CurrentUser() currentUser: AuthenticatedUser) {
     const pdf = await this.exportService.buildWorkoutHistoryPdf(currentUser);
     return new StreamableFile(pdf);

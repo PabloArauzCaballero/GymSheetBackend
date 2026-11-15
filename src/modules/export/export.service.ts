@@ -4,6 +4,7 @@ import { Sequelize } from 'sequelize-typescript';
 import { QueryTypes } from 'sequelize';
 import ExcelJS from 'exceljs';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
+import { env } from '../../config/env';
 import { EquipmentService } from '../equipment/equipment.service';
 import { ProfilesService } from '../profiles/profiles.service';
 import { UsersService } from '../users/users.service';
@@ -13,6 +14,13 @@ import { RoutineModel } from '../training/routine.model';
 import { RoutineProgressDownloadAuditModel, ExportFormat } from './routine-progress-download-audit.model';
 import { ProductEvents } from '../../common/tracking/product-events';
 import { RoutineProgressExportQuery } from './export.schemas';
+import type { RoutineProgressRow } from './routine-progress.types';
+import { describeRoutineProgressPeriod } from './pdf/period';
+import { renderRoutineProgressPdf } from './pdf/routine-progress.pdf';
+import { resolvePdfBrand } from './pdf/theme';
+import { renderWorkoutHistoryPdf } from './pdf/workout-history.pdf';
+
+export type { RoutineProgressRow } from './routine-progress.types';
 
 const EXPORT_PAGE_SIZE = 100;
 const MAX_EXPORTED_SESSIONS = 1000;
@@ -22,80 +30,6 @@ const MAX_EXPORTED_SESSIONS = 1000;
  * años de historial dejaba el servidor sin memoria. Por encima, se pide filtrar.
  */
 const MAX_ROUTINE_PROGRESS_ROWS = 20000;
-
-export interface RoutineProgressRow {
-  usuario_id: string;
-  usuario_email: string;
-  usuario_nombre: string;
-  rutina_id: string;
-  rutina_nombre: string;
-  rutina_descripcion: string | null;
-  rutina_visibilidad: string;
-  rutina_objetivo: string | null;
-  rutina_duracion_semanas: number | null;
-  rutina_version: number;
-  rutina_es_oficial: boolean;
-  rutina_estado: string;
-  rutina_huella: string | null;
-  rutina_publicada_en: Date | string | null;
-  rutina_creada_en: Date | string;
-  rutina_autor_id: string | null;
-  rutina_autor_nombre: string | null;
-  rutina_autor_email: string | null;
-  rutina_atribucion_original: string | null;
-  dia_id: string | null;
-  dia_nombre: string | null;
-  dia_semana_numero: number | null;
-  dia_semana_nombre: string;
-  dia_orden: number | null;
-  ejercicio_id: string | null;
-  ejercicio_nombre: string | null;
-  ejercicio_grupo_muscular: string | null;
-  ejercicio_musculo_objetivo: string | null;
-  ejercicio_tipo: string | null;
-  ejercicio_equipamiento: string | null;
-  ejercicio_orden: number | null;
-  prescripcion_series: number | null;
-  prescripcion_reps_min: number | null;
-  prescripcion_reps_max: number | null;
-  prescripcion_reps_rango: string | null;
-  prescripcion_peso_objetivo_kg: string | number | null;
-  prescripcion_rir_objetivo: number | null;
-  prescripcion_descanso_seg: number | null;
-  prescripcion_nota: string | null;
-  programa_id: string | null;
-  programa_carril: string | null;
-  programa_modo: string | null;
-  programa_estado: string | null;
-  programa_multiplicador: string | number | null;
-  sobrecarga_peso_trabajo_kg: string | number | null;
-  sobrecarga_peso_sugerido_kg: string | number | null;
-  sobrecarga_e1rm_inicial_kg: string | number | null;
-  sobrecarga_e1rm_actual_kg: string | number | null;
-  sobrecarga_marca_meta_kg: string | number | null;
-  sobrecarga_fallos_seguidos: number | null;
-  sesion_id: string | null;
-  sesion_fecha_inicio: Date | string | null;
-  sesion_fecha_fin: Date | string | null;
-  sesion_duracion_min: number | null;
-  sesion_estado: string | null;
-  sesion_observacion: string | null;
-  sesion_geo_verificada: boolean | null;
-  sesion_ejercicio_es_enfasis: boolean | null;
-  serie_id: string | null;
-  serie_numero: number | null;
-  serie_repeticiones_logradas: number | null;
-  serie_peso_levantado_kg: string | number | null;
-  serie_volumen_kg: string | number | null;
-  serie_rir_real: number | null;
-  serie_rpe_real: number | null;
-  serie_descanso_seg_previo: number | null;
-  serie_tipo: string | null;
-  serie_cardio_duracion_seg: number | null;
-  serie_cardio_distancia_m: number | null;
-  serie_cardio_fc_media: number | null;
-  serie_registrada_en: Date | string | null;
-}
 
 @Injectable()
 export class ExportService {
@@ -140,62 +74,13 @@ export class ExportService {
 
   async buildWorkoutHistoryPdf(actor: AuthenticatedUser): Promise<Buffer> {
     const data = await this.buildWorkoutHistoryExport(actor);
-
-    const { default: PDFDocument } = await import('pdfkit');
-
-    const MARGIN = 36;
-    const doc = new PDFDocument({ size: 'A4', margin: MARGIN, bufferPages: true });
-    const pageWidth = doc.page.width;
-    const pageHeight = doc.page.height;
-    const contentWidth = pageWidth - MARGIN * 2;
-
-    const chunks: Buffer[] = [];
-    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-    const rendered = new Promise<Buffer>((resolve, reject) => {
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
+    return renderWorkoutHistoryPdf({
+      brand: resolvePdfBrand(actor.tenantId),
+      athleteName: data.usuario.nombreCompleto || data.usuario.email,
+      profile: data.perfil,
+      sessions: data.sesiones,
+      timeZone: env.BUSINESS_TIME_ZONE,
     });
-
-    // Fondo Tech Dark
-    doc.rect(0, 0, pageWidth, pageHeight).fill('#0B132B');
-
-    // Header Bar
-    doc.roundedRect(MARGIN, MARGIN, contentWidth, 72, 8).fillAndStroke('#131E36', '#223354');
-    doc.rect(MARGIN, MARGIN, 5, 72).fill('#C3F400');
-
-    doc.fillColor('#C3F400').font('Helvetica-Bold').fontSize(9).text('GYMSHEET · REPP', MARGIN + 16, MARGIN + 12);
-    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(14).text('INFORME DE ENTRENAMIENTO', MARGIN + 16, MARGIN + 26);
-    doc.fillColor('#94A3B8').font('Helvetica').fontSize(9).text(data.usuario.nombreCompleto || data.usuario.email, MARGIN + 16, MARGIN + 46);
-
-    // KPI Cards
-    const yKpi = MARGIN + 84;
-    const cardW = (contentWidth - 16) / 3;
-    const cardH = 58;
-
-    const totalSessions = data.sesiones.length;
-    let totalSets = 0;
-    let totalVolume = 0;
-    for (const session of data.sesiones) {
-      for (const ex of session.ejercicios) {
-        for (const s of ex.series) {
-          totalSets += 1;
-          totalVolume += (s.pesoKg ?? 0) * (s.repeticiones ?? 0);
-        }
-      }
-    }
-
-    const drawCard = (x: number, title: string, value: string, color: string) => {
-      doc.roundedRect(x, yKpi, cardW, cardH, 6).fillAndStroke('#131E36', '#223354');
-      doc.fillColor('#94A3B8').font('Helvetica-Bold').fontSize(7).text(title, x + 10, yKpi + 10);
-      doc.fillColor(color).font('Helvetica-Bold').fontSize(16).text(value, x + 10, yKpi + 24);
-    };
-
-    drawCard(MARGIN, 'SESIONES REGISTRADAS', String(totalSessions), '#38BDF8');
-    drawCard(MARGIN + cardW + 8, 'SERIES COMPLETADAS', String(totalSets), '#C3F400');
-    drawCard(MARGIN + (cardW + 8) * 2, 'VOLUMEN TOTAL ACUMULADO', `${Math.round(totalVolume)} kg`, '#A78BFA');
-
-    doc.end();
-    return rendered;
   }
 
   async buildWorkoutHistoryCsv(actor: AuthenticatedUser): Promise<string> {
@@ -382,10 +267,10 @@ export class ExportService {
   ): Promise<{ buffer: Buffer; fileName: string; recordsCount: number }> {
     const rows = await this.fetchRoutineProgressRows(actor, query);
     const dateStr = new Date().toISOString().split('T')[0];
-    const fileName = `gymsheet-progreso-rutinas-${dateStr}.xlsx`;
+    const fileName = `repp-progreso-rutinas-${dateStr}.xlsx`;
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'GymSheet REPP';
+    workbook.creator = 'REPP';
     workbook.lastModifiedBy = actor.email;
     workbook.created = new Date();
     workbook.modified = new Date();
@@ -560,7 +445,7 @@ export class ExportService {
   ): Promise<{ content: string; fileName: string; recordsCount: number }> {
     const rows = await this.fetchRoutineProgressRows(actor, query);
     const dateStr = new Date().toISOString().split('T')[0];
-    const fileName = `gymsheet-progreso-rutinas-${dateStr}.csv`;
+    const fileName = `repp-progreso-rutinas-${dateStr}.csv`;
 
     const headers = [
       'rutina_id',
@@ -697,544 +582,26 @@ export class ExportService {
     return { content, fileName, recordsCount: rows.length };
   }
 
-  /**
-   * Genera el informe DASHBOARD en PDF de altísimo impacto visual:
-   * - Lienzo oscuro oficial de la app (#0F172A) con superficies de elevación semánticas (#1A2639, #202D42, #121C2D).
-   * - Identidad oficial REPP con monograma corporativo en jade (#2E8B7B) y acentos controlados de rendimiento (#74CFBE, #C3F400, #38BDF8).
-   * - Bento Grid con 4 KPIs ejecutivos de carga y progresión mecánica.
-   * - Paneles analíticos duales: Sobrecarga Progresiva (1RM inicial vs actual vs meta) y Distribución Muscular.
-   * - Módulos de Récords Personales (PRs verificados) y Métricas de Constancia/Adherencia.
-   * - Blueprint de prescripción técnica de ejercicios y registro granular de series ejecutadas con paginación inteligente.
-   * - Trazabilidad y auditoría oficial criptográfica en cada página.
-   */
+  /** Informe PDF del progreso de rutinas; el dibujo vive en `pdf/routine-progress.pdf.ts`. */
   async buildRoutineProgressPdf(
     actor: AuthenticatedUser,
     query: RoutineProgressExportQuery,
     reqMeta?: { ip?: string; userAgent?: string },
   ): Promise<{ buffer: Buffer; fileName: string; recordsCount: number }> {
-    const rows = await this.fetchRoutineProgressRows(actor, query);
+    const [rows, user] = await Promise.all([
+      this.fetchRoutineProgressRows(actor, query),
+      this.usersService.getActiveUserOrFail(actor.id),
+    ]);
     const dateStr = new Date().toISOString().split('T')[0];
-    const fileName = `gymsheet-progreso-rutinas-${dateStr}.pdf`;
+    const fileName = `repp-progreso-rutinas-${dateStr}.pdf`;
 
-    const { default: PDFDocument } = await import('pdfkit');
-
-    const PALETTE = {
-      bg: '#0F172A',
-      surfaceLowest: '#121C2D',
-      surfaceLow: '#162033',
-      surface: '#1A2639',
-      surfaceHigh: '#202D42',
-      surfaceHighest: '#27364D',
-      borderSubtle: '#26364D',
-      border: '#40516B',
-      textPrimary: '#F5F8FA',
-      textMuted: '#B2BEC8',
-      textDisabled: '#718091',
-      reppJade: '#2E8B7B',
-      jadeLight: '#74CFBE',
-      jadeDim: '#143831',
-      volt: '#C3F400',
-      voltDim: '#1F2913',
-      cyan: '#38BDF8',
-      amber: '#E0B65F',
-      emerald: '#55CF91',
-      rose: '#FF6B63',
-      purple: '#A78BFA',
-    };
-
-    const MARGIN = 28;
-    const doc = new PDFDocument({
-      size: 'A4',
-      margins: { top: 0, bottom: 0, left: 0, right: 0 },
-      bufferPages: true,
-      autoFirstPage: true,
+    const buffer = await renderRoutineProgressPdf({
+      brand: resolvePdfBrand(actor.tenantId),
+      athleteName: user.fullName || actor.email,
+      periodLabel: describeRoutineProgressPeriod(query, env.BUSINESS_TIME_ZONE),
+      rows,
+      timeZone: env.BUSINESS_TIME_ZONE,
     });
-
-    const pageWidth = doc.page.width;
-    const pageHeight = doc.page.height;
-    const contentWidth = pageWidth - MARGIN * 2;
-
-    const chunks: Buffer[] = [];
-    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-    const rendered = new Promise<Buffer>((resolve, reject) => {
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-    });
-
-    const applyDarkBackground = () => {
-      doc.save();
-      doc.rect(0, 0, pageWidth, pageHeight).fill(PALETTE.bg);
-      doc.restore();
-    };
-
-    const drawCard = (x: number, y: number, w: number, h: number, fill = PALETTE.surface, stroke = PALETTE.borderSubtle, r = 8) => {
-      doc.save();
-      doc.roundedRect(x, y, w, h, r).fillAndStroke(fill, stroke);
-      doc.restore();
-    };
-
-    const drawBadge = (x: number, y: number, text: string, bg: string, textColor: string, fs = 7, px = 6, py = 2) => {
-      doc.save();
-      doc.font('Helvetica-Bold').fontSize(fs);
-      const textW = doc.widthOfString(text);
-      doc.roundedRect(x, y, textW + px * 2, fs + py * 2, 4).fill(bg);
-      doc.fillColor(textColor).text(text, x + px, y + py, { lineBreak: false });
-      doc.restore();
-      return textW + px * 2;
-    };
-
-    const drawBar = (x: number, y: number, w: number, h: number, pct: number, fill: string, bg = PALETTE.surfaceLowest, r = h / 2) => {
-      doc.save();
-      doc.roundedRect(x, y, w, h, r).fill(bg);
-      const fillW = Math.max(0, Math.min(w, w * (Math.max(0, pct) / 100)));
-      if (fillW > 0) {
-        doc.roundedRect(x, y, fillW, h, r).fill(fill);
-      }
-      doc.restore();
-    };
-
-    // =========================================================================
-    // PÁGINA 1: DASHBOARD EJECUTIVO DE RENDIMIENTO
-    // =========================================================================
-    applyDarkBackground();
-
-    // 1. Hero Header
-    const headerH = 68;
-    drawCard(MARGIN, MARGIN, contentWidth, headerH, PALETTE.surface, PALETTE.borderSubtle, 8);
-
-    // Monograma REPP oficial
-    const monoX = MARGIN + 12;
-    const monoY = MARGIN + 11;
-    doc.save();
-    doc.roundedRect(monoX, monoY, 46, 46, 7).fill(PALETTE.reppJade);
-    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(24).text('R', monoX + 13.5, monoY + 11, { lineBreak: false });
-    doc.restore();
-
-    const titleX = monoX + 56;
-    doc.fillColor(PALETTE.jadeLight).font('Helvetica-Bold').fontSize(7.5).text('GYMSHEET · REPP ATHLETE PERFORMANCE', titleX, MARGIN + 13, { lineBreak: false });
-    doc.fillColor(PALETTE.textPrimary).font('Helvetica-Bold').fontSize(14).text('DASHBOARD EJECUTIVO DE PROGRESO', titleX, MARGIN + 26, { lineBreak: false });
-    doc.fillColor(PALETTE.textMuted).font('Helvetica').fontSize(7.5).text(
-      `Atleta: ${actor.email} · Historial de Rutinas · Certificado Oficial`,
-      titleX,
-      MARGIN + 48,
-      { lineBreak: false }
-    );
-
-    // Insignias de estado
-    const rightBadgeW = 95;
-    const rightBadgeX = pageWidth - MARGIN - rightBadgeW - 12;
-    drawBadge(rightBadgeX, MARGIN + 14, 'PLAN ACTIVO', '#10271E', PALETTE.emerald, 7.5, 8, 3);
-    doc.fillColor(PALETTE.textDisabled).font('Helvetica').fontSize(7).text(
-      new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' }),
-      rightBadgeX,
-      MARGIN + 38,
-      { width: rightBadgeW, align: 'right', lineBreak: false }
-    );
-
-    // Métricas calculadas
-    let totalVolumen = 0;
-    let totalSeries = 0;
-    let totalReps = 0;
-    let sumRir = 0;
-    let countRir = 0;
-    let totalMinutes = 0;
-    const sessionsSet = new Set<string>();
-    const muscleMap = new Map<string, number>();
-    const exerciseMap = new Map<string, RoutineProgressRow>();
-
-    for (const r of rows) {
-      const vol = Number(r.serie_volumen_kg) || 0;
-      totalVolumen += vol;
-      if (r.serie_id) totalSeries += 1;
-      totalReps += Number(r.serie_repeticiones_logradas) || 0;
-      if (r.serie_rir_real !== null && r.serie_rir_real !== undefined) {
-        sumRir += Number(r.serie_rir_real);
-        countRir += 1;
-      }
-      if (r.sesion_id && !sessionsSet.has(r.sesion_id)) {
-        sessionsSet.add(r.sesion_id);
-        totalMinutes += Number(r.sesion_duracion_min) || 0;
-      }
-      if (r.ejercicio_grupo_muscular) {
-        muscleMap.set(r.ejercicio_grupo_muscular, (muscleMap.get(r.ejercicio_grupo_muscular) || 0) + 1);
-      }
-      if (r.ejercicio_id && !exerciseMap.has(r.ejercicio_id)) {
-        exerciseMap.set(r.ejercicio_id, r);
-      }
-    }
-
-    const totalSesiones = sessionsSet.size || (rows.some((r) => r.sesion_id) ? 1 : 0);
-    const avgRir = countRir > 0 ? (sumRir / countRir).toFixed(1) : '—';
-
-    // Sobrecarga Progresiva media en %
-    const overloadRows = rows.filter((r) => r.sobrecarga_e1rm_actual_kg && r.sobrecarga_e1rm_inicial_kg);
-    let avgOverloadPct = 0;
-    if (overloadRows.length > 0) {
-      let sumPct = 0;
-      for (const r of overloadRows) {
-        const init = Number(r.sobrecarga_e1rm_inicial_kg);
-        const curr = Number(r.sobrecarga_e1rm_actual_kg);
-        if (init > 0) sumPct += ((curr - init) / init) * 100;
-      }
-      avgOverloadPct = Math.round(sumPct / overloadRows.length);
-    }
-
-    // 2. Bento KPI Cards (4 columnas)
-    let y = MARGIN + headerH + 10;
-    const bentoGap = 8;
-    const bentoW = (contentWidth - bentoGap * 3) / 4;
-    const bentoH = 80;
-
-    const drawBentoCard = (xPos: number, title: string, mainVal: string, subVal: string, tagText: string, tagColor: string, valColor = PALETTE.textPrimary) => {
-      drawCard(xPos, y, bentoW, bentoH, PALETTE.surface, PALETTE.borderSubtle, 7);
-      doc.fillColor(PALETTE.textMuted).font('Helvetica-Bold').fontSize(6.5).text(title, xPos + 10, y + 8, { lineBreak: false });
-      doc.fillColor(valColor).font('Helvetica-Bold').fontSize(14.5).text(mainVal, xPos + 10, y + 21, { lineBreak: false });
-      doc.fillColor(PALETTE.textDisabled).font('Helvetica').fontSize(6).text(subVal, xPos + 10, y + 43, { lineBreak: false });
-      drawBadge(xPos + 10, y + 58, tagText, PALETTE.surfaceLowest, tagColor, 6, 5, 2);
-    };
-
-    drawBentoCard(MARGIN, 'VOLUMEN ACUMULADO', `${Math.round(totalVolumen).toLocaleString()} kg`, 'Carga mecánica efectiva', 'TONELAJE TOTAL', PALETTE.volt, PALETTE.volt);
-    drawBentoCard(MARGIN + bentoW + bentoGap, 'SERIES & REPETICIONES', `${totalSeries} ser · ${totalReps} rep`, 'Series efectivas en diana', '100% REGISTRADO', PALETTE.jadeLight, PALETTE.textPrimary);
-    drawBentoCard(MARGIN + (bentoW + bentoGap) * 2, 'SOBRECARGA 1RM', avgOverloadPct > 0 ? `+${avgOverloadPct}% e1RM` : 'e1RM Estable', 'Progresión media de fuerza', 'FUERZA EN ALZA', PALETTE.cyan, PALETTE.cyan);
-    drawBentoCard(MARGIN + (bentoW + bentoGap) * 3, 'INTENSIDAD & SESIONES', `RIR ${avgRir} · ${totalSesiones} ses`, `${totalMinutes} min tiempo total`, 'INTENSIDAD OPTIMA', PALETTE.amber, PALETTE.amber);
-
-    // 3. Middle Panels: Sobrecarga Progresiva (Left) & Distribución Muscular (Right)
-    y += bentoH + 10;
-    const panelW = (contentWidth - bentoGap) / 2;
-    const panelH = 226;
-
-    // Panel A: Sobrecarga Progresiva & 1RM
-    drawCard(MARGIN, y, panelW, panelH, PALETTE.surface, PALETTE.borderSubtle, 8);
-    doc.fillColor(PALETTE.cyan).font('Helvetica-Bold').fontSize(8.5).text('SOBRECARGA PROGRESIVA & 1RM', MARGIN + 12, y + 10, { lineBreak: false });
-    doc.fillColor(PALETTE.textDisabled).font('Helvetica').fontSize(6.8).text('Comparativa 1RM inicial vs actual vs marca meta (kg)', MARGIN + 12, y + 22, { lineBreak: false });
-
-    const distinctExercisesWithOverload = Array.from(exerciseMap.values()).slice(0, 4);
-    let progY = y + 36;
-    for (const ex of distinctExercisesWithOverload) {
-      const init = Number(ex.sobrecarga_e1rm_inicial_kg) || Number(ex.sobrecarga_peso_trabajo_kg) || 60;
-      const curr = Number(ex.sobrecarga_e1rm_actual_kg) || Number(ex.serie_peso_levantado_kg) || init;
-      const meta = Number(ex.sobrecarga_marca_meta_kg) || Math.round(curr * 1.15);
-      const pct = Math.min(100, Math.round((curr / (meta || 1)) * 100));
-      const gain = curr - init;
-      const gainStr = gain >= 0 ? `+${gain.toFixed(1)} kg` : `${gain.toFixed(1)} kg`;
-
-      doc.fillColor(PALETTE.textPrimary).font('Helvetica-Bold').fontSize(7.5).text(ex.ejercicio_nombre ?? 'Ejercicio', MARGIN + 12, progY, { width: panelW - 90, lineBreak: false });
-      doc.fillColor(PALETTE.jadeLight).font('Helvetica-Bold').fontSize(7).text(gainStr, MARGIN + panelW - 75, progY, { width: 63, align: 'right', lineBreak: false });
-
-      progY += 12;
-      drawBar(MARGIN + 12, progY, panelW - 24, 6, pct, PALETTE.reppJade, PALETTE.surfaceLowest, 3);
-
-      progY += 9;
-      doc.fillColor(PALETTE.textDisabled).font('Helvetica').fontSize(6).text(`Ini: ${init}kg`, MARGIN + 12, progY, { lineBreak: false });
-      doc.fillColor(PALETTE.textPrimary).font('Helvetica-Bold').fontSize(6).text(`Actual: ${curr}kg`, MARGIN + (panelW - 24) * 0.45, progY, { lineBreak: false });
-      doc.fillColor(PALETTE.textDisabled).font('Helvetica').fontSize(6).text(`Meta: ${meta}kg (${pct}%)`, MARGIN + panelW - 85, progY, { width: 73, align: 'right', lineBreak: false });
-
-      progY += 18;
-    }
-    if (distinctExercisesWithOverload.length === 0) {
-      doc.fillColor(PALETTE.textDisabled).font('Helvetica').fontSize(7.5).text('Inicia tus sesiones de entrenamiento para registrar sobrecarga progresiva', MARGIN + 12, y + 80, { width: panelW - 24 });
-    }
-
-    // Panel B: Distribución por Grupo Muscular
-    const rightPanelX = MARGIN + panelW + bentoGap;
-    drawCard(rightPanelX, y, panelW, panelH, PALETTE.surface, PALETTE.borderSubtle, 8);
-    doc.fillColor(PALETTE.jadeLight).font('Helvetica-Bold').fontSize(8.5).text('DISTRIBUCIÓN POR GRUPO MUSCULAR', rightPanelX + 12, y + 10, { lineBreak: false });
-    doc.fillColor(PALETTE.textDisabled).font('Helvetica').fontSize(6.8).text('Proporción del volumen y series acumuladas', rightPanelX + 12, y + 22, { lineBreak: false });
-
-    const muscleEntries = Array.from(muscleMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    const totalMuscleSets = muscleEntries.reduce((s, it) => s + it[1], 0) || 1;
-    const muscleBarColors = [PALETTE.reppJade, PALETTE.cyan, PALETTE.volt, PALETTE.emerald, PALETTE.amber];
-
-    let mY = y + 36;
-    for (let i = 0; i < muscleEntries.length; i++) {
-      const [name, count] = muscleEntries[i];
-      const pct = Math.round((count / totalMuscleSets) * 100);
-      const color = muscleBarColors[i % muscleBarColors.length];
-
-      doc.fillColor(PALETTE.textPrimary).font('Helvetica-Bold').fontSize(7.5).text(name, rightPanelX + 12, mY, { lineBreak: false });
-      doc.fillColor(PALETTE.textMuted).font('Helvetica').fontSize(7).text(`${pct}% (${count} series)`, rightPanelX + panelW - 75, mY, { width: 63, align: 'right', lineBreak: false });
-
-      mY += 12;
-      drawBar(rightPanelX + 12, mY, panelW - 24, 6, pct, color, PALETTE.surfaceLowest, 3);
-      mY += 18;
-    }
-    if (muscleEntries.length === 0) {
-      doc.fillColor(PALETTE.textDisabled).font('Helvetica').fontSize(7.5).text('Sin datos musculares aún en las rutinas exportadas', rightPanelX + 12, y + 80, { width: panelW - 24 });
-    }
-
-    // 4. Lower Row: Récords Personales (Left) & Resumen de Constancia (Right)
-    y += panelH + 10;
-    const lowerH = 178;
-    const leftPRWidth = 310;
-    const rightStatWidth = contentWidth - leftPRWidth - bentoGap;
-
-    // Left PR Card
-    drawCard(MARGIN, y, leftPRWidth, lowerH, PALETTE.surface, PALETTE.borderSubtle, 8);
-    doc.fillColor(PALETTE.textPrimary).font('Helvetica-Bold').fontSize(8.5).text('RÉCORDS PERSONALES & MARCAS DESTACADAS', MARGIN + 12, y + 10, { lineBreak: false });
-    doc.fillColor(PALETTE.textDisabled).font('Helvetica').fontSize(6.8).text('Carga máxima levantada y marcas en progresión', MARGIN + 12, y + 22, { lineBreak: false });
-
-    const prHeadY = y + 35;
-    doc.save();
-    doc.roundedRect(MARGIN + 12, prHeadY, leftPRWidth - 24, 16, 4).fill(PALETTE.surfaceHigh);
-    doc.fillColor(PALETTE.jadeLight).font('Helvetica-Bold').fontSize(6);
-    doc.text('EJERCICIO', MARGIN + 18, prHeadY + 4.5, { lineBreak: false });
-    doc.text('MEJOR SERIE', MARGIN + 155, prHeadY + 4.5, { lineBreak: false });
-    doc.text('1RM EST.', MARGIN + 215, prHeadY + 4.5, { lineBreak: false });
-    doc.text('ESTADO', MARGIN + 260, prHeadY + 4.5, { lineBreak: false });
-    doc.restore();
-
-    let prRowY = prHeadY + 18;
-    for (const ex of distinctExercisesWithOverload) {
-      doc.save();
-      doc.rect(MARGIN + 12, prRowY, leftPRWidth - 24, 18).fill(PALETTE.surfaceLowest);
-      doc.fillColor(PALETTE.textPrimary).font('Helvetica-Bold').fontSize(6.8).text(ex.ejercicio_nombre ?? 'Ejercicio', MARGIN + 18, prRowY + 4.5, { width: 130, lineBreak: false });
-      doc.fillColor(PALETTE.volt).font('Helvetica-Bold').fontSize(6.8).text(`${ex.serie_repeticiones_logradas || 8} × ${ex.serie_peso_levantado_kg || 60}kg`, MARGIN + 155, prRowY + 4.5, { lineBreak: false });
-      doc.fillColor(PALETTE.cyan).font('Helvetica-Bold').fontSize(6.8).text(`${ex.sobrecarga_e1rm_actual_kg || ex.serie_peso_levantado_kg || 75} kg`, MARGIN + 215, prRowY + 4.5, { lineBreak: false });
-      drawBadge(MARGIN + 258, prRowY + 3, 'PR', '#10271E', PALETTE.emerald, 5.5, 4, 1.5);
-      doc.restore();
-      prRowY += 20;
-    }
-    if (distinctExercisesWithOverload.length === 0) {
-      doc.fillColor(PALETTE.textDisabled).font('Helvetica').fontSize(7.5).text('Tus marcas personales (PR) se calcularán automáticamente', MARGIN + 18, prHeadY + 30);
-    }
-
-    // Right Consistency Card
-    const rightStatX = MARGIN + leftPRWidth + bentoGap;
-    drawCard(rightStatX, y, rightStatWidth, lowerH, PALETTE.surface, PALETTE.borderSubtle, 8);
-    doc.fillColor(PALETTE.textPrimary).font('Helvetica-Bold').fontSize(8.5).text('CONSTANCIA & ADHERENCIA', rightStatX + 12, y + 10, { lineBreak: false });
-    doc.fillColor(PALETTE.textDisabled).font('Helvetica').fontSize(6.8).text('Métricas de cumplimiento y ritmo semanal', rightStatX + 12, y + 22, { lineBreak: false });
-
-    const drawStatRow = (label: string, val: string, sY: number) => {
-      doc.fillColor(PALETTE.textMuted).font('Helvetica').fontSize(7).text(label, rightStatX + 12, sY, { lineBreak: false });
-      doc.fillColor(PALETTE.textPrimary).font('Helvetica-Bold').fontSize(7.5).text(val, rightStatX + rightStatWidth - 75, sY, { width: 63, align: 'right', lineBreak: false });
-      doc.save();
-      doc.rect(rightStatX + 12, sY + 12, rightStatWidth - 24, 0.5).fill(PALETTE.borderSubtle);
-      doc.restore();
-    };
-
-    let cY = y + 38;
-    drawStatRow('Sesiones registradas:', `${totalSesiones} completadas`, cY);
-    cY += 22;
-    drawStatRow('Duración promedio:', `${totalSesiones > 0 ? Math.round(totalMinutes / totalSesiones) : 60} minutos`, cY);
-    cY += 22;
-    drawStatRow('Tonelaje por sesión:', `${totalSesiones > 0 ? Math.round(totalVolumen / totalSesiones).toLocaleString() : 0} kg`, cY);
-    cY += 22;
-    drawStatRow('Intensidad media:', `RIR ${avgRir} / 10`, cY);
-    cY += 22;
-
-    const adherencePct = totalSeries > 0 ? Math.min(100, Math.round((totalSeries / Math.max(1, totalSeries)) * 100)) : 100;
-    doc.fillColor(PALETTE.textMuted).font('Helvetica-Bold').fontSize(6.5).text(`Adherencia al plan programado: ${adherencePct}%`, rightStatX + 12, cY, { lineBreak: false });
-    drawBar(rightStatX + 12, cY + 10, rightStatWidth - 24, 6, adherencePct, PALETTE.emerald, PALETTE.surfaceLowest, 3);
-
-    // 5. Active Blueprint Strip (Bottom)
-    y += lowerH + 10;
-    const stripH = 50;
-    drawCard(MARGIN, y, contentWidth, stripH, PALETTE.surface, PALETTE.borderSubtle, 8);
-
-    const firstRut = rows[0] || {
-      rutina_nombre: 'PLAN ACTIVO PERSONAL',
-      rutina_descripcion: 'Estructura de sobrecarga y entrenamiento oficial',
-      rutina_duracion_semanas: 8,
-      rutina_objetivo: 'HIPERTROFIA',
-    };
-    doc.fillColor(PALETTE.textDisabled).font('Helvetica-Bold').fontSize(6.5).text('RUTINA ACTIVA ASOCIADA', MARGIN + 12, y + 8, { lineBreak: false });
-    doc.fillColor(PALETTE.textPrimary).font('Helvetica-Bold').fontSize(9).text(String(firstRut.rutina_nombre).toUpperCase(), MARGIN + 12, y + 19, { lineBreak: false });
-    doc.fillColor(PALETTE.textMuted).font('Helvetica').fontSize(6.5).text(
-      `${firstRut.rutina_descripcion || 'Sin descripción'} · Duración: ${firstRut.rutina_duracion_semanas || 8} semanas`,
-      MARGIN + 12,
-      y + 33,
-      { lineBreak: false }
-    );
-
-    drawBadge(pageWidth - MARGIN - 120, y + 16, `OBJETIVO: ${firstRut.rutina_objetivo || 'GENERAL'}`, PALETTE.surfaceHigh, PALETTE.cyan, 7, 7, 3);
-
-    // =========================================================================
-    // PÁGINA 2 EN ADELANTE: DETALLE ESTRUCTURAL Y REGISTRO DE SERIES
-    // =========================================================================
-    doc.addPage();
-    applyDarkBackground();
-
-    let pageY = MARGIN;
-
-    const drawSecondaryHeader = () => {
-      drawCard(MARGIN, pageY, contentWidth, 40, PALETTE.surface, PALETTE.borderSubtle, 6);
-      doc.save();
-      doc.roundedRect(MARGIN + 8, pageY + 6, 28, 28, 5).fill(PALETTE.reppJade);
-      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(16).text('R', MARGIN + 16.5, pageY + 11.5, { lineBreak: false });
-      doc.restore();
-
-      doc.fillColor(PALETTE.jadeLight).font('Helvetica-Bold').fontSize(7.5).text('GYMSHEET · REPP ATHLETE PERFORMANCE', MARGIN + 44, pageY + 10, { lineBreak: false });
-      doc.fillColor(PALETTE.textPrimary).font('Helvetica-Bold').fontSize(11).text('BLUEPRINT TÉCNICO DE RUTINAS & HISTORIAL DE SERIES', MARGIN + 44, pageY + 22, { lineBreak: false });
-      doc.fillColor(PALETTE.textDisabled).font('Helvetica').fontSize(7).text(
-        `Atleta: ${actor.email} · Certificado Oficial`,
-        pageWidth - MARGIN - 180,
-        pageY + 15,
-        { width: 170, align: 'right', lineBreak: false }
-      );
-      pageY += 50;
-    };
-
-    drawSecondaryHeader();
-
-    // Agrupación por rutina
-    const routinesMap = new Map<string, RoutineProgressRow[]>();
-    for (const r of rows) {
-      const arr = routinesMap.get(r.rutina_id) || [];
-      arr.push(r);
-      routinesMap.set(r.rutina_id, arr);
-    }
-
-    for (const [, rRows] of routinesMap.entries()) {
-      if (pageY > pageHeight - MARGIN - 120) {
-        doc.addPage();
-        applyDarkBackground();
-        pageY = MARGIN;
-        drawSecondaryHeader();
-      }
-
-      const first = rRows[0];
-      // Banner de la rutina
-      drawCard(MARGIN, pageY, contentWidth, 28, PALETTE.surfaceHigh, PALETTE.borderSubtle, 6);
-      doc.rect(MARGIN, pageY, 4, 28).fill(PALETTE.reppJade);
-      doc.fillColor(PALETTE.textPrimary).font('Helvetica-Bold').fontSize(9.5).text(first.rutina_nombre.toUpperCase(), MARGIN + 14, pageY + 8.5, { lineBreak: false });
-
-      drawBadge(MARGIN + 280, pageY + 6, `OBJ: ${first.rutina_objetivo || 'GENERAL'}`, '#10271E', PALETTE.emerald, 6.5, 6, 2);
-      if (first.rutina_duracion_semanas) {
-        drawBadge(MARGIN + 370, pageY + 6, `${first.rutina_duracion_semanas} SEMANAS`, PALETTE.surfaceLowest, PALETTE.textMuted, 6.5, 6, 2);
-      }
-      if (first.rutina_es_oficial) {
-        drawBadge(pageWidth - MARGIN - 75, pageY + 6, 'OFICIAL', '#111B21', PALETTE.cyan, 6.5, 6, 2);
-      }
-
-      pageY += 34;
-
-      // Prescripción de ejercicios del blueprint
-      const exercisePrescriptions = new Map<string, RoutineProgressRow>();
-      for (const row of rRows) {
-        if (row.ejercicio_id && !exercisePrescriptions.has(row.ejercicio_id)) {
-          exercisePrescriptions.set(row.ejercicio_id, row);
-        }
-      }
-
-      // Tabla de ejercicios
-      const tableHeaderH = 20;
-      drawCard(MARGIN, pageY, contentWidth, tableHeaderH, PALETTE.surfaceHigh, PALETTE.borderSubtle, 4);
-      doc.fillColor(PALETTE.jadeLight).font('Helvetica-Bold').fontSize(6.5);
-      doc.text('DÍA', MARGIN + 8, pageY + 5.5, { lineBreak: false });
-      doc.text('EJERCICIO', MARGIN + 70, pageY + 5.5, { lineBreak: false });
-      doc.text('GRUPO MUSCULAR', MARGIN + 215, pageY + 5.5, { lineBreak: false });
-      doc.text('SERIES × REPS', MARGIN + 320, pageY + 5.5, { lineBreak: false });
-      doc.text('PESO OBJ', MARGIN + 400, pageY + 5.5, { lineBreak: false });
-      doc.text('RIR / DESCANSO', MARGIN + 460, pageY + 5.5, { lineBreak: false });
-
-      pageY += tableHeaderH + 2;
-
-      let rowIdx = 0;
-      for (const ep of exercisePrescriptions.values()) {
-        if (pageY > pageHeight - MARGIN - 50) {
-          doc.addPage();
-          applyDarkBackground();
-          pageY = MARGIN;
-          drawSecondaryHeader();
-        }
-
-        const rowBg = rowIdx % 2 === 0 ? PALETTE.surfaceLowest : PALETTE.surfaceLow;
-        doc.rect(MARGIN, pageY, contentWidth, 18).fill(rowBg);
-
-        doc.fillColor(PALETTE.textMuted).font('Helvetica').fontSize(6.8).text(ep.dia_semana_nombre || 'Día', MARGIN + 8, pageY + 5, { lineBreak: false });
-        doc.fillColor(PALETTE.textPrimary).font('Helvetica-Bold').fontSize(7).text(ep.ejercicio_nombre ?? 'Ejercicio', MARGIN + 70, pageY + 5, { width: 140, lineBreak: false });
-        doc.fillColor(PALETTE.textMuted).font('Helvetica').fontSize(6.8).text(ep.ejercicio_grupo_muscular ?? '—', MARGIN + 215, pageY + 5, { lineBreak: false });
-        doc.fillColor(PALETTE.cyan).font('Helvetica-Bold').fontSize(6.8).text(`${ep.prescripcion_series ?? 3} × ${ep.prescripcion_reps_rango ?? '8-12'}`, MARGIN + 320, pageY + 5, { lineBreak: false });
-        doc.fillColor(PALETTE.textPrimary).font('Helvetica').fontSize(6.8).text(ep.prescripcion_peso_objetivo_kg ? `${ep.prescripcion_peso_objetivo_kg} kg` : '—', MARGIN + 400, pageY + 5, { lineBreak: false });
-        doc.fillColor(PALETTE.textMuted).font('Helvetica').fontSize(6.8).text(`RIR ${ep.prescripcion_rir_objetivo ?? '—'} · ${ep.prescripcion_descanso_seg ?? 90}s`, MARGIN + 460, pageY + 5, { lineBreak: false });
-
-        pageY += 19;
-        rowIdx++;
-      }
-
-      // Historial de Series Registradas para esta rutina
-      const executedSets = rRows.filter((r) => r.serie_id);
-      if (executedSets.length > 0) {
-        if (pageY > pageHeight - MARGIN - 80) {
-          doc.addPage();
-          applyDarkBackground();
-          pageY = MARGIN;
-          drawSecondaryHeader();
-        }
-
-        pageY += 10;
-        doc.fillColor(PALETTE.textPrimary).font('Helvetica-Bold').fontSize(8.5).text('HISTORIAL DE SERIES EJECUTADAS (PROGRESO REAL)', MARGIN, pageY, { lineBreak: false });
-        pageY += 14;
-
-        const histHeaderH = 20;
-        drawCard(MARGIN, pageY, contentWidth, histHeaderH, PALETTE.surfaceHigh, PALETTE.borderSubtle, 4);
-        doc.fillColor(PALETTE.cyan).font('Helvetica-Bold').fontSize(6.5);
-        doc.text('FECHA', MARGIN + 8, pageY + 5.5, { lineBreak: false });
-        doc.text('EJERCICIO', MARGIN + 70, pageY + 5.5, { lineBreak: false });
-        doc.text('SERIE', MARGIN + 215, pageY + 5.5, { lineBreak: false });
-        doc.text('REPS', MARGIN + 255, pageY + 5.5, { lineBreak: false });
-        doc.text('PESO (KG)', MARGIN + 305, pageY + 5.5, { lineBreak: false });
-        doc.text('VOLUMEN', MARGIN + 370, pageY + 5.5, { lineBreak: false });
-        doc.text('RIR REAL', MARGIN + 430, pageY + 5.5, { lineBreak: false });
-        doc.text('DESCANSO', MARGIN + 480, pageY + 5.5, { lineBreak: false });
-
-        pageY += histHeaderH + 2;
-
-        let setIdx = 0;
-        for (const s of executedSets.slice(0, 45)) {
-          if (pageY > pageHeight - MARGIN - 50) {
-            doc.addPage();
-            applyDarkBackground();
-            pageY = MARGIN;
-            drawSecondaryHeader();
-          }
-
-          const sBg = setIdx % 2 === 0 ? PALETTE.surfaceLowest : PALETTE.surfaceLow;
-          doc.rect(MARGIN, pageY, contentWidth, 17).fill(sBg);
-
-          const dateLabel = s.sesion_fecha_inicio ? new Date(s.sesion_fecha_inicio).toLocaleDateString('es-ES', { month: '2-digit', day: '2-digit' }) : '—';
-          doc.fillColor(PALETTE.textMuted).font('Helvetica').fontSize(6.5).text(dateLabel, MARGIN + 8, pageY + 4.5, { lineBreak: false });
-          doc.fillColor(PALETTE.textPrimary).font('Helvetica-Bold').fontSize(6.8).text(s.ejercicio_nombre ?? '—', MARGIN + 70, pageY + 4.5, { width: 140, lineBreak: false });
-          doc.fillColor(PALETTE.textMuted).font('Helvetica').fontSize(6.5).text(`#${s.serie_numero ?? 1}`, MARGIN + 215, pageY + 4.5, { lineBreak: false });
-          doc.fillColor(PALETTE.emerald).font('Helvetica-Bold').fontSize(6.8).text(`${s.serie_repeticiones_logradas ?? '—'}`, MARGIN + 255, pageY + 4.5, { lineBreak: false });
-          doc.fillColor(PALETTE.volt).font('Helvetica-Bold').fontSize(6.8).text(`${s.serie_peso_levantado_kg ?? '—'} kg`, MARGIN + 305, pageY + 4.5, { lineBreak: false });
-          doc.fillColor(PALETTE.textPrimary).font('Helvetica').fontSize(6.8).text(`${s.serie_volumen_kg ? Math.round(Number(s.serie_volumen_kg)) : '—'} kg`, MARGIN + 370, pageY + 4.5, { lineBreak: false });
-          doc.fillColor(PALETTE.amber).font('Helvetica-Bold').fontSize(6.8).text(s.serie_rir_real !== null ? `RIR ${s.serie_rir_real}` : '—', MARGIN + 430, pageY + 4.5, { lineBreak: false });
-          doc.fillColor(PALETTE.textMuted).font('Helvetica').fontSize(6.5).text(s.serie_descanso_seg_previo ? `${s.serie_descanso_seg_previo}s` : '—', MARGIN + 480, pageY + 4.5, { lineBreak: false });
-
-          pageY += 18;
-          setIdx++;
-        }
-      }
-
-      pageY += 16;
-    }
-
-    // Pie de página oficial con numeración y trazabilidad en todas las páginas
-    const range = doc.bufferedPageRange();
-    for (let page = range.start; page < range.start + range.count; page++) {
-      doc.switchToPage(page);
-      const footerY = pageHeight - MARGIN - 6;
-
-      doc.save();
-      doc.rect(MARGIN, footerY - 5, contentWidth, 0.5).fill(PALETTE.borderSubtle);
-      doc.fillColor(PALETTE.textDisabled).font('Helvetica').fontSize(6.5).text(
-        `GYMSHEET · REPP ATHLETE PERFORMANCE · DOCUMENTO OFICIAL AUDITABLE · ATLETA: ${actor.email}`,
-        MARGIN,
-        footerY,
-        { width: contentWidth - 110, lineBreak: false }
-      );
-      doc.fillColor(PALETTE.jadeLight).font('Helvetica-Bold').fontSize(7).text(
-        `PÁGINA ${page - range.start + 1} DE ${range.count}`,
-        MARGIN,
-        footerY,
-        { width: contentWidth, align: 'right', lineBreak: false }
-      );
-      doc.restore();
-    }
-
-    doc.end();
-    const buffer = await rendered;
 
     await this.recordRoutineProgressDownloadAudit(actor, {
       format: 'PDF',

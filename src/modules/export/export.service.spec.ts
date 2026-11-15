@@ -7,6 +7,7 @@ import { UsersService } from '../users/users.service';
 import { WorkoutSessionResponse } from '../workouts/workout.mapper';
 import { WorkoutsService } from '../workouts/workouts.service';
 import type { Sequelize } from 'sequelize-typescript';
+import PDFDocument from 'pdfkit';
 import { ExportService } from './export.service';
 
 const userId = '00000000-0000-4000-8000-000000000001';
@@ -157,12 +158,109 @@ describe('ExportService PDF generation', () => {
     return (pdf.toString('latin1').match(/\/Type \/Page(?!s)/g) ?? []).length;
   }
 
-  it('does not append blank pages when drawing the footer', async () => {
-    const service = createService(singlePage([createSession('Press banca')]));
+  /** Valor de una entrada del diccionario /Info (pdfkit las escribe como objetos indirectos). */
+  function infoValue(raw: string, key: string): string | undefined {
+    const ref = new RegExp(`/${key} (\\d+) 0 R`).exec(raw)?.[1];
+    return ref ? new RegExp(`\\n${ref} 0 obj\\n\\((.*)\\)\\nendobj`).exec(raw)?.[1] : undefined;
+  }
 
-    const pdf = await service.buildWorkoutHistoryPdf(actor);
+  /** Captura el texto que el informe escribe (las fuentes embebidas lo codifican por glifo). */
+  function captureText(): { texts: string[]; restore: () => void } {
+    const texts: string[] = [];
+    const original = PDFDocument.prototype.text;
+    const spy = jest.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (this: PDFKit.PDFDocument, ...args: any[]) {
+      if (typeof args[0] === 'string') texts.push(args[0]);
+      return (original as (...a: any[]) => PDFKit.PDFDocument).apply(this, args);
+    });
+    return { texts, restore: () => spy.mockRestore() };
+  }
 
-    expect(countPages(pdf)).toBe(1);
+  function longHistory(count: number): WorkoutSessionResponse[] {
+    return Array.from({ length: count }, (_, i) => ({
+      ...createSession(`Ejercicio ${i}`),
+      id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+      fechaInicio: new Date(Date.UTC(2026, 0, 1 + i)),
+    }));
+  }
+
+  it('renders an empty history on a single page without blank footer pages', async () => {
+    const capture = captureText();
+    try {
+      const pdf = await createService(singlePage([])).buildWorkoutHistoryPdf(actor);
+
+      expect(countPages(pdf)).toBe(1);
+      expect(capture.texts).toContain('Página 1 de 1');
+      expect(capture.texts).toContain('Sin sesiones registradas.');
+      expect(capture.texts).toContain('Sin ejercicios registrados.');
+    } finally {
+      capture.restore();
+    }
+  });
+
+  it('brands the report as REPP, never GymSheet, in the page and in the metadata', async () => {
+    const capture = captureText();
+    try {
+      const pdf = await createService(singlePage([createSession('Press banca')])).buildWorkoutHistoryPdf({
+        ...actor,
+        tenantId: 'gymsheet',
+      });
+      const raw = pdf.toString('latin1');
+
+      expect(capture.texts).toContain('REPP');
+      expect(capture.texts).toContain('Avance de entrenamiento');
+      expect(capture.texts.join(' ')).not.toMatch(/gymsheet/i);
+      expect(infoValue(raw, 'Producer')).toBe('REPP');
+      expect(infoValue(raw, 'Creator')).toBe('REPP');
+      expect(infoValue(raw, 'Author')).toBe('REPP');
+      expect(infoValue(raw, 'Subject')).toBe('Avance de entrenamiento');
+      expect(raw).not.toMatch(/PDFKit|GymSheet/i);
+    } finally {
+      capture.restore();
+    }
+  });
+
+  it('numbers every page as «Página X de Y» and repeats the table header after a page break', async () => {
+    const capture = captureText();
+    try {
+      const pdf = await createService(singlePage(longHistory(60))).buildWorkoutHistoryPdf(actor);
+      const pages = countPages(pdf);
+
+      expect(pages).toBeGreaterThan(1);
+      for (let page = 1; page <= pages; page += 1) {
+        expect(capture.texts).toContain(`Página ${page} de ${pages}`);
+      }
+      expect(capture.texts).toContain('Continúa en la página siguiente');
+      // One table header for the exercise progress table, one per page of the session table.
+      expect(capture.texts.filter((t) => t === 'DETALLE (REPS × CARGA)').length).toBeGreaterThan(1);
+    } finally {
+      capture.restore();
+    }
+  });
+
+  it('summarises real session data in the KPI cards', async () => {
+    const capture = captureText();
+    try {
+      await createService(singlePage([createSession('Press banca')])).buildWorkoutHistoryPdf(actor);
+
+      // One set of 8 × 60 kg: 480 kg of volume, one set, one finished session.
+      expect(capture.texts).toContain('480');
+      expect(capture.texts).toContain('8 × 60 kg');
+      expect(capture.texts).toContain('SESIONES FINALIZADAS');
+    } finally {
+      capture.restore();
+    }
+  });
+
+  it('uses the gym brand of the tenant and keeps REPP as attribution', async () => {
+    const capture = captureText();
+    try {
+      await createService(singlePage([])).buildWorkoutHistoryPdf(actor);
+
+      expect(capture.texts).toContain('TOP FITNESS');
+      expect(capture.texts).toContain('TOP Fitness Center · REPP');
+    } finally {
+      capture.restore();
+    }
   });
 });
 
@@ -296,31 +394,71 @@ describe('ExportService Routine Progress Export and Audit', () => {
     );
   });
 
-  it('builds PDF with GymSheet branding and KPI summary cards', async () => {
+  it('builds the routine progress PDF with REPP branding', async () => {
     const service = createService(jest.fn());
     jest.spyOn(service, 'fetchRoutineProgressRows').mockResolvedValue([sampleRow]);
     const auditSpy = jest.spyOn(service, 'recordRoutineProgressDownloadAudit').mockResolvedValue(undefined);
-
-    const result = await service.buildRoutineProgressPdf(actor, {
-      format: 'pdf',
-      routineId: 'ALL',
-      datePreset: 'ALL',
-      includeHistory: true,
-      includeTargets: true,
-      includePrograms: true,
+    const texts: string[] = [];
+    const original = PDFDocument.prototype.text;
+    const spy = jest.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (this: PDFKit.PDFDocument, ...args: any[]) {
+      if (typeof args[0] === 'string') texts.push(args[0]);
+      return (original as (...a: any[]) => PDFKit.PDFDocument).apply(this, args);
     });
 
-    expect(result.buffer).toBeInstanceOf(Buffer);
-    expect(result.buffer.length).toBeGreaterThan(100);
-    expect(result.fileName).toMatch(/\.pdf$/);
-    expect(result.recordsCount).toBe(1);
-    expect(auditSpy).toHaveBeenCalledWith(
-      actor,
-      expect.objectContaining({
-        format: 'PDF',
-        recordsCount: 1,
-      }),
-    );
+    try {
+      const result = await service.buildRoutineProgressPdf(actor, {
+        format: 'pdf',
+        routineId: 'ALL',
+        datePreset: 'LAST_90',
+        includeHistory: true,
+        includeTargets: true,
+        includePrograms: true,
+      });
+
+      expect(result.buffer).toBeInstanceOf(Buffer);
+      expect(result.buffer.subarray(0, 5).toString()).toBe('%PDF-');
+      expect(result.fileName).toMatch(/^repp-progreso-rutinas-\d{4}-\d{2}-\d{2}\.pdf$/);
+      expect(result.recordsCount).toBe(1);
+      expect(texts).toContain('Progreso de rutinas');
+      expect(texts).toContain('Últimos 90 días');
+      expect(texts).toContain('Torso Pierna Fuerza');
+      // e1RM 75 → 80 kg comes from the row; nothing is invented.
+      expect(texts).toContain('+5 kg');
+      expect(texts).toContain('Página 1 de 2');
+      expect(texts.join(' ')).not.toMatch(/gymsheet/i);
+      expect(auditSpy).toHaveBeenCalledWith(
+        actor,
+        expect.objectContaining({
+          format: 'PDF',
+          recordsCount: 1,
+        }),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('builds an empty routine progress PDF with explicit empty states', async () => {
+    const service = createService(jest.fn());
+    jest.spyOn(service, 'fetchRoutineProgressRows').mockResolvedValue([]);
+    jest.spyOn(service, 'recordRoutineProgressDownloadAudit').mockResolvedValue(undefined);
+    const texts: string[] = [];
+    const original = PDFDocument.prototype.text;
+    const spy = jest.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (this: PDFKit.PDFDocument, ...args: any[]) {
+      if (typeof args[0] === 'string') texts.push(args[0]);
+      return (original as (...a: any[]) => PDFKit.PDFDocument).apply(this, args);
+    });
+
+    try {
+      const result = await service.buildRoutineProgressPdf(actor, {} as never);
+
+      expect(result.recordsCount).toBe(0);
+      expect(texts).toContain('Sin datos de sobrecarga progresiva.');
+      expect(texts).toContain('Sin rutinas ni series en el período seleccionado.');
+      expect(texts).toContain('Página 1 de 1');
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
