@@ -135,13 +135,13 @@ describe('Exercises · búsqueda tolerante (e2e)', () => {
 
     await e2e.sql(
       `INSERT INTO training.exercise_media (id, ejercicio_id, media_type, provider, url, alt_text, width, height, is_primary, sort_order, status, created_at, updated_at)
-       VALUES (gen_random_uuid(), :id, 'IMAGE', 'e2e', 'https://media.e2e.test/curl.jpg', 'e2e', 1700, 1134, false, 0, 'ACTIVE', now(), now()),
-              (gen_random_uuid(), :id, 'VIDEO', 'e2e', 'https://media.e2e.test/curl.mp4', 'e2e', NULL, NULL, true, 1, 'ACTIVE', now(), now())`,
+       VALUES (gen_random_uuid(), :id, 'IMAGE', 'EXTERNAL_URL', 'https://media.e2e.test/curl.jpg', 'e2e', 1700, 1134, false, 0, 'ACTIVE', now(), now()),
+              (gen_random_uuid(), :id, 'VIDEO', 'EXTERNAL_URL', 'https://media.e2e.test/curl.mp4', 'e2e', NULL, NULL, true, 1, 'ACTIVE', now(), now())`,
       { id: ids.curl },
     );
     await e2e.sql(
       `INSERT INTO training.exercise_media (id, ejercicio_id, media_type, provider, url, thumbnail_url, alt_text, is_primary, sort_order, status, created_at, updated_at)
-       VALUES (gen_random_uuid(), :id, 'VIDEO', 'e2e', 'https://media.e2e.test/pull.mp4', 'https://media.e2e.test/pull-poster.webp', 'e2e', true, 0, 'ACTIVE', now(), now())`,
+       VALUES (gen_random_uuid(), :id, 'VIDEO', 'EXTERNAL_URL', 'https://media.e2e.test/pull.mp4', 'https://media.e2e.test/pull-poster.webp', 'e2e', true, 0, 'ACTIVE', now(), now())`,
       { id: ids.pull },
     );
 

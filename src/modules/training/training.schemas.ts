@@ -222,6 +222,23 @@ export const importRoutinesSchema = z
     })),
   }));
 
+/** Parámetros que solo entiende el catálogo por cursor (RF-01). */
+const CATALOG_ONLY_PARAMS = ['limit', 'cursor', 'q', 'objetivo', 'diasPorSemana', 'deMiGimnasio', 'orden'] as const;
+
+/**
+ * ¿Pide `GET /routines` el listado paginado por página de siempre (`listRoutinesSchema`)
+ * en vez del catálogo por cursor? Las apps ya instaladas piden `mine`/`templates` y la
+ * pantalla «Explorar rutinas» del móvil pide `scope=public&pageSize=…&page=…[&goal=…]`,
+ * y validan la rutina completa. Cualquier parámetro propio del catálogo manda la
+ * petición al catálogo: el listado de siempre lo descartaría en silencio. Un
+ * `scope=public` sin `page`/`pageSize` también es el catálogo (las tarjetas de RF-01).
+ */
+export function isLegacyRoutineListQuery(raw: Record<string, unknown>): boolean {
+  if (CATALOG_ONLY_PARAMS.some((param) => raw[param] !== undefined)) return false;
+  if (raw.scope === undefined || raw.scope === 'mine' || raw.scope === 'templates') return true;
+  return raw.scope === 'public' && (raw.page !== undefined || raw.pageSize !== undefined);
+}
+
 export const listRoutinesSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),

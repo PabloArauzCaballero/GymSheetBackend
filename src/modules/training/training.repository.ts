@@ -8,7 +8,9 @@ import {
   RoutineAssignmentStatus,
   RoutineStatus,
   RoutineVisibility,
+  TrainingGoal,
 } from '../../common/enums/domain.enums';
+import { env } from '../../config/env';
 import { ExerciseMediaModel } from '../exercises/exercise-media.model';
 import { ExerciseModel } from '../exercises/exercise.model';
 import { UserModel } from '../users/user.model';
@@ -59,18 +61,23 @@ const routineInclude = {
 };
 
 export function routineWhereForScope(
-  scope: 'mine' | 'templates',
+  scope: 'mine' | 'templates' | 'public',
   userId: string,
+  goal?: TrainingGoal,
 ): WhereOptions {
-  if (scope === 'templates') {
-    // Compatibilidad: lo que antes eran «plantillas» ahora son las públicas.
-    return {
-      visibility: { [Op.in]: [RoutineVisibility.PUBLIC, RoutineVisibility.TEMPLATE] },
-      status: RoutineStatus.ACTIVE,
-      moderationState: 'VISIBLE',
-    };
+  if (scope === 'mine') {
+    return { createdByUserId: userId, status: RoutineStatus.ACTIVE, ...(goal ? { goal } : {}) };
   }
-  return { createdByUserId: userId, status: RoutineStatus.ACTIVE };
+  // Compatibilidad: lo que antes eran «plantillas» ahora son las públicas. Como el
+  // catálogo, nunca muestra las rutinas de pruebas automáticas (CATALOG_HIDDEN_NAME_PREFIX).
+  const prefix = env.CATALOG_HIDDEN_NAME_PREFIX;
+  return {
+    visibility: { [Op.in]: [RoutineVisibility.PUBLIC, RoutineVisibility.TEMPLATE] },
+    status: RoutineStatus.ACTIVE,
+    moderationState: 'VISIBLE',
+    ...(goal ? { goal } : {}),
+    ...(prefix ? { name: { [Op.notLike]: `${prefix.replace(/[%_\\]/gu, (c) => `\\${c}`)}%` } } : {}),
+  };
 }
 
 @Injectable()

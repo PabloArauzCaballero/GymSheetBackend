@@ -71,7 +71,7 @@ describe('Routines v2 · catalog (e2e)', () => {
     await e2e.sql(`UPDATE profile.photos SET hidden_at = now() WHERE storage_key = :k`, { k: `${tag}-a` });
     await e2e.sql(
       `INSERT INTO training.exercise_media (id, ejercicio_id, media_type, provider, url, thumbnail_url, alt_text, is_primary, sort_order, status, created_at, updated_at)
-       SELECT gen_random_uuid(), re.ejercicio_id, 'VIDEO', 'e2e', 'https://media.e2e.test/v.mp4', 'https://media.e2e.test/poster.webp', 'e2e', true, 0, 'ACTIVE', now(), now()
+       SELECT gen_random_uuid(), re.ejercicio_id, 'VIDEO', 'EXTERNAL_URL', 'https://media.e2e.test/v.mp4', 'https://media.e2e.test/poster.webp', 'e2e', true, 0, 'ACTIVE', now(), now()
          FROM training.routine_exercises re WHERE re.routine_id = :r LIMIT 1`,
       { r: ids.pub3 },
     );
@@ -100,7 +100,7 @@ describe('Routines v2 · catalog (e2e)', () => {
       })
       .expect(201);
     const media = `INSERT INTO training.exercise_media (id, ejercicio_id, media_type, provider, url, thumbnail_url, width, alt_text, is_primary, sort_order, status, created_at, updated_at)
-                   VALUES (gen_random_uuid(), :e, :type, 'e2e', :url, NULL, :width, 'e2e', :primary, :orden, 'ACTIVE', now(), now())`;
+                   VALUES (gen_random_uuid(), :e, :type, 'EXTERNAL_URL', :url, NULL, :width, 'e2e', :primary, :orden, 'ACTIVE', now(), now())`;
     // Vídeo principal SIN póster + lámina de 850 px: antes el detalle no enseñaba ninguna imagen de este ejercicio.
     await e2e.sql(media, { e: blurry, type: 'VIDEO', url: 'https://media.e2e.test/sin-poster.mp4', width: null, primary: true, orden: 0 });
     await e2e.sql(media, { e: blurry, type: 'IMAGE', url: 'https://media.e2e.test/lamina-850.jpg', width: 850, primary: false, orden: 50 });
@@ -178,5 +178,49 @@ describe('Routines v2 · catalog (e2e)', () => {
     expect(typeof legacy.body.data.total).toBe('number');
     const templates = await e2e.as(leo.token).get('/routines?scope=templates&pageSize=50').expect(200);
     expect(templates.body.data.items.some((r: { nombre: string }) => r.nombre.includes(tag))).toBe(true);
+  });
+  describe('compatibilidad: «Explorar rutinas» del móvil (scope=public&page&pageSize)', () => {
+    type Full = { id: string; nombre: string; creadoPorUsuarioId: string; estado: string; ejercicios: unknown[]; dias: unknown[]; objetivo: string | null };
+    /** Recorre todas las páginas: la base de e2e es compartida y no se sabe en qué página cae cada rutina. */
+    const allPages = async (token: string, query: string): Promise<Full[]> => {
+      const items: Full[] = [];
+      for (let page = 1; ; page += 1) {
+        const res = await e2e.as(token).get(`/routines?${query}&pageSize=100&page=${page}`).expect(200);
+        expect(res.body.data).toMatchObject({ page, pageSize: 100 });
+        items.push(...(res.body.data.items as Full[]));
+        if (page >= res.body.data.totalPages) return items;
+      }
+    };
+
+    it('recibe la rutina completa, nunca la privada de otra persona', async () => {
+      const items = await allPages(leo.token, 'scope=public');
+      const ids3 = items.map((r) => r.id);
+      expect(ids3).toEqual(expect.arrayContaining([ids.pub3, ids.pub2]));
+      expect(ids3).not.toContain(ids.priv);
+      const three = items.find((r) => r.id === ids.pub3)!;
+      expect(three).toMatchObject({ creadoPorUsuarioId: ana.id, estado: 'ACTIVE' });
+      expect(three.ejercicios).toHaveLength(3);
+      expect(three.dias).toHaveLength(3);
+    });
+
+    it('filtra por goal en public y en mine', async () => {
+      const pub = await allPages(leo.token, 'scope=public&goal=FUERZA');
+      expect(pub.every((r) => r.objetivo === 'FUERZA')).toBe(true);
+      expect(pub.map((r) => r.id)).toContain(ids.pub2);
+      expect(pub.map((r) => r.id)).not.toContain(ids.pub3);
+      const mine = await allPages(ana.token, 'scope=mine&goal=FUERZA');
+      expect(mine.map((r) => r.id).sort()).toEqual([ids.pub2, ids.priv].sort());
+    });
+
+    it('un filtro del catálogo manda la petición al catálogo aunque traiga page', async () => {
+      const res = await e2e.as(leo.token).get(`/routines?scope=public&page=2&q=${tag}&objetivo=FUERZA`).expect(200);
+      expect(res.body.data).toHaveProperty('siguienteCursor');
+      expect(names(res.body)).toEqual([`${tag} Pública 2 días`]);
+    });
+
+    it('valida sus parámetros: pageSize > 100 y goal desconocido responden 400', async () => {
+      await e2e.as(leo.token).get('/routines?scope=public&pageSize=101&page=1').expect(400);
+      await e2e.as(leo.token).get('/routines?scope=public&pageSize=20&page=1&goal=INVALID').expect(400);
+    });
   });
 });

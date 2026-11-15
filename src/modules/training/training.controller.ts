@@ -47,6 +47,7 @@ import {
   selfScheduleRoutineSchema,
   createRoutineSchema,
   importRoutinesSchema,
+  isLegacyRoutineListQuery,
   listRoutinesSchema,
   updateRoutineExerciseSchema,
   updateRoutineSchema,
@@ -70,15 +71,11 @@ export class TrainingController {
 
   /**
    * Catálogo por pestañas (RF-01) o, para las apps ya instaladas, el listado
-   * paginado de siempre: `mine`/`templates` sin `limit` ni `cursor`.
+   * paginado de siempre (ver `isLegacyRoutineListQuery`).
    */
   @Get()
   list(@CurrentUser() user: AuthenticatedUser, @Query() rawQuery: Record<string, unknown>) {
-    const legacy =
-      (rawQuery.scope === undefined || rawQuery.scope === 'mine' || rawQuery.scope === 'templates') &&
-      rawQuery.limit === undefined &&
-      rawQuery.cursor === undefined;
-    if (legacy) {
+    if (isLegacyRoutineListQuery(rawQuery)) {
       const query = new ZodValidationPipe(listRoutinesSchema).transform(rawQuery, { type: 'query' }) as ListRoutinesInput;
       return this.trainingService.listRoutines(user.id, query);
     }
