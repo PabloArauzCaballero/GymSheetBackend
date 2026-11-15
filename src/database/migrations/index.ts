@@ -117,6 +117,7 @@ import { workoutExerciseSwapsMigration } from "./202610220001-workout-exercise-s
 import { branchLocationMigration } from "./202611080001-branch-location";
 import { tutorialProgressInitialMigration } from "./202611080001-tutorial-progress";
 import { tutorialProgressMigration } from "./202611120001-tutorial-progress";
+import { renameDefaultTenantReppMigration } from "./202611150002-rename-default-tenant-repp";
 import { progressionStrikesAndCoachCardsMigration } from "./202610190002-progression-strikes-and-coach-cards";
 import { DatabaseMigration } from "./migration.types";
 
@@ -244,4 +245,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   // porque TEST pudo aplicar ya el primero.
   tutorialProgressInitialMigration,
   tutorialProgressMigration,
+  renameDefaultTenantReppMigration,
 ];
