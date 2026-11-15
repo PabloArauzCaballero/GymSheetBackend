@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { UserGender } from '../../common/enums/domain.enums';
+import { stripInvisibleCharacters } from '../../common/text/invisible-characters';
 
 /**
  * Ajustes de cuenta que la persona puede cambiar por su cuenta.
@@ -22,6 +23,21 @@ export const updateMyAccountSchema = z
      * sede activa de su propio gimnasio (lo comprueba el servicio).
      */
     sedeId: z.string().uuid(),
+    /**
+     * Unas líneas sobre ti, visibles en tu carta de Conocer. Se recorta y se
+     * aplanan los saltos y caracteres de control: es una línea de carta, no un
+     * documento. Se quitan los invisibles (`stripInvisibleCharacters`): una bio
+     * de espacios de ancho cero o con la dirección invertida no es una bio.
+     * Vacía o `null` la borra.
+     */
+    bio: z
+      .string()
+      .transform((value) =>
+        stripInvisibleCharacters(value.replace(/\p{Cc}+/gu, " ")).replace(/\s+/g, " ").trim(),
+      )
+      .pipe(z.string().max(160, "La bio admite 160 caracteres como máximo."))
+      .transform((value) => (value === "" ? null : value))
+      .nullable(),
   })
   .partial()
   .refine((input) => Object.values(input).some((value) => value !== undefined), {

@@ -49,6 +49,8 @@ export type DirectoryEntryResponse = {
   age: number | null;
   gender: string | null;
   experienceLevel: string | null;
+  /** Unas líneas sobre sí misma. Reportable como `USER` en moderación. */
+  bio: string | null;
   points: number | null;
   levelCode: string | null;
 };
@@ -68,6 +70,7 @@ export function mapDirectoryRowToResponse(row: DirectoryRow): DirectoryEntryResp
     age: row.age,
     gender: row.gender,
     experienceLevel: row.experienceLevel,
+    bio: row.bio ?? null,
     points: row.points,
     levelCode: row.levelCode,
   };

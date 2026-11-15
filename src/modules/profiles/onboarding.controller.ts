@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Put } from "@nestjs/common";
+import { Body, Controller, Get, Patch, Post, Put } from "@nestjs/common";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
@@ -9,11 +9,13 @@ import {
   OnboardingGoalsInput,
   OnboardingPreferencesInput,
   OnboardingProfileInput,
+  TrainingProfileUpdateInput,
   bodyMeasurementSchema,
   onboardingEquipmentSchema,
   onboardingGoalsSchema,
   onboardingPreferencesSchema,
   onboardingProfileSchema,
+  trainingProfileUpdateSchema,
 } from "./onboarding.schemas";
 
 @Controller("me")
@@ -42,6 +44,14 @@ export class OnboardingController {
     input: OnboardingPreferencesInput,
   ) {
     return this.service.savePreferences(user.id, input);
+  }
+  /** Editar nivel e intereses desde el perfil sin reabrir el alta. */
+  @Patch("onboarding/preferences") updateTrainingProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(trainingProfileUpdateSchema))
+    input: TrainingProfileUpdateInput,
+  ) {
+    return this.service.updateTrainingProfile(user.id, input);
   }
   @Put("onboarding/equipment") equipment(
     @CurrentUser() user: AuthenticatedUser,

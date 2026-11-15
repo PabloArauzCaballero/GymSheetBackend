@@ -50,6 +50,10 @@ export class UsersService {
       if (transaction) await user.update({ weightIncrementKg: String(input.pesoIncrementoKg) }, { transaction });
       else await user.update({ weightIncrementKg: String(input.pesoIncrementoKg) });
     }
+    if (input.bio !== undefined) {
+      if (transaction) await user.update({ bio: input.bio }, { transaction });
+      else await user.update({ bio: input.bio });
+    }
     if (input.sedeId !== undefined) {
       // La sede se valida contra el gimnasio de la cuenta: elegir una de otro
       // gimnasio sería colarse en su directorio, no escoger dónde entrenas.

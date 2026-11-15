@@ -24,6 +24,29 @@ export const onboardingPreferencesSchema = z.object({
   consentData: z.boolean(),
 });
 
+/**
+ * Editar nivel e intereses desde el perfil, una vez terminado el alta.
+ *
+ * No reutiliza `onboardingPreferencesSchema`: aquel exige los consentimientos y
+ * su guardado devuelve el alta a «en curso», que en la web vuelve a encerrar a
+ * la persona en el cuestionario. Esto solo cambia lo que se envía.
+ */
+export const trainingProfileUpdateSchema = z
+  .object({
+    experienceLevel: z.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED"]),
+    weeklyFrequency: z.number().int().min(1).max(7),
+    trainingLocation: z.enum(["GYM", "HOME", "OUTDOORS", "MIXED"]),
+    trainingPreferences: z
+      .array(z.string().trim().min(1).max(80))
+      .max(20)
+      .transform((items) => [...new Set(items)]),
+  })
+  .partial()
+  .strict()
+  .refine((input) => Object.values(input).some((value) => value !== undefined), {
+    message: "Debe enviar al menos un campo para actualizar.",
+  });
+
 export const onboardingEquipmentSchema = z.object({
   availableEquipment: z.array(z.string().trim().min(1).max(80)).max(50),
 });
@@ -43,4 +66,5 @@ export type OnboardingPreferencesInput = z.infer<
 export type OnboardingEquipmentInput = z.infer<
   typeof onboardingEquipmentSchema
 >;
+export type TrainingProfileUpdateInput = z.infer<typeof trainingProfileUpdateSchema>;
 export type BodyMeasurementInput = z.infer<typeof bodyMeasurementSchema>;

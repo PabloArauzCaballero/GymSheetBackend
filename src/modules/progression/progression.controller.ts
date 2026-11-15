@@ -48,6 +48,15 @@ export class ProgressionController {
   }
 
 
+  /**
+   * Qué datos del perfil faltan y cuántos puntos vale cada uno. Leerlo otorga
+   * los recién completados (una vez por dato, `docs/progression/la-senda.md` §5.1).
+   */
+  @Get("profile-completion")
+  getMyProfileCompletion(@CurrentUser() user: AuthenticatedUser) {
+    return this.progressionService.getProfileCompletion(user.id);
+  }
+
   /** Los cupones del socio («Mis premios»): lo mismo que `progression.prizes`. */
   @Get("prizes")
   getMyPrizes(@CurrentUser() user: AuthenticatedUser) {

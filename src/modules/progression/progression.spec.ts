@@ -327,6 +327,7 @@ describe("computePoints", () => {
       challenges: 0,
       penalties: 0,
       strikePurchases: 0,
+      profile: 0,
     });
     const sum =
       breakdown.session +

@@ -117,7 +117,11 @@ import { workoutExerciseSwapsMigration } from "./202610220001-workout-exercise-s
 import { branchLocationMigration } from "./202611080001-branch-location";
 import { tutorialProgressInitialMigration } from "./202611080001-tutorial-progress";
 import { tutorialProgressMigration } from "./202611120001-tutorial-progress";
+import { profileCompletionRewardsMigration } from "./202611150001-profile-completion-rewards";
 import { renameDefaultTenantReppMigration } from "./202611150002-rename-default-tenant-repp";
+import { profileGoalSportPerformanceMigration } from "./202611150003-profile-goal-sport-performance";
+import { validateProfileGoalCheckMigration } from "./202611150004-validate-profile-goal-check";
+import { backfillProfileCompletionAwardsMigration } from "./202611150005-backfill-profile-completion-awards";
 import { progressionStrikesAndCoachCardsMigration } from "./202610190002-progression-strikes-and-coach-cards";
 import { DatabaseMigration } from "./migration.types";
 
@@ -245,5 +249,9 @@ export const databaseMigrations: DatabaseMigration[] = [
   // porque TEST pudo aplicar ya el primero.
   tutorialProgressInitialMigration,
   tutorialProgressMigration,
+  profileCompletionRewardsMigration,
   renameDefaultTenantReppMigration,
+  profileGoalSportPerformanceMigration,
+  validateProfileGoalCheckMigration,
+  backfillProfileCompletionAwardsMigration,
 ];

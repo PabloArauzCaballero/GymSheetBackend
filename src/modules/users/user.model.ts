@@ -82,6 +82,10 @@ export class UserModel extends Model {
   @Column({ type: DataType.DECIMAL(5, 2), allowNull: false, field: 'weight_increment_kg' })
   declare weightIncrementKg: string;
 
+  /** Unas líneas sobre ti (160 como máximo). Nula = todavía no la escribió. */
+  @Column({ type: DataType.STRING(160), allowNull: true, field: 'bio' })
+  declare bio: string | null;
+
   /** Sucursal habitual. Nula si la cuenta no tiene una sede asignada. */
   @Column({ type: DataType.UUID, allowNull: true, field: 'sede_id' })
   declare branchId: string | null;

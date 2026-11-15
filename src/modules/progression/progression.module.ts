@@ -3,6 +3,8 @@ import { SequelizeModule } from "@nestjs/sequelize";
 import { UsersModule } from "../users/users.module";
 import { ChallengesRepository } from "./challenges.repository";
 import { PrizesRepository } from "./prizes.repository";
+import { ProfileCompletionRepository } from "./profile-completion.repository";
+import { ProfileCompletionService } from "./profile-completion.service";
 import { ProgressionAdminService } from "./progression-admin.service";
 import { ProgressionBadgeModel } from "./progression-badge.model";
 import { ProgressionLevelModel } from "./progression-level.model";
@@ -43,6 +45,8 @@ import { WeeklyChallengesService } from "./weekly-challenges.service";
     ChallengesRepository,
     WeeklyChallengesService,
     PrizesRepository,
+    ProfileCompletionRepository,
+    ProfileCompletionService,
   ],
   exports: [ProgressionService],
 })

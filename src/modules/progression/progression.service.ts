@@ -4,6 +4,8 @@ import { env } from "../../config/env";
 import { resolveMediaUrl } from "../../common/media/media-url";
 import { badgeIllustration, rarityRank } from "./badge-illustrations";
 import { UsersRepository } from "../users/users.repository";
+import { PROFILE_COMPLETION_ITEMS, ProfileCompletionView } from "./profile-completion";
+import { ProfileCompletionService } from "./profile-completion.service";
 import { ChallengeTotals } from "./challenges.repository";
 import { ProgressionBadgeModel } from "./progression-badge.model";
 import { ProgressionLevelModel } from "./progression-level.model";
@@ -85,6 +87,8 @@ export interface PointsBreakdown {
   penalties: number;
   /** Puntos canjeados para recomprar strikes. */
   strikePurchases: number;
+  /** Datos del perfil completados (libro de solo inserción, §5.1). Nunca bajan. */
+  profile: number;
 }
 
 export interface StreakView {
@@ -146,6 +150,8 @@ export interface PointRulesView {
   perfectWeekBonus: number;
   freezeEveryDays: number;
   maxFreezes: number;
+  /** Cuánto vale cada dato del perfil la primera vez que se completa. */
+  profileItems: { code: string; points: number }[];
 }
 
 interface ProgressionSnapshot {
@@ -274,6 +280,7 @@ export class ProgressionService {
     private readonly usersRepository: UsersRepository,
     private readonly challenges: WeeklyChallengesService,
     private readonly prizes: PrizesRepository,
+    private readonly profileCompletion: ProfileCompletionService,
   ) {}
 
   /**
@@ -301,6 +308,8 @@ export class ProgressionService {
     // «retos cumplidos» y «semanas redondas», y sus puntos entran en el total.
     const challengeState = await this.challenges.sync(userId);
     const metrics = withChallengeTotals(context.metrics, challengeState.totals);
+    // El perfil va antes de sumar: lo recién completado entra ya en este total.
+    const profile = await this.profileCompletion.sync(userId, tenantId);
 
     const earnedByBadgeId = new Map(earned.map((row) => [row.badgeId, row]));
 
@@ -343,6 +352,7 @@ export class ProgressionService {
       metrics,
       badges.filter((badge) => satisfied.includes(badge) || earnedByBadgeId.has(badge.id)),
       strikes.ledger,
+      profile.pointsEarned,
     );
     const points = sumBreakdown(breakdown);
     const { earnedTotal, path, current, next, pointsToNextLevel, levelProgress } = rankOf(levels, breakdown);
@@ -458,7 +468,10 @@ export class ProgressionService {
         earnedIds.has(badge.id) ||
         measure(metrics, badge.criterionType) >= Number(badge.criterionThreshold),
     );
-    const breakdown = computePointsBreakdown(metrics, satisfied, strikes.ledger);
+    // Lo pendiente del perfil va en la foto: `computeProgression` lo pagará al
+    // cerrar la sesión, y no es fruto de la sesión.
+    const profilePoints = await this.profileCompletion.preview(userId);
+    const breakdown = computePointsBreakdown(metrics, satisfied, strikes.ledger, profilePoints);
     const points = sumBreakdown(breakdown);
     const { current: level, levelProgress } = rankOf(levels, breakdown);
     return {
@@ -510,6 +523,7 @@ export class ProgressionService {
         challenges: delta("challenges"),
         penalties: delta("penalties"),
         strikePurchases: delta("strikePurchases"),
+        profile: delta("profile"),
       },
       levelBefore: before.level,
       levelAfter: after.level,
@@ -543,7 +557,25 @@ export class ProgressionService {
       perfectWeekBonus: PERFECT_WEEK_BONUS,
       freezeEveryDays: STREAK_FREEZE_EVERY_DAYS,
       maxFreezes: STREAK_MAX_FREEZES,
+      profileItems: PROFILE_COMPLETION_ITEMS.map((item) => ({ code: item.code, points: item.points })),
     };
+  }
+
+  /**
+   * Qué le falta al perfil y cuánto vale cada dato. Otorga lo recién
+   * completado y, si pagó algo, recalcula la senda, igual que abrirla: la
+   * cifra que ve el cliente es la que ya está en el saldo, nunca una promesa
+   * calculada en el teléfono.
+   */
+  async getProfileCompletion(userId: string): Promise<ProfileCompletionView> {
+    const user = await this.usersRepository.findById(userId);
+    if (!user) throw new NotFoundException("Usuario no encontrado.");
+    const view = await this.profileCompletion.sync(userId, user.tenantId ?? env.DEFAULT_TENANT_ID ?? null);
+    // Lo recién pagado mueve el saldo: se recalcula y guarda la senda igual que
+    // al abrirla, para que la clasificación, el rango y sus premios no queden
+    // atrasados hasta la próxima lectura de la senda.
+    if (view.awardedNow.length > 0) await this.computeProgression(userId);
+    return view;
   }
 
   /**
@@ -775,6 +807,7 @@ export function computePointsBreakdown(
   metrics: TrainingMetrics,
   earnedBadges: readonly { pointsReward: number }[],
   strikes?: { penaltyPoints?: number; purchasedStrikes?: number },
+  profilePoints = 0,
 ): PointsBreakdown {
   const penaltyPoints = strikes?.penaltyPoints ?? 0;
   const purchasedStrikes = strikes?.purchasedStrikes ?? 0;
@@ -789,6 +822,7 @@ export function computePointsBreakdown(
     challenges: metrics.challengePoints ?? 0,
     penalties: penaltyPoints,
     strikePurchases: purchasedStrikes * POINTS.strikeCost,
+    profile: profilePoints,
   };
 }
 
@@ -801,7 +835,8 @@ function sumBreakdown(breakdown: PointsBreakdown): number {
     (breakdown.progress ?? 0) +
     breakdown.badges +
     breakdown.modes +
-    breakdown.challenges;
+    breakdown.challenges +
+    (breakdown.profile ?? 0);
   const negative = (breakdown.penalties ?? 0) + (breakdown.strikePurchases ?? 0);
   return Math.max(0, positive - negative);
 }

@@ -1,5 +1,5 @@
 import { FitnessGoal } from '../../common/enums/domain.enums';
-import { bodyMeasurementSchema, onboardingGoalsSchema, onboardingPreferencesSchema } from './onboarding.schemas';
+import { bodyMeasurementSchema, onboardingGoalsSchema, onboardingPreferencesSchema, trainingProfileUpdateSchema } from './onboarding.schemas';
 
 describe('onboarding schemas', () => {
   it('accepts every supported goal as a stable enum', () => {
@@ -15,5 +15,15 @@ describe('onboarding schemas', () => {
   it('validates historical measurement units and dates', () => {
     expect(bodyMeasurementSchema.parse({ weight: 80, unit: 'KG', measuredOn: '2026-07-22' })).toMatchObject({ weight: 80, unit: 'KG' });
     expect(() => bodyMeasurementSchema.parse({ weight: -1, unit: 'KG', measuredOn: 'bad-date' })).toThrow();
+  });
+
+  it('edits level and interests from the profile without asking for consents again', () => {
+    expect(trainingProfileUpdateSchema.parse({ trainingPreferences: ['Fuerza', 'Cardio', 'Fuerza'] })).toEqual({
+      trainingPreferences: ['Fuerza', 'Cardio'],
+    });
+    expect(trainingProfileUpdateSchema.parse({ experienceLevel: 'ADVANCED' })).toEqual({ experienceLevel: 'ADVANCED' });
+    expect(() => trainingProfileUpdateSchema.parse({})).toThrow();
+    // Consent and status are not editable through this door.
+    expect(() => trainingProfileUpdateSchema.parse({ consentHealth: false })).toThrow();
   });
 });

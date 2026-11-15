@@ -17,6 +17,8 @@ export type UserResponse = {
   pesoIncrementoKg: number;
   /** Sede habitual. Nula = todavía no la ha elegido. */
   sedeId: string | null;
+  /** Unas líneas sobre ti. Nula = todavía no la escribió. */
+  bio: string | null;
 };
 
 /**
@@ -37,5 +39,6 @@ export function mapUserToResponse(user: UserModel): UserResponse {
     genero: user.gender,
     pesoIncrementoKg: Number(user.weightIncrementKg),
     sedeId: user.branchId,
+    bio: user.bio ?? null,
   };
 }

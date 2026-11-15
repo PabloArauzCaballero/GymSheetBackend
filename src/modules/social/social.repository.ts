@@ -59,6 +59,8 @@ export interface DirectoryRow {
   age: number | null;
   gender: string | null;
   experienceLevel: string | null;
+  /** Unas líneas que la persona escribió sobre sí misma, para su carta. */
+  bio?: string | null;
   points: number | null;
   levelCode: string | null;
   /** Public gym coordinates and declared discovery intent, internal to ranking only. */
@@ -1259,6 +1261,7 @@ export class SocialRepository {
       age: number | null;
       gender: string | null;
       experience_level: string | null;
+      bio: string | null;
       points: number | null;
       level_code: string | null;
       recommendation_lat: number | null;
@@ -1272,6 +1275,7 @@ export class SocialRepository {
               b.id AS branch_id,
               b.name AS branch_name,
               o.experience_level,
+              u.bio,
               c.id AS connection_id,
               c.status AS connection_status,
               c.requester_id,
@@ -1423,6 +1427,7 @@ export class SocialRepository {
         age: row.age,
         gender: row.gender,
         experienceLevel: row.experience_level,
+        bio: row.bio,
         points: row.points,
         levelCode: row.level_code,
         recommendationArea:

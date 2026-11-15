@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS perfiles_antropometricos (
                 'RESISTENCIA',
                 'PERDIDA_GRASA',
                 'SALUD_GENERAL',
+                'RENDIMIENTO_DEPORTIVO',
                 'REHABILITACION'
             )
         )

@@ -136,6 +136,54 @@ Decisiones:
   y es lo único que sobrevive a que un administrador cambie un umbral o a que se
   corrija una serie mal registrada.
 
+### 5.1 Completar el perfil
+
+Cada dato del perfil paga **una vez**, en un libro de solo inserción
+(`progression.profile_completion_awards`, clave `(user_id, item_code)`). La
+partida es `profile` en el desglose y cuenta para el rango como cualquier punto ganado.
+
+| Código | Dato | Puntos |
+|---|---|---|
+| `FOTO` | Primera foto visible (no ocultada por moderación) | 50 |
+| `DATOS` | Peso, estatura y objetivo (`perfiles_antropometricos`) | 50 |
+| `BIO` | Unas líneas sobre ti (`usuarios.bio`, 160 máx., con al menos 3 letras o cifras) | 40 |
+| `FOTOS_3` | Tres fotos visibles | 30 |
+| `NIVEL` | Nivel de experiencia | 20 |
+| `INTERESES` | Al menos un interés de entreno | 20 |
+| `NACIMIENTO` | Fecha de nacimiento | 20 |
+| `GENERO` | Género respondido («Prefiero no decirlo» cuenta) | 20 |
+
+Total: 250, menos que dos sesiones corrientes. Así completar el perfil no es un atajo para subir de rango.
+
+- **Se otorga al leer** (`GET /me/progression` o `GET /me/progression/profile-completion`),
+  igual que las insignias: no depende de que cada pantalla que cambia un dato avise.
+- **Idempotente y a prueba de carreras**: `INSERT … ON CONFLICT DO NOTHING`. Dos lecturas
+  simultáneas pagan una sola vez (lo cubre una prueba e2e).
+- **No se devuelve**: quitar la foto después no resta puntos; volver a subirla no paga dos veces.
+- **Paga lo que valía al ganarse**: la fila guarda `points`, así que cambiar el catálogo
+  no reescribe lo ya ganado. `tenant_id` guarda el gimnasio de la cuenta en ese momento.
+- **Sin puntos retroactivos** (decisión de producto, 15/11/2026). Quien ya tenía un dato antes
+  de este despliegue no cobra por él: la migración `202611150005-backfill-profile-completion-awards`
+  anota cada dato que la cuenta ya cumplía con `points = 0` y el `tenant_id` de la cuenta. Va en
+  su propia transacción, separada del DDL de `202611150001` (que bloquea `usuarios` mientras dura),
+  y juzga con una copia congelada de los predicados (`profile-completion-backfill.snapshot.ts`).
+  Una prueba de paridad (unitaria y e2e contra PostgreSQL) falla si el servicio se aparta de esa
+  copia. Ese dato figura como hecho y cobrado, no se ofrece como «+N pts», y solo paga lo que se
+  complete desde entonces.
+- **La bio paga si dice algo**: al menos tres letras o cifras de cualquier alfabeto
+  (`hasMeaningfulBio`). Al guardarla se quitan los invisibles (categoría `Cf` —espacio de ancho
+  cero, BOM, controles bidi como U+202E— y los rellenos Hangul U+3164, U+115F, U+1160, U+FFA0 y
+  el blanco braille U+2800); el ZWJ solo se conserva dentro de una secuencia emoji.
+- **El cierre de una sesión no se lleva estos puntos**: la foto previa a la sesión
+  (`snapshot`) ya cuenta lo pendiente del perfil (`preview`), así que si el cierre paga un
+  dato, `breakdown.profile` de la recompensa es 0 y el desglose suma `pointsEarned`.
+- **Leer `profile-completion` y cobrar algo recalcula la senda** y guarda el progreso, igual
+  que `GET /me/progression`: la clasificación, el rango y sus premios no quedan atrasados.
+- `GET /me/progression/rules` publica `profileItems`. Los clientes no copian las cifras.
+- Nivel e intereses se editan con `PATCH /me/onboarding/preferences`, que **no** devuelve el
+  alta a «en curso». El `PUT` del cuestionario sí la devuelve, y en la web eso volvería a
+  encerrar a la persona en `/onboarding`.
+
 ### Umbrales
 
 | Rango | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
@@ -376,6 +424,7 @@ GET  /api/v1/me/progression/rules        cuánto vale cada cosa
 GET  /api/v1/me/progression/prizes       los cupones del socio
 POST /api/v1/me/progression/acknowledge  las novedades (insignias, retos, cupones) dejan de serlo
 GET  /api/v1/me/progression/leaderboard  clasificación del gimnasio
+GET  /api/v1/me/progression/profile-completion  qué le falta al perfil y cuánto vale (otorga lo recién completado)
 ```
 
 El `finish` de una sesión (`PATCH /workouts/{id}/finish`) devuelve en

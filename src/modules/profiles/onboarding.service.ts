@@ -18,6 +18,7 @@ import {
   OnboardingEquipmentInput,
   OnboardingGoalsInput,
   OnboardingPreferencesInput,
+  TrainingProfileUpdateInput,
   OnboardingProfileInput,
 } from "./onboarding.schemas";
 
@@ -88,6 +89,14 @@ export class OnboardingService {
   async savePreferences(userId: string, input: OnboardingPreferencesInput) {
     const state = await this.repository.getOrCreate(userId);
     await this.advance(state, 3, input);
+    return this.getState(userId);
+  }
+
+  /** Nivel e intereses editados desde el perfil: cambia los datos, no el estado del alta. */
+  async updateTrainingProfile(userId: string, input: TrainingProfileUpdateInput) {
+    const state = await this.repository.getOrCreate(userId);
+    await state.update(input);
+    this.logger.log({ event: "onboarding.training_profile_updated", userId, fields: Object.keys(input) });
     return this.getState(userId);
   }
 
