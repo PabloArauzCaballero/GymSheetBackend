@@ -121,8 +121,9 @@ export const environmentSchema = z
      */
     METRICS_SCRAPE_TOKEN: optionalSecretSchema,
     /**
-     * Optional key for the HMAC-SHA256 of the client IP stored with each legal
-     * acceptance. Unset = no IP evidence is stored (the column stays null).
+     * Privacy pepper: key of every HMAC of a client IP and of the email kept
+     * for a sanctioned closed account (ADR-0014, ADR-0015). Unset = no IP
+     * evidence and no ban-evasion record is stored.
      */
     IP_HASH_SECRET: optionalSecretSchema,
 

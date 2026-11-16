@@ -51,8 +51,9 @@ export class RoutineProgressDownloadAuditModel extends Model {
   @Column({ type: DataType.INTEGER, allowNull: false, field: 'records_count' })
   declare recordsCount: number;
 
-  @Column({ type: DataType.STRING(60), allowNull: true, field: 'ip' })
-  declare ip: string | null;
+  /** Keyed hash of the client IP (ADR-0014); the raw address is never stored. */
+  @Column({ type: DataType.STRING(64), allowNull: true, field: 'ip_hmac' })
+  declare ipHmac: string | null;
 
   @Column({ type: DataType.TEXT, allowNull: true, field: 'user_agent' })
   declare userAgent: string | null;

@@ -1,6 +1,5 @@
 import { Injectable } from "@nestjs/common";
 import { IP_HASH_RETENTION_DAYS } from "../../common/privacy/client-ip-hash";
-import { env } from "../../config/env";
 import { TicketLedgerRepository } from "../antibot/ticket-ledger.repository";
 import { IpHmacTable, PrivacyRetentionRepository } from "./privacy-retention.repository";
 
@@ -13,7 +12,7 @@ export type PrivacyRetentionResult = {
   /** Hashes nulled per table; their total is `ipHashesCleared`. */
   ipHashesClearedByTable: Record<IpHmacTable, number>;
   ipHashesCleared: number;
-  rawIpsConverted: number;
+  closedAccountSanctionsDeleted: number;
 };
 
 /** Data minimisation across every table holding personal data with a retention limit (ADR-0014). */
@@ -24,8 +23,7 @@ export class PrivacyRetentionService {
     private readonly repository: PrivacyRetentionRepository,
   ) {}
 
-  async purge(now: Date, ipHashSecret: string | undefined = env.IP_HASH_SECRET): Promise<PrivacyRetentionResult> {
-    const rawIpsConverted = await this.repository.convertRawDownloadAuditIps(ipHashSecret);
+  async purge(now: Date): Promise<PrivacyRetentionResult> {
     const ticketsDeleted = await this.ledger.deleteUsedBefore(
       new Date(now.getTime() - SPENT_TOKEN_RETENTION_DAYS * DAY_MS),
     );
@@ -33,6 +31,7 @@ export class PrivacyRetentionService {
       new Date(now.getTime() - IP_HASH_RETENTION_DAYS * DAY_MS),
     );
     const ipHashesCleared = Object.values(ipHashesClearedByTable).reduce((total, count) => total + count, 0);
-    return { ticketsDeleted, ipHashesClearedByTable, ipHashesCleared, rawIpsConverted };
+    const closedAccountSanctionsDeleted = await this.repository.deleteExpiredClosedAccountSanctions(now);
+    return { ticketsDeleted, ipHashesClearedByTable, ipHashesCleared, closedAccountSanctionsDeleted };
   }
 }

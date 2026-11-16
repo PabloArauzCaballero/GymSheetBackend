@@ -516,6 +516,7 @@ export class RoutinesShowcaseSeeder {
     await moderation.resolve(asAuthenticated(moderator, null), 'COMMENT', commentId, {
       hideContent: true,
       sanction: false,
+      confirmMinor: false,
       note: 'Spam comercial (datos de demostración).',
     });
     this.count('comentarios_moderados');

@@ -49,6 +49,7 @@ describe('Legal acceptance and signup requirements (e2e)', () => {
       documents: [
         { document: 'TERMS', version: LEGAL_DOCUMENTS.TERMS, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.TERMS },
         { document: 'PRIVACY', version: LEGAL_DOCUMENTS.PRIVACY, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.PRIVACY },
+        { document: 'COMMUNITY', version: LEGAL_DOCUMENTS.COMMUNITY, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.COMMUNITY },
       ],
       consents: CONSENT_KINDS.map((kind) => ({ kind, version: CONSENT_VERSIONS[kind] })),
     });
@@ -90,6 +91,7 @@ describe('Legal acceptance and signup requirements (e2e)', () => {
       { userId: account.id },
     );
     expect(acceptances).toEqual([
+      { document: 'COMMUNITY', version: LEGAL_DOCUMENTS.COMMUNITY, channel: 'IOS', user_agent: 'e2e-agent' },
       { document: 'PRIVACY', version: LEGAL_DOCUMENTS.PRIVACY, channel: 'IOS', user_agent: 'e2e-agent' },
       { document: 'TERMS', version: LEGAL_DOCUMENTS.TERMS, channel: 'IOS', user_agent: 'e2e-agent' },
     ]);

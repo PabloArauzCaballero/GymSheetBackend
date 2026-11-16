@@ -1,6 +1,7 @@
-# ADR-0010 — El chat avisa al teléfono: productor de push y presencia
+# ADR-0016 — El chat avisa al teléfono: productor de push y presencia
 
-Estado: aceptado · Fecha: 2026-09-13
+Estado: aceptado · Fecha: 2026-09-13 · Renumerado el 2026-11-18: nació como un segundo ADR-0010
+(el número ya era de [ADR-0010](ADR-0010-minio-immutable-media.md)); el contenido no cambia.
 
 ## Contexto
 

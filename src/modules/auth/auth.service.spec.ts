@@ -6,6 +6,7 @@ import { UsersRepository } from '../users/users.repository';
 import { TenantsService } from '../tenants/tenants.service';
 import { LegalService } from '../legal/legal.service';
 import { SignupProtectionService } from '../antibot/signup-protection.service';
+import { ClosedAccountSanctionsService } from '../closed-account-sanctions/closed-account-sanctions.service';
 import { AuthSessionService } from './auth-session.service';
 import { AuthService } from './auth.service';
 import { ClientDeviceContext } from './client-device-context';
@@ -56,6 +57,7 @@ function createService(usersRepositoryOverrides: Partial<UsersRepository>): Auth
     {} as UserDeviceService,
     {} as EmailVerificationService,
     {} as SignupProtectionService,
+    {} as ClosedAccountSanctionsService,
   );
 }
 

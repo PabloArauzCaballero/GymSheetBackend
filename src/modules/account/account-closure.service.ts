@@ -6,7 +6,8 @@ import { UserRole } from "../../common/enums/domain.enums";
 import { DomainException } from "../../common/errors/domain.exception";
 import { env } from "../../config/env";
 import { EMAIL_PIN_POLICY, EmailPinFailure, EmailVerificationService, emailPinError } from "../auth/email-verification.service";
-import { OutboxService } from "../integration/outbox.service";
+import { ClosedAccountSanctionsService } from "../closed-account-sanctions/closed-account-sanctions.service";
+import { MediaReleaseService } from "../media/media-release.service";
 import { SocialRecommendationOutboxService } from "../social/social-recommendation-outbox.service";
 import { UserModel } from "../users/user.model";
 import { UsersRepository } from "../users/users.repository";
@@ -14,18 +15,15 @@ import { AccountClosureRepository } from "./account-closure.repository";
 import { ClosurePreview, mapClosurePreview } from "./account-closure.mapper";
 import { CloseAccountInput } from "./account.schemas";
 
-/** Queue drained by the account-data worker; each job carries a bounded list of keys. */
-export const ACCOUNT_MEDIA_ERASURE_QUEUE = "account.media-erasure";
-const MEDIA_KEYS_PER_JOB = 100;
-const MEDIA_ERASURE_MAX_ATTEMPTS = 10;
-
 export const closedAccountEmail = (userId: string): string => `cerrada-${userId}@cuenta-cerrada.invalid`;
 
 /**
  * Closes an account in ONE transaction: sessions, devices and every personal
  * row of the data map go, the gym's tax records stay de-identified and the
  * account row is anonymized. Files cannot join a database transaction, so
- * their erasure is enqueued in the outbox in that same transaction.
+ * their erasure is enqueued in that same transaction on the shared
+ * `media.release` queue, one job per file. Strikes still counting are kept
+ * under the hash of the email so closing does not wipe a sanction (ADR-0015).
  */
 @Injectable()
 export class AccountClosureService {
@@ -35,8 +33,9 @@ export class AccountClosureService {
     private readonly repository: AccountClosureRepository,
     private readonly users: UsersRepository,
     private readonly emailPins: EmailVerificationService,
-    private readonly outbox: OutboxService,
+    private readonly mediaRelease: MediaReleaseService,
     private readonly recommendations: SocialRecommendationOutboxService,
+    private readonly sanctions: ClosedAccountSanctionsService,
   ) {}
 
   async preview(userId: string): Promise<ClosurePreview> {
@@ -82,11 +81,13 @@ export class AccountClosureService {
     // A wrong PIN must commit its attempt counter, so it is returned and thrown after commit.
     const result = await this.repository.runInTransaction(async (transaction): Promise<{ failed: EmailPinFailure } | { closedAt: Date }> => {
       await this.users.lockUserForUpdate(userId, transaction);
-      if (!(await this.users.findActiveById(userId, transaction))) throw accountNotFound();
+      const locked = await this.users.findActiveById(userId, transaction);
+      if (!locked) throw accountNotFound();
       if (input.pin !== undefined) {
         const outcome = await this.emailPins.verifyPurposePin(userId, "CLOSE_ACCOUNT", input.pin, transaction);
         if (outcome.kind !== "VERIFIED") return { failed: outcome };
       }
+      await this.sanctions.recordAtClosure(locked, transaction);
       return { closedAt: await this.eraseInTransaction(userId, unusablePasswordHash, transaction) };
     });
     if ("failed" in result) throw emailPinError(result.failed);
@@ -105,25 +106,10 @@ export class AccountClosureService {
     // The account is inactive now, so the snapshot tells the recommender to drop the profile.
     await this.recommendations.enqueueProfileSnapshot(userId, transaction);
     const inUse = await this.repository.keysStillInUse(mediaKeys, transaction);
-    await this.enqueueMediaErasure(userId, mediaKeys.filter((key) => !inUse.has(key)), closedAt, transaction);
-    return closedAt;
-  }
-
-  private async enqueueMediaErasure(userId: string, keys: string[], closedAt: Date, transaction: Transaction) {
-    for (let start = 0; start < keys.length; start += MEDIA_KEYS_PER_JOB) {
-      await this.outbox.enqueue(
-        {
-          queueName: ACCOUNT_MEDIA_ERASURE_QUEUE,
-          eventType: "account.media-erasure.v1",
-          aggregateType: "account",
-          aggregateId: userId,
-          deduplicationKey: `account-media-erasure:${userId}:${closedAt.getTime()}:${start}`,
-          payload: { storageKeys: keys.slice(start, start + MEDIA_KEYS_PER_JOB) },
-          maxAttempts: MEDIA_ERASURE_MAX_ATTEMPTS,
-        },
-        transaction,
-      );
+    for (const storageKey of mediaKeys.filter((key) => !inUse.has(key))) {
+      await this.mediaRelease.requestRelease({ aggregateType: "account", aggregateId: userId, storageKey }, transaction);
     }
+    return closedAt;
   }
 
   private async activeUser(userId: string): Promise<UserModel> {

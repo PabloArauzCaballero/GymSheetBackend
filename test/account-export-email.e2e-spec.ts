@@ -1,10 +1,8 @@
 import { Sequelize } from 'sequelize-typescript';
 import request from 'supertest';
-import { AccountMediaErasureService } from '../src/modules/account/account-media-erasure.service';
 import { ACCOUNT_EXPORT_SECTIONS } from '../src/modules/export/account-export.sections';
 import { AccountExportService } from '../src/modules/export/account-export.service';
 import { OutboxService } from '../src/modules/integration/outbox.service';
-import { MediaRetentionService } from '../src/modules/media/media-retention.service';
 import { AccountDataRunner } from '../src/workers/account-data.runner';
 import { seedPersonalData, selectOne } from './support/account-fixtures';
 import { bootE2eApp, E2eApp } from './support/e2e-app';
@@ -63,7 +61,6 @@ describe('Account export and email change (e2e)', () => {
       const runner = new AccountDataRunner(
         e2e.app.get(OutboxService),
         e2e.app.get(AccountExportService),
-        new AccountMediaErasureService(e2e.app.get(MediaRetentionService, { strict: false })),
       );
       await runner.drainOnce();
       const status = await e2e.as(owner.token).get(`/me/export/${exportId}`).expect(200);

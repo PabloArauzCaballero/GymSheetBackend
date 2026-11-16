@@ -1,5 +1,3 @@
-import { AccountMediaErasureService } from '../modules/account/account-media-erasure.service';
-import { ACCOUNT_MEDIA_ERASURE_QUEUE } from '../modules/account/account-closure.service';
 import { ACCOUNT_EXPORT_QUEUE, AccountExportService } from '../modules/export/account-export.service';
 import { OutboxJobModel } from '../modules/integration/outbox-job.model';
 import { OutboxService } from '../modules/integration/outbox.service';
@@ -18,23 +16,21 @@ function build(jobs: Record<string, object[]>, options: { deadLetter?: boolean; 
     markFailed: jest.fn().mockResolvedValue(undefined),
     purgeExpired: jest.fn().mockResolvedValue(0),
   };
-  const media = { erase: jest.fn().mockResolvedValue({ removed: 1, kept: 0 }) };
   const runner = new AccountDataRunner(
     outbox as unknown as OutboxService,
     exports as unknown as AccountExportService,
-    media as unknown as AccountMediaErasureService,
   );
-  return { runner, outbox, exports, media };
+  return { runner, outbox, exports };
 }
 
 describe('AccountDataRunner', () => {
-  it('builds exports and erases media, completing each job', async () => {
+  it('builds exports, completing each job, and claims only the export queue (files go to media.release)', async () => {
     const exportJob = { id: 'j1', queueName: ACCOUNT_EXPORT_QUEUE, payload: { exportId } } as unknown as OutboxJobModel;
-    const mediaJob = { id: 'j2', queueName: ACCOUNT_MEDIA_ERASURE_QUEUE, payload: { storageKeys: ['k'] } } as unknown as OutboxJobModel;
-    const { runner, outbox, exports, media } = build({ [ACCOUNT_EXPORT_QUEUE]: [exportJob], [ACCOUNT_MEDIA_ERASURE_QUEUE]: [mediaJob] });
+    const secondJob = { id: 'j2', queueName: ACCOUNT_EXPORT_QUEUE, payload: { exportId } } as unknown as OutboxJobModel;
+    const { runner, outbox, exports } = build({ [ACCOUNT_EXPORT_QUEUE]: [exportJob, secondJob] });
     await expect(runner.drainOnce()).resolves.toBe(2);
     expect(exports.build).toHaveBeenCalledWith(exportId);
-    expect(media.erase).toHaveBeenCalledWith({ storageKeys: ['k'] });
+    expect(outbox.claim.mock.calls.map(([queue]) => queue)).toEqual([ACCOUNT_EXPORT_QUEUE]);
     expect(outbox.complete).toHaveBeenCalledTimes(2);
   });
 

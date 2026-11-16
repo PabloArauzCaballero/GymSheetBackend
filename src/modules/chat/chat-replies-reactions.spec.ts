@@ -201,6 +201,7 @@ describe("MessageMutationsService.setReaction", () => {
       repository as never,
       reactions as never,
       {} as never,
+      {} as never,
     );
     return { service, reactions, events, repository };
   }
@@ -295,7 +296,7 @@ describe("ChatService.forwardMessage", () => {
 
 describe("ChatGateway typing", () => {
   function gateway() {
-    return new ChatGateway({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    return new ChatGateway({} as never, {} as never, {} as never, {} as never, {} as never, {} as never, { hasPending: jest.fn().mockResolvedValue(false) } as never);
   }
 
   it("relays typing to the rest of the joined room, never back to the sender", () => {

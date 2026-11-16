@@ -9,7 +9,7 @@ import { PrivacyMaintenanceModule } from './privacy-maintenance.module';
  *  - deletes spent form tickets / attestation nonces older than 1 day;
  *  - nulls every keyed IP hash older than 90 days (signup audit, legal
  *    acceptances, devices, password resets, admin audit, coach downloads);
- *  - replaces any raw IP still written to the coach download audit.
+ *  - deletes ban-evasion records of closed accounts whose strikes expired (ADR-0015).
  * It has no dry run: it only removes data the retention policy says must not
  * be kept. The log carries counts only, never a value.
  *

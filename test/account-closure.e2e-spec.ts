@@ -3,11 +3,7 @@ import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import request from 'supertest';
 import { ACCOUNT_CLOSURE_STEPS } from '../src/modules/account/account-closure.catalog';
-import { AccountMediaErasureService } from '../src/modules/account/account-media-erasure.service';
-import { AccountExportService } from '../src/modules/export/account-export.service';
-import { OutboxService } from '../src/modules/integration/outbox.service';
-import { MediaRetentionService } from '../src/modules/media/media-retention.service';
-import { AccountDataRunner } from '../src/workers/account-data.runner';
+import { MediaReleaseService } from '../src/modules/media/media-release.service';
 import { countRows, seedPersonalData, selectOne, SeededAccount, writeStoredFile } from './support/account-fixtures';
 import { bootE2eApp, E2E_SIGNUP_FIELDS, E2eApp } from './support/e2e-app';
 
@@ -152,14 +148,9 @@ describe('Account closure (e2e)', () => {
       expect(await countRows(sequelize, 'access_control.credentials', "t.user_id = :userId AND t.status = 'REVOKED'", closer.id)).toBe(1);
     });
 
-    it('erases the stored files through the outbox worker', async () => {
+    it('erases the stored files through the shared media.release outbox queue', async () => {
       expect(existsSync(photoPath)).toBe(true);
-      const runner = new AccountDataRunner(
-        e2e.app.get(OutboxService),
-        e2e.app.get(AccountExportService),
-        new AccountMediaErasureService(e2e.app.get(MediaRetentionService, { strict: false })),
-      );
-      await runner.drainOnce();
+      await e2e.app.get(MediaReleaseService).drainOnce();
       expect(existsSync(photoPath)).toBe(false);
       expect(existsSync(chatPath)).toBe(false);
     });

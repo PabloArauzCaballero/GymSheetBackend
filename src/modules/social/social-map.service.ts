@@ -1,4 +1,5 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { ForbiddenException, HttpStatus, Injectable } from "@nestjs/common";
+import { DomainException } from "../../common/errors/domain.exception";
 import { ConsentsService } from "../consents/consents.service";
 import { SocialRepository } from "./social.repository";
 import { env } from "../../config/env";
@@ -28,9 +29,27 @@ export class SocialMapService {
     return { saved: true };
   }
 
-  async areas(_viewerId: string, bounds: MapBounds) {
+  /**
+   * "If you don't share, you don't see": only a viewer whose own social profile
+   * and map visibility are on may see who is on the map. Checked before any
+   * map query, so a refused viewer learns nothing (not even a count).
+   */
+  private async assertViewerShares(viewerId: string) {
+    const settings = await this.socialRepository.discoverySettings(viewerId);
+    if (!settings.profileEnabled || !settings.mapEnabled) {
+      throw new DomainException(
+        HttpStatus.FORBIDDEN,
+        "SOCIAL_MAP_DISABLED",
+        "Para ver a otras personas en el mapa, activa tu perfil social y tu visibilidad en el mapa.",
+      );
+    }
+    return settings;
+  }
+
+  async areas(viewerId: string, bounds: MapBounds) {
     const cells = mapCellsForBounds(bounds);
-    const counts = await this.repository.listEligibleMapCells(_viewerId, cells);
+    await this.assertViewerShares(viewerId);
+    const counts = await this.repository.listEligibleMapCells(viewerId, cells);
     const byId = new Map(counts.map((row) => [row.cellId, row.count]));
     return {
       cells: cells.flatMap((cell) => {
@@ -41,10 +60,8 @@ export class SocialMapService {
   }
 
   async peopleInCell(viewerId: string, tenantId: string, cellId: string) {
-    const [settings, userIds] = await Promise.all([
-      this.socialRepository.discoverySettings(viewerId),
-      this.repository.listEligibleMapPeople(viewerId, cellId),
-    ]);
+    const settings = await this.assertViewerShares(viewerId);
+    const userIds = await this.repository.listEligibleMapPeople(viewerId, cellId);
     if (userIds.length === 0) return [];
     const rows = await this.socialRepository.directory(viewerId, tenantId, env.DEFAULT_TENANT_ID, {
       userIds,
@@ -65,8 +82,8 @@ export class SocialMapService {
   async nearby(viewerId: string, tenantId: string, point: MapCoordinates) {
     const cells = mapCellsAround(point);
     const centers = new Map(cells.map((cell) => [cell.id, cell.center]));
-    const [settings, preferences, located] = await Promise.all([
-      this.socialRepository.discoverySettings(viewerId),
+    const settings = await this.assertViewerShares(viewerId);
+    const [preferences, located] = await Promise.all([
       this.socialRepository.discoveryPreferences(viewerId),
       this.repository.listEligibleMapPeopleInCells(viewerId, cells.map((cell) => cell.id)),
     ]);

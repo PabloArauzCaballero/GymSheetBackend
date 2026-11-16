@@ -1,5 +1,9 @@
-/** Legal documents a person must accept to use the app. */
-export const LEGAL_DOCUMENT_TYPES = ["TERMS", "PRIVACY"] as const;
+/**
+ * Legal documents a person must accept to use the app. COMMUNITY is the
+ * community rules: the terms incorporate them, so a change to the rules needs
+ * a new acceptance like any other document.
+ */
+export const LEGAL_DOCUMENT_TYPES = ["TERMS", "PRIVACY", "COMMUNITY"] as const;
 export type LegalDocument = (typeof LEGAL_DOCUMENT_TYPES)[number];
 
 export type LegalDocumentVersion = { document: LegalDocument; version: string };
@@ -18,6 +22,7 @@ export type PublishedLegalDocument = LegalDocumentVersion & { contentSha256: str
 export const LEGAL_DOCUMENTS: Record<LegalDocument, string> = {
   TERMS: "2026-08-25",
   PRIVACY: "2026-08-25",
+  COMMUNITY: "2026-08-25",
 };
 
 /**
@@ -30,6 +35,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocument, string> = {
 export const LEGAL_DOCUMENT_CONTENT_SHA256: Record<LegalDocument, string | null> = {
   TERMS: null,
   PRIVACY: null,
+  COMMUNITY: null,
 };
 
 /** Kept for compatibility with code that predates the catalog. */

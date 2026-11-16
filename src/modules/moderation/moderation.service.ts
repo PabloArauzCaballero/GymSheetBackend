@@ -12,15 +12,21 @@ import {
   ConnectionStatus,
   NotificationChannel,
 } from "../../common/enums/domain.enums";
+import { DISCOVERY_PASS_ORIGIN } from "../social/discovery-pass.model";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { ConnectionModel } from "../social/connection.model";
 import { DiscoveryPassModel } from "../social/discovery-pass.model";
 import { SocialRecommendationOutboxService } from "../social/social-recommendation-outbox.service";
 import { NotificationService } from "../notifications/notification.service";
 import { ModerationRepository } from "./moderation.repository";
+import { ModerationAutoHideService } from "./moderation-auto-hide.service";
+import { ModerationEvidenceService } from "./moderation-evidence.service";
+import { ModerationMinorService } from "./moderation-minor.service";
+import { ModerationNotice, sanctionNotice } from "./moderation-notices";
+import { ChatMessageEvidence } from "./moderation-safeguards.repository";
 import {
-  AUTO_HIDE_DISTINCT_REPORTERS,
   isHideableTarget,
+  ModerationReason,
   ModerationReasonValue,
   ModerationResolution,
   ModerationResolutionValue,
@@ -28,6 +34,7 @@ import {
   ModerationTargetKindValue,
   nextSanction,
   Sanction,
+  severityOf,
   strikeExpiryFrom,
   StrikeKind,
 } from "./moderation.policy";
@@ -61,6 +68,8 @@ export interface CasePreview {
   /** Qué sanción tocaría, calculada antes de aplicarla. */
   pendingSanction: { kind: string; days: number | null };
   contentHidden: boolean;
+  /** Copy of a reported chat message, kept even if its sender deleted it. */
+  evidence: ChatMessageEvidence | null;
 }
 
 @Injectable()
@@ -75,6 +84,9 @@ export class ModerationService {
     private readonly connections: typeof ConnectionModel,
     @InjectModel(DiscoveryPassModel)
     private readonly passes: typeof DiscoveryPassModel,
+    private readonly minors: ModerationMinorService,
+    private readonly evidence: ModerationEvidenceService,
+    private readonly autoHide: ModerationAutoHideService,
     @Optional()
     private readonly recommendationOutbox?: SocialRecommendationOutboxService,
     @Optional() private readonly reelSocial?: ReelSocialService,
@@ -139,8 +151,8 @@ export class ModerationService {
     }
 
     const report = await this.sequelize
-      .transaction(async (transaction) =>
-        this.repository.createReport(
+      .transaction(async (transaction) => {
+        const created = await this.repository.createReport(
           {
             tenantId: owner.tenantId,
             reporterUserId: reporter.id,
@@ -151,8 +163,16 @@ export class ModerationService {
             details: input.details,
           },
           transaction,
-        ),
-      )
+        );
+        // Evidence and the minor suspension commit with the report or not at all.
+        if (input.targetKind === ModerationTargetKind.CHAT_MESSAGE) {
+          await this.evidence.captureChatMessage(input.targetId, transaction);
+        }
+        if (input.reason === ModerationReason.MENOR_DE_EDAD) {
+          await this.minors.suspendPendingReview(owner.userId, transaction);
+        }
+        return created;
+      })
       .catch((error: unknown) => {
         if (
           error instanceof Error &&
@@ -166,9 +186,9 @@ export class ModerationService {
       });
 
     await this.distanceFromReportedUser(reporter.id, owner.userId);
-    const autoHidden = await this.autoHideIfThresholdReached(
-      input.targetKind,
-      input.targetId,
+    const autoHidden = await this.autoHide.hideIfThresholdReached(
+      { kind: input.targetKind, id: input.targetId },
+      owner,
       input.reason,
     );
 
@@ -193,8 +213,9 @@ export class ModerationService {
   ): Promise<void> {
     try {
       const revokedConversationIds = await this.sequelize.transaction(async (transaction) => {
+        // REPORT origin: never listed in the reported person's passes-received.
         await this.passes.bulkCreate(
-          [{ viewerId: reporterId, targetId: reportedUserId }] as never,
+          [{ viewerId: reporterId, targetId: reportedUserId, origin: DISCOVERY_PASS_ORIGIN.REPORT }] as never,
           { ignoreDuplicates: true, transaction },
         );
         const conversations = await this.sequelize.query<{ id: string }>(
@@ -244,7 +265,7 @@ export class ModerationService {
         return conversationIds;
       });
       for (const conversationId of revokedConversationIds) {
-        this.chatEvents?.emitConversationRevoked(conversationId, reporterId);
+        this.chatEvents?.emitConversationRevoked(conversationId);
       }
     } catch (error) {
       this.logger.warn(
@@ -257,43 +278,6 @@ export class ModerationService {
         ModerationService.name,
       );
     }
-  }
-
-  /** Cortina automática por acumulación de denunciantes distintos. */
-  private async autoHideIfThresholdReached(
-    targetKind: ModerationTargetKindValue,
-    targetId: string,
-    reason: ModerationReasonValue,
-  ): Promise<boolean> {
-    if (!isHideableTarget(targetKind)) return false;
-
-    const reporters = await this.repository.countDistinctReporters(
-      targetKind,
-      targetId,
-    );
-    if (reporters < AUTO_HIDE_DISTINCT_REPORTERS) return false;
-
-    await this.sequelize.transaction((transaction) =>
-      this.repository.setContentHidden(
-        {
-          targetKind,
-          targetId,
-          hidden: true,
-          // Lo oculta el sistema, no una persona: se deja SIN moderador. Un
-          // identificador inventado violaría la clave foránea contra
-          // `usuarios`, y uno real atribuiría a alguien una decisión que no
-          // tomó.
-          moderatorUserId: null,
-          reason,
-        },
-        transaction,
-      ),
-    );
-    this.logger.log(
-      { event: "moderation.auto_hidden", targetKind, targetId, reporters },
-      ModerationService.name,
-    );
-    return true;
   }
 
   listQueue(actor: AuthenticatedUser, page: number, pageSize: number) {
@@ -327,10 +311,11 @@ export class ModerationService {
     }
 
     const reportedUserId = reports[0].reportedUserId;
-    const [activeStrikes, person, contentHidden] = await Promise.all([
+    const [activeStrikes, person, contentHidden, evidence] = await Promise.all([
       this.repository.countActiveStrikes(reportedUserId, new Date()),
       this.loadReportedPerson(reportedUserId),
       this.isContentHidden(targetKind, targetId),
+      targetKind === ModerationTargetKind.CHAT_MESSAGE ? this.evidence.findChatMessage(targetId) : null,
     ]);
     const sanction = nextSanction(activeStrikes);
 
@@ -353,6 +338,7 @@ export class ModerationService {
       activeStrikes,
       pendingSanction: { kind: sanction.kind, days: sanction.days },
       contentHidden,
+      evidence,
     };
   }
 
@@ -458,12 +444,23 @@ export class ModerationService {
     const first = openReports[0];
     const reportedUserId = first.reportedUserId;
     const tenantId = first.tenantId;
+    // The notice and the strike name the most serious reason of the case.
+    const reason = openReports.reduce((worst, report) =>
+      severityOf(report.reason) > severityOf(worst) ? report.reason : worst, first.reason);
     const now = new Date();
 
     let sanction: Sanction | null = null;
+    let authorNotice: ModerationNotice | null = null;
 
     await this.sequelize.transaction(async (transaction) => {
-      if (input.sanction) {
+      // A confirmed minor is not punished: the account is closed because the
+      // service is for adults. Dismissing a minor report ends its suspension.
+      if (input.confirmMinor) {
+        await this.minors.confirm(reportedUserId, transaction);
+      } else if (openReports.some((report) => report.reason === ModerationReason.MENOR_DE_EDAD)) {
+        await this.minors.liftIfCleared(reportedUserId, { kind: targetKind, id: targetId }, transaction);
+      }
+      if (input.sanction && !input.confirmMinor) {
         const previous = await this.repository.countActiveStrikes(
           reportedUserId,
           now,
@@ -476,7 +473,7 @@ export class ModerationService {
             userId: reportedUserId,
             tenantId,
             kind: sanction.kind,
-            reason: first.reason,
+            reason,
             note: input.note,
             targetKind,
             targetId,
@@ -520,11 +517,16 @@ export class ModerationService {
             targetId,
             hidden: input.hideContent,
             moderatorUserId: actor.id,
-            reason: first.reason,
+            reason,
           },
           transaction,
         );
       }
+      authorNotice = await this.autoHide.closeReview(
+        { kind: targetKind, id: targetId },
+        { moderatorUserId: actor.id, hidden: input.hideContent, sanctioned: sanction !== null || input.confirmMinor, reason },
+        transaction,
+      );
 
       await this.repository.resolveTarget(
         {
@@ -533,14 +535,18 @@ export class ModerationService {
           resolution: this.resolutionFor(input, sanction),
           note: input.note,
           moderatorUserId: actor.id,
-          discarded: !input.sanction && !input.hideContent,
+          discarded: !input.sanction && !input.hideContent && !input.confirmMinor,
           tenantScope: actor.tenantScope,
         },
         transaction,
       );
     });
 
-    await this.notifyOutcome(openReports, reportedUserId, sanction, input);
+    await this.notifyOutcome(openReports, reportedUserId, sanction, input, {
+      reason,
+      target: { kind: targetKind, id: targetId },
+      authorNotice,
+    });
 
     return {
       resolved: true,
@@ -552,6 +558,7 @@ export class ModerationService {
           }
         : null,
       contentHidden: isHideableTarget(targetKind) ? input.hideContent : false,
+      minorConfirmed: input.confirmMinor,
     };
   }
 
@@ -559,6 +566,7 @@ export class ModerationService {
     input: ResolveCaseInput,
     sanction: Sanction | null,
   ): ModerationResolutionValue {
+    if (input.confirmMinor) return ModerationResolution.MENOR_CONFIRMADO;
     if (sanction) return sanction.resolution;
     if (input.hideContent) return ModerationResolution.CONTENIDO_OCULTO;
     return ModerationResolution.SIN_ACCION;
@@ -582,6 +590,11 @@ export class ModerationService {
     reportedUserId: string,
     sanction: Sanction | null,
     input: ResolveCaseInput,
+    context: {
+      reason: ModerationReasonValue;
+      target: { kind: ModerationTargetKindValue; id: string };
+      authorNotice: ModerationNotice | null;
+    },
   ): Promise<void> {
     const tasks: Promise<unknown>[] = reports.map((report) =>
       this.notifications.enqueueDirectMessage({
@@ -595,14 +608,16 @@ export class ModerationService {
       }),
     );
 
-    if (sanction) {
+    const notice = sanction ? sanctionNotice(sanction, context.reason, context.target) : context.authorNotice;
+    if (notice) {
       tasks.push(
         this.notifications.enqueueDirectMessage({
           recipientUserId: reportedUserId,
           channel: NotificationChannel.IN_APP,
-          subject: this.sanctionSubject(sanction),
-          body: this.sanctionBody(sanction),
-          deduplicationKey: `moderation.sanction:${reportedUserId}:${Date.now()}`,
+          subject: notice.subject,
+          body: notice.body,
+          deduplicationKey: `moderation.${sanction ? "sanction" : "content"}:${reportedUserId}:${Date.now()}`,
+          metadata: notice.metadata,
         }),
       );
     }
@@ -617,25 +632,6 @@ export class ModerationService {
         ModerationService.name,
       );
     }
-  }
-
-  private sanctionSubject(sanction: Sanction): string {
-    if (sanction.kind === StrikeKind.ADVERTENCIA)
-      return "Aviso sobre tu contenido";
-    if (sanction.kind === StrikeKind.EXPULSION)
-      return "Tu cuenta ha sido cerrada";
-    return "Tu cuenta ha sido suspendida";
-  }
-
-  private sanctionBody(sanction: Sanction): string {
-    if (sanction.kind === StrikeKind.ADVERTENCIA) {
-      return "Retiramos contenido tuyo por incumplir las normas de la comunidad. Es un aviso: si vuelve a ocurrir, tu cuenta puede quedar suspendida.";
-    }
-    if (sanction.kind === StrikeKind.EXPULSION) {
-      return "Cerramos tu cuenta por incumplimientos repetidos de las normas de la comunidad.";
-    }
-    const days = sanction.days ?? 0;
-    return `Suspendimos tu cuenta ${days === 1 ? "un día" : `${days} días`} por incumplir las normas de la comunidad. Podrás volver a entrar cuando termine.`;
   }
 
   /** Historial de una persona, para la ficha y para decidir con contexto. */

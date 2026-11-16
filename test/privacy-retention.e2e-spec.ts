@@ -68,7 +68,7 @@ describe('Privacy retention and minimisation (e2e)', () => {
     expect(['::ffff:127.0.0.1', '127.0.0.1', '::1'].map(hmac)).toContain(audits[0].ip_hmac);
   });
 
-  it('nulls every IP hash older than 90 days, in every table, and converts raw download-audit IPs', async () => {
+  it('nulls every IP hash older than 90 days, in every table', async () => {
     const { id } = await e2e.register('privacy-retention');
     // Fixed clock in the past: inserted rows are never future-dated for other suites sharing the DB.
     const now = new Date('2026-11-01T00:00:00.000Z');
@@ -91,17 +91,13 @@ describe('Privacy retention and minimisation (e2e)', () => {
         id, rid: randomUUID(), at: entry.at, tag: entry.tag, document: index < 6 ? 'TERMS' : 'PRIVACY',
       });
     }
-    // What the export module still writes today (transitional raw IP).
-    await e2e.sql(`INSERT INTO training.routine_progress_download_audits (user_id, format, file_name, ip, created_at)
-      VALUES (:id, 'PDF', 'raw.pdf', '203.0.113.20', :recent)`, { id, recent });
 
     // Built on the app connection: a second Nest context would rebind the global models.
     const retention = new PrivacyRetentionService(
       e2e.app.get(TicketLedgerRepository, { strict: false }),
       new PrivacyRetentionRepository(e2e.app.get(Sequelize)),
     );
-    const result = await retention.purge(now, secret);
-    expect(result.rawIpsConverted).toBeGreaterThanOrEqual(1);
+    const result = await retention.purge(now);
     expect(result.ipHashesCleared).toBeGreaterThanOrEqual(6);
 
     const remaining = await selectRows<{ source: string; hash: string | null }>(e2e, `
@@ -118,9 +114,21 @@ describe('Privacy retention and minimisation (e2e)', () => {
     expect(sourcesWith('a'.repeat(64))).toEqual([]);
     expect(sourcesWith('b'.repeat(64))).toEqual(sources);
     expect(sourcesWith(null)).toEqual(sources);
-    const converted = await selectRows<{ ip: string | null; ip_hmac: string }>(e2e,
-      `SELECT ip, ip_hmac FROM training.routine_progress_download_audits WHERE user_id = :id AND file_name = 'raw.pdf'`, { id });
-    expect(converted).toEqual([{ ip: null, ip_hmac: hmac('203.0.113.20') }]);
+  });
+
+  it('records the coach progress download with the IP HMAC and keeps no raw IP column', async () => {
+    const coach = await e2e.register('privacy-download');
+    await e2e.as(coach.token).post('/export/routine-progress').set('Accept', 'application/json')
+      .send({ format: 'csv' }).expect(201);
+    const audits = await selectRows<Record<string, unknown>>(e2e,
+      'SELECT * FROM training.routine_progress_download_audits WHERE user_id = :id', { id: coach.id });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).not.toHaveProperty('ip');
+    expect(['::ffff:127.0.0.1', '127.0.0.1', '::1'].map(hmac)).toContain(audits[0].ip_hmac);
+    const rawColumns = await selectRows(e2e, `SELECT table_name FROM information_schema.columns
+      WHERE table_schema = 'training' AND column_name = 'ip'
+        AND table_name IN ('routine_progress_download_audits', 'v_audit_routine_progress_downloads')`);
+    expect(rawColumns).toEqual([]);
   });
 
   it('stores the SHA-256 of the accepted text with the acceptance', async () => {

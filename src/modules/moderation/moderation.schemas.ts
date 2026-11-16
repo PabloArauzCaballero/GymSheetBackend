@@ -56,6 +56,11 @@ export const resolveCaseSchema = z.object({
   hideContent: z.boolean().default(false),
   /** Emitir la sanción que toque por historial. */
   sanction: z.boolean().default(false),
+  /**
+   * The account belongs to a minor: it stays suspended and is closed with data
+   * erasure. Replaces the ladder (a minor is not sanctioned, just not allowed).
+   */
+  confirmMinor: z.boolean().default(false),
   note: z
     .string()
     .trim()

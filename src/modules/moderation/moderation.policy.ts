@@ -55,6 +55,8 @@ export const ModerationResolution = {
   USUARIO_ADVERTIDO: "USUARIO_ADVERTIDO",
   USUARIO_SUSPENDIDO: "USUARIO_SUSPENDIDO",
   USUARIO_EXPULSADO: "USUARIO_EXPULSADO",
+  /** A moderator confirmed the account belongs to a minor: it is closed, not sanctioned. */
+  MENOR_CONFIRMADO: "MENOR_CONFIRMADO",
 } as const;
 export type ModerationResolutionValue =
   (typeof ModerationResolution)[keyof typeof ModerationResolution];
@@ -116,7 +118,12 @@ export function severityOf(reason: ModerationReasonValue): number {
  */
 export const AUTO_HIDE_DISTINCT_REPORTERS = 3;
 
-/** Cuánto pesa una sanción antes de caducar: un año, como en Facebook. */
+/**
+ * Counting window of a sanction: one year, like Facebook. The single source of
+ * this number (the legal texts cite it). A sanction row is NEVER deleted: after
+ * this window it stays as history (`expires_at` in the past) and only stops
+ * counting for the ladder.
+ */
 export const STRIKE_LIFETIME_DAYS = 365;
 
 const DAY_MS = 24 * 60 * 60 * 1000;

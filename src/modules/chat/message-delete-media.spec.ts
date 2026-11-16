@@ -7,7 +7,7 @@ const messageId = "00000000-0000-4000-8000-000000000010";
 const sender = "00000000-0000-4000-8000-00000000000a";
 const transaction = { LOCK: { UPDATE: "UPDATE" } } as unknown as Transaction;
 
-function setup(media: { mediaKey: string | null; mediaProvider: string | null }) {
+function setup(media: { mediaKey: string | null; mediaProvider: string | null }, held = false) {
   const message = {
     id: messageId,
     conversationId,
@@ -37,6 +37,7 @@ function setup(media: { mediaKey: string | null; mediaProvider: string | null })
     { publishDeletion: jest.fn().mockResolvedValue(true) } as never,
     { destroy: jest.fn().mockResolvedValue(0) } as never,
     mediaRelease as never,
+    { isHeld: jest.fn().mockResolvedValue(held) } as never,
   );
   return { service, message, mediaRelease };
 }
@@ -58,5 +59,12 @@ describe("MessageMutationsService.deleteMessage media release", () => {
     const { service, mediaRelease } = setup({ mediaKey: null, mediaProvider: null });
     await service.deleteMessage(conversationId, messageId, sender, { scope: "EVERYONE" });
     expect(mediaRelease.requestRelease).not.toHaveBeenCalled();
+  });
+
+  it("keeps the stored blob of a reported message: its evidence copy still points to it", async () => {
+    const { service, message, mediaRelease } = setup({ mediaKey: "users/a/chats/c/blob.bin", mediaProvider: "local" }, true);
+    await service.deleteMessage(conversationId, messageId, sender, { scope: "EVERYONE" });
+    expect(mediaRelease.requestRelease).not.toHaveBeenCalled();
+    expect(message.update).toHaveBeenCalledWith(expect.objectContaining({ mediaKey: null, body: null }), { transaction });
   });
 });

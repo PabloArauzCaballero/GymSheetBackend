@@ -909,8 +909,9 @@ export class ChatRepository {
 
   /**
    * Borra un lote de mensajes temporales ya caducados. La lectura ya los oculta
-   * desde `expires_at`; esto es la higiene posterior. Un mensaje denunciado se
-   * conserva para que moderación pueda revisarlo.
+   * desde `expires_at`; esto es la higiene posterior. Un mensaje con una
+   * denuncia ABIERTA se conserva para que moderación lo revise; resuelta, se
+   * purga como los demás (la copia de evidencia vive en moderación).
    */
   async purgeExpiredMessages(batchSize: number): Promise<number> {
     const rows = await this.sequelize.query<{ id: string }>(
@@ -921,6 +922,7 @@ export class ChatRepository {
              AND NOT EXISTS (
                SELECT 1 FROM moderation.reports r
                 WHERE r.target_kind = 'CHAT_MESSAGE' AND r.target_id = m.id
+                 AND r.status IN ('PENDIENTE', 'EN_REVISION')
              )
            ORDER BY m.expires_at
            LIMIT :batchSize

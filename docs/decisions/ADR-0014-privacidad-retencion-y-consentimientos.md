@@ -23,8 +23,8 @@ en el almacenamiento.
   **configurado al correr la migración**; sin secreto se anulan (no hay con qué firmarlas).
   `solicitado_desde_ip` y `audit_log.ip` se eliminan. La auditoría de descargas conserva su columna
   `ip` vacía (paso *expand*): el módulo `export` todavía la escribe, y el comando de retención la
-  convierte en HMAC en cada pasada. Cuando `export` escriba `ip_hmac`, una migración posterior la
-  elimina (*contract*).
+  convierte en HMAC en cada pasada. *Contract* hecho en `202611180301` (ADR-0015): `export` escribe
+  `ip_hmac`, la columna `ip` y el paso de conversión de la retención desaparecen.
 - `admin.audit_log` es de sólo inserción: anular su HMAC a los 90 días es la única modificación
   permitida, y es minimización exigida por la política, no edición del rastro (actor, acción,
   objetivo y fecha se conservan).
@@ -87,7 +87,8 @@ con `null`.
   outbox (8 intentos con backoff, luego dead-letter). `MediaReleaseService` lo drena desde la API
   cada minuto y borra el binario a través de `MediaRetentionService` (respeta el recuento de
   referencias). Con almacenamiento inmutable (ADR-0010) el binario **se conserva** y queda en el log:
-  los textos no pueden prometer el borrado del archivo en esa configuración.
+  los textos no pueden prometer el borrado del archivo en esa configuración. El cierre de cuenta usa
+  la misma cola, un trabajo por archivo (ADR-0015).
 
 ## Consecuencias y reversión
 

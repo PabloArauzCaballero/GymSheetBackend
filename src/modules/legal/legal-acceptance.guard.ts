@@ -10,6 +10,14 @@ import { SKIP_LEGAL_ACCEPTANCE_KEY } from "./skip-legal-acceptance.decorator";
 
 /** Route prefixes (after the API prefix) a person must reach to log in, read or accept the documents. */
 const EXEMPT_PREFIXES = ["auth/", "legal/", "me/legal/", "health/"] as const;
+/**
+ * Routes under an exempt prefix that still need the acceptance: a socket
+ * ticket opens the chat, which is the app, not the way to accept.
+ */
+const GUARDED_UNDER_EXEMPT = ["auth/socket-ticket/"] as const;
+
+export const LEGAL_ACCEPTANCE_REQUIRED_MESSAGE =
+  "Debes aceptar los términos, la política de privacidad y las normas de la comunidad vigentes para continuar.";
 
 /**
  * Blocks authenticated requests from accounts that have not accepted every
@@ -42,7 +50,7 @@ export class LegalAcceptanceGuard implements CanActivate {
       throw new DomainException(
         HttpStatus.PRECONDITION_REQUIRED,
         "LEGAL_ACCEPTANCE_REQUIRED",
-        "Debes aceptar los términos y la política de privacidad vigentes para continuar.",
+        LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
       );
     }
     return true;
@@ -53,5 +61,6 @@ export function isExemptPath(path: string, apiPrefix: string = env.API_PREFIX): 
   const prefix = `/${apiPrefix.replace(/^\/+|\/+$/g, "")}/`;
   const relative = path.startsWith(prefix) ? path.slice(prefix.length) : path.replace(/^\/+/, "");
   const normalized = relative.endsWith("/") ? relative : `${relative}/`;
+  if (GUARDED_UNDER_EXEMPT.some((guarded) => normalized.startsWith(guarded))) return false;
   return EXEMPT_PREFIXES.some((exempt) => normalized.startsWith(exempt));
 }

@@ -126,6 +126,8 @@ import { signupAntibotMigration } from "./202611170201-signup-antibot";
 import { sessionsValidAfterMigration } from "./202611170301-sessions-valid-after";
 import { privacyIpHmacAndConsentsMigration } from "./202611180201-privacy-ip-hmac-and-consents";
 import { accountRightsMigration } from "./202611180101-account-rights";
+import { downloadAuditIpContractAndClosedAccountSanctionsMigration } from "./202611180301-download-audit-ip-contract-and-closed-account-sanctions";
+import { moderationLegalSafeguardsMigration } from "./202611180401-moderation-legal-safeguards";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
 export const databaseMigrations: DatabaseMigration[] = [
@@ -258,4 +260,6 @@ export const databaseMigrations: DatabaseMigration[] = [
   sessionsValidAfterMigration,
   privacyIpHmacAndConsentsMigration,
   accountRightsMigration,
+  downloadAuditIpContractAndClosedAccountSanctionsMigration,
+  moderationLegalSafeguardsMigration,
 ];

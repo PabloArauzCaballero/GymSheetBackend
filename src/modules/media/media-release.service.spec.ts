@@ -4,8 +4,8 @@ import { MEDIA_RELEASE_QUEUE, MediaReleaseService } from "./media-release.servic
 import type { MediaRetentionService } from "./media-retention.service";
 import type { MediaStorageProvider } from "./media-storage.port";
 
-function job(payload: Record<string, unknown>): OutboxJobModel {
-  return { id: "job-1", aggregateType: "chat.message", attemptCount: 1, payload } as unknown as OutboxJobModel;
+function job(payload: Record<string, unknown>, aggregateType = "chat.message"): OutboxJobModel {
+  return { id: "job-1", aggregateType, attemptCount: 1, payload } as unknown as OutboxJobModel;
 }
 
 function setup(jobs: OutboxJobModel[], removal: jest.Mock = jest.fn().mockResolvedValue({ fileRemoved: true })) {
@@ -64,5 +64,38 @@ describe("MediaReleaseService", () => {
     await service.drainOnce(10);
     expect(retention.deleteRowAndUnreferencedFile).not.toHaveBeenCalled();
     expect(outbox.fail).toHaveBeenCalled();
+  });
+
+  it("stamps the configured provider when the caller's rows do not record one (account closure)", async () => {
+    const { service, outbox } = setup([]);
+    const transaction = {} as never;
+    await service.requestRelease({ aggregateType: "account", aggregateId: "u1", storageKey: "users/u1/perfiles/1.jpg" }, transaction);
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queueName: MEDIA_RELEASE_QUEUE,
+        aggregateType: "account",
+        deduplicationKey: "media-release:account:u1:users/u1/perfiles/1.jpg",
+        payload: { schemaVersion: 1, provider: "local", storageKey: "users/u1/perfiles/1.jpg" },
+      }),
+      transaction,
+    );
+  });
+
+  it("releases each closed-account key through the shared-reference check, keeping a file still in use", async () => {
+    const removal = jest.fn().mockResolvedValueOnce({ fileRemoved: true }).mockResolvedValueOnce({ fileRemoved: false });
+    const jobs = ["users/a/perfiles/1.jpg", "users/a/chats/c/2.bin"].map((storageKey) =>
+      job({ schemaVersion: 1, provider: "local", storageKey }, "account"));
+    const { service, outbox, retention } = setup(jobs, removal);
+    await expect(service.drainOnce(10)).resolves.toBe(2);
+    expect(retention.deleteRowAndUnreferencedFile).toHaveBeenCalledTimes(2);
+    expect(retention.deleteRowAndUnreferencedFile).toHaveBeenNthCalledWith(1, "users/a/perfiles/1.jpg", expect.any(Function));
+    expect(outbox.complete).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a malformed job so the outbox retries and dead-letters it", async () => {
+    const { service, outbox, retention } = setup([job({ storageKeys: "nope" }, "account")]);
+    await expect(service.drainOnce(10)).resolves.toBe(0);
+    expect(retention.deleteRowAndUnreferencedFile).not.toHaveBeenCalled();
+    expect(outbox.fail).toHaveBeenCalledWith(expect.objectContaining({ id: "job-1" }), expect.any(String), expect.any(Error));
   });
 });

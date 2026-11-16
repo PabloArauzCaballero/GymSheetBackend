@@ -82,10 +82,15 @@ export class ChatEventsService {
     this.server.to(ChatEventsService.roomFor(conversationId)).emit("read-receipts:changed", { conversationId, userId, version });
   }
 
-  emitConversationRevoked(conversationId: string, byUserId: string): void {
+  /**
+   * The payload never says who revoked: a revocation may come from a report,
+   * and the reported person must not learn who reported them (nor tell a
+   * report apart from a block or a disconnect by a missing field).
+   */
+  emitConversationRevoked(conversationId: string): void {
     if (!this.server) return;
     const room = ChatEventsService.roomFor(conversationId);
-    this.server.to(room).emit("conversation:revoked", { conversationId, byUserId });
+    this.server.to(room).emit("conversation:revoked", { conversationId });
     this.server.in(room).socketsLeave(room);
   }
 }

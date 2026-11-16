@@ -13,7 +13,7 @@ import { LegalRepository } from "./legal.repository";
 import { AcceptLegalDocumentsInput } from "./legal.schemas";
 
 const OUTDATED_MESSAGE =
-  "Los términos o la política de privacidad cambiaron. Vuelve a leerlos y acéptalos para continuar.";
+  "Los términos, la política de privacidad o las normas de la comunidad cambiaron. Vuelve a leerlos y acéptalos para continuar.";
 
 @Injectable()
 export class LegalService {

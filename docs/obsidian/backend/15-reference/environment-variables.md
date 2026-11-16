@@ -91,6 +91,11 @@ al correrla (sin secreto, las anula). `yarn db:privacy:retention` (alias `db:sig
 programarlo a diario) anula todo HMAC de más de 90 días. Cambiar el secreto rompe la correlación con
 los HMAC anteriores, que de todos modos caducan a los 90 días.
 
+`IP_HASH_SECRET` es el pepper de privacidad de la API (ADR-0015): también firma el correo de una
+cuenta sancionada que se cierra (`moderation.closed_account_sanctions.email_hmac`), para que volver a
+registrarse con ese correo herede las faltas. Sin él no se guarda ese registro y cerrar la cuenta
+borra las sanciones: configurarlo en producción. Rotarlo deja sin efecto los registros existentes.
+
 ## Métricas / acceso
 
 | Variable | Propósito | Requerida |

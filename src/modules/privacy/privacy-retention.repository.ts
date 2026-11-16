@@ -1,7 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { QueryTypes } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
-import { hashClientIp } from "../../common/privacy/client-ip-hash";
 
 /**
  * Every column holding a keyed IP hash, with the timestamp that dates it.
@@ -18,8 +17,6 @@ export const IP_HMAC_COLUMNS = [
 ] as const;
 
 export type IpHmacTable = (typeof IP_HMAC_COLUMNS)[number]["table"];
-
-const RAW_IP_BATCH = 500;
 
 @Injectable()
 export class PrivacyRetentionRepository {
@@ -42,35 +39,14 @@ export class PrivacyRetentionRepository {
     return cleared;
   }
 
-  /**
-   * Transitional (expand step of migration 202611180201): the coach download
-   * audit still receives the raw IP from the export module. Each run replaces
-   * it with its keyed hash (or drops it without a secret). Remove together
-   * with the `ip` column once the export module writes `ip_hmac` itself.
-   */
-  async convertRawDownloadAuditIps(secret: string | undefined): Promise<number> {
-    let converted = 0;
-    for (;;) {
-      const rows = await this.sequelize.query<{ id: string; ip: string }>(
-        `SELECT id::text AS id, ip FROM training.routine_progress_download_audits
-          WHERE ip IS NOT NULL LIMIT ${RAW_IP_BATCH}`,
-        { type: QueryTypes.SELECT },
-      );
-      if (rows.length === 0) return converted;
-      await this.sequelize.query(
-        `UPDATE training.routine_progress_download_audits target
-            SET ip_hmac = NULLIF(source.ip_hmac, ''), ip = NULL
-           FROM unnest(ARRAY[:ids]::uuid[], ARRAY[:hashes]::varchar[]) AS source(id, ip_hmac)
-          WHERE target.id = source.id`,
-        {
-          type: QueryTypes.UPDATE,
-          replacements: {
-            ids: rows.map((row) => row.id),
-            hashes: rows.map((row) => hashClientIp(row.ip, secret) ?? ""),
-          },
-        },
-      );
-      converted += rows.length;
-    }
+  /** Ban-evasion records whose last strike stopped counting (ADR-0015). */
+  async deleteExpiredClosedAccountSanctions(now: Date): Promise<number> {
+    const rows = await this.sequelize.query<{ deleted: number }>(
+      `WITH deleted AS (
+         DELETE FROM moderation.closed_account_sanctions WHERE expires_at <= :now RETURNING 1)
+       SELECT COUNT(*)::int AS deleted FROM deleted`,
+      { type: QueryTypes.SELECT, replacements: { now } },
+    );
+    return rows[0]?.deleted ?? 0;
   }
 }

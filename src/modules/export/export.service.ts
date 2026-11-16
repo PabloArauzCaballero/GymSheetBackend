@@ -12,6 +12,7 @@ import { WorkoutsService } from '../workouts/workouts.service';
 import { RoutineModel } from '../training/routine.model';
 import { RoutineProgressDownloadAuditModel, ExportFormat } from './routine-progress-download-audit.model';
 import { ProductEvents } from '../../common/tracking/product-events';
+import { hashClientIp } from '../../common/privacy/client-ip-hash';
 import { RoutineProgressExportQuery } from './export.schemas';
 
 const EXPORT_PAGE_SIZE = 100;
@@ -354,7 +355,7 @@ export class ExportService {
           filters: details.filters,
           fileName: details.fileName,
           recordsCount: details.recordsCount,
-          ip: details.ip || null,
+          ipHmac: hashClientIp(details.ip),
           userAgent: details.userAgent || null,
         });
       }

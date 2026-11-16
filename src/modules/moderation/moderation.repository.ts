@@ -28,6 +28,8 @@ export interface ModerationCaseRow {
   claimed_by_name: string | null;
   claimed_at: Date | null;
   content_hidden: boolean;
+  /** Hidden by the distinct-reporters threshold and waiting for a person. */
+  auto_hidden: boolean;
 }
 
 @Injectable()
@@ -143,7 +145,8 @@ export class ModerationRepository {
                OR bool_or(rl.hidden_at IS NOT NULL)
                OR bool_or(mp.hidden_at IS NOT NULL)
                OR bool_or(ex.estado_moderacion <> 'VISIBLE')
-               OR bool_or(cm.estado IN ('OCULTO_AUTO','OCULTO_MODERACION'))), false) AS content_hidden
+               OR bool_or(cm.estado IN ('OCULTO_AUTO','OCULTO_MODERACION'))), false) AS content_hidden,
+              bool_or(ah.id IS NOT NULL)                          AS auto_hidden
          FROM moderation.reports r
          JOIN public.usuarios u ON u.id = r.reported_user_id
          LEFT JOIN public.usuarios claimer ON claimer.id = r.claimed_by_user_id
@@ -161,6 +164,8 @@ export class ModerationRepository {
            ON r.target_kind = 'EXERCISE' AND ex.id = r.target_id
          LEFT JOIN community.content_comments cm
            ON r.target_kind = 'COMMENT' AND cm.id = r.target_id
+         LEFT JOIN moderation.auto_hide_reviews ah -- at most one open per target
+           ON ah.target_kind = r.target_kind AND ah.target_id = r.target_id AND ah.reviewed_at IS NULL
         WHERE r.status IN ('PENDIENTE', 'EN_REVISION')
           AND (:tenantScope IS NULL OR r.tenant_id = :tenantScope)
         GROUP BY r.target_kind, r.target_id, r.reported_user_id, u.nombre_completo

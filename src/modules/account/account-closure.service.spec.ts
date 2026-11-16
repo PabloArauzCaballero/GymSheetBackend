@@ -1,18 +1,19 @@
 import * as bcrypt from 'bcryptjs';
 import { UserRole } from '../../common/enums/domain.enums';
 import { EmailVerificationService } from '../auth/email-verification.service';
-import { OutboxService } from '../integration/outbox.service';
+import { ClosedAccountSanctionsService } from '../closed-account-sanctions/closed-account-sanctions.service';
+import { MediaReleaseService } from '../media/media-release.service';
 import { SocialRecommendationOutboxService } from '../social/social-recommendation-outbox.service';
 import { UsersRepository } from '../users/users.repository';
 import { AccountClosureRepository } from './account-closure.repository';
-import { ACCOUNT_MEDIA_ERASURE_QUEUE, AccountClosureService, closedAccountEmail } from './account-closure.service';
+import { AccountClosureService, closedAccountEmail } from './account-closure.service';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 const transaction = { id: 'tx' };
 const closedAt = new Date('2026-11-18T10:00:00Z');
 
 async function build(options: { role?: UserRole; identity?: boolean; pinKind?: string; keys?: string[]; inUse?: string[] } = {}) {
-  const user = { id: userId, role: options.role ?? UserRole.CLIENT, passwordHash: await bcrypt.hash('secret-pass', 4) };
+  const user = { id: userId, email: 'ana@example.test', tenantId: null, role: options.role ?? UserRole.CLIENT, passwordHash: await bcrypt.hash('secret-pass', 4) };
   const repository = {
     runInTransaction: jest.fn((work: (t: unknown) => unknown) => work(transaction)),
     hasLinkedIdentity: jest.fn().mockResolvedValue(options.identity ?? false),
@@ -34,16 +35,18 @@ async function build(options: { role?: UserRole; identity?: boolean; pinKind?: s
         : { kind: 'VERIFIED', targetEmail: null },
     ),
   };
-  const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+  const mediaRelease = { requestRelease: jest.fn().mockResolvedValue(undefined) };
+  const sanctions = { recordAtClosure: jest.fn().mockResolvedValue(false) };
   const recommendations = { enqueueProfileSnapshot: jest.fn().mockResolvedValue(undefined) };
   const service = new AccountClosureService(
     repository as unknown as AccountClosureRepository,
     users as unknown as UsersRepository,
     pins as unknown as EmailVerificationService,
-    outbox as unknown as OutboxService,
+    mediaRelease as unknown as MediaReleaseService,
     recommendations as unknown as SocialRecommendationOutboxService,
+    sanctions as unknown as ClosedAccountSanctionsService,
   );
-  return { service, repository, pins, outbox, recommendations };
+  return { service, repository, pins, mediaRelease, recommendations, sanctions };
 }
 
 describe('AccountClosureService.close', () => {
@@ -74,7 +77,7 @@ describe('AccountClosureService.close', () => {
 
   it('erases, anonymizes and enqueues the file erasure in the same transaction', async () => {
     const keys = Array.from({ length: 205 }, (_, index) => `users/${userId}/perfiles/${index}.jpg`);
-    const { service, repository, outbox, recommendations } = await build({ keys, inUse: [keys[0]] });
+    const { service, repository, mediaRelease, recommendations, sanctions } = await build({ keys, inUse: [keys[0]] });
     await expect(service.close(userId, { password: 'secret-pass' })).resolves.toEqual({ closed: true, closedAt });
 
     expect(repository.collectMediaKeys.mock.invocationCallOrder[0]).toBeLessThan(repository.eraseAll.mock.invocationCallOrder[0]);
@@ -84,12 +87,17 @@ describe('AccountClosureService.close', () => {
     await expect(bcrypt.compare('secret-pass', values.unusablePasswordHash)).resolves.toBe(false);
     expect(recommendations.enqueueProfileSnapshot).toHaveBeenCalledWith(userId, transaction);
 
-    const jobs = outbox.enqueue.mock.calls.map(([job]) => job as { queueName: string; payload: { storageKeys: string[] } });
-    expect(jobs.map((job) => job.queueName)).toEqual([ACCOUNT_MEDIA_ERASURE_QUEUE, ACCOUNT_MEDIA_ERASURE_QUEUE, ACCOUNT_MEDIA_ERASURE_QUEUE]);
-    const enqueued = jobs.flatMap((job) => job.payload.storageKeys);
+    // One job per file on the single media.release queue, written in the closure transaction.
+    const jobs = mediaRelease.requestRelease.mock.calls.map(([job]) => job as { aggregateType: string; aggregateId: string; storageKey: string });
+    expect(new Set(jobs.map((job) => `${job.aggregateType}:${job.aggregateId}`))).toEqual(new Set([`account:${userId}`]));
+    const enqueued = jobs.map((job) => job.storageKey);
     expect(enqueued).toHaveLength(204);
     expect(enqueued).not.toContain(keys[0]);
-    expect(outbox.enqueue.mock.calls[0][1]).toBe(transaction);
+    expect(mediaRelease.requestRelease.mock.calls[0][1]).toBe(transaction);
+
+    // The sanction snapshot is taken in the same transaction, before the row is anonymized.
+    expect(sanctions.recordAtClosure).toHaveBeenCalledWith(expect.objectContaining({ id: userId, email: 'ana@example.test' }), transaction);
+    expect(sanctions.recordAtClosure.mock.invocationCallOrder[0]).toBeLessThan(repository.anonymizeAccount.mock.invocationCallOrder[0]);
   });
 });
 

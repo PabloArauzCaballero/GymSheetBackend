@@ -14,6 +14,11 @@ import { ModerationReportModel } from "./report.model";
 import { UserStrikeModel } from "./user-strike.model";
 import { ReelsModule } from "../reels/reels.module";
 import { SocialModule } from "../social/social.module";
+import { MediaModule } from "../media/media.module";
+import { ModerationAutoHideService } from "./moderation-auto-hide.service";
+import { ModerationEvidenceService } from "./moderation-evidence.service";
+import { ModerationMinorService } from "./moderation-minor.service";
+import { ModerationSafeguardsRepository } from "./moderation-safeguards.repository";
 
 @Module({
   imports: [
@@ -29,9 +34,17 @@ import { SocialModule } from "../social/social.module";
     IntegrationModule,
     ReelsModule,
     SocialModule,
+    MediaModule,
   ],
   controllers: [ReportsController, ModerationAdminController],
-  providers: [ModerationRepository, ModerationService],
-  exports: [ModerationService],
+  providers: [
+    ModerationRepository,
+    ModerationService,
+    ModerationSafeguardsRepository,
+    ModerationMinorService,
+    ModerationEvidenceService,
+    ModerationAutoHideService,
+  ],
+  exports: [ModerationService, ModerationEvidenceService],
 })
 export class ModerationModule {}
