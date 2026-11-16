@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { ACCOUNT_CLOSURE_STEPS } from "./account-closure.catalog";
-import { ClosureStep } from "./account-closure.steps";
+import { ClosureStep, mediaKeysOf } from "./account-closure.steps";
 
 export type ClosureStepCount = { step: ClosureStep; count: number };
 
@@ -59,7 +59,7 @@ export class AccountClosureRepository {
     const withMedia = ACCOUNT_CLOSURE_STEPS.filter((step) => step.mediaKey && step.disposition !== "KEPT");
     if (withMedia.length === 0) return [];
     const sql = withMedia
-      .map((step) => `SELECT ${step.mediaKey} AS key FROM ${step.table} t WHERE ${step.where}`)
+      .flatMap((step) => mediaKeysOf(step.mediaKey).map((key) => `SELECT ${key} AS key FROM ${step.table} t WHERE ${step.where}`))
       .join("\nUNION\n");
     const rows = await this.sequelize.query<{ key: string | null }>(sql, {
       type: QueryTypes.SELECT,

@@ -103,7 +103,8 @@ la política del usuario no se puede leer con sus propias credenciales.
 La evidencia ya no la protege el almacén sino la base de datos, y sólo durante su plazo:
 
 - una foto, story o comentario denunciado se **retiene** en vez de borrarse mientras la denuncia
-  está abierta (`holdIfReported`), y su fila mantiene la referencia al archivo;
+  está abierta (`holdIfReported`), y su fila mantiene la referencia al archivo; lo mismo las
+  subidas a un ejercicio personal denunciado (`holdIfExerciseReported`, §7);
 - la copia de un mensaje denunciado vive en `moderation.chat_message_evidence`, que
   `MediaReferencesRepository.isReferenced` consulta;
 - la retención de contenido denunciado y la purga de evidencia liberan el archivo por
@@ -118,9 +119,17 @@ Un socio puede subir archivos a su ejercicio **personal** (`POST /exercises/:id/
 es contenido suyo, no catálogo: se guarda bajo `users/{ownerUserId}/ejercicios/{exerciseId}/`
 (`MediaUploadTarget` con `ownerUserId`), y se borra —fila y archivo por `media.release`— al borrar
 esa media, al borrar el ejercicio, al reemplazarla con una nueva subida de la misma identidad y al
-cerrar la cuenta (paso `training.exercise_media` del catálogo de cierre). La lectura anónima de
+cerrar la cuenta (paso `training.exercise_media` del catálogo de cierre, que libera el archivo y su
+póster `thumbnail_url`). La lectura anónima de
 MinIO cubre `users/*/ejercicios/*` igual que cubría `ejercicios/*`. Lo que sube un administrador a
 un ejercicio global sigue bajo `ejercicios/{exerciseId}/`, inmutable.
+
+Si el ejercicio tiene una denuncia (`target_kind = 'EXERCISE'`) **abierta**, borrar su media o el
+ejercicio no la destruye: la fila queda retenida (`author_deleted_at`, `INACTIVE`, sin
+`external_id` para que una nueva subida cree otra fila) con su archivo, y no se encola ninguna
+liberación. Al cerrar la cuenta, un ejercicio con denuncia se conserva junto con sus subidas. La
+retención de contenido denunciado borra esas subidas (archivo y póster) y luego el ejercicio, si
+nadie más lo usa, 180 días después de cerrarse la última denuncia.
 
 Las filas subidas antes de este cambio **conservan su clave** bajo `ejercicios/`: no se mueven
 archivos ni se reescriben URLs (una migración de datos sobre un almacén inmutable no podría borrar

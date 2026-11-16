@@ -92,6 +92,10 @@ export class ExerciseMediaModel extends Model {
   @Column({ type: DataType.JSONB, allowNull: false })
   declare metadata: Record<string, unknown>;
 
+  /** Deleted by its author under an open report on the exercise: held as evidence (INACTIVE). */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'author_deleted_at' })
+  declare authorDeletedAt: Date | null;
+
   @ForeignKey(() => UserModel)
   @Column({ type: DataType.UUID, allowNull: true, field: 'created_by_usuario_id' })
   declare createdByUserId: string | null;

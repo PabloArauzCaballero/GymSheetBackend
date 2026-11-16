@@ -4,6 +4,7 @@ import {
   anonymize,
   del,
   keep,
+  ownExerciseUploadKey,
   ownFolderKey,
   reported,
   routineUsedByOthers,
@@ -33,8 +34,12 @@ const EXERCISE_USED_ELSEWHERE = `(
   OR EXISTS (SELECT 1 FROM training.program_lift_targets lt JOIN training.training_programs p ON p.id = lt.program_id
               WHERE lt.ejercicio_id = t.id AND p.usuario_id <> :userId))`;
 
-/** Storage key of a personal exercise upload in the owner's folder (null for catalog or foreign URLs). */
-const OWN_EXERCISE_UPLOAD = ownFolderKey("t.url");
+/** Storage keys of a personal exercise upload in the owner's folder: the file and its poster. */
+const OWN_EXERCISE_UPLOAD_KEYS = [ownExerciseUploadKey("t.url"), ownExerciseUploadKey("t.thumbnail_url")] as const;
+const OWN_EXERCISE_UPLOAD = `t.ejercicio_id IN (SELECT e.id FROM public.ejercicios e WHERE e.tipo_ejercicio = 'PERSONAL' AND e.created_by_usuario_id = :userId)
+     AND (${OWN_EXERCISE_UPLOAD_KEYS[0]} IS NOT NULL OR ${OWN_EXERCISE_UPLOAD_KEYS[1]} IS NOT NULL)`;
+/** A report on the exercise makes its uploads evidence, held ones (author deleted under the report) included. */
+const EXERCISE_REPORTED = reported("EXERCISE", "t.ejercicio_id");
 
 const HAS_OTHERS_REPLIES =
   "EXISTS (SELECT 1 FROM community.content_comments c WHERE c.respuesta_a = t.id AND c.autor_id <> :userId)";
@@ -104,14 +109,21 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
     "Siguen en el entrenamiento de esas personas, firmadas como «Cuenta cerrada»."),
   del("public.usuarios_ejercicios", "Ejercicios elegidos", OWN_ES),
   // Uploads to personal exercises live in the owner's folder (ADR-0017): they
-  // go even when the exercise itself is kept for someone else's routine.
+  // go, file and poster, even when the exercise itself is kept for someone
+  // else's routine. A reported exercise keeps them (and itself) as evidence,
+  // until the reported-content retention erases them.
   del("training.exercise_media", "Fotos y videos que subiste a tus ejercicios propios",
-    `t.ejercicio_id IN (SELECT e.id FROM public.ejercicios e WHERE e.tipo_ejercicio = 'PERSONAL' AND e.created_by_usuario_id = :userId)
-     AND ${OWN_EXERCISE_UPLOAD} LIKE 'users/' || :userId || '/ejercicios/%'`, OWN_EXERCISE_UPLOAD),
-  del("public.ejercicios", "Ejercicios propios", `${OWN_PERSONAL_EXERCISE} AND NOT ${EXERCISE_USED_ELSEWHERE}`),
+    `${OWN_EXERCISE_UPLOAD} AND NOT ${EXERCISE_REPORTED}`, OWN_EXERCISE_UPLOAD_KEYS),
+  keep("training.exercise_media", "Fotos y videos de tus ejercicios denunciados",
+    `${OWN_EXERCISE_UPLOAD} AND ${EXERCISE_REPORTED}`, "Evidencia de una denuncia en revisión de moderación."),
+  del("public.ejercicios", "Ejercicios propios",
+    `${OWN_PERSONAL_EXERCISE} AND NOT ${EXERCISE_USED_ELSEWHERE} AND NOT ${reported("EXERCISE")}`),
   keep("public.ejercicios", "Ejercicios propios que usan rutinas ajenas",
     `${OWN_PERSONAL_EXERCISE} AND ${EXERCISE_USED_ELSEWHERE}`,
     "Forman parte de rutinas de otras personas; no llevan tu nombre."),
+  keep("public.ejercicios", "Ejercicios propios denunciados",
+    `${OWN_PERSONAL_EXERCISE} AND NOT ${EXERCISE_USED_ELSEWHERE} AND ${reported("EXERCISE")}`,
+    "Evidencia de una denuncia en revisión de moderación."),
 
   // La Senda.
   del("progression.user_progress", "Puntos y nivel", OWN_ES),

@@ -131,6 +131,7 @@ import { downloadAuditIpContractAndClosedAccountSanctionsMigration } from "./202
 import { moderationLegalSafeguardsMigration } from "./202611180401-moderation-legal-safeguards";
 import { authorDeletedEvidenceHoldMigration } from "./202611190101-author-deleted-evidence-hold";
 import { discoveryRankingMigration } from "./202611190101-discovery-ranking";
+import { exerciseMediaEvidenceHoldMigration } from "./202611190201-exercise-media-evidence-hold";
 import { photoVerificationsMigration } from "./202611200101-photo-verifications";
 import { photoVerificationSelfieKeyIndexMigration } from "./202611200201-photo-verification-selfie-key-index";
 
@@ -270,6 +271,7 @@ export const databaseMigrations: DatabaseMigration[] = [
   moderationLegalSafeguardsMigration,
   authorDeletedEvidenceHoldMigration,
   discoveryRankingMigration,
+  exerciseMediaEvidenceHoldMigration,
   photoVerificationsMigration,
   photoVerificationSelfieKeyIndexMigration,
 ];

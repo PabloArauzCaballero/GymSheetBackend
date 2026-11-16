@@ -7,6 +7,13 @@
  */
 export type ClosureDisposition = "DELETED" | "ANONYMIZED" | "KEPT";
 
+/** One SQL expression yielding a storage key, or several when a row holds several files. */
+export type MediaKeySql = string | readonly string[];
+
+/** The storage-key expressions of a step, as a list. */
+export const mediaKeysOf = (mediaKey: MediaKeySql | undefined): readonly string[] =>
+  mediaKey === undefined ? [] : typeof mediaKey === "string" ? [mediaKey] : mediaKey;
+
 export type ClosureStep = {
   /** `schema.table`, as the preview and the e2e coverage test name it. */
   table: string;
@@ -19,13 +26,13 @@ export type ClosureStep = {
   set?: string;
   /** Spanish reason for a kept or anonymized row, shown in the preview. */
   reason?: string;
-  /** SQL expression over `t` yielding a storage key to erase after commit. */
-  mediaKey?: string;
+  /** SQL expression(s) over `t` yielding the storage key(s) to erase after commit (e.g. a file and its poster). */
+  mediaKey?: MediaKeySql;
   /** Side effect on other people's rows: runs, but is not listed in the preview. */
   internal?: boolean;
 };
 
-export const del = (table: string, label: string, where: string, mediaKey?: string): ClosureStep => ({
+export const del = (table: string, label: string, where: string, mediaKey?: MediaKeySql): ClosureStep => ({
   table,
   label,
   disposition: "DELETED",
@@ -39,7 +46,7 @@ export const anonymize = (
   where: string,
   set: string,
   reason: string,
-  mediaKey?: string,
+  mediaKey?: MediaKeySql,
 ): ClosureStep => ({ table, label, disposition: "ANONYMIZED", where, set, reason, mediaKey });
 
 export const keep = (table: string, label: string, where: string, reason: string): ClosureStep => ({
@@ -66,6 +73,14 @@ export const ownFolderKey = (urlColumn: string, owner = ":userId"): string =>
   `CASE WHEN strpos(${urlColumn}, 'users/' || ${owner} || '/') > 0
          AND ${urlColumn} !~ '(\\.\\.|%|//users/|[[:space:][:cntrl:]]|[?#])'
         THEN substr(${urlColumn}, strpos(${urlColumn}, 'users/' || ${owner} || '/')) END`;
+
+/**
+ * Storage key of a personal exercise upload (file or poster) in the owner's
+ * `ejercicios/` folder; null for catalog, foreign or other-folder URLs.
+ */
+export const ownExerciseUploadKey = (urlColumn: string, owner = ":userId"): string =>
+  `CASE WHEN ${ownFolderKey(urlColumn, owner)} LIKE 'users/' || ${owner} || '/ejercicios/%'
+        THEN ${ownFolderKey(urlColumn, owner)} END`;
 
 /**
  * A routine of the person that someone else still uses: their program,

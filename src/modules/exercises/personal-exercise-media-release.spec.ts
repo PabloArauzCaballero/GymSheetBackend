@@ -1,6 +1,9 @@
 import { ExerciseType } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
+import { Sequelize } from "sequelize-typescript";
 import { MediaReferenceReleaseService } from "../media/media-reference-release.service";
+import { MediaReferencesRepository } from "../media/media-references.repository";
+import { MediaReleaseService } from "../media/media-release.service";
 import { ExerciseMediaModel } from "./exercise-media.model";
 import { ExerciseMediaRepository } from "./exercise-media.repository";
 import {
@@ -47,6 +50,7 @@ describe("PersonalExerciseMediaRelease", () => {
     const transaction = { id: "tx" };
     const repository = {
       destroy: jest.fn().mockResolvedValue(undefined),
+      holdIfExerciseReported: jest.fn().mockResolvedValue(false),
       promoteFirstActive: jest.fn().mockResolvedValue(undefined),
       listAllByExercise: jest.fn().mockResolvedValue(rows),
     };
@@ -99,5 +103,82 @@ describe("PersonalExerciseMediaRelease", () => {
     expect(repository.destroy).toHaveBeenCalledTimes(1);
     expect(repository.destroy).toHaveBeenCalledWith(own, transaction);
     expect(markInactive).toHaveBeenCalledWith(transaction);
+  });
+
+  describe("under an open report on the exercise (evidence hold)", () => {
+    /**
+     * The real release service over an in-memory reference table: a held row
+     * keeps referencing its files, a destroyed one does not, so a release is
+     * queued only for files nobody references any more.
+     */
+    function withRealRelease(rows: Partial<ExerciseMediaModel>[], reported: boolean) {
+      const transaction = { id: "tx" };
+      const live = new Map(rows.map((row) => [row.id as string, row]));
+      const repository = {
+        listAllByExercise: jest.fn().mockResolvedValue(rows),
+        holdIfExerciseReported: jest.fn((_exerciseId: string, ids: readonly string[]) =>
+          Promise.resolve(reported && ids.length > 0)),
+        destroy: jest.fn((media: ExerciseMediaModel) => Promise.resolve(void live.delete(media.id))),
+        promoteFirstActive: jest.fn().mockResolvedValue(undefined),
+      };
+      const references = {
+        lockStorageKey: jest.fn().mockResolvedValue(undefined),
+        isReferenced: jest.fn((key: string) =>
+          Promise.resolve([...live.values()].some((row) => personalExerciseMediaKeys(row as ExerciseMediaModel, personal).includes(key)))),
+      };
+      const mediaRelease = { requestRelease: jest.fn().mockResolvedValue(undefined) };
+      const sequelize = { transaction: jest.fn((work: (t: unknown) => Promise<unknown>) => work(transaction)) };
+      const release = new MediaReferenceReleaseService(
+        sequelize as unknown as Sequelize,
+        references as unknown as MediaReferencesRepository,
+        mediaRelease as unknown as MediaReleaseService,
+      );
+      const service = new PersonalExerciseMediaRelease(repository as unknown as ExerciseMediaRepository, release);
+      return { service, repository, mediaRelease, transaction };
+    }
+    const posterKey = `users/${ownerId}/ejercicios/${exerciseId}/${"c".repeat(64)}.webp`;
+    const posterUrl = `${env.MEDIA_STORAGE_PUBLIC_BASE_URL.replace(/\/+$/u, "")}/${posterKey}`;
+
+    it("deleting one upload holds its row and queues no release", async () => {
+      const media = { id: "m1", exerciseId, url, thumbnailUrl: posterUrl, isPrimary: true, authorDeletedAt: null } as ExerciseMediaModel;
+      const { service, repository, mediaRelease, transaction } = withRealRelease([media], true);
+
+      await expect(service.removeOne(media, personal)).resolves.toBe(true);
+      expect(repository.holdIfExerciseReported).toHaveBeenCalledWith(exerciseId, ["m1"], transaction);
+      expect(repository.destroy).not.toHaveBeenCalled();
+      expect(repository.promoteFirstActive).toHaveBeenCalledWith(exerciseId, transaction);
+      expect(mediaRelease.requestRelease).not.toHaveBeenCalled();
+    });
+
+    it("without an open report the same deletion releases the file and its poster", async () => {
+      const media = { id: "m1", exerciseId, url, thumbnailUrl: posterUrl, isPrimary: false, authorDeletedAt: null } as ExerciseMediaModel;
+      const { service, repository, mediaRelease } = withRealRelease([media], false);
+
+      await service.removeOne(media, personal);
+      expect(repository.destroy).toHaveBeenCalledTimes(1);
+      expect(mediaRelease.requestRelease.mock.calls.map(([job]) => (job as { storageKey: string }).storageKey).sort())
+        .toEqual([ownKey, posterKey].sort());
+    });
+
+    it("deleting the exercise holds every upload, queues no release and still changes the exercise", async () => {
+      const own = { id: "m1", exerciseId, url, thumbnailUrl: posterUrl, authorDeletedAt: null };
+      const { service, repository, mediaRelease, transaction } = withRealRelease([own], true);
+      const markInactive = jest.fn().mockResolvedValue(undefined);
+
+      await service.removeAllOf(personal, markInactive);
+      expect(repository.holdIfExerciseReported).toHaveBeenCalledWith(exerciseId, ["m1"], transaction);
+      expect(repository.destroy).not.toHaveBeenCalled();
+      expect(mediaRelease.requestRelease).not.toHaveBeenCalled();
+      expect(markInactive).toHaveBeenCalledWith(transaction);
+    });
+
+    it("deleting the exercise leaves rows already held to the reported-content retention", async () => {
+      const held = { id: "m1", exerciseId, url, thumbnailUrl: null, authorDeletedAt: new Date("2026-11-01T00:00:00.000Z") };
+      const { service, repository, mediaRelease } = withRealRelease([held], false);
+
+      await service.removeAllOf(personal, jest.fn().mockResolvedValue(undefined));
+      expect(repository.destroy).not.toHaveBeenCalled();
+      expect(mediaRelease.requestRelease).not.toHaveBeenCalled();
+    });
   });
 });

@@ -3,14 +3,19 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Sequelize } from 'sequelize-typescript';
 import { env } from '../src/config/env';
+import { ReportedContentRetentionService } from '../src/modules/account/reported-content-retention.service';
+import { MediaReferencesRepository } from '../src/modules/media/media-references.repository';
 import { MediaReleaseService } from '../src/modules/media/media-release.service';
+import { REPORT_EVIDENCE_RETENTION_DAYS } from '../src/modules/moderation/moderation.policy';
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from '../src/modules/media/media-storage.port';
 import { writeStoredFile } from './support/account-fixtures';
 import { bootE2eApp, createPersonalExercise, E2eApp } from './support/e2e-app';
 import { selectRows } from './support/privacy-e2e';
 
 const PASSWORD = 'e2e-strong-password';
+const DAY_MS = 24 * 60 * 60 * 1000;
 // 1x1 PNG: the smallest multipart that is still a real image.
 const tinyPng = (seed: string) => Buffer.concat([
   Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
@@ -136,6 +141,110 @@ describe('User media release (e2e)', () => {
         .toEqual([{ status: 'INACTIVE' }]);
       expect(await releaseJobs(uploaded.id)).toEqual([]);
       expect(fileAt(key)).toBe(true);
+    });
+  });
+
+  describe('personal exercise uploads under a report are evidence (ADR-0017 §7)', () => {
+    const fileReport = (reporterId: string, reportedId: string, exerciseId: string) =>
+      e2e.sql(`INSERT INTO moderation.reports (id, tenant_id, reporter_user_id, reported_user_id, target_kind, target_id, reason)
+               VALUES (:id, 'default', :reporterId, :reportedId, 'EXERCISE', :exerciseId, 'SPAM')`,
+      { id: randomUUID(), reporterId, reportedId, exerciseId });
+    const resolvedAt = new Date('2026-01-01T00:00:00.000Z');
+    const closeReports = (exerciseId: string) =>
+      e2e.sql(`UPDATE moderation.reports SET status = 'RESUELTO', resolution = 'SIN_ACCION', resolved_at = :resolvedAt
+                WHERE target_kind = 'EXERCISE' AND target_id = :exerciseId`, { exerciseId, resolvedAt });
+    const purgeAfterRetention = () => new ReportedContentRetentionService(
+      e2e.app.get(Sequelize),
+      e2e.app.get(MediaReferencesRepository, { strict: false }),
+      media,
+    ).purge(new Date(resolvedAt.getTime() + (REPORT_EVIDENCE_RETENTION_DAYS + 1) * DAY_MS));
+    const mediaRows = (exerciseId: string) =>
+      selectRows<{ id: string; status: string; held: boolean }>(e2e,
+        `SELECT id, status, author_deleted_at IS NOT NULL AS held FROM training.exercise_media
+          WHERE ejercicio_id = :exerciseId ORDER BY created_at`, { exerciseId });
+    const addPoster = async (ownerId: string, exerciseId: string, mediaId: string) => {
+      const posterKey = `users/${ownerId}/ejercicios/${exerciseId}/${randomUUID()}.webp`;
+      writeStoredFile(posterKey);
+      await e2e.sql('UPDATE training.exercise_media SET thumbnail_url = :url WHERE id = :mediaId',
+        { url: `${base()}/${posterKey}`, mediaId });
+      return posterKey;
+    };
+
+    it('deleting an upload of a reported exercise hides the row and keeps the file until the retention erases both', async () => {
+      const owner = await e2e.register('pex-held-owner');
+      const reporter = await e2e.register('pex-held-reporter');
+      const exerciseId = await createPersonalExercise(e2e.as(owner.token), 'Press propio denunciado');
+      const uploaded = await uploadExerciseMedia(owner.token, exerciseId, randomUUID());
+      const key = keyOf(uploaded.url);
+      await fileReport(reporter.id, owner.id, exerciseId);
+
+      await e2e.as(owner.token).del(`/exercise-media/${uploaded.id}`).expect(200);
+      expect(await mediaRows(exerciseId)).toEqual([{ id: uploaded.id, status: 'INACTIVE', held: true }]);
+      const listed = await e2e.as(owner.token).get(`/exercises/${exerciseId}/media`).expect(200);
+      expect(JSON.stringify(listed.body.data)).not.toContain(uploaded.id);
+      expect(await releaseJobs(uploaded.id)).toEqual([]);
+      await media.drainOnce(500);
+      expect(fileAt(key)).toBe(true);
+
+      // A new upload with the same identity gets its own row: the held one is never revived nor replaced.
+      const again = await uploadExerciseMedia(owner.token, exerciseId, randomUUID());
+      expect(again.id).not.toBe(uploaded.id);
+      // Deleting the exercise holds that upload too while the report is open.
+      await e2e.as(owner.token).del(`/exercises/${exerciseId}`).expect(200);
+      expect(await mediaRows(exerciseId)).toEqual([
+        { id: uploaded.id, status: 'INACTIVE', held: true },
+        { id: again.id, status: 'INACTIVE', held: true },
+      ]);
+      expect(await releaseJobs(exerciseId)).toEqual([]);
+      await media.drainOnce(500);
+      expect(fileAt(key)).toBe(true);
+      expect(fileAt(keyOf(again.url))).toBe(true);
+
+      await closeReports(exerciseId);
+      await purgeAfterRetention();
+      expect(await mediaRows(exerciseId)).toEqual([]);
+      await media.drainOnce(500);
+      expect(fileAt(key)).toBe(false);
+      expect(fileAt(keyOf(again.url))).toBe(false);
+    });
+
+    it('account closure releases the poster of an upload as well as its file', async () => {
+      const owner = await e2e.register('pex-poster-owner');
+      const exerciseId = await createPersonalExercise(e2e.as(owner.token), 'Curl propio con póster');
+      const uploaded = await uploadExerciseMedia(owner.token, exerciseId, randomUUID());
+      const posterKey = await addPoster(owner.id, exerciseId, uploaded.id);
+
+      await e2e.as(owner.token).del('/me/account').send({ password: PASSWORD }).expect(200);
+      await media.drainOnce(500);
+      expect(fileAt(keyOf(uploaded.url))).toBe(false);
+      expect(fileAt(posterKey)).toBe(false);
+    });
+
+    it('account closure keeps a reported exercise and its uploads, and the retention erases them later', async () => {
+      const owner = await e2e.register('pex-closure-reported');
+      const reporter = await e2e.register('pex-closure-reporter');
+      const exerciseId = await createPersonalExercise(e2e.as(owner.token), 'Remo propio denunciado');
+      const uploaded = await uploadExerciseMedia(owner.token, exerciseId, randomUUID());
+      const posterKey = await addPoster(owner.id, exerciseId, uploaded.id);
+      await fileReport(reporter.id, owner.id, exerciseId);
+
+      const preview = await e2e.as(owner.token).get('/me/account/closure-preview').expect(200);
+      const kept = (preview.body.data.kept as { table: string }[]).map((item) => item.table);
+      expect(kept).toEqual(expect.arrayContaining(['training.exercise_media', 'public.ejercicios']));
+      await e2e.as(owner.token).del('/me/account').send({ password: PASSWORD }).expect(200);
+      expect(await mediaRows(exerciseId)).toEqual([{ id: uploaded.id, status: 'ACTIVE', held: false }]);
+      expect(await selectRows(e2e, 'SELECT 1 FROM public.ejercicios WHERE id = :exerciseId', { exerciseId })).toHaveLength(1);
+      await media.drainOnce(500);
+      expect(fileAt(keyOf(uploaded.url))).toBe(true);
+      expect(fileAt(posterKey)).toBe(true);
+
+      await closeReports(exerciseId);
+      await purgeAfterRetention();
+      expect(await mediaRows(exerciseId)).toEqual([]);
+      expect(await selectRows(e2e, 'SELECT 1 FROM public.ejercicios WHERE id = :exerciseId', { exerciseId })).toEqual([]);
+      await media.drainOnce(500);
+      expect(fileAt(keyOf(uploaded.url))).toBe(false);
+      expect(fileAt(posterKey)).toBe(false);
     });
   });
 
