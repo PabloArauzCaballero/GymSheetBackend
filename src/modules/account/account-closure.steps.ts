@@ -66,9 +66,15 @@ export const ownFolderKey = (urlColumn: string, owner = ":userId"): string =>
          AND ${urlColumn} !~ '(\\.\\.|%|//users/|[[:space:][:cntrl:]]|[?#])'
         THEN substr(${urlColumn}, strpos(${urlColumn}, 'users/' || ${owner} || '/')) END`;
 
-/** A routine of the person that someone else's program, session or invite snapshot still uses. */
+/**
+ * A routine of the person that someone else still uses: their program,
+ * session, invite snapshot or assignment, or the gym's official catalogue
+ * (written by staff for the gym, not personal content).
+ */
 export const routineUsedByOthers = (alias: string): string => `(
-  EXISTS (SELECT 1 FROM training.training_programs p WHERE p.routine_id = ${alias}.id AND p.usuario_id <> :userId)
+  ${alias}.es_oficial
+  OR EXISTS (SELECT 1 FROM training.routine_assignments a WHERE a.routine_id = ${alias}.id AND a.cliente_user_id <> :userId)
+  OR EXISTS (SELECT 1 FROM training.training_programs p WHERE p.routine_id = ${alias}.id AND p.usuario_id <> :userId)
   OR EXISTS (SELECT 1 FROM public.sesiones_entrenamiento s WHERE s.routine_id = ${alias}.id AND s.usuario_id <> :userId)
   OR EXISTS (SELECT 1 FROM training.training_invite_shared_snapshots sn
               JOIN training.training_invites i ON i.id = sn.invite_id

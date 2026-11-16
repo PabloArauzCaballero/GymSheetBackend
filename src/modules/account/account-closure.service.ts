@@ -4,6 +4,8 @@ import { randomBytes } from "node:crypto";
 import { Transaction } from "sequelize";
 import { UserRole } from "../../common/enums/domain.enums";
 import { DomainException } from "../../common/errors/domain.exception";
+import { effectiveTenantOf, isAccountInScope } from "../../common/tenancy/tenant-scope";
+import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { env } from "../../config/env";
 import { EMAIL_PIN_POLICY, EmailPinFailure, EmailVerificationService, emailPinError } from "../auth/email-verification.service";
 import { ClosedAccountSanctionsService } from "../closed-account-sanctions/closed-account-sanctions.service";
@@ -121,6 +123,48 @@ export class AccountClosureService {
     return outcome;
   }
 
+  /**
+   * A gym admin closes a staff account of their own gym (the staff cannot:
+   * `ACCOUNT_CLOSURE_STAFF`). No password or PIN: the authority is the admin
+   * role, and the audit log records who did it. Same erasure transaction as
+   * any closure, with the strikes still counting carried as at a self-service
+   * closure. Another gym's account, a member, a platform admin or an account
+   * already closed reads as not found; the admin's own account and the gym's
+   * last active admin are refused, so a gym never ends up without one.
+   */
+  async closeStaffByAdmin(actor: AuthenticatedUser, userId: string): Promise<{ closed: true; closedAt: Date }> {
+    if (actor.id === userId) throw staffClosureError("STAFF_CLOSURE_SELF", "No puedes cerrar tu propia cuenta desde aquí.");
+    const unusablePasswordHash = await bcrypt.hash(randomBytes(32).toString("hex"), env.BCRYPT_SALT_ROUNDS);
+    const closedAt = await this.repository.runInTransaction(async (transaction) => {
+      const candidate = await this.users.findActiveById(userId, transaction);
+      this.assertStaffInScope(candidate, actor);
+      if (candidate.role === UserRole.ADMIN) {
+        const admins = await this.repository.lockActiveAdmins(effectiveTenantOf(candidate), env.DEFAULT_TENANT_ID, transaction);
+        if (admins.length <= 1) {
+          throw staffClosureError("STAFF_CLOSURE_LAST_ADMIN", "Es el único administrador del gimnasio: nombra otro antes de cerrar esta cuenta.");
+        }
+      }
+      await this.users.lockUserForUpdate(userId, transaction);
+      const locked = await this.users.findActiveById(userId, transaction);
+      this.assertStaffInScope(locked, actor);
+      await this.sanctions.recordAtClosure(locked, transaction);
+      return this.eraseInTransaction(userId, unusablePasswordHash, transaction);
+    });
+    this.logger.log({ event: "account.closed_by_admin", userId, actorUserId: actor.id });
+    return { closed: true, closedAt };
+  }
+
+  private assertStaffInScope(user: UserModel | null, actor: AuthenticatedUser): asserts user is UserModel {
+    if (!user || user.role === UserRole.SYSTEM_ADMIN || !isAccountInScope(user, actor.tenantScope)) throw accountNotFound();
+    if (user.role === UserRole.CLIENT) {
+      throw new DomainException(
+        HttpStatus.BAD_REQUEST,
+        "STAFF_CLOSURE_NOT_STAFF",
+        "Las cuentas de socios las cierra cada socio desde su app.",
+      );
+    }
+  }
+
   private async eraseInTransaction(userId: string, unusablePasswordHash: string, transaction: Transaction): Promise<Date> {
     const mediaKeys = await this.repository.collectMediaKeys(userId, transaction);
     await this.repository.eraseAll(userId, transaction);
@@ -154,6 +198,11 @@ export class AccountClosureService {
       );
     }
   }
+}
+
+/** 403: the request is understood, the gym's rules forbid it. */
+function staffClosureError(code: "STAFF_CLOSURE_SELF" | "STAFF_CLOSURE_LAST_ADMIN", message: string): DomainException {
+  return new DomainException(HttpStatus.FORBIDDEN, code, message);
 }
 
 function accountNotFound(): NotFoundException {

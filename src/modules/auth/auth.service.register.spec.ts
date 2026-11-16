@@ -4,6 +4,7 @@ import { UserGender, UserRole } from '../../common/enums/domain.enums';
 import { DomainException } from '../../common/errors/domain.exception';
 import { SignupProtectionService } from '../antibot/signup-protection.service';
 import { ClosedAccountSanctionsService } from '../closed-account-sanctions/closed-account-sanctions.service';
+import { SanctionStatusService } from '../sanction-status/sanction-status.service';
 import type { SignupVerdict } from '../antibot/signup-protection.types';
 import { LEGAL_DOCUMENTS, LEGAL_DOCUMENT_CONTENT_SHA256 } from '../legal/legal-documents';
 import { LegalRepository } from '../legal/legal.repository';
@@ -72,6 +73,7 @@ function build(decision: SignupVerdict = verdict(), inheritedSuspension: Date | 
   const recordSignup = jest.fn().mockResolvedValue('device-1');
   const issuePin = jest.fn().mockResolvedValue(undefined);
   const inheritAtSignup = jest.fn().mockResolvedValue(inheritedSuspension);
+  const suspensionReason = jest.fn().mockResolvedValue({ code: 'SPAM', label: 'Spam', text: 'publicidad' });
   const jwt = { sign: jest.fn().mockReturnValue('access-token') } as unknown as JwtService;
   const refreshTokens = { create: refreshCreate } as unknown as RefreshTokenRepository;
   const service = new AuthService(
@@ -86,10 +88,11 @@ function build(decision: SignupVerdict = verdict(), inheritedSuspension: Date | 
     { issuePin } as unknown as EmailVerificationService,
     { evaluate, recordOutcome } as unknown as SignupProtectionService,
     { inheritAtSignup } as unknown as ClosedAccountSanctionsService,
+    { suspensionReason } as unknown as SanctionStatusService,
   );
   return {
     service, createClient, findByEmail, insertAcceptances, refreshCreate,
-    evaluate, recordOutcome, recordSignup, issuePin, inheritAtSignup,
+    evaluate, recordOutcome, recordSignup, issuePin, inheritAtSignup, suspensionReason,
   };
 }
 
@@ -177,8 +180,13 @@ describe('AuthService.register signup protection', () => {
 describe('AuthService.register after a sanctioned closure', () => {
   it('inherits the sanction in the signup transaction and refuses the session while suspended', async () => {
     const until = new Date(Date.now() + 3 * 86_400_000);
-    const { service, inheritAtSignup, refreshCreate, createClient } = build(verdict(), until);
-    await expect(service.register(input, meta)).rejects.toMatchObject({ status: 403 });
+    const { service, inheritAtSignup, refreshCreate, createClient, suspensionReason } = build(verdict(), until);
+    await expect(service.register(input, meta)).rejects.toMatchObject({
+      status: 403,
+      code: 'ACCOUNT_SUSPENDED',
+      details: { until: until.toISOString(), reason: { code: 'SPAM' } },
+    });
+    expect(suspensionReason).toHaveBeenCalledWith('user-1', until);
     expect(inheritAtSignup).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1', email: input.email }), transaction);
     expect(createClient).toHaveBeenCalled();
     expect(refreshCreate).not.toHaveBeenCalled();

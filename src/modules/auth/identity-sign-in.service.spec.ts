@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PENDING_REVIEW_SUSPENSION_UNTIL } from '../../common/moderation/account-suspension';
 import { JwtService } from '@nestjs/jwt';
 import { Sequelize } from 'sequelize-typescript';
@@ -18,6 +18,7 @@ import { SignupRequestMeta } from './signup-context';
 import { UserDeviceService } from './user-device.service';
 import { SignupProtectionService } from '../antibot/signup-protection.service';
 import { ClosedAccountSanctionsService } from '../closed-account-sanctions/closed-account-sanctions.service';
+import { SanctionStatusService } from '../sanction-status/sanction-status.service';
 
 const transaction = { id: 'tx' };
 const device: ClientDeviceContext = {
@@ -42,7 +43,9 @@ const account = {
   emailVerifiedAt: null,
 };
 
-function build(options: { linkedUserId?: string | null; byEmail?: unknown; verified?: VerifiedIdentity; inherited?: Date } = {}) {
+const spam = { code: 'SPAM', label: 'Spam', text: 'publicidad o mensajes repetidos que nadie pidió' };
+
+function build(options: { linkedUserId?: string | null; byEmail?: unknown; byId?: unknown; verified?: VerifiedIdentity; inherited?: Date; banned?: boolean } = {}) {
   const jwt = new JwtService();
   const signupTokens = new IdentitySignupTokenService(jwt);
   const identities = {
@@ -51,6 +54,7 @@ function build(options: { linkedUserId?: string | null; byEmail?: unknown; verif
   };
   const users = {
     findActiveById: jest.fn().mockResolvedValue(account),
+    findById: jest.fn().mockResolvedValue(options.byId ?? account),
     findByEmail: jest.fn().mockResolvedValue(options.byEmail ?? null),
     markEmailVerified: jest.fn().mockResolvedValue(undefined),
     updatePasswordHash: jest.fn().mockResolvedValue(undefined),
@@ -65,6 +69,10 @@ function build(options: { linkedUserId?: string | null; byEmail?: unknown; verif
     endAllSessions: jest.fn().mockResolvedValue(undefined),
   };
   const sanctions = { inheritAtSignup: jest.fn().mockResolvedValue(options.inherited ?? null) };
+  const sanctionStatus = {
+    suspensionReason: jest.fn().mockResolvedValue(spam),
+    banReason: jest.fn().mockResolvedValue(options.banned ? spam : null),
+  };
   const signupProtection = {
     vouchedVerdict: jest.fn((source: string) => ({ allowed: true, risk: 'LOW', riskReasons: [source] })),
     recordOutcome: jest.fn().mockResolvedValue(undefined),
@@ -81,8 +89,9 @@ function build(options: { linkedUserId?: string | null; byEmail?: unknown; verif
     signupProtection as unknown as SignupProtectionService,
     { transaction: jest.fn((work: (t: unknown) => unknown) => work(transaction)) } as unknown as Sequelize,
     sanctions as unknown as ClosedAccountSanctionsService,
+    sanctionStatus as unknown as SanctionStatusService,
   );
-  return { service, identities, users, legal, devices, signupTokens, signupProtection, sanctions, refreshTokens };
+  return { service, identities, users, legal, devices, signupTokens, signupProtection, sanctions, refreshTokens, sanctionStatus };
 }
 
 const completion = (signupToken: string) => ({
@@ -150,7 +159,29 @@ describe('IdentitySignInService', () => {
     const { service } = build({
       byEmail: { ...account, suspendedUntil: new Date(Date.now() + 86_400_000) },
     });
-    await expect(service.signIn('GOOGLE', 'token', undefined, device)).rejects.toMatchObject({ code: 'ACCOUNT_SUSPENDED', status: 403 });
+    await expect(service.signIn('GOOGLE', 'token', undefined, device)).rejects.toMatchObject({
+      code: 'ACCOUNT_SUSPENDED',
+      status: 403,
+      details: { reason: spam },
+    });
+  });
+
+  it('tells a banned account, linked or matched by email, that it was banned and why', async () => {
+    const inactive = { ...account, status: UserStatus.INACTIVE };
+    const linked = build({ linkedUserId: 'user-1', byId: inactive, banned: true });
+    await expect(linked.service.signIn('GOOGLE', 'token', undefined, device)).rejects.toMatchObject({
+      code: 'ACCOUNT_BANNED',
+      status: 403,
+      details: { reason: spam },
+    });
+    const byEmail = build({ byEmail: inactive, banned: true });
+    await expect(byEmail.service.signIn('GOOGLE', 'token', undefined, device)).rejects.toMatchObject({ code: 'ACCOUNT_BANNED' });
+    expect(byEmail.identities.link).not.toHaveBeenCalled();
+  });
+
+  it('keeps the generic 401 for any other inactive account', async () => {
+    const { service } = build({ linkedUserId: 'user-1', byId: { ...account, status: UserStatus.INACTIVE } });
+    await expect(service.signIn('GOOGLE', 'token', undefined, device)).rejects.toThrow(new UnauthorizedException('Credenciales inválidas.'));
   });
 
   it('says a pending-review suspension lasts while the report is reviewed, not until 9999', async () => {

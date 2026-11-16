@@ -4,9 +4,10 @@ import { PENDING_REVIEW_SUSPENSION_UNTIL } from "../../common/moderation/account
 import { env } from "../../config/env";
 import { OutboxService } from "../integration/outbox.service";
 import { NotificationService } from "../notifications/notification.service";
+import { NoticeEmailService } from "../notifications/notice-email.service";
 import { SocialRecommendationOutboxService } from "../social/social-recommendation-outbox.service";
 import { ModerationSafeguardsRepository } from "./moderation-safeguards.repository";
-import { minorClosureNotice, minorSuspensionNotice, sendModerationNotice } from "./moderation-notices";
+import { emailModerationNotice, minorClosureNotice, minorSuspensionNotice, sendModerationNotice } from "./moderation-notices";
 import { ModerationTargetKind, ModerationTargetKindValue } from "./moderation.policy";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -46,6 +47,7 @@ export class ModerationMinorService {
     private readonly repository: ModerationSafeguardsRepository,
     private readonly outbox: OutboxService,
     private readonly notifications: NotificationService,
+    private readonly noticeEmails: NoticeEmailService,
     @Optional() private readonly recommendationOutbox?: SocialRecommendationOutboxService,
   ) {}
 
@@ -74,11 +76,18 @@ export class ModerationMinorService {
     const suspended = await this.repository.suspendMemberUntil(userId, PENDING_REVIEW_SUSPENSION_UNTIL, transaction);
     if (!suspended) return false;
     await this.recommendationOutbox?.enqueueProfileSnapshot(userId, transaction);
-    await sendModerationNotice(this.notifications, userId, minorSuspensionNotice(), `moderation.minor-suspended:${userId}:${Date.now()}`, transaction);
+    const key = `moderation.minor-suspended:${userId}:${Date.now()}`;
+    await sendModerationNotice(this.notifications, userId, minorSuspensionNotice(), key, transaction);
+    await emailModerationNotice(this.noticeEmails, userId, minorSuspensionNotice(), key, { transaction });
     return true;
   }
 
-  /** A moderator confirmed a minor: keep the account suspended and request its closure. */
+  /**
+   * A moderator confirmed a minor: keep the account suspended and request its
+   * closure. The email is written here, before the closure job runs, to the
+   * address on file now, and is exempt from the closure's purge: the closure
+   * erases the in-app notice and the address, the email still arrives.
+   */
   async confirm(userId: string, transaction: Transaction): Promise<void> {
     await this.repository.suspendMemberUntil(userId, PENDING_REVIEW_SUSPENSION_UNTIL, transaction);
     await this.recommendationOutbox?.enqueueProfileSnapshot(userId, transaction);
@@ -95,6 +104,10 @@ export class ModerationMinorService {
       transaction,
     );
     await sendModerationNotice(this.notifications, userId, minorClosureNotice(), `moderation.minor-confirmed:${userId}`, transaction);
+    await emailModerationNotice(this.noticeEmails, userId, minorClosureNotice(), `moderation.minor-confirmed:${userId}`, {
+      survivesClosure: true,
+      transaction,
+    });
   }
 
   /** The case is closed without confirming a minor: the provisional suspension ends. */

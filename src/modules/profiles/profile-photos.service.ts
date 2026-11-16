@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { env } from "../../config/env";
 import { MediaRetentionService } from "../media/media-retention.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
@@ -24,6 +24,8 @@ const MAX_PHOTOS_PER_USER = 6;
 
 @Injectable()
 export class ProfilePhotosService {
+  private readonly logger = new Logger(ProfilePhotosService.name);
+
   constructor(
     private readonly repository: ProfilePhotosRepository,
     @Inject(MEDIA_STORAGE_PROVIDER) private readonly storage: MediaStorageProvider,
@@ -83,10 +85,17 @@ export class ProfilePhotosService {
     // La clave de almacenamiento es el SHA-256 del contenido, así que dos
     // cuentas que subieron la misma imagen comparten fichero. Borrarlo sin
     // mirar el refcount dejaría a la otra cuenta con la foto rota.
-    await this.retention.deleteRowAndUnreferencedFile(
-      photo.storageKey,
-      (transaction) => this.repository.delete(photo, transaction),
-    );
+    //
+    // Under an OPEN report the photo is evidence: it is held (hidden for
+    // everyone, the author included) instead of deleted, and since its row
+    // still references the file, the retention keeps the file too. The
+    // reported-content retention erases both once the reports are closed.
+    let held = false;
+    await this.retention.deleteRowAndUnreferencedFile(photo.storageKey, async (transaction) => {
+      held = await this.repository.holdIfReported(photo.id, transaction);
+      if (!held) await this.repository.delete(photo, transaction);
+    });
+    if (held) this.logger.log({ event: "profile_photo.held_as_evidence", photoId: photo.id });
     return { deleted: true };
   }
 }

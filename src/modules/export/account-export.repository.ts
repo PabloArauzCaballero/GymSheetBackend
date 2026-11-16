@@ -98,22 +98,28 @@ export class AccountExportRepository {
     return rows.map((entry) => entry.row);
   }
 
-  async markReady(id: string, archive: string, expiresAt: Date): Promise<void> {
-    await this.sequelize.query(
+  /** True only for the call that moved the export out of PENDING: the caller notifies once. */
+  async markReady(id: string, archive: string, expiresAt: Date, transaction: Transaction): Promise<boolean> {
+    const rows = await this.sequelize.query<{ id: string }>(
       `UPDATE auth.account_exports
           SET status = 'READY', archive = CAST(:archive AS jsonb), size_bytes = :sizeBytes,
               completed_at = now(), expires_at = :expiresAt, failure_code = NULL
-        WHERE id = :id AND status = 'PENDING'`,
-      { replacements: { id, archive, sizeBytes: Buffer.byteLength(archive), expiresAt } },
+        WHERE id = :id AND status = 'PENDING'
+      RETURNING id`,
+      { type: QueryTypes.SELECT, replacements: { id, archive, sizeBytes: Buffer.byteLength(archive), expiresAt }, transaction },
     );
+    return rows.length > 0;
   }
 
-  async markFailed(id: string, failureCode: string): Promise<void> {
-    await this.sequelize.query(
+  /** True only for the call that moved the export out of PENDING. */
+  async markFailed(id: string, failureCode: string, transaction: Transaction): Promise<boolean> {
+    const rows = await this.sequelize.query<{ id: string }>(
       `UPDATE auth.account_exports SET status = 'FAILED', failure_code = :failureCode, completed_at = now()
-        WHERE id = :id AND status = 'PENDING'`,
-      { replacements: { id, failureCode: failureCode.slice(0, 60) } },
+        WHERE id = :id AND status = 'PENDING'
+      RETURNING id`,
+      { type: QueryTypes.SELECT, replacements: { id, failureCode: failureCode.slice(0, 60) }, transaction },
     );
+    return rows.length > 0;
   }
 
   /** An archive is personal data too: it is dropped once its link expires. */

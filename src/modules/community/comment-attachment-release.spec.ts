@@ -32,11 +32,11 @@ describe("commentAttachmentKey", () => {
 describe("CommentAttachmentRelease", () => {
   afterEach(() => jest.restoreAllMocks());
   const transaction = { LOCK: { UPDATE: "UPDATE" } } as unknown as Transaction;
-  const sequelize = {
-    transaction: jest.fn((work: (t: Transaction) => Promise<unknown>) => work(transaction)),
-  } as unknown as Sequelize;
-
-  function setup(referenced: boolean, attachmentUrl: string | null) {
+  function setup(referenced: boolean, attachmentUrl: string | null, openReport = false) {
+    const sequelize = {
+      transaction: jest.fn((work: (t: Transaction) => Promise<unknown>) => work(transaction)),
+      query: jest.fn().mockResolvedValue([{ open: openReport }]),
+    } as unknown as Sequelize;
     const comment = {
       id: "c1",
       authorId: author,
@@ -87,6 +87,17 @@ describe("CommentAttachmentRelease", () => {
 
     await service.removeByAuthor(comment as unknown as ContentCommentModel);
 
+    expect(references.isReferenced).not.toHaveBeenCalled();
+    expect(mediaRelease.requestRelease).not.toHaveBeenCalled();
+  });
+
+  it("under an open report hides the comment but keeps text and attachment, and queues no release", async () => {
+    const { service, comment, references, mediaRelease } = setup(false, `${base}/${key}`, true);
+    jest.replaceProperty(env, "MEDIA_STORAGE_PUBLIC_BASE_URL", base);
+
+    await service.removeByAuthor(comment as unknown as ContentCommentModel);
+
+    expect(comment.update).toHaveBeenCalledWith({ status: "BORRADO_AUTOR" }, { transaction });
     expect(references.isReferenced).not.toHaveBeenCalled();
     expect(mediaRelease.requestRelease).not.toHaveBeenCalled();
   });

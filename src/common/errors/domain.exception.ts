@@ -42,7 +42,11 @@ export type DomainErrorCode =
   | 'EMAIL_CHANGE_BLOCKED_BY_SANCTION'
   | 'ACCOUNT_EXPORT_RATE_LIMITED'
   | 'ACCOUNT_EXPORT_NOT_READY'
-  | 'ACCOUNT_SUSPENDED';
+  | 'ACCOUNT_SUSPENDED'
+  | 'ACCOUNT_BANNED'
+  | 'STAFF_CLOSURE_SELF'
+  | 'STAFF_CLOSURE_NOT_STAFF'
+  | 'STAFF_CLOSURE_LAST_ADMIN';
 
 /**
  * Error de dominio con `code` estable y `details` opcional (por ejemplo

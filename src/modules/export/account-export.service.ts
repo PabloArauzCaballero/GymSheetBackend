@@ -1,6 +1,11 @@
 import { HttpStatus, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { Transaction } from "sequelize";
+import { NotificationChannel } from "../../common/enums/domain.enums";
 import { DomainException } from "../../common/errors/domain.exception";
+import { env } from "../../config/env";
 import { OutboxService } from "../integration/outbox.service";
+import { NoticeEmailService } from "../notifications/notice-email.service";
+import { NotificationService } from "../notifications/notification.service";
 import { AccountExportRepository, AccountExportRow } from "./account-export.repository";
 import { ACCOUNT_EXPORT_SECTIONS } from "./account-export.sections";
 import { MAX_ROUTINE_PROGRESS_ROWS } from "./export.service";
@@ -39,6 +44,8 @@ export class AccountExportService {
   constructor(
     private readonly repository: AccountExportRepository,
     private readonly outbox: OutboxService,
+    private readonly notifications: NotificationService,
+    private readonly noticeEmails: NoticeEmailService,
   ) {}
 
   async request(userId: string): Promise<AccountExportStatusResponse> {
@@ -110,17 +117,80 @@ export class AccountExportService {
       userId: row.userId,
       tables,
     });
-    await this.repository.markReady(exportId, archive, new Date(Date.now() + ACCOUNT_EXPORT_TTL_DAYS * DAY_MS));
-    this.logger.log({ event: "account_export.ready", exportId, sizeBytes: Buffer.byteLength(archive) });
+    const expiresAt = new Date(Date.now() + ACCOUNT_EXPORT_TTL_DAYS * DAY_MS);
+    // The state change and its notice commit together, and only the call that
+    // moved the export out of PENDING notifies: a retried job says nothing twice.
+    const ready = await this.repository.runInTransaction(async (transaction) => {
+      const updated = await this.repository.markReady(exportId, archive, expiresAt, transaction);
+      if (updated) await this.notifyOwner(row.userId, readyNotice(exportId, expiresAt), transaction);
+      return updated;
+    });
+    if (ready) this.logger.log({ event: "account_export.ready", exportId, sizeBytes: Buffer.byteLength(archive) });
   }
 
-  markFailed(exportId: string, failureCode: string): Promise<void> {
-    return this.repository.markFailed(exportId, failureCode);
+  /** Dead-lettered build: the export is FAILED and its owner is told, once. */
+  async markFailed(exportId: string, failureCode: string): Promise<void> {
+    const row = await this.repository.findById(exportId);
+    if (!row) return;
+    await this.repository.runInTransaction(async (transaction) => {
+      if (await this.repository.markFailed(exportId, failureCode, transaction)) {
+        await this.notifyOwner(row.userId, failedNotice(exportId), transaction);
+      }
+    });
+  }
+
+  /** In the app, with the download path, and by email (the person may have left the screen). */
+  private async notifyOwner(userId: string, notice: ExportNotice, transaction: Transaction): Promise<void> {
+    await this.notifications.enqueueDirectMessage(
+      {
+        recipientUserId: userId,
+        channel: NotificationChannel.IN_APP,
+        subject: notice.subject,
+        body: notice.body,
+        deduplicationKey: notice.key,
+        metadata: notice.metadata,
+      },
+      transaction,
+    );
+    await this.noticeEmails.enqueue(
+      { recipientUserId: userId, subject: notice.subject, body: notice.body, deduplicationKey: notice.key },
+      transaction,
+    );
   }
 
   purgeExpired(): Promise<number> {
     return this.repository.purgeExpired();
   }
+}
+
+type ExportNotice = { key: string; subject: string; body: string; metadata: Record<string, unknown> };
+
+function readyNotice(exportId: string, expiresAt: Date): ExportNotice {
+  const until = expiresAt.toLocaleDateString("es", { timeZone: env.BUSINESS_TIME_ZONE });
+  return {
+    key: `account-export.ready:${exportId}`,
+    subject: "Tu copia de datos está lista",
+    body: `Ya puedes descargar la copia de tus datos desde la app, en la sección de privacidad de tu cuenta. Está disponible hasta el ${until}; después la borramos.`,
+    metadata: {
+      type: "ACCOUNT_EXPORT_READY",
+      exportId,
+      downloadPath: downloadPathOf(exportId),
+      expiresAt: expiresAt.toISOString(),
+    },
+  };
+}
+
+function failedNotice(exportId: string): ExportNotice {
+  return {
+    key: `account-export.failed:${exportId}`,
+    subject: "No pudimos preparar tu copia de datos",
+    body: "Algo falló al preparar la copia de tus datos. Puedes pedirla otra vez desde la app 24 horas después de tu pedido anterior.",
+    metadata: { type: "ACCOUNT_EXPORT_FAILED", exportId },
+  };
+}
+
+function downloadPathOf(exportId: string): string {
+  return `/me/export/${exportId}/download`;
 }
 
 function exportNotFound(): NotFoundException {
@@ -136,6 +206,6 @@ function toStatus(row: AccountExportRow): AccountExportStatusResponse {
     completedAt: row.completedAt,
     expiresAt: row.expiresAt,
     sizeBytes: row.sizeBytes,
-    downloadPath: downloadable ? `/me/export/${row.id}/download` : null,
+    downloadPath: downloadable ? downloadPathOf(row.id) : null,
   };
 }

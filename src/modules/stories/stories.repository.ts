@@ -3,6 +3,7 @@ import { InjectModel } from "@nestjs/sequelize";
 import { QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { ConnectionStatus } from "../../common/enums/domain.enums";
+import { hasOpenReportSql } from "../../common/moderation/open-report.sql";
 import type { StoredAsset } from "../media/media-storage.port";
 import { StoryModel, StoryMediaType } from "./story.model";
 import { StoryViewModel } from "./story-view.model";
@@ -117,8 +118,24 @@ export class StoriesRepository {
     return this.stories.findOne({ where: { userId, uploadRequestId: requestId } });
   }
 
+  /** For its owner, a story held as evidence is already deleted. */
   findByIdForUser(id: string, userId: string): Promise<StoryModel | null> {
-    return this.stories.findOne({ where: { id, userId } });
+    return this.stories.findOne({ where: { id, userId, authorDeletedAt: null } });
+  }
+
+  /**
+   * The author deletes a story under an OPEN report: it is marked and hidden
+   * instead of deleted, keeping row and file as evidence. It expires within
+   * 24 h, and the stories purge removes it, file included, once no report on
+   * it is open. Returns whether it was held.
+   */
+  async holdIfReported(id: string, transaction: Transaction): Promise<boolean> {
+    const [, affected] = await this.sequelize.query(
+      `UPDATE profile.stories t SET author_deleted_at = now(), hidden_at = COALESCE(t.hidden_at, now())
+        WHERE t.id = :id AND t.author_deleted_at IS NULL AND ${hasOpenReportSql("STORY", "t.id")}`,
+      { type: QueryTypes.UPDATE, replacements: { id }, transaction },
+    );
+    return Number(affected) > 0;
   }
 
   findById(id: string): Promise<StoryModel | null> {
@@ -146,8 +163,7 @@ export class StoriesRepository {
       `SELECT s.id, s.storage_key AS "storageKey"
          FROM profile.stories s
         WHERE s.expires_at <= :now
-          AND NOT EXISTS (SELECT 1 FROM moderation.reports r WHERE r.target_kind = 'STORY'
-                           AND r.target_id = s.id AND r.status IN ('PENDIENTE', 'EN_REVISION'))
+          AND NOT ${hasOpenReportSql("STORY", "s.id")}
         ORDER BY s.expires_at ASC
         LIMIT :limit`,
       { type: QueryTypes.SELECT, replacements: { now, limit } },

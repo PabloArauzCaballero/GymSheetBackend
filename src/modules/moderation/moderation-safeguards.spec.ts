@@ -22,8 +22,9 @@ describe("ModerationMinorService", () => {
     };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const notifications = { enqueueDirectMessage: jest.fn().mockResolvedValue(true) };
-    const service = new ModerationMinorService(repository as never, outbox as never, notifications as never);
-    return { service, repository, outbox, notifications };
+    const noticeEmails = { enqueue: jest.fn().mockResolvedValue(true) };
+    const service = new ModerationMinorService(repository as never, outbox as never, notifications as never, noticeEmails as never);
+    return { service, repository, outbox, notifications, noticeEmails };
   }
   const profileReport = { reportedUserId: "user-1", tenantId: "gym", targetKind: "USER" as const };
 
@@ -78,6 +79,21 @@ describe("ModerationMinorService", () => {
       }),
       transaction,
     );
+  });
+
+  it("emails the suspension and the closure notices too; the closure email survives the closure", async () => {
+    const suspended = build(true);
+    await suspended.service.suspendIfCorroborated(profileReport, transaction as never);
+    expect(suspended.noticeEmails.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientUserId: "user-1", subject: "Suspendimos tu cuenta mientras revisamos una denuncia", survivesClosure: false }),
+      transaction,
+    );
+    const confirmed = build(false);
+    await confirmed.service.confirm("user-1", transaction as never);
+    const [email, tx] = confirmed.noticeEmails.enqueue.mock.calls[0] as [{ body: string; survivesClosure: boolean; deduplicationKey: string }, unknown];
+    expect(email).toMatchObject({ survivesClosure: true, deduplicationKey: "moderation.minor-confirmed:user-1" });
+    expect(email.body).toContain("Menor de edad");
+    expect(tx).toBe(transaction);
   });
 });
 

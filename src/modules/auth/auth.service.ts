@@ -10,13 +10,14 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { Sequelize } from 'sequelize-typescript';
 import { UniqueConstraintError } from 'sequelize';
-import { RefreshTokenRevokedReason, UserRole } from '../../common/enums/domain.enums';
+import { RefreshTokenRevokedReason, UserRole, UserStatus } from '../../common/enums/domain.enums';
 import { DomainException } from '../../common/errors/domain.exception';
 import { AuthenticatedUser, JwtPayload } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
 import { SignupProtectionService } from '../antibot/signup-protection.service';
-import { suspendedAccountError } from '../../common/moderation/account-suspension';
+import { bannedAccountError, suspendedAccountError } from '../../common/moderation/account-suspension';
 import { ClosedAccountSanctionsService } from '../closed-account-sanctions/closed-account-sanctions.service';
+import { SanctionStatusService } from '../sanction-status/sanction-status.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { UsersRepository } from '../users/users.repository';
 import { LEGAL_DOCUMENTS } from '../legal/legal-documents';
@@ -58,6 +59,7 @@ export class AuthService {
     private readonly emailVerification: EmailVerificationService,
     private readonly signupProtection: SignupProtectionService,
     private readonly carriedSanctions: ClosedAccountSanctionsService,
+    private readonly sanctionStatus: SanctionStatusService,
   ) {}
 
   async register(input: RegisterInput, meta: SignupRequestMeta): Promise<AuthResponse> {
@@ -127,9 +129,14 @@ export class AuthService {
         const deviceId = await this.devices.recordSignup(user.id, meta.device, transaction);
         await this.emailVerification.issuePin(user.id, transaction);
         const suspendedUntil = await this.carriedSanctions.inheritAtSignup(user, transaction);
-        return suspendedUntil ?? this.sessions.issue(user, { deviceId }, transaction);
+        return suspendedUntil ? { userId: user.id, suspendedUntil } : this.sessions.issue(user, { deviceId }, transaction);
       });
-      if (session instanceof Date) throw suspendedAccountError(session);
+      if ('suspendedUntil' in session) {
+        throw suspendedAccountError(
+          session.suspendedUntil,
+          await this.sanctionStatus.suspensionReason(session.userId, session.suspendedUntil),
+        );
+      }
       return session;
     } catch (error: unknown) {
       if (error instanceof UniqueConstraintError) {
@@ -141,7 +148,9 @@ export class AuthService {
   }
 
   async login(input: LoginInput, device: ClientDeviceContext): Promise<AuthResponse> {
-    const activeUser = await this.usersRepository.findActiveByEmail(input.email);
+    // Any status, so a banned account can be told why once its owner proved
+    // the password. Closed accounts never match: their email is a tombstone.
+    const account = await this.usersRepository.findByEmail(input.email);
 
     // Always spend the cost of one bcrypt comparison, even when no account
     // matches. Returning early for unknown emails made the response measurably
@@ -149,12 +158,20 @@ export class AuthService {
     // whether an address is registered by timing alone.
     const passwordMatches = await bcrypt.compare(
       input.password,
-      activeUser?.passwordHash ?? UNKNOWN_ACCOUNT_PASSWORD_HASH,
+      account?.passwordHash ?? UNKNOWN_ACCOUNT_PASSWORD_HASH,
     );
 
-    if (!activeUser || !passwordMatches) {
+    if (!account || !passwordMatches) {
       throw new UnauthorizedException('Credenciales inválidas.');
     }
+    if (account.status !== UserStatus.ACTIVE) {
+      // Same rule as the suspension below: only the proven owner learns of the
+      // ban and its reason. Any other inactive account keeps the generic answer.
+      const banReason = await this.sanctionStatus.banReason(account.id);
+      if (banReason) throw bannedAccountError(banReason);
+      throw new UnauthorizedException('Credenciales inválidas.');
+    }
+    const activeUser = account;
 
     // Después de comprobar la contraseña, nunca antes: avisar de la suspensión
     // a quien no ha demostrado ser el dueño de la cuenta convertiría el login
@@ -165,7 +182,10 @@ export class AuthService {
     // persona suspendida que se había equivocado de contraseña, y el motivo y
     // la fecha que escribimos aquí no llegaban nunca a la pantalla.
     if (activeUser.suspendedUntil && activeUser.suspendedUntil.getTime() > Date.now()) {
-      throw suspendedAccountError(activeUser.suspendedUntil);
+      throw suspendedAccountError(
+        activeUser.suspendedUntil,
+        await this.sanctionStatus.suspensionReason(activeUser.id, activeUser.suspendedUntil),
+      );
     }
 
     return this.sequelize.transaction(async (transaction) => {

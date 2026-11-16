@@ -1,6 +1,7 @@
 import { chatRequestFingerprint } from "./chat-request-fingerprint";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
+import { hasOpenReportSql } from "../../common/moderation/open-report.sql";
 import { literal, Op, QueryTypes, Transaction, type WhereOptions } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { ConversationParticipantModel } from "./conversation-participant.model";
@@ -922,11 +923,7 @@ export class ChatRepository {
         WHERE id IN (
           SELECT m.id FROM chat.messages m
            WHERE m.expires_at IS NOT NULL AND m.expires_at <= now()
-             AND NOT EXISTS (
-               SELECT 1 FROM moderation.reports r
-                WHERE r.target_kind = 'CHAT_MESSAGE' AND r.target_id = m.id
-                 AND r.status IN ('PENDIENTE', 'EN_REVISION')
-             )
+             AND NOT ${hasOpenReportSql("CHAT_MESSAGE", "m.id")}
            ORDER BY m.expires_at
            LIMIT :batchSize
         )

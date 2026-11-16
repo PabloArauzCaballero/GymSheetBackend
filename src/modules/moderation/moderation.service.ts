@@ -18,11 +18,12 @@ import { ConnectionModel } from "../social/connection.model";
 import { DiscoveryPassModel } from "../social/discovery-pass.model";
 import { SocialRecommendationOutboxService } from "../social/social-recommendation-outbox.service";
 import { NotificationService } from "../notifications/notification.service";
+import { NoticeEmailService } from "../notifications/notice-email.service";
 import { ModerationRepository } from "./moderation.repository";
 import { ModerationAutoHideService } from "./moderation-auto-hide.service";
 import { ModerationEvidenceService } from "./moderation-evidence.service";
 import { ModerationMinorService } from "./moderation-minor.service";
-import { ModerationNotice, sanctionNotice } from "./moderation-notices";
+import { emailModerationNotice, ModerationNotice, sanctionNotice } from "./moderation-notices";
 import { ChatMessageEvidence } from "./moderation-safeguards.repository";
 import {
   isHideableTarget,
@@ -87,6 +88,7 @@ export class ModerationService {
     private readonly minors: ModerationMinorService,
     private readonly evidence: ModerationEvidenceService,
     private readonly autoHide: ModerationAutoHideService,
+    private readonly noticeEmails: NoticeEmailService,
     @Optional()
     private readonly recommendationOutbox?: SocialRecommendationOutboxService,
     @Optional() private readonly reelSocial?: ReelSocialService,
@@ -450,6 +452,7 @@ export class ModerationService {
     const now = new Date();
 
     let sanction: Sanction | null = null;
+    let strikeId: string | null = null;
     let authorNotice: ModerationNotice | null = null;
 
     await this.sequelize.transaction(async (transaction) => {
@@ -468,7 +471,7 @@ export class ModerationService {
         );
         sanction = nextSanction(previous, now);
 
-        await this.repository.createStrike(
+        const strike = await this.repository.createStrike(
           {
             userId: reportedUserId,
             tenantId,
@@ -483,6 +486,7 @@ export class ModerationService {
           },
           transaction,
         );
+        strikeId = strike.id;
 
         if (sanction.kind === StrikeKind.SUSPENSION) {
           await this.repository.setSuspension(
@@ -543,6 +547,7 @@ export class ModerationService {
     });
 
     await this.notifyOutcome(openReports, reportedUserId, sanction, input, {
+      strikeId,
       reason,
       target: { kind: targetKind, id: targetId },
       authorNotice,
@@ -591,6 +596,7 @@ export class ModerationService {
     sanction: Sanction | null,
     input: ResolveCaseInput,
     context: {
+      strikeId: string | null;
       reason: ModerationReasonValue;
       target: { kind: ModerationTargetKindValue; id: string };
       authorNotice: ModerationNotice | null;
@@ -619,6 +625,13 @@ export class ModerationService {
           deduplicationKey: `moderation.${sanction ? "sanction" : "content"}:${reportedUserId}:${Date.now()}`,
           metadata: notice.metadata,
         }),
+      );
+    }
+    // A suspension or an expulsion locks the person out of the inbox where
+    // that notice waits: it also goes to the address on file, once per strike.
+    if (notice && sanction && sanction.kind !== StrikeKind.ADVERTENCIA && context.strikeId) {
+      tasks.push(
+        emailModerationNotice(this.noticeEmails, reportedUserId, notice, `moderation.sanction:${context.strikeId}`),
       );
     }
 

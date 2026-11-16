@@ -9,6 +9,7 @@ import { TenantsService } from '../tenants/tenants.service';
 import { LegalService } from '../legal/legal.service';
 import { SignupProtectionService } from '../antibot/signup-protection.service';
 import { ClosedAccountSanctionsService } from '../closed-account-sanctions/closed-account-sanctions.service';
+import { SanctionStatusService } from '../sanction-status/sanction-status.service';
 import { AuthSessionService } from './auth-session.service';
 import { AuthService } from './auth.service';
 import { ClientDeviceContext } from './client-device-context';
@@ -42,7 +43,15 @@ jest.mock('bcryptjs', () => ({
   compare: jest.fn(() => Promise.resolve(false)),
 }));
 
-function createService(usersRepositoryOverrides: Partial<UsersRepository>): AuthService {
+const harassment = { code: 'ACOSO', label: 'Acoso', text: 'mensajes o contenido que hostigan o intimidan a otra persona' };
+
+function createService(
+  usersRepositoryOverrides: Partial<UsersRepository>,
+  sanctionStatus: Partial<SanctionStatusService> = {
+    suspensionReason: jest.fn().mockResolvedValue(harassment),
+    banReason: jest.fn().mockResolvedValue(null),
+  },
+): AuthService {
   // Neither test below reaches refresh-token issuance: both `login` calls
   // throw UnauthorizedException before AuthService would touch these. They
   // only need to satisfy the constructor's shape.
@@ -60,6 +69,7 @@ function createService(usersRepositoryOverrides: Partial<UsersRepository>): Auth
     {} as EmailVerificationService,
     {} as SignupProtectionService,
     {} as ClosedAccountSanctionsService,
+    sanctionStatus as SanctionStatusService,
   );
 }
 
@@ -70,16 +80,17 @@ describe('AuthService login account enumeration resistance', () => {
 
   it('rejects a wrong password and an unknown email with the same message', async () => {
     const knownAccountService = createService({
-      findActiveByEmail: jest.fn().mockResolvedValue({
+      findByEmail: jest.fn().mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000001',
         email: registeredEmail,
         passwordHash: STORED_HASH,
         fullName: 'Registered User',
         role: 'CLIENTE',
+        status: 'ACTIVO',
       }),
     });
     const unknownAccountService = createService({
-      findActiveByEmail: jest.fn().mockResolvedValue(null),
+      findByEmail: jest.fn().mockResolvedValue(null),
     });
 
     const knownAccountError = await knownAccountService
@@ -103,7 +114,7 @@ describe('AuthService login account enumeration resistance', () => {
     // through a module mock rather than jest.spyOn.
     const { compare } = jest.requireMock<typeof bcrypt>('bcryptjs');
     const service = createService({
-      findActiveByEmail: jest.fn().mockResolvedValue(null),
+      findByEmail: jest.fn().mockResolvedValue(null),
     });
 
     await expect(
@@ -120,12 +131,13 @@ describe('AuthService login de una cuenta suspendida', () => {
     const { compare } = jest.requireMock<{ compare: jest.Mock }>('bcryptjs');
     compare.mockResolvedValueOnce(true);
     const service = createService({
-      findActiveByEmail: jest.fn().mockResolvedValue({
+      findByEmail: jest.fn().mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000001',
         email: registeredEmail,
         passwordHash: STORED_HASH,
         fullName: 'Registered User',
         role: 'CLIENTE',
+        status: 'ACTIVO',
         suspendedUntil: new Date(Date.now() + 86_400_000),
       }),
     });
@@ -138,23 +150,74 @@ describe('AuthService login de una cuenta suspendida', () => {
     expect((error as DomainException).getStatus()).toBe(403);
     expect((error as DomainException).code).toBe('ACCOUNT_SUSPENDED');
     expect((error as DomainException).message).toMatch(/suspendida/u);
+    expect((error as DomainException).details).toMatchObject({ pendingReview: false, reason: harassment });
   });
 
   it('una suspensión pendiente de revisión no anuncia el año 9999', async () => {
     const { compare } = jest.requireMock<{ compare: jest.Mock }>('bcryptjs');
     compare.mockResolvedValueOnce(true);
     const service = createService({
-      findActiveByEmail: jest.fn().mockResolvedValue({
+      findByEmail: jest.fn().mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000001',
         email: registeredEmail,
         passwordHash: STORED_HASH,
         role: 'CLIENTE',
+        status: 'ACTIVO',
         suspendedUntil: PENDING_REVIEW_SUSPENSION_UNTIL,
       }),
     });
 
     await expect(service.login({ email: registeredEmail, password: 'right-password' }, noDevice))
       .rejects.toThrow('Tu cuenta está suspendida mientras revisamos un reporte.');
+  });
+});
+
+describe('AuthService login de una cuenta expulsada', () => {
+  const banned = {
+    id: '00000000-0000-4000-8000-000000000002',
+    email: registeredEmail,
+    passwordHash: STORED_HASH,
+    role: 'CLIENTE',
+    status: 'INACTIVO',
+    suspendedUntil: null,
+  };
+
+  it('con la contraseña correcta responde 403 ACCOUNT_BANNED con el motivo', async () => {
+    const { compare } = jest.requireMock<{ compare: jest.Mock }>('bcryptjs');
+    compare.mockResolvedValueOnce(true);
+    const banReason = jest.fn().mockResolvedValue(harassment);
+    const service = createService({ findByEmail: jest.fn().mockResolvedValue(banned) }, { banReason });
+
+    const error = await service
+      .login({ email: registeredEmail, password: 'right-password' }, noDevice)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(DomainException);
+    expect((error as DomainException).getStatus()).toBe(403);
+    expect((error as DomainException).code).toBe('ACCOUNT_BANNED');
+    expect((error as DomainException).details).toEqual({ reason: harassment });
+    expect(banReason).toHaveBeenCalledWith(banned.id);
+  });
+
+  it('con la contraseña equivocada sigue siendo el 401 genérico y no mira la sanción', async () => {
+    const { compare } = jest.requireMock<{ compare: jest.Mock }>('bcryptjs');
+    compare.mockClear();
+    const banReason = jest.fn().mockResolvedValue(harassment);
+    const service = createService({ findByEmail: jest.fn().mockResolvedValue(banned) }, { banReason });
+
+    await expect(service.login({ email: registeredEmail, password: submittedPassword }, noDevice))
+      .rejects.toThrow(new UnauthorizedException('Credenciales inválidas.'));
+    expect(compare).toHaveBeenCalledWith(submittedPassword, STORED_HASH);
+    expect(banReason).not.toHaveBeenCalled();
+  });
+
+  it('otra cuenta inactiva (sin expulsión) responde el 401 genérico aun con la contraseña correcta', async () => {
+    const { compare } = jest.requireMock<{ compare: jest.Mock }>('bcryptjs');
+    compare.mockResolvedValueOnce(true);
+    const service = createService({ findByEmail: jest.fn().mockResolvedValue(banned) });
+
+    await expect(service.login({ email: registeredEmail, password: 'right-password' }, noDevice))
+      .rejects.toThrow(new UnauthorizedException('Credenciales inválidas.'));
   });
 });
 

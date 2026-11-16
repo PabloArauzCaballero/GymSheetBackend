@@ -1,5 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { OutboxService } from '../integration/outbox.service';
+import { NoticeEmailService } from '../notifications/notice-email.service';
+import { NotificationService } from '../notifications/notification.service';
 import { AccountExportRepository } from './account-export.repository';
 import { ACCOUNT_EXPORT_SECTIONS } from './account-export.sections';
 import { ACCOUNT_EXPORT_QUEUE, ACCOUNT_EXPORT_ROWS_PER_TABLE, AccountExportService } from './account-export.service';
@@ -9,7 +11,7 @@ const exportId = '00000000-0000-4000-8000-0000000000e1';
 const transaction = { id: 'tx' };
 const pending = { id: exportId, userId, status: 'PENDING', sizeBytes: null, requestedAt: new Date(), completedAt: null, expiresAt: null };
 
-function build(options: { latest?: Date | null; row?: object | null; archive?: string | null; sectionRows?: number } = {}) {
+function build(options: { latest?: Date | null; row?: object | null; archive?: string | null; sectionRows?: number; transitioned?: boolean } = {}) {
   const repository = {
     runInTransaction: jest.fn((work: (t: unknown) => unknown) => work(transaction)),
     lockAccount: jest.fn().mockResolvedValue(undefined),
@@ -20,11 +22,19 @@ function build(options: { latest?: Date | null; row?: object | null; archive?: s
     findLatestOwn: jest.fn().mockResolvedValue(options.row === undefined ? pending : options.row),
     readArchive: jest.fn().mockResolvedValue(options.archive ?? null),
     readSection: jest.fn().mockResolvedValue(Array.from({ length: options.sectionRows ?? 1 }, (_, index) => ({ index }))),
-    markReady: jest.fn().mockResolvedValue(undefined),
+    markReady: jest.fn().mockResolvedValue(options.transitioned ?? true),
+    markFailed: jest.fn().mockResolvedValue(options.transitioned ?? true),
   };
   const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
-  const service = new AccountExportService(repository as unknown as AccountExportRepository, outbox as unknown as OutboxService);
-  return { service, repository, outbox };
+  const notifications = { enqueueDirectMessage: jest.fn().mockResolvedValue(true) };
+  const noticeEmails = { enqueue: jest.fn().mockResolvedValue(true) };
+  const service = new AccountExportService(
+    repository as unknown as AccountExportRepository,
+    outbox as unknown as OutboxService,
+    notifications as unknown as NotificationService,
+    noticeEmails as unknown as NoticeEmailService,
+  );
+  return { service, repository, outbox, notifications, noticeEmails };
 }
 
 describe('AccountExportService', () => {
@@ -66,6 +76,45 @@ describe('AccountExportService', () => {
     const users = parsed.tables['public.usuarios'];
     expect(users.truncated).toBe(true);
     expect(users.rows).toHaveLength(ACCOUNT_EXPORT_ROWS_PER_TABLE);
+  });
+
+  it('tells the owner in the app and by email that the copy is ready, in the transaction that marks it', async () => {
+    const { service, repository, notifications, noticeEmails } = build();
+    await service.build(exportId);
+    const [message, tx] = notifications.enqueueDirectMessage.mock.calls[0] as [Record<string, unknown>, unknown];
+    expect(message).toMatchObject({
+      recipientUserId: userId,
+      channel: 'IN_APP',
+      subject: 'Tu copia de datos está lista',
+      deduplicationKey: `account-export.ready:${exportId}`,
+      metadata: { type: 'ACCOUNT_EXPORT_READY', exportId, downloadPath: `/me/export/${exportId}/download` },
+    });
+    expect(tx).toBe(transaction);
+    expect(repository.markReady.mock.calls[0][3]).toBe(transaction);
+    expect(noticeEmails.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientUserId: userId, subject: 'Tu copia de datos está lista', deduplicationKey: `account-export.ready:${exportId}` }),
+      transaction,
+    );
+  });
+
+  it('notifies once: a call that did not move the export out of PENDING says nothing', async () => {
+    const { service, notifications, noticeEmails } = build({ transitioned: false });
+    await service.build(exportId);
+    await service.markFailed(exportId, 'Error');
+    expect(notifications.enqueueDirectMessage).not.toHaveBeenCalled();
+    expect(noticeEmails.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('tells the owner when the copy could not be prepared', async () => {
+    const { service, repository, notifications, noticeEmails } = build();
+    await service.markFailed(exportId, 'TimeoutError');
+    expect(repository.markFailed).toHaveBeenCalledWith(exportId, 'TimeoutError', transaction);
+    expect(notifications.enqueueDirectMessage.mock.calls[0][0]).toMatchObject({
+      recipientUserId: userId,
+      deduplicationKey: `account-export.failed:${exportId}`,
+      metadata: { type: 'ACCOUNT_EXPORT_FAILED', exportId },
+    });
+    expect(noticeEmails.enqueue).toHaveBeenCalledTimes(1);
   });
 
   it('never rebuilds an export that is no longer pending', async () => {

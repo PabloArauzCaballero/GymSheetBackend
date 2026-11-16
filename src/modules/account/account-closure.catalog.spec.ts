@@ -40,4 +40,24 @@ describe('ACCOUNT_CLOSURE_STEPS', () => {
     expect(preview.anonymized).toEqual([]);
     expect(preview.proof).toEqual({ password: true, emailPin: false });
   });
+
+  it("a staff closure leaves the members' gym chats and the routines assigned to them in place", () => {
+    const deleted = (table: string) => ACCOUNT_CLOSURE_STEPS.filter((step) => step.table === table && step.disposition === 'DELETED');
+    for (const step of deleted('chat.conversations')) expect(step.where).toContain('p.can_write = false');
+    expect(deleted('training.routine_assignments').map((step) => step.where)).toEqual(['t.cliente_user_id = :userId']);
+    const keptAssignments = ACCOUNT_CLOSURE_STEPS.find((step) => step.table === 'training.routine_assignments' && step.disposition === 'KEPT');
+    expect(keptAssignments?.where).toContain('t.asignado_por_user_id = :userId');
+    const ownRoutines = deleted('training.routines')[0];
+    expect(ownRoutines.where).toContain('es_oficial');
+    expect(ownRoutines.where).toContain('training.routine_assignments');
+    const staffProfile = ACCOUNT_CLOSURE_STEPS.find((step) => step.table === 'membership.staff_profiles');
+    expect(staffProfile).toMatchObject({ disposition: 'ANONYMIZED' });
+    expect(staffProfile?.set).toContain("employment_status = 'TERMINATED'");
+  });
+
+  it('drops pending notice emails of the account except the one marked to survive the closure', () => {
+    const outbox = ACCOUNT_CLOSURE_STEPS.find((step) => step.table === 'integration.outbox_jobs');
+    expect(outbox?.where).toContain("t.payload->>'survivesClosure' = 'false'");
+    expect(outbox?.where).toContain("t.payload->>'recipientUserId' = CAST(:userId AS text)");
+  });
 });

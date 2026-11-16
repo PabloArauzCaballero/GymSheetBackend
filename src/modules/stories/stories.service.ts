@@ -183,10 +183,13 @@ export class StoriesService {
     // El fichero se comparte con quien haya subido el mismo binario (la clave
     // es el SHA-256 del contenido): la fila siempre cae, el fichero solo si
     // deja de estar referenciado. Ver `MediaRetentionService`.
-    await this.retention.deleteRowAndUnreferencedFile(
-      story.storageKey,
-      (transaction) => this.repository.delete(story, transaction),
-    );
+    // Under an OPEN report the story is evidence: held (hidden for everyone)
+    // instead of deleted, and its row keeps the file referenced.
+    await this.retention.deleteRowAndUnreferencedFile(story.storageKey, async (transaction) => {
+      if (!(await this.repository.holdIfReported(story.id, transaction))) {
+        await this.repository.delete(story, transaction);
+      }
+    });
     return { deleted: true };
   }
 

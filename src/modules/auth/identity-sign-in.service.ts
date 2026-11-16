@@ -26,8 +26,9 @@ import { IdentityProvider, OidcTokenVerifier, VerifiedIdentity } from "./oidc-to
 import { SignupRequestMeta } from "./signup-context";
 import { UserDeviceService } from "./user-device.service";
 import { SignupProtectionService } from "../antibot/signup-protection.service";
-import { suspendedAccountError } from "../../common/moderation/account-suspension";
+import { bannedAccountError, suspendedAccountError } from "../../common/moderation/account-suspension";
 import { ClosedAccountSanctionsService } from "../closed-account-sanctions/closed-account-sanctions.service";
+import { SanctionStatusService } from "../sanction-status/sanction-status.service";
 
 export type IdentitySignInResult =
   | ({ status: "AUTHENTICATED" } & AuthResponse)
@@ -54,6 +55,7 @@ export class IdentitySignInService {
     private readonly signupProtection: SignupProtectionService,
     private readonly sequelize: Sequelize,
     private readonly carriedSanctions: ClosedAccountSanctionsService,
+    private readonly sanctionStatus: SanctionStatusService,
   ) {}
 
   async signIn(
@@ -67,15 +69,15 @@ export class IdentitySignInService {
 
     const linkedUserId = await this.identities.findUserId(provider, identity.subject);
     if (linkedUserId) {
-      const user = await this.users.findActiveById(linkedUserId);
-      if (!user) throw new UnauthorizedException("Credenciales inválidas.");
+      const user = await this.users.findById(linkedUserId);
+      if (!user || user.status !== UserStatus.ACTIVE) throw await this.inactiveAccountError(user);
       return this.openSession(user, device, null);
     }
 
     const email = verifiedEmail(identity);
     const existing = await this.users.findByEmail(email);
     if (existing) {
-      if (existing.status !== UserStatus.ACTIVE) throw new UnauthorizedException("Credenciales inválidas.");
+      if (existing.status !== UserStatus.ACTIVE) throw await this.inactiveAccountError(existing);
       // The provider proved this mailbox, which is exactly what the PIN proves.
       // An account that never verified it may have been pre-registered by
       // someone else to hijack it later: the mailbox owner takes it over, so its
@@ -133,14 +135,29 @@ export class IdentitySignInService {
         await this.identities.link(claims.provider, claims.subject, user.id, claims.email, transaction);
         const deviceId = await this.devices.recordSignup(user.id, meta.device, transaction);
         const suspendedUntil = await this.carriedSanctions.inheritAtSignup(user, transaction);
-        return suspendedUntil ?? this.sessions.issue(user, { deviceId }, transaction);
+        return suspendedUntil ? { userId: user.id, suspendedUntil } : this.sessions.issue(user, { deviceId }, transaction);
       });
-      if (session instanceof Date) throw suspendedAccountError(session);
+      if ("suspendedUntil" in session) {
+        throw suspendedAccountError(
+          session.suspendedUntil,
+          await this.sanctionStatus.suspensionReason(session.userId, session.suspendedUntil),
+        );
+      }
       return { status: "AUTHENTICATED", ...session };
     } catch (error: unknown) {
       if (error instanceof UniqueConstraintError) throw new ConflictException(ACCOUNT_EXISTS);
       throw error;
     }
+  }
+
+  /**
+   * The provider proved who the person is, as a password would: a banned
+   * account learns of the ban and its reason, any other inactive one gets the
+   * generic refusal.
+   */
+  private async inactiveAccountError(user: UserModel | null): Promise<Error> {
+    const banReason = user ? await this.sanctionStatus.banReason(user.id) : null;
+    return banReason ? bannedAccountError(banReason) : new UnauthorizedException("Credenciales inválidas.");
   }
 
   /** Links the identity when given, marks the email verified and issues the session atomically. */
@@ -151,7 +168,7 @@ export class IdentitySignInService {
     options: { takeOver?: boolean } = {},
   ): Promise<IdentitySignInResult> {
     if (user.suspendedUntil && user.suspendedUntil.getTime() > Date.now()) {
-      throw suspendedAccountError(user.suspendedUntil);
+      throw suspendedAccountError(user.suspendedUntil, await this.sanctionStatus.suspensionReason(user.id, user.suspendedUntil));
     }
     try {
       const session = await this.sequelize.transaction(async (transaction) => {

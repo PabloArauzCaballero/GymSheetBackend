@@ -247,4 +247,136 @@ describe('Reported content lifecycle (e2e)', () => {
       expect(fileAt(keys.openPhoto)).toBe(true);
     });
   });
+
+  describe('evidence hold of content its author deletes under an open report (I2)', () => {
+    // Fixed clock far from the N4 test's, so neither purge touches the other's rows.
+    const resolvedAt = new Date('2025-06-01T00:00:00.000Z');
+    const afterRetention = new Date(resolvedAt.getTime() + (REPORT_EVIDENCE_RETENTION_DAYS + 1) * DAY_MS);
+    const retention = () => new ReportedContentRetentionService(
+      e2e.app.get(Sequelize),
+      e2e.app.get(MediaReferencesRepository, { strict: false }),
+      e2e.app.get(MediaReleaseService, { strict: false }),
+    );
+    const url = (key: string) => `${env.MEDIA_STORAGE_PUBLIC_BASE_URL}/${key}`;
+
+    it('a reported profile photo is hidden for everyone but kept with its file until 180 days after the report closes', async () => {
+      const author = await e2e.register('hold-photo-author');
+      const reporter = await e2e.register('hold-photo-reporter');
+      const [held, plain] = [randomUUID(), randomUUID()];
+      const keys = { held: `users/${author.id}/perfiles/${held}.jpg`, plain: `users/${author.id}/perfiles/${plain}.jpg` };
+      for (const [id, key] of [[held, keys.held], [plain, keys.plain]]) {
+        writeStoredFile(key);
+        await e2e.sql(`INSERT INTO profile.photos (id, user_id, url, storage_provider, storage_key) VALUES (:id, :userId, :url, 'local', :key)`,
+          { id, userId: author.id, url: url(key), key });
+      }
+      await fileReport(reporter.id, author.id, 'PROFILE_PHOTO', held);
+
+      await e2e.as(author.token).del(`/me/photos/${held}`).expect(200);
+      await e2e.as(author.token).del(`/me/photos/${plain}`).expect(200);
+
+      // Gone for its author (list, second delete) and for everyone else; row and file stay.
+      const gallery = await e2e.as(author.token).get('/me/photos').expect(200);
+      expect(JSON.stringify(gallery.body.data)).not.toContain(held);
+      await e2e.as(author.token).del(`/me/photos/${held}`).expect(404);
+      const [row] = await selectRows<{ hidden: boolean; deleted: boolean }>(e2e,
+        'SELECT hidden_at IS NOT NULL AS hidden, author_deleted_at IS NOT NULL AS deleted FROM profile.photos WHERE id = :id', { id: held });
+      expect(row).toEqual({ hidden: true, deleted: true });
+      expect(fileAt(keys.held)).toBe(true);
+      expect(await rowCount('profile.photos', plain)).toBe(0);
+      expect(fileAt(keys.plain)).toBe(false);
+      expect(await releaseJobs(held)).toEqual([]);
+
+      // Closed but within the retention: still evidence.
+      await closeReports('PROFILE_PHOTO', held, resolvedAt);
+      await retention().purge(new Date(resolvedAt.getTime() + (REPORT_EVIDENCE_RETENTION_DAYS - 1) * DAY_MS));
+      expect(await rowCount('profile.photos', held)).toBe(1);
+
+      await retention().purge(afterRetention);
+      expect(await rowCount('profile.photos', held)).toBe(0);
+      expect(await releaseJobs(held)).toHaveLength(1);
+      await e2e.app.get(MediaReleaseService, { strict: false }).drainOnce(500);
+      expect(fileAt(keys.held)).toBe(false);
+    });
+
+    it("a moderator's restore never brings back a photo its author deleted", async () => {
+      const author = await e2e.register('hold-restore-author');
+      const reporter = await e2e.register('hold-restore-reporter');
+      const moderator = await e2e.register('hold-restore-mod');
+      await e2e.promote(moderator.id, 'SYSTEM_ADMIN');
+      const photo = randomUUID();
+      const key = `users/${author.id}/perfiles/${photo}.jpg`;
+      writeStoredFile(key);
+      await e2e.sql(`INSERT INTO profile.photos (id, user_id, url, storage_provider, storage_key) VALUES (:id, :userId, :url, 'local', :key)`,
+        { id: photo, userId: author.id, url: url(key), key });
+      await e2e.as(reporter.token).post('/me/reports').send({ targetKind: 'PROFILE_PHOTO', targetId: photo, reason: 'SPAM' }).expect(201);
+      await e2e.as(author.token).del(`/me/photos/${photo}`).expect(200);
+
+      const base = `/admin/moderation/cases/PROFILE_PHOTO/${photo}`;
+      await e2e.as(moderator.token).post(`${base}/claim`).expect(201);
+      await e2e.as(moderator.token).post(`${base}/resolve`).send({ hideContent: false, sanction: false, confirmMinor: false }).expect(201);
+      const [row] = await selectRows<{ hidden: boolean }>(e2e,
+        'SELECT hidden_at IS NOT NULL AS hidden FROM profile.photos WHERE id = :id', { id: photo });
+      expect(row).toEqual({ hidden: true });
+      // A held photo cannot be reported again: it no longer exists for anyone.
+      await e2e.as(reporter.token).post('/me/reports').send({ targetKind: 'PROFILE_PHOTO', targetId: photo, reason: 'ACOSO' }).expect(404);
+    });
+
+    it('a reported story is held hidden and the stories purge removes it once no report is open', async () => {
+      const author = await e2e.register('hold-story-author');
+      const reporter = await e2e.register('hold-story-reporter');
+      const id = randomUUID();
+      const key = `users/${author.id}/stories/${id}.jpg`;
+      writeStoredFile(key);
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+      await e2e.sql(`INSERT INTO profile.stories (id, user_id, tenant_id, media_url, storage_provider, storage_key, media_type, expires_at)
+                     VALUES (:id, :userId, 'default', :url, 'local', :key, 'image', :expiresAt)`,
+      { id, userId: author.id, url: url(key), key, expiresAt });
+      await fileReport(reporter.id, author.id, 'STORY', id);
+
+      await e2e.as(author.token).del(`/me/stories/${id}`).expect(200);
+      await e2e.as(author.token).get(`/me/stories/${id}/media`).expect(404);
+      await e2e.as(author.token).del(`/me/stories/${id}`).expect(404);
+      expect(await rowCount('profile.stories', id)).toBe(1);
+      expect(fileAt(key)).toBe(true);
+
+      const purge = e2e.app.get(StoriesPurgeService, { strict: false });
+      const afterExpiry = new Date(expiresAt.getTime() + 1000);
+      await purge.purgeExpired(1000, afterExpiry);
+      expect(await rowCount('profile.stories', id)).toBe(1);
+      await closeReports('STORY', id, new Date());
+      await purge.purgeExpired(1000, afterExpiry);
+      expect(await rowCount('profile.stories', id)).toBe(0);
+      expect(fileAt(key)).toBe(false);
+    });
+
+    it('a reported comment keeps its text and attachment, hidden, and the retention then erases it and releases the file', async () => {
+      const author = await e2e.register('hold-comment-author');
+      const reporter = await e2e.register('hold-comment-reporter');
+      const routineId = randomUUID();
+      await e2e.sql(`INSERT INTO training.routines (id, nombre, created_by_user_id) VALUES (:routineId, 'Rutina evidencia', :userId)`,
+        { routineId, userId: reporter.id });
+      const id = randomUUID();
+      const key = `users/${author.id}/publicaciones/${randomUUID()}.jpg`;
+      writeStoredFile(key);
+      await e2e.sql(`INSERT INTO community.content_comments (id, target_kind, target_id, autor_id, texto, adjunto_tipo, adjunto_url)
+                     VALUES (:id, 'ROUTINE', :routineId, :userId, 'Texto denunciado', 'IMAGEN', :url)`,
+      { id, routineId, userId: author.id, url: url(key) });
+      await fileReport(reporter.id, author.id, 'COMMENT', id);
+
+      await e2e.as(author.token).del(`/comments/${id}`).expect(200);
+      const [held] = await selectRows<{ estado: string; texto: string; adjunto_url: string | null }>(e2e,
+        'SELECT estado, texto, adjunto_url FROM community.content_comments WHERE id = :id', { id });
+      expect(held).toEqual({ estado: 'BORRADO_AUTOR', texto: 'Texto denunciado', adjunto_url: url(key) });
+      expect(await releaseJobs(id)).toEqual([]);
+      const listing = await e2e.as(reporter.token).get(`/comments/ROUTINE/${routineId}`).expect(200);
+      expect(JSON.stringify(listing.body)).not.toContain('Texto denunciado');
+
+      await closeReports('COMMENT', id, resolvedAt);
+      await retention().purge(afterRetention);
+      expect(await rowCount('community.content_comments', id)).toBe(0);
+      expect(await releaseJobs(id)).toHaveLength(1);
+      await e2e.app.get(MediaReleaseService, { strict: false }).drainOnce(500);
+      expect(fileAt(key)).toBe(false);
+    });
+  });
 });

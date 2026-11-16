@@ -6,6 +6,7 @@ import { RealtimeModule } from '../../common/realtime/realtime.module';
 import { AntibotModule } from '../antibot/antibot.module';
 import { ClosedAccountSanctionsModule } from '../closed-account-sanctions/closed-account-sanctions.module';
 import { LegalModule } from '../legal/legal.module';
+import { SanctionStatusModule } from '../sanction-status/sanction-status.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { UsersModule } from '../users/users.module';
@@ -40,6 +41,7 @@ import { UserDevicesController } from './user-devices.controller';
     NotificationsModule,
     AntibotModule,
     ClosedAccountSanctionsModule,
+    SanctionStatusModule,
     SequelizeModule.forFeature([RefreshTokenModel, PasswordResetTokenModel]),
   ],
   controllers: [
