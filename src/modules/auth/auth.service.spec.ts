@@ -1,4 +1,5 @@
-import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { UnauthorizedException } from '@nestjs/common';
+import { DomainException } from '../../common/errors/domain.exception';
 import { PENDING_REVIEW_SUSPENSION_UNTIL } from '../../common/moderation/account-suspension';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
@@ -133,8 +134,10 @@ describe('AuthService login de una cuenta suspendida', () => {
       .login({ email: registeredEmail, password: 'right-password' }, noDevice)
       .catch((caught: unknown) => caught);
 
-    expect(error).toBeInstanceOf(ForbiddenException);
-    expect((error as ForbiddenException).message).toMatch(/suspendida/u);
+    expect(error).toBeInstanceOf(DomainException);
+    expect((error as DomainException).getStatus()).toBe(403);
+    expect((error as DomainException).code).toBe('ACCOUNT_SUSPENDED');
+    expect((error as DomainException).message).toMatch(/suspendida/u);
   });
 
   it('una suspensión pendiente de revisión no anuncia el año 9999', async () => {

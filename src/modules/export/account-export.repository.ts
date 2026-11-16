@@ -61,6 +61,15 @@ export class AccountExportRepository {
     return row ?? null;
   }
 
+  /** The person's most recent request, whatever its state (served by ix_account_exports_user_requested). */
+  async findLatestOwn(userId: string): Promise<AccountExportRow | null> {
+    const [row] = await this.sequelize.query<AccountExportRow>(
+      `SELECT ${COLUMNS} FROM auth.account_exports WHERE user_id = :userId ORDER BY requested_at DESC LIMIT 1`,
+      { type: QueryTypes.SELECT, replacements: { userId } },
+    );
+    return row ?? null;
+  }
+
   async findById(id: string): Promise<AccountExportRow | null> {
     const [row] = await this.sequelize.query<AccountExportRow>(
       `SELECT ${COLUMNS} FROM auth.account_exports WHERE id = :id`,

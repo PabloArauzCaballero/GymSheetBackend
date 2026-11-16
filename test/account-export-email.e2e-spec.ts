@@ -58,6 +58,14 @@ describe('Account export and email change (e2e)', () => {
       await request(e2e.http).get(e2e.url(`/me/export/${exportId}`)).expect(401);
     });
 
+    it('lets the owner resume the latest request after losing its id; a stranger sees none', async () => {
+      const latest = await e2e.as(owner.token).get('/me/export/latest').expect(200);
+      expect(latest.body.data.export).toMatchObject({ id: exportId, status: 'PENDING' });
+      const other = await e2e.as(stranger.token).get('/me/export/latest').expect(200);
+      expect(other.body.data.export).toBeNull();
+      await request(e2e.http).get(e2e.url('/me/export/latest')).expect(401);
+    });
+
     it('builds an archive with every table of the data map, own rows only', async () => {
       const runner = new AccountDataRunner(
         e2e.app.get(OutboxService),

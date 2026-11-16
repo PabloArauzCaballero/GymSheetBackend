@@ -49,7 +49,8 @@ export type DomainErrorCode =
   | 'EMAIL_UNCHANGED'
   | 'EMAIL_CHANGE_BLOCKED_BY_SANCTION'
   | 'ACCOUNT_EXPORT_RATE_LIMITED'
-  | 'ACCOUNT_EXPORT_NOT_READY';
+  | 'ACCOUNT_EXPORT_NOT_READY'
+  | 'ACCOUNT_SUSPENDED';
 
 /**
  * Error de dominio con `code` estable y `details` opcional (por ejemplo

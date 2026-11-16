@@ -78,6 +78,8 @@ Liveness remains independent of PostgreSQL to avoid restart loops during tempora
 
 `register` and `login` use a tighter configurable rate limit than normal API routes. Login failures use a uniform message to reduce account enumeration.
 
+A suspended account answers `code: ACCOUNT_SUSPENDED` — `403` at login/signup with the right credentials, `401` on any request with a still-valid token — with `details.pendingReview` (`true`: suspended while a report is reviewed, no end date) or `details.until` (ISO end of a dated suspension). Clients compare the code; the message is for display.
+
 `register` requires `genero` (`MALE`|`FEMALE`), `fechaNacimiento` (`YYYY-MM-DD`, 18–100) and `termsVersion`; an outdated version answers `409 TERMS_VERSION_OUTDATED`. The birth date is stored on the account (`usuarios.fecha_nacimiento`, the single source of age) and one row per document goes to `auth.terms_acceptances` in the same transaction.
 
 ## Legal acceptance
@@ -127,6 +129,7 @@ Canonical internal units are kilograms for body weight, centimeters for height, 
 | POST   | `/me/account/closure-pin`          | authenticated | `202`; emails a closure PIN. Only for accounts linked to Google/Apple (`400 CLOSURE_PROOF_REQUIRED` otherwise) |
 | DELETE | `/me/account`                      | authenticated (CLIENTE) | Body `{ password }` or `{ pin }` (exactly one); `200 { closed: true, closedAt }` |
 | POST   | `/me/export`                       | authenticated | `202` with the export status; one request per 24 h (`429 ACCOUNT_EXPORT_RATE_LIMITED`, `details.retryAfterSeconds`) |
+| GET    | `/me/export/latest`                | authenticated | `{ export: <status> \| null }`: the caller's most recent request, so a client that lost the id resumes it |
 | GET    | `/me/export/:id`                   | owner         | `{ id, status: PENDING\|READY\|FAILED, requestedAt, completedAt, expiresAt, sizeBytes, downloadPath }` |
 | GET    | `/me/export/:id/download`          | owner         | `application/json` attachment while `READY` and not expired (7 days); `409 ACCOUNT_EXPORT_NOT_READY` before |
 
