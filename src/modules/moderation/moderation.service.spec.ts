@@ -35,6 +35,7 @@ describe('ModerationService', () => {
         .mockResolvedValue({ userId: 'author-1', tenantId: 'topfitness' }),
       canReporterSee: jest.fn().mockResolvedValue(true),
       canReporterViewComment: jest.fn().mockResolvedValue(true),
+      canReporterDiscoverRoutine: jest.fn().mockResolvedValue(false),
       createReport: jest.fn().mockResolvedValue({ id: 'report-1', status: 'PENDIENTE' }),
       countDistinctReporters: jest.fn().mockResolvedValue(1),
       setContentHidden: jest.fn().mockResolvedValue(undefined),
@@ -113,6 +114,43 @@ describe('ModerationService', () => {
         expect.objectContaining({ tenantId: 'vecino', targetKind: ModerationTargetKind.COMMENT }),
         expect.anything(),
       );
+    });
+
+    it('una rutina de otro gimnasio se denuncia si quien denuncia la puede descubrir (oficial o autor con consentimiento)', async () => {
+      const { service, repository } = build({
+        findContentOwner: jest.fn().mockResolvedValue({ userId: 'author-1', tenantId: 'vecino' }),
+        canReporterDiscoverRoutine: jest.fn().mockResolvedValue(true),
+      });
+      const input = { ...reportInput, targetKind: ModerationTargetKind.ROUTINE, targetId: 'routine-1' };
+
+      await expect(service.report(reporter, input)).resolves.toMatchObject({ id: 'report-1' });
+      expect(repository.canReporterDiscoverRoutine).toHaveBeenCalledWith('routine-1', reporter);
+      expect(repository.createReport).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'vecino', targetKind: ModerationTargetKind.ROUTINE }),
+        expect.anything(),
+      );
+    });
+
+    it('una rutina de otro gimnasio que no aparece en sus listas responde 404', async () => {
+      const { service, repository } = build({
+        findContentOwner: jest.fn().mockResolvedValue({ userId: 'author-1', tenantId: 'vecino' }),
+        canReporterDiscoverRoutine: jest.fn().mockResolvedValue(false),
+      });
+      const input = { ...reportInput, targetKind: ModerationTargetKind.ROUTINE, targetId: 'routine-1' };
+
+      await expect(service.report(reporter, input)).rejects.toBeInstanceOf(NotFoundException);
+      expect(repository.createReport).not.toHaveBeenCalled();
+    });
+
+    it('el descubrimiento entre gimnasios no abre otros tipos de contenido', async () => {
+      const discover = jest.fn().mockResolvedValue(true);
+      const { service } = build({
+        findContentOwner: jest.fn().mockResolvedValue({ userId: 'author-1', tenantId: 'vecino' }),
+        canReporterDiscoverRoutine: discover,
+      });
+
+      await expect(service.report(reporter, reportInput)).rejects.toBeInstanceOf(NotFoundException);
+      expect(discover).not.toHaveBeenCalled();
     });
 
     it('un comentario que quien denuncia no puede leer responde 404', async () => {

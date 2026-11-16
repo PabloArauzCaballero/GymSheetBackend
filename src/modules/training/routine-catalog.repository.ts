@@ -4,6 +4,12 @@ import { env } from '../../config/env';
 import { QueryTypes } from 'sequelize';
 import { RoutineModel } from './routine.model';
 import { RoutineCatalogQuery } from './routine-catalog.schemas';
+import {
+  discoveryReplacements,
+  routineAuthorTenantSql,
+  routineDiscoverableSql,
+  routineNotHiddenByViewerSql,
+} from './routine-discovery';
 
 export type CatalogRow = {
   id: string;
@@ -116,11 +122,11 @@ export class RoutineCatalogRepository {
     let shareJoin = '';
     switch (query.scope) {
       case 'public':
-        where.push("r.visibilidad = 'PUBLIC'", "r.estado_moderacion = 'VISIBLE'", 'r.es_oficial = false');
+        where.push("r.visibilidad = 'PUBLIC'", "r.estado_moderacion = 'VISIBLE'", 'r.es_oficial = false', routineDiscoverableSql('r'));
         if (env.CATALOG_HIDDEN_NAME_PREFIX) where.push(HIDDEN_PREFIX_CONDITION);
         break;
       case 'official':
-        where.push("r.visibilidad = 'PUBLIC'", "r.estado_moderacion = 'VISIBLE'", 'r.es_oficial = true');
+        where.push("r.visibilidad = 'PUBLIC'", "r.estado_moderacion = 'VISIBLE'", 'r.es_oficial = true', routineNotHiddenByViewerSql('r'));
         if (env.CATALOG_HIDDEN_NAME_PREFIX) where.push(HIDDEN_PREFIX_CONDITION);
         break;
       case 'all': {
@@ -129,6 +135,7 @@ export class RoutineCatalogRepository {
         const community = `(${[
           "r.visibilidad = 'PUBLIC'",
           "r.estado_moderacion = 'VISIBLE'",
+          routineDiscoverableSql('r'),
           ...(env.CATALOG_HIDDEN_NAME_PREFIX ? [HIDDEN_PREFIX_CONDITION] : []),
         ].join(' AND ')})`;
         where.push('r.es_oficial = false', `(r.created_by_user_id = :userId OR ${community})`);
@@ -146,7 +153,7 @@ export class RoutineCatalogRepository {
     }
     if (query.q) where.push('r.nombre ILIKE :q');
     if (query.objetivo) where.push('r.objetivo = :objetivo');
-    if (query.deMiGimnasio) where.push('r.tenant_id_autor = :tenantId');
+    if (query.deMiGimnasio) where.push(`${routineAuthorTenantSql('r')} = :viewerTenantId`);
     if (query.diasPorSemana) {
       where.push('(SELECT count(*) FROM training.routine_days dd WHERE dd.routine_id = r.id) = :diasPorSemana');
     }
@@ -169,13 +176,13 @@ export class RoutineCatalogRepository {
       type: QueryTypes.SELECT,
       replacements: {
         userId: viewer.id,
-        tenantId: viewer.tenantId,
         q: query.q ? `%${query.q.replace(/[%_\\]/gu, (c) => `\\${c}`)}%` : null,
         objetivo: query.objetivo ?? null,
         diasPorSemana: query.diasPorSemana ?? null,
         limitPlusOne: query.limit + 1,
         offset,
         hiddenPrefix: env.CATALOG_HIDDEN_NAME_PREFIX ?? null,
+        ...discoveryReplacements(viewer, env.DEFAULT_TENANT_ID),
       },
     });
   }
@@ -185,7 +192,7 @@ export class RoutineCatalogRepository {
    * `metadata.plantilla` (las 20 de REPP). Son pocas: se filtran en memoria con
    * la regla pura de `routine-recommendation.ts`.
    */
-  listOfficialTemplates(): Promise<OfficialTemplateRow[]> {
+  listOfficialTemplates(viewerId: string): Promise<OfficialTemplateRow[]> {
     return this.routineModel.sequelize!.query<OfficialTemplateRow>(
       `SELECT ${CARD_COLUMNS}, r.metadata,
               NULL::uuid AS share_id, NULL AS share_estado, NULL AS share_origen,
@@ -194,10 +201,11 @@ export class RoutineCatalogRepository {
          JOIN public.usuarios u ON u.id = r.created_by_user_id
         WHERE r.estado = 'ACTIVE' AND r.visibilidad = 'PUBLIC' AND r.estado_moderacion = 'VISIBLE'
           AND r.es_oficial = true AND r.metadata->>'plantilla' IS NOT NULL
+          AND ${routineNotHiddenByViewerSql('r')}
           ${env.CATALOG_HIDDEN_NAME_PREFIX ? `AND ${HIDDEN_PREFIX_CONDITION}` : ''}
         ORDER BY r.id
         LIMIT 200`,
-      { type: QueryTypes.SELECT, replacements: { hiddenPrefix: env.CATALOG_HIDDEN_NAME_PREFIX ?? null } },
+      { type: QueryTypes.SELECT, replacements: { hiddenPrefix: env.CATALOG_HIDDEN_NAME_PREFIX ?? null, viewerId } },
     );
   }
 

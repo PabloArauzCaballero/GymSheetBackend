@@ -98,6 +98,12 @@ export class ModerationService {
    *    (patrón de Tinder/Facebook). Es reversible y no sanciona a nadie: baja la
    *    cortina mientras llega un humano.
    */
+  /** What Explorar / the catalog shows from another gym can be reported too. */
+  private canReportRoutineAcrossGyms(reporter: AuthenticatedUser, input: CreateReportInput): Promise<boolean> {
+    if (input.targetKind !== ModerationTargetKind.ROUTINE) return Promise.resolve(false);
+    return this.repository.canReporterDiscoverRoutine(input.targetId, reporter);
+  }
+
   async report(reporter: AuthenticatedUser, input: CreateReportInput) {
     const owner = await this.repository.findContentOwner(
       input.targetKind,
@@ -130,7 +136,8 @@ export class ModerationService {
       !canReportComment ||
       (owner.tenantId !== reporter.tenantId &&
         !CROSS_TENANT_TARGETS.has(input.targetKind) &&
-        input.targetKind !== ModerationTargetKind.COMMENT)
+        input.targetKind !== ModerationTargetKind.COMMENT &&
+        !(await this.canReportRoutineAcrossGyms(reporter, input)))
     ) {
       throw new NotFoundException("No encontramos ese contenido.");
     }

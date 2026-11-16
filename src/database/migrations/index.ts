@@ -122,6 +122,7 @@ import { renameDefaultTenantReppMigration } from "./202611150002-rename-default-
 import { profileGoalSportPerformanceMigration } from "./202611150003-profile-goal-sport-performance";
 import { validateProfileGoalCheckMigration } from "./202611150004-validate-profile-goal-check";
 import { backfillProfileCompletionAwardsMigration } from "./202611150005-backfill-profile-completion-awards";
+import { moderationReportsReporterIndexMigration } from "./202611160001-moderation-reports-reporter-index";
 import { progressionStrikesAndCoachCardsMigration } from "./202610190002-progression-strikes-and-coach-cards";
 import { DatabaseMigration } from "./migration.types";
 
@@ -254,4 +255,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   profileGoalSportPerformanceMigration,
   validateProfileGoalCheckMigration,
   backfillProfileCompletionAwardsMigration,
+  moderationReportsReporterIndexMigration,
 ];

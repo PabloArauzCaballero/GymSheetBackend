@@ -30,7 +30,8 @@ import {
   RoutineResponse,
 } from './training.mapper';
 import { applyRoutineStills } from './routine-stills';
-import { routineWhereForScope, TrainingRepository } from './training.repository';
+import { routineListReplacements, routineWhereForScope, TrainingRepository } from './training.repository';
+import type { DiscoveryViewer } from './routine-discovery';
 import {
   AssignRoutineInput,
   SelfScheduleRoutineInput,
@@ -110,11 +111,12 @@ export class TrainingService {
   }
 
   async listRoutines(
-    userId: string,
+    viewer: DiscoveryViewer,
     input: ListRoutinesInput,
   ): Promise<RoutinePageResponse> {
+    const userId = viewer.id;
     const where = routineWhereForScope(input.scope, userId, input.goal);
-    const result = await this.repository.listRoutines(where, input.page, input.pageSize);
+    const result = await this.repository.listRoutines(where, input.page, input.pageSize, routineListReplacements(viewer));
     return {
       items: result.rows.map((routine) =>
         mapRoutineToResponse(routine, { id: userId, canEdit: routine.createdByUserId === userId }),

@@ -1,3 +1,4 @@
+import { RoutineCatalogRepository } from '../src/modules/training/routine-catalog.repository';
 import { bootE2eApp, createPersonalExercise, E2eApp } from './support/e2e-app';
 
 /** RF-01 · catálogo por pestañas: públicas, mías, compartidas; filtros, orden y cursor. */
@@ -7,6 +8,16 @@ describe('Routines v2 · catalog (e2e)', () => {
   let leo: { token: string; id: string };
   const tag = `cat${Date.now().toString(36)}`;
   const ids: Record<string, string> = {};
+  const fixtureIds: string[] = [];
+  /**
+   * The legacy list orders by `updated_at DESC, id ASC` over the whole shared
+   * base, and walking every page trips the rate limiter. Moving this run's few
+   * fixtures an hour ahead makes them page 1; afterAll puts them back.
+   */
+  const bumpToFirstPage = async (routineIds: string[]) => {
+    fixtureIds.push(...routineIds);
+    await e2e.sql(`UPDATE training.routines SET updated_at = now() + interval '1 hour' WHERE id IN (:ids)`, { ids: routineIds });
+  };
 
   beforeAll(async () => {
     e2e = await bootE2eApp();
@@ -25,9 +36,13 @@ describe('Routines v2 · catalog (e2e)', () => {
     await mk('pub3', 'Pública 3 días', [1, 3, 5], 'HIPERTROFIA', true);
     await mk('pub2', 'Pública 2 días', [2, 4], 'FUERZA', true);
     await mk('priv', 'Privada de Ana', [1], 'FUERZA', false);
+    await bumpToFirstPage(Object.values(ids));
   }, 90000);
 
   afterAll(async () => {
+    await e2e?.sql(`UPDATE training.routines SET updated_at = now() WHERE updated_at > now() AND id IN (:ids)`, {
+      ids: [...Object.values(ids), ...fixtureIds],
+    }).catch(() => undefined);
     await e2e.app?.close();
   });
 
@@ -176,20 +191,16 @@ describe('Routines v2 · catalog (e2e)', () => {
     const legacy = await e2e.as(ana.token).get('/routines?scope=mine&page=1&pageSize=50').expect(200);
     expect(legacy.body.data).toMatchObject({ page: 1, pageSize: 50 });
     expect(typeof legacy.body.data.total).toBe('number');
-    const templates = await e2e.as(leo.token).get('/routines?scope=templates&pageSize=50').expect(200);
+    const templates = await e2e.as(leo.token).get('/routines?scope=templates&pageSize=100').expect(200);
     expect(templates.body.data.items.some((r: { nombre: string }) => r.nombre.includes(tag))).toBe(true);
   });
   describe('compatibilidad: «Explorar rutinas» del móvil (scope=public&page&pageSize)', () => {
     type Full = { id: string; nombre: string; creadoPorUsuarioId: string; estado: string; ejercicios: unknown[]; dias: unknown[]; objetivo: string | null };
-    /** Recorre todas las páginas: la base de e2e es compartida y no se sabe en qué página cae cada rutina. */
+    /** The fixtures were moved to the top of `updated_at DESC, id ASC`, so page 1 holds them whatever the shared base contains. */
     const allPages = async (token: string, query: string): Promise<Full[]> => {
-      const items: Full[] = [];
-      for (let page = 1; ; page += 1) {
-        const res = await e2e.as(token).get(`/routines?${query}&pageSize=100&page=${page}`).expect(200);
-        expect(res.body.data).toMatchObject({ page, pageSize: 100 });
-        items.push(...(res.body.data.items as Full[]));
-        if (page >= res.body.data.totalPages) return items;
-      }
+      const res = await e2e.as(token).get(`/routines?${query}&pageSize=100&page=1`).expect(200);
+      expect(res.body.data).toMatchObject({ page: 1, pageSize: 100 });
+      return res.body.data.items as Full[];
     };
 
     it('recibe la rutina completa, nunca la privada de otra persona', async () => {
@@ -222,5 +233,198 @@ describe('Routines v2 · catalog (e2e)', () => {
       await e2e.as(leo.token).get('/routines?scope=public&pageSize=101&page=1').expect(400);
       await e2e.as(leo.token).get('/routines?scope=public&pageSize=20&page=1&goal=INVALID').expect(400);
     });
+  });
+
+  /**
+   * Discovery rule shared by the web catalog (cursor) and mobile «Explorar»
+   * (legacy page list), see src/modules/training/routine-discovery.ts. Every
+   * fixture is set up first and each viewer's lists are read once.
+   */
+  describe('descubrimiento: reportadas, bloqueos y gimnasio (web y móvil)', () => {
+    const t2 = `dsc${Date.now().toString(36)}`;
+    const otherGym = 'e2e-otro-gym';
+    const d: Record<string, string> = {};
+    type Person = { token: string; id: string };
+    type Views = { web: string[]; all: string[]; official: string[]; mine: string[]; mobile: string[]; templates: string[]; recommended: string[] };
+    const people: Record<string, Person> = {};
+    const views: Record<string, Views> = {};
+    const reportStatus: Record<string, number> = {};
+
+    const publish = async (who: Person, key: string): Promise<void> => {
+      const api = e2e.as(who.token);
+      const ex = await createPersonalExercise(api, `${t2} ${key}`);
+      const res = await api
+        .post('/routines')
+        .send({ nombre: `${t2} ${key}`, objetivo: 'FUERZA', dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: ex }] }] })
+        .expect(201);
+      d[key] = res.body.data.id;
+      await api.post(`/routines/${d[key]}/publish`).expect(201);
+    };
+    const makeOfficial = (key: string) =>
+      e2e.sql(`UPDATE training.routines SET es_oficial = true, metadata = metadata || jsonb_build_object('plantilla', CAST(:p AS text)) WHERE id = :id`, {
+        id: d[key],
+        p: `${t2}-${key}`,
+      });
+    const adultWithCrossGym = async (id: string, edad: number) => {
+      await e2e.sql(
+        `INSERT INTO public.perfiles_antropometricos (usuario_id, edad, peso_kg, estatura_cm, objetivo)
+         VALUES (:id, :edad, 70, 175, 'HIPERTROFIA') ON CONFLICT (usuario_id) DO UPDATE SET edad = :edad, fecha_nacimiento = NULL`,
+        { id, edad },
+      );
+      await e2e.sql(
+        `INSERT INTO social.profile_settings (user_id, profile_enabled, cross_gym_enabled) VALUES (:id, true, true)
+         ON CONFLICT (user_id) DO UPDATE SET profile_enabled = true, cross_gym_enabled = true`,
+        { id },
+      );
+    };
+
+    /** Ids the viewer gets from each path the apps use. */
+    const read = async (token: string, viewerId: string): Promise<Views> => {
+      const ids = (b: { data: Array<{ id: string }> | { items: Array<{ id: string }> } }) =>
+        (Array.isArray(b.data) ? b.data : b.data.items).map((i) => i.id);
+      const tab = async (q: string) => ids((await e2e.as(token).get(`/routines?${q}&q=${t2}&limit=50`).expect(200)).body);
+      // Page 1 only: the fixtures were bumped to the top of the legacy order (bumpToFirstPage).
+      const pages = async (scope: string) =>
+        ids((await e2e.as(token).get(`/routines?scope=${scope}&pageSize=100&page=1`).expect(200)).body);
+      // «Para ti» picks among these by profile; asserting on its source keeps the case deterministic.
+      const templates = await e2e.app.get(RoutineCatalogRepository).listOfficialTemplates(viewerId);
+      await e2e.as(token).get('/routines/recommended').expect(200);
+      return {
+        web: await tab('scope=public'),
+        all: await tab('scope=all'),
+        official: await tab('scope=official'),
+        mine: await tab('scope=public&deMiGimnasio=true'),
+        mobile: await pages('public'),
+        templates: await pages('templates'),
+        recommended: templates.map((row) => row.id),
+      };
+    };
+
+    beforeAll(async () => {
+      for (const label of ['rita', 'bea', 'tom', 'carla', 'pablo', 'mino', 'sus']) {
+        people[label] = await e2e.register(`dsc-${label}`);
+      }
+      const { rita, bea, tom, carla, pablo, mino, sus } = people;
+      await e2e.sql(`INSERT INTO public.tenants (id, nombre) VALUES (:id, 'Otro gimnasio') ON CONFLICT (id) DO NOTHING`, { id: otherGym });
+      await e2e.sql(`UPDATE public.usuarios SET tenant_id = :g WHERE id IN (:ids)`, { g: otherGym, ids: [carla.id, pablo.id, mino.id, sus.id] });
+      // Pablo and Sus are adults who opened cross-gym discovery; Mino too, but is 16; Carla did not.
+      await adultWithCrossGym(pablo.id, 30);
+      await adultWithCrossGym(sus.id, 30);
+      await adultWithCrossGym(mino.id, 16);
+
+      await publish(ana, 'reportada');
+      await publish(bea, 'de-bea');
+      await publish(carla, 'otro-gym');
+      await publish(pablo, 'otro-gym-consentida');
+      await publish(mino, 'otro-gym-menor');
+      await publish(sus, 'otro-gym-suspendida');
+      await publish(carla, 'oficial');
+      await publish(ana, 'oficial-reportada');
+      await publish(carla, 'oficial-otro-gym-reportada');
+      await publish(bea, 'oficial-bloqueada');
+      await publish(carla, 'sin-tenant-cuenta');
+      await publish(ana, 'sin-tenant-mismo-gym');
+      await Promise.all(['oficial', 'oficial-reportada', 'oficial-bloqueada', 'oficial-otro-gym-reportada'].map(makeOfficial));
+      // Rows without tenant_id_autor take the gym of the author's account (usuarios.tenant_id is NOT NULL,
+      // so the DEFAULT_TENANT_ID fallback only mirrors the session and cannot be reached with real rows).
+      await e2e.sql(`UPDATE training.routines SET tenant_id_autor = NULL WHERE id IN (:ids)`, { ids: [d['sin-tenant-cuenta'], d['sin-tenant-mismo-gym']] });
+      await e2e.sql(`UPDATE public.usuarios SET suspended_until = now() + interval '1 day' WHERE id = :id`, { id: sus.id });
+
+      // Cross-gym reports: allowed exactly when the reporter can discover the routine.
+      for (const key of ['reportada', 'oficial-reportada', 'oficial-otro-gym-reportada', 'otro-gym-consentida']) {
+        reportStatus[key] = (await e2e.as(rita.token).post('/me/reports').send({ targetKind: 'ROUTINE', targetId: d[key], reason: 'SPAM' })).status;
+      }
+      reportStatus['otro-gym-repetida'] = (
+        await e2e.as(rita.token).post('/me/reports').send({ targetKind: 'ROUTINE', targetId: d['oficial-otro-gym-reportada'], reason: 'PLAGIO' })
+      ).status;
+      reportStatus['otro-gym'] = (await e2e.as(rita.token).post('/me/reports').send({ targetKind: 'ROUTINE', targetId: d['otro-gym'], reason: 'SPAM' })).status;
+      await e2e.as(rita.token).post('/me/blocks').send({ targetUserId: bea.id }).expect(201);
+      await e2e.as(bea.token).post('/me/blocks').send({ targetUserId: tom.id }).expect(201);
+
+      await bumpToFirstPage(Object.values(d));
+      for (const label of ['rita', 'tom', 'carla', 'pablo']) views[label] = await read(people[label].token, people[label].id);
+      views.leo = await read(leo.token, leo.id);
+    }, 180000);
+
+    afterAll(async () => {
+      // Keep the shared base's «Para ti» candidates to the real REPP templates.
+      await e2e.sql(`UPDATE training.routines SET es_oficial = false, metadata = metadata - 'plantilla' WHERE id IN (:ids)`, {
+        ids: [d.oficial, d['oficial-reportada'], d['oficial-bloqueada'], d['oficial-otro-gym-reportada']].filter(Boolean),
+      });
+    });
+
+    const community = (v: Views) => [v.web, v.all, v.mobile, v.templates];
+    const officialPaths = (v: Views) => [v.official, v.mobile, v.templates, v.recommended];
+
+    it('quien reportó una rutina deja de verla; las demás personas la siguen viendo', () => {
+      for (const list of community(views.rita)) expect(list).not.toContain(d.reportada);
+      for (const list of community(views.leo)) expect(list).toContain(d.reportada);
+    }, 30000);
+
+    it('el bloqueo es mutuo: ni quien bloqueó ni quien fue bloqueado ve las rutinas del otro', () => {
+      for (const list of [...community(views.rita), ...community(views.tom)]) expect(list).not.toContain(d['de-bea']);
+      for (const list of community(views.leo)) expect(list).toContain(d['de-bea']);
+    }, 30000);
+
+    it('reportar o bloquear también oculta una oficial: pestaña Oficiales, móvil, templates y «Para ti»', () => {
+      for (const list of officialPaths(views.rita)) {
+        expect(list).not.toContain(d['oficial-reportada']);
+        expect(list).not.toContain(d['oficial-bloqueada']);
+      }
+      for (const list of officialPaths(views.tom)) expect(list).not.toContain(d['oficial-bloqueada']);
+      for (const list of officialPaths(views.leo)) {
+        expect(list).toContain(d['oficial-reportada']);
+        expect(list).toContain(d['oficial-bloqueada']);
+      }
+    }, 30000);
+
+    it('otro gimnasio: solo con consentimiento de un adulto activo y sin suspensión', async () => {
+      for (const list of community(views.leo)) {
+        expect(list).not.toContain(d['otro-gym']);
+        expect(list).toContain(d['otro-gym-consentida']);
+        expect(list).not.toContain(d['otro-gym-menor']);
+        expect(list).not.toContain(d['otro-gym-suspendida']);
+      }
+      // Its own gym still discovers them, and the author keeps hers in «Todas».
+      for (const list of community(views.pablo)) {
+        expect(list).toContain(d['otro-gym']);
+        expect(list).toContain(d['otro-gym-menor']);
+      }
+      expect(views.carla.all).toContain(d['otro-gym']);
+      // «De mi gimnasio» narrows further to the viewer's gym.
+      expect(views.leo.mine).not.toContain(d['otro-gym-consentida']);
+      // Listing is not access: the detail by id is unchanged.
+      await e2e.as(leo.token).get(`/routines/${d['otro-gym']}`).expect(200);
+    }, 30000);
+
+    it('sin tenant_id_autor, el gimnasio sale de la cuenta del autor (también en «De mi gimnasio»)', () => {
+      for (const list of [...community(views.leo), views.leo.mine]) {
+        expect(list).not.toContain(d['sin-tenant-cuenta']);
+        expect(list).toContain(d['sin-tenant-mismo-gym']);
+      }
+      for (const list of [...community(views.pablo), views.pablo.mine]) {
+        expect(list).toContain(d['sin-tenant-cuenta']);
+        expect(list).not.toContain(d['sin-tenant-mismo-gym']);
+      }
+    }, 30000);
+
+    it('lo que se ve desde otro gimnasio se puede denunciar, y desaparece para quien denunció', () => {
+      expect(reportStatus).toEqual({
+        reportada: 201,
+        'oficial-reportada': 201,
+        'oficial-otro-gym-reportada': 201,
+        'otro-gym-consentida': 201,
+        'otro-gym-repetida': 409, // a repeated open report still answers 409
+        'otro-gym': 404, // not discoverable from the reporter's gym
+      });
+      for (const list of officialPaths(views.rita)) expect(list).not.toContain(d['oficial-otro-gym-reportada']);
+      for (const list of community(views.rita)) expect(list).not.toContain(d['otro-gym-consentida']);
+      for (const list of officialPaths(views.leo)) expect(list).toContain(d['oficial-otro-gym-reportada']);
+    }, 30000);
+
+    it('una rutina oficial de REPP se ve desde cualquier gimnasio', () => {
+      for (const list of officialPaths(views.leo)) expect(list).toContain(d.oficial);
+      expect(views.leo.web).not.toContain(d.oficial); // officials have their own tab on the web
+    }, 30000);
   });
 });

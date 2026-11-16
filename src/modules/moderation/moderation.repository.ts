@@ -3,6 +3,12 @@ import { InjectModel } from "@nestjs/sequelize";
 import { Op, QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { exerciseVisibleSql, routineVisibleSql } from "../../common/sql/content-visibility";
+import { env } from "../../config/env";
+import {
+  discoveryReplacements,
+  DiscoveryViewer,
+  routineWithinViewerReachSql,
+} from "../training/routine-discovery";
 import { ModerationReportModel } from "./report.model";
 import { UserStrikeModel } from "./user-strike.model";
 import {
@@ -489,6 +495,29 @@ export class ModerationRepository {
       {
         type: QueryTypes.SELECT,
         replacements: { messageId, reporterUserId },
+      },
+    );
+    return rows[0]?.allowed === true;
+  }
+
+  /**
+   * A routine from another gym is reportable exactly when the reporter can
+   * discover it in Explorar / the catalog: official, or by an author who may be
+   * shown across gyms (training/routine-discovery.ts). Reports and blocks are
+   * left out on purpose: a repeated report must still answer 409, and someone
+   * who blocked the author may still report what they saw.
+   */
+  async canReporterDiscoverRoutine(routineId: string, reporter: DiscoveryViewer): Promise<boolean> {
+    const rows = await this.sequelize.query<{ allowed: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM training.routines r
+          WHERE r.id = :routineId AND r.estado = 'ACTIVE' AND r.estado_moderacion = 'VISIBLE'
+            AND r.visibilidad IN ('PUBLIC','TEMPLATE')
+            AND ${routineWithinViewerReachSql("r")}
+       ) AS allowed`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: { routineId, ...discoveryReplacements(reporter, env.DEFAULT_TENANT_ID) },
       },
     );
     return rows[0]?.allowed === true;

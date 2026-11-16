@@ -85,7 +85,7 @@ export class RoutineCatalogService {
   async recommended(viewer: { id: string }, limit: number): Promise<RecommendedRoutineResponse[]> {
     const [profileRow, templates] = await Promise.all([
       this.repository.findRecommendationProfile(viewer.id),
-      this.repository.listOfficialTemplates(),
+      this.repository.listOfficialTemplates(viewer.id),
     ]);
     const picks = recommendRoutines(this.toProfile(profileRow), templates.map((row) => this.toCandidate(row)), limit);
     return picks.map(({ candidate, motivo }) => ({

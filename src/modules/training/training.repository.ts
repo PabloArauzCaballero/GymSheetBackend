@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Op, QueryTypes, Transaction, WhereOptions } from 'sequelize';
+import { literal, Op, QueryTypes, Transaction, WhereOptions } from 'sequelize';
 import {
   ExerciseMediaStatus,
   ExerciseStatus,
@@ -20,6 +20,7 @@ import { RoutineDayModel } from './routine-day.model';
 import { RoutineExerciseModel } from './routine-exercise.model';
 import { RoutineModel } from './routine.model';
 import { authorPhotoSql, coverSql } from './routine-catalog.repository';
+import { discoveryReplacements, DiscoveryViewer, routineDiscoverableSql } from './routine-discovery';
 import { ExerciseStill } from './routine-stills';
 import type { RoutineAuthor } from './training.mapper';
 import {
@@ -60,6 +61,14 @@ const routineInclude = {
   include: [exercisesInclude, daysInclude],
 };
 
+/** Alias Sequelize gives the routines table in `listRoutines` (the model name). */
+export const ROUTINE_LIST_ALIAS = '"RoutineModel"';
+
+/**
+ * Where-clause of the legacy page list. `public`/`templates` apply the same
+ * discovery rule as the catalog (`routine-discovery.ts`); its parameters come
+ * from `routineListReplacements`.
+ */
 export function routineWhereForScope(
   scope: 'mine' | 'templates' | 'public',
   userId: string,
@@ -77,7 +86,12 @@ export function routineWhereForScope(
     moderationState: 'VISIBLE',
     ...(goal ? { goal } : {}),
     ...(prefix ? { name: { [Op.notLike]: `${prefix.replace(/[%_\\]/gu, (c) => `\\${c}`)}%` } } : {}),
+    [Op.and]: [literal(routineDiscoverableSql(ROUTINE_LIST_ALIAS))],
   };
+}
+
+export function routineListReplacements(viewer: DiscoveryViewer): Record<string, unknown> {
+  return discoveryReplacements(viewer, env.DEFAULT_TENANT_ID);
 }
 
 @Injectable()
@@ -218,15 +232,19 @@ export class TrainingRepository {
     where: WhereOptions,
     page: number,
     pageSize: number,
+    replacements: Record<string, unknown>,
   ): Promise<RoutinePage> {
     return this.routineModel.findAndCountAll({
       where,
+      replacements,
       distinct: true,
       limit: pageSize,
       offset: (page - 1) * pageSize,
       include: [exercisesInclude, daysInclude],
       order: [
         ['updatedAt', 'DESC'],
+        // Tiebreak: equal timestamps must not swap between pages.
+        ['id', 'ASC'],
         [{ model: RoutineExerciseModel, as: 'exercises' }, 'order', 'ASC'],
       ],
     });

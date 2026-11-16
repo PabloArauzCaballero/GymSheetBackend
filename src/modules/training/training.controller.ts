@@ -77,7 +77,7 @@ export class TrainingController {
   list(@CurrentUser() user: AuthenticatedUser, @Query() rawQuery: Record<string, unknown>) {
     if (isLegacyRoutineListQuery(rawQuery)) {
       const query = new ZodValidationPipe(listRoutinesSchema).transform(rawQuery, { type: 'query' }) as ListRoutinesInput;
-      return this.trainingService.listRoutines(user.id, query);
+      return this.trainingService.listRoutines(user, query);
     }
     const query = new ZodValidationPipe(routineCatalogQuerySchema).transform(rawQuery, { type: 'query' }) as RoutineCatalogQuery;
     return this.catalogService.list(user, query);
