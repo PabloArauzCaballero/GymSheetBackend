@@ -22,6 +22,7 @@ tags: [backend, reference, config]
 | `API_PREFIX` | Prefijo global de rutas | No | `api` |
 | `CORS_ORIGINS` | Allowlist de orígenes CORS | Sí | `https://app.example.com` |
 | `TRUST_PROXY` | Confianza en proxy inverso | No | `1` |
+| `TRUST_PROXY_HOPS` | Saltos de proxy de confianza cuando `TRUST_PROXY` está activo (0–5); la BFF web reenvía `X-Forwarded-For` | No | `1` |
 | `REQUEST_BODY_LIMIT` | Límite de tamaño de body | No | `1mb` |
 | `LOG_LEVEL` | Nivel de logs | No | `info` |
 | `BUSINESS_TIME_ZONE` | Zona horaria de negocio | No | `America/Guayaquil` |

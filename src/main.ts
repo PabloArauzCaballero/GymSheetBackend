@@ -28,7 +28,7 @@ async function bootstrap(): Promise<void> {
   expressApplication.disable('x-powered-by');
 
   if (env.TRUST_PROXY) {
-    expressApplication.set('trust proxy', 1);
+    expressApplication.set('trust proxy', env.TRUST_PROXY_HOPS);
   }
 
   application.setGlobalPrefix(env.API_PREFIX);
