@@ -124,6 +124,7 @@ import { emailVerificationDevicesIdentitiesMigration } from "./202611170101-emai
 import { DatabaseMigration } from "./migration.types";
 import { signupAntibotMigration } from "./202611170201-signup-antibot";
 import { sessionsValidAfterMigration } from "./202611170301-sessions-valid-after";
+import { notificationSecretMessagesMigration } from "./202611170401-notification-secret-messages";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
 export const databaseMigrations: DatabaseMigration[] = [
@@ -254,4 +255,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   emailVerificationDevicesIdentitiesMigration,
   signupAntibotMigration,
   sessionsValidAfterMigration,
+  notificationSecretMessagesMigration,
 ];

@@ -41,6 +41,8 @@ export class NotificationRepository {
     return this.messages.findAndCountAll({
       where: {
         recipientUserId: userId,
+        // Credential-carrying messages never reach the in-app inbox.
+        secret: false,
         ...(filters.estado ? { status: filters.estado } : {}),
       },
       limit: filters.pageSize,
@@ -51,13 +53,13 @@ export class NotificationRepository {
 
   countUnreadForUser(userId: string) {
     return this.messages.count({
-      where: { recipientUserId: userId, readAt: null },
+      where: { recipientUserId: userId, readAt: null, secret: false },
     });
   }
 
   findForUser(id: string, userId: string) {
     return this.messages.findOne({
-      where: { id, recipientUserId: userId },
+      where: { id, recipientUserId: userId, secret: false },
     });
   }
 

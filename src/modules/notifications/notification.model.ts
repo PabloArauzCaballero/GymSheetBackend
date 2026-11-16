@@ -60,6 +60,14 @@ export class NotificationModel extends Model {
   @Column({ type: DataType.JSONB, allowNull: false })
   declare metadata: Record<string, unknown>;
 
+  /**
+   * Carries a credential (PIN): delivered by email only, never listed in the
+   * in-app inbox, body redacted once delivered.
+   */
+  @Default(false)
+  @Column({ type: DataType.BOOLEAN, allowNull: false })
+  declare secret: boolean;
+
   @BelongsTo(() => UserModel)
   declare recipient?: UserModel;
 
