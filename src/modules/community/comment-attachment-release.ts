@@ -1,5 +1,7 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
+import { QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
+import { hasOpenReportSql } from "../../common/moderation/open-report.sql";
 import { ownMediaKey } from "../../common/media/own-media-key";
 import { env } from "../../config/env";
 
@@ -45,15 +47,28 @@ export function commentAttachmentKey(
  */
 @Injectable()
 export class CommentAttachmentRelease {
+  private readonly logger = new Logger(CommentAttachmentRelease.name);
+
   constructor(
     private readonly sequelize: Sequelize,
     private readonly references: MediaReferencesRepository,
     private readonly mediaRelease: MediaReleaseService,
   ) {}
 
+  /**
+   * Under an OPEN report the comment is evidence: it becomes BORRADO_AUTOR
+   * (no listing shows it, its author included) but keeps its text and
+   * attachment, and no release is requested. The reported-content retention
+   * wipes it and releases the file once every report on it is closed.
+   */
   async removeByAuthor(comment: ContentCommentModel): Promise<void> {
     await this.sequelize.transaction(async (transaction) => {
       await comment.reload({ transaction, lock: transaction.LOCK.UPDATE });
+      if (await this.hasOpenReport(comment.id, transaction)) {
+        await comment.update({ status: "BORRADO_AUTOR" }, { transaction });
+        this.logger.log({ event: "community_comment.held_as_evidence", commentId: comment.id });
+        return;
+      }
       const storageKey = commentAttachmentKey(comment.attachmentUrl, comment.authorId);
       await comment.update(WIPED_COMMENT, { transaction });
       if (storageKey && !(await this.references.isReferenced(storageKey, transaction))) {
@@ -63,5 +78,13 @@ export class CommentAttachmentRelease {
         );
       }
     });
+  }
+
+  private async hasOpenReport(commentId: string, transaction: Transaction): Promise<boolean> {
+    const [row] = await this.sequelize.query<{ open: boolean }>(
+      `SELECT ${hasOpenReportSql("COMMENT", ":commentId")} AS open`,
+      { type: QueryTypes.SELECT, replacements: { commentId }, transaction },
+    );
+    return row?.open === true;
   }
 }

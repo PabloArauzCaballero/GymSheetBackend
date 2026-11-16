@@ -84,6 +84,7 @@ describe('ModerationService', () => {
       closeAutoHideReview: jest.fn().mockResolvedValue(false),
     };
     const chatEvents = { emitConversationRevoked: jest.fn() };
+    const noticeEmails = { enqueue: jest.fn().mockResolvedValue(true) };
     const autoHide = new ModerationAutoHideService(
       sequelize as never,
       repository as never,
@@ -100,11 +101,12 @@ describe('ModerationService', () => {
       minors as never,
       evidence as never,
       autoHide,
+      noticeEmails as never,
       undefined,
       undefined,
       chatEvents as never,
     );
-    return { service, repository, notifications, connections, passes, sequelize, minors, evidence, safeguards, chatEvents };
+    return { service, repository, notifications, connections, passes, sequelize, minors, evidence, safeguards, chatEvents, noticeEmails };
   }
 
   const reportInput = {
@@ -392,6 +394,35 @@ describe('ModerationService', () => {
       expect(sanctionNotice?.body).toContain('Motivo: Contenido sexual (contenido sexual o desnudos');
       expect(sanctionNotice?.body).not.toContain('nota interna');
       expect(sanctionNotice?.metadata).toMatchObject({ reason: 'CONTENIDO_SEXUAL', sanction: 'SUSPENSION', days: 1 });
+    });
+
+    it('una suspensión o una expulsión también se avisan por correo, una vez por falta; una advertencia no', async () => {
+      const suspended = build({ countActiveStrikes: jest.fn().mockResolvedValue(1) });
+      await suspended.service.resolve(moderator, ModerationTargetKind.STORY, 'story-1', {
+        hideContent: true, sanction: true, confirmMinor: false, note: 'nota interna',
+      });
+      expect(suspended.noticeEmails.enqueue).toHaveBeenCalledTimes(1);
+      const [email] = suspended.noticeEmails.enqueue.mock.calls[0] as [{ recipientUserId: string; subject: string; body: string; deduplicationKey: string }];
+      expect(email).toMatchObject({
+        recipientUserId: 'author-1',
+        subject: 'Tu cuenta ha sido suspendida',
+        deduplicationKey: 'moderation.sanction:strike-1',
+      });
+      expect(email.body).toContain('Motivo: Contenido sexual');
+      expect(email.body).not.toContain('nota interna');
+
+      const expelled = build({ countActiveStrikes: jest.fn().mockResolvedValue(10) });
+      const result = await expelled.service.resolve(moderator, ModerationTargetKind.STORY, 'story-1', {
+        hideContent: true, sanction: true, confirmMinor: false, note: null,
+      });
+      expect(result.sanction).toMatchObject({ kind: StrikeKind.EXPULSION });
+      expect(expelled.noticeEmails.enqueue).toHaveBeenCalledWith(expect.objectContaining({ subject: 'Tu cuenta ha sido cerrada' }), undefined);
+
+      const warned = build({ countActiveStrikes: jest.fn().mockResolvedValue(0) });
+      await warned.service.resolve(moderator, ModerationTargetKind.STORY, 'story-1', {
+        hideContent: true, sanction: true, confirmMinor: false, note: null,
+      });
+      expect(warned.noticeEmails.enqueue).not.toHaveBeenCalled();
     });
 
     it('el moderador restaura lo oculto por umbral, cierra la revisión y avisa a la autora', async () => {

@@ -12,9 +12,15 @@ import {
 const OWN = "t.user_id = :userId";
 const OWN_ES = "t.usuario_id = :userId";
 
-/** Conversations of the person with the platform or the gym (no third party's history). */
+/**
+ * Conversations of the person with the platform or the gym (no third party's
+ * history). The person is the member side (`can_write = false`, see
+ * `createSystemConversation`): when a gym admin's account closes, the
+ * members' chats with the gym it answered stay theirs.
+ */
 const systemConversation = (alias: string): string => `${alias}.system_kind IS NOT NULL
-  AND EXISTS (SELECT 1 FROM chat.participants p WHERE p.conversation_id = ${alias}.id AND p.user_id = :userId)
+  AND EXISTS (SELECT 1 FROM chat.participants p
+               WHERE p.conversation_id = ${alias}.id AND p.user_id = :userId AND p.can_write = false)
   AND NOT EXISTS (SELECT 1 FROM chat.messages m WHERE m.conversation_id = ${alias}.id AND ${reported("CHAT_MESSAGE", "m.id")})`;
 const IN_SYSTEM_CONVERSATION = `t.conversation_id IN (SELECT c.id FROM chat.conversations c WHERE ${systemConversation("c")})`;
 
@@ -55,10 +61,13 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
   anonymize("auth.consents", "Consentimientos de datos sensibles", OWN, "revoked_at = COALESCE(t.revoked_at, now())",
     "Se revocan todos; queda la prueba de qué aceptaste y cuándo."),
 
-  // Notifications (pending deliveries first: their notice is about to go).
+  // Notifications (pending deliveries first: their notice is about to go). A
+  // self-contained notice email marked `survivesClosure` (the notice of this
+  // very closure, decided by moderation) is the one pending delivery kept.
   { ...del("integration.outbox_jobs", "Avisos pendientes de envío",
     `t.queue_name = 'notifications.delivery' AND t.status IN ('PENDING', 'FAILED')
-     AND t.payload->>'notificationId' IN (SELECT m.id::text FROM notifications.messages m WHERE m.recipient_user_id = :userId)`),
+     AND (t.payload->>'notificationId' IN (SELECT m.id::text FROM notifications.messages m WHERE m.recipient_user_id = :userId)
+          OR (t.payload->>'recipientUserId' = CAST(:userId AS text) AND t.payload->>'survivesClosure' = 'false'))`),
     internal: true },
   del("notifications.messages", "Avisos y correos recibidos", "t.recipient_user_id = :userId"),
   del("notifications.device_tokens", "Permisos de notificación push", OWN),
@@ -77,7 +86,10 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
   del("public.sesiones_entrenamiento", "Sesiones, ejercicios y series registradas", OWN_ES),
   del("training.user_exercise_preferences", "Preferencias de ejercicios", OWN_ES),
   del("training.routine_shares", "Rutinas compartidas", "t.propietario_id = :userId OR t.invitado_id = :userId"),
-  del("training.routine_assignments", "Rutinas asignadas", "t.cliente_user_id = :userId OR t.asignado_por_user_id = :userId"),
+  del("training.routine_assignments", "Rutinas asignadas", "t.cliente_user_id = :userId"),
+  keep("training.routine_assignments", "Rutinas que asignaste a socios",
+    "t.asignado_por_user_id = :userId AND t.cliente_user_id <> :userId",
+    "Son parte del plan de cada socio; quedan a nombre de «Cuenta cerrada»."),
   del("training.routine_progress_download_audits", "Descargas de tu progreso", OWN),
   anonymize("training.routines", "Tu nombre en copias de tus rutinas", "t.atribucion->>'authorId' = :userId",
     `atribucion = jsonb_set(jsonb_set(t.atribucion, '{authorId}', 'null'::jsonb), '{authorName}', '"Cuenta cerrada"'::jsonb)`,
@@ -188,6 +200,10 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
     "Registro de la revisión de moderación del contenido ocultado; no lleva tu nombre ni tu correo."),
 
   // The gym's records (the gym is responsible; REPP only processes them).
+  anonymize("membership.staff_profiles", "Ficha de personal del gimnasio", OWN,
+    `employment_status = 'TERMINATED', terminated_on = GREATEST(t.hired_on, COALESCE(t.terminated_on, CURRENT_DATE)),
+     unlimited_access = false, metadata = '{}'::jsonb, updated_at = now()`,
+    "El gimnasio conserva el puesto y las fechas de la relación laboral; la ficha queda dada de baja."),
   anonymize("membership.customer_profiles", "Ficha de socio del gimnasio", OWN,
     "phone_number = NULL, notes = NULL, metadata = '{}'::jsonb, updated_at = now()", GYM_RECORD),
   anonymize("membership.memberships", "Membresías", OWN, "notes = NULL, updated_at = now()", GYM_RECORD),

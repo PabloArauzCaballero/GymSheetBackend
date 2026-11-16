@@ -14,6 +14,7 @@ import { WorkoutSessionModel } from '../workouts/workout-session.model';
 import { WorkoutSessionExerciseModel } from '../workouts/workout-session-exercise.model';
 import { WorkoutSetModel } from '../workouts/workout-set.model';
 import { IntegrationModule } from '../integration/integration.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { AccountExportController } from './account-export.controller';
 import { AccountExportRepository } from './account-export.repository';
 import { AccountExportService } from './account-export.service';
@@ -28,6 +29,7 @@ import { RoutineProgressDownloadAuditModel } from './routine-progress-download-a
     WorkoutsModule,
     EquipmentModule,
     IntegrationModule,
+    NotificationsModule,
     SequelizeModule.forFeature([
       RoutineProgressDownloadAuditModel,
       RoutineModel,

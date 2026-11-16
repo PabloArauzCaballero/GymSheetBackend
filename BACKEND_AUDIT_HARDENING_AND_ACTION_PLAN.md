@@ -907,6 +907,16 @@ Aflorados por F-001 y resueltos sin cambio de comportamiento:
 | `src/workers/worker-loop.ts` | `prefer-const` sobre binding con referencia circular legítima | Excepción documentada en línea |
 | `.gitignore` | `graphify-out/` sin ignorar | Añadido |
 
+### Revisión legal 2 (franja 4): lo que los textos prometen, en código
+
+| Hallazgo | Corrección | Prueba |
+|---|---|---|
+| B1 · la persona sancionada no leía el motivo | `ACCOUNT_SUSPENDED` lleva `details.reason { code, label, text }` (login, alta y cada petición); la expulsión responde `403 ACCOUNT_BANNED` con el motivo sólo tras la contraseña o Google/Apple (`SanctionStatusService`, marcador: falta `EXPULSION` + `INACTIVO` sin `closed_at`); suspensión, expulsión y el flujo de menor se envían además por correo (`NoticeEmailService`, trabajo autocontenido en `notifications.delivery`; el del cierre de un menor sobrevive al cierre) | `test/sanction-notices.e2e-spec.ts`, `test/minor-reports-closure.e2e-spec.ts` |
+| B6 · la copia de datos lista no se avisaba | `READY` y `FAILED` avisan una vez por exportación, en la app (con `downloadPath`) y por correo, en la transacción del cambio de estado | `test/account-export-email.e2e-spec.ts` |
+| I2 · borrar contenido denunciado destruía la evidencia | foto, historia y comentario con denuncia abierta se ocultan para todos y se conservan (migración `202611190101`, `author_deleted_at`); la retención de contenido denunciado (180 días) o la purga de historias los borran después; misma regla SQL de «denuncia abierta» (`hasOpenReportSql`) | `test/reported-content-lifecycle.e2e-spec.ts` |
+| I9 · el personal no tenía vía de cierre | `POST /admin/users/:id/close` (ADMIN del mismo gimnasio, auditado; 404 ajeno, 403 propio o último ADMIN); el cierre conserva rutinas asignadas a socios y sus chats con el gimnasio | `test/staff-closure.e2e-spec.ts` |
+| I1 · retención de una cuenta expulsada | sin purga ni plazo en código: documentado en ADR-0014 §6 (R-007) | — |
+
 ---
 
 ## 5. Matriz de alcance funcional (dominio real: gimnasio)
@@ -1039,6 +1049,15 @@ ciclo de vida completo (`revoked_at`). El recorrido dato → evento → job → 
 | **Solución definitiva** | Implementar refresh + revocación, o retirar las variables no utilizadas. |
 | **Responsable** | Propietario |
 | **Dependencia externa** | Ninguna |
+
+### R-007 · Cuenta expulsada sin plazo de borrado
+
+| Campo | Valor |
+|---|---|
+| **Descripción** | La expulsión deja la cuenta `INACTIVO` con todos sus datos; ningún proceso la cierra ni la purga (ADR-0014 §6). |
+| **Impacto** | **Medio (legal).** Los textos no pueden fijar un plazo de retención; los derechos de esas cuentas se atienden a mano por el contacto de privacidad. |
+| **Solución definitiva** | Decidir el plazo y añadir la purga (cierre por moderación tras el plazo, conservando las faltas como hoy hace `closed_account_sanctions`). |
+| **Responsable** | Propietario |
 
 ### R-006 · ~~Readiness no verifica el estado de migraciones~~ — **CERRADO**
 

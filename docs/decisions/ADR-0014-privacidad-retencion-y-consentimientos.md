@@ -113,6 +113,36 @@ con `null`.
   los textos no pueden prometer el borrado del archivo en esa configuración. El cierre de cuenta usa
   la misma cola, un trabajo por archivo (ADR-0015).
 
+### 6. Cuenta expulsada: qué se conserva hoy (estado del código, 2026-11-19)
+
+Se documenta para que los textos (I1 de la revisión legal 2) no prometan un plazo que no existe:
+
+- La expulsión (`moderation.service.ts`, sanción `EXPULSION`) sólo pone `usuarios.estado = 'INACTIVO'`
+  y deja la falta en `moderation.user_strikes`. **No ejecuta el cierre de cuenta** ni anonimiza la
+  fila: perfil, entrenamientos, fotos, mensajes, consentimientos y el resto del mapa de datos quedan
+  almacenados tal cual, sin `closed_at`.
+- **No hay purga ni plazo de borrado de la cuenta expulsada**: ningún comando ni worker cierra,
+  anonimiza o borra la cuenta, su perfil ni su contenido por estar expulsada. Las faltas
+  (`user_strikes`) tampoco se purgan.
+- Sólo siguen corriendo sobre sus datos las mismas purgas que sobre cualquier cuenta, ninguna ligada
+  a la expulsión: las historias vencidas (24 h) las borra la purga de historias cuando no tienen
+  denuncia abierta; los mensajes temporales de chat, la purga de mensajes temporales; la copia de
+  evidencia de un mensaje denunciado, 180 días después de cerrar su última denuncia; una foto o un
+  comentario que borró con una denuncia abierta (retención de evidencia, I2), 180 días después de cerrar la última denuncia;
+  `privacy-retention` anula los HMAC de IP a los 90 días; las copias de exportación caducan a los
+  7 días; los trabajos completados del outbox se podan como los de todos.
+- La persona no puede ejercer derechos desde la app: el login responde `403 ACCOUNT_BANNED` con el
+  motivo, y una sesión anterior ya no es válida (401). No existe endpoint que cierre una cuenta de
+  socio expulsada: `POST /admin/users/:id/close` es sólo para personal (`STAFF_CLOSURE_NOT_STAFF`) y
+  el cierre por moderación sólo lo dispara un menor confirmado. Por eso los derechos de una cuenta
+  suspendida o expulsada se ejercen por el contacto de privacidad, y su atención es hoy un proceso
+  manual fuera del código.
+- El aviso sí llega: la expulsión se notifica en la app y por correo a la dirección registrada, con
+  el motivo (B1).
+
+Fijar un plazo de retención para estas cuentas exige una decisión de producto y una purga nueva;
+mientras no exista, los textos no deben afirmar uno.
+
 ## Consecuencias y reversión
 
 - Rollback de `202611180201`: elimina `auth.consents`, `content_sha256`, los índices y `ip_hmac`, y

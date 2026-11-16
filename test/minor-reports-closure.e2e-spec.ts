@@ -120,4 +120,29 @@ describe('Minor reports and moderation-decided closure (e2e)', () => {
       ticket: ticket.body.data.ticket as string, email, password: PASSWORD, nombreCompleto: 'Ya adulta', ...E2E_SIGNUP_FIELDS,
     }).expect(201);
   });
+
+  it('the suspension and the closure are emailed; the closure email survives the closure that erases the inbox', async () => {
+    const [first, second, minor] = [await e2e.register('mr-mail-first'), await e2e.register('mr-mail-second'), await e2e.register('mr-mail-minor')];
+    const email = (await selectRows<{ email: string }>(e2e, 'SELECT email FROM public.usuarios WHERE id = :id', { id: minor.id }))[0].email;
+    const noticeEmails = () => selectRows<{ status: string; payload: { to: string; subject: string; body: string; survivesClosure: boolean } }>(e2e,
+      `SELECT status, payload FROM integration.outbox_jobs
+        WHERE queue_name = 'notifications.delivery' AND aggregate_id = :id AND payload->>'kind' = 'NOTICE_EMAIL'
+        ORDER BY created_at`, { id: minor.id });
+    await reportMinor(first.token, minor.id).expect(201);
+    await reportMinor(second.token, minor.id).expect(201);
+    const [suspension] = await noticeEmails();
+    expect(suspension.payload).toMatchObject({ to: email, survivesClosure: false });
+    expect(suspension.payload.body).toContain('Menor de edad');
+
+    await resolveCase(e2e, moderator, { kind: 'USER', id: minor.id }, { confirmMinor: true });
+    await expect(runWorkerUntilDone(minor.id)).resolves.toBe('COMPLETED');
+
+    // The in-app notices went with the account; the pending suspension email too.
+    expect(await selectRows(e2e, 'SELECT 1 FROM notifications.messages WHERE recipient_user_id = :id', { id: minor.id })).toEqual([]);
+    const remaining = await noticeEmails();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]).toMatchObject({ status: 'PENDING', payload: { to: email, survivesClosure: true } });
+    expect(remaining[0].payload.subject).toContain('Tu cuenta ha sido cerrada');
+    expect(remaining[0].payload.body).toContain('borramos sus datos');
+  });
 });

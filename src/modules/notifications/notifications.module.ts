@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
+import { BrandingModule } from '../../common/branding/branding.module';
 import { BusinessDateService } from '../../common/time/business-date.service';
 import { env } from '../../config/env';
 import { IntegrationModule } from '../integration/integration.module';
@@ -31,9 +32,11 @@ import { NotificationRepository } from './notification.repository';
 import { NotificationScheduleService } from './notification-schedule.service';
 import { NotificationService } from './notification.service';
 import { NotificationModel } from './notification.model';
+import { NoticeEmailService } from './notice-email.service';
 
 @Module({
   imports: [
+    BrandingModule,
     IntegrationModule,
     SequelizeModule.forFeature([
       NotificationModel,
@@ -48,6 +51,7 @@ import { NotificationModel } from './notification.model';
     BusinessDateService,
     NotificationRepository,
     NotificationService,
+    NoticeEmailService,
     BroadcastService,
     MembershipReminderService,
     NotificationScheduleService,
@@ -112,6 +116,7 @@ import { NotificationModel } from './notification.model';
     PushDispatcherService,
     NotificationRepository,
     NotificationService,
+    NoticeEmailService,
     MembershipReminderService,
     NotificationDeliveryService,
   ],

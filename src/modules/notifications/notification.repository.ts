@@ -37,6 +37,15 @@ export class NotificationRepository {
     private readonly sequelize: Sequelize,
   ) {}
 
+  /** Address on file of an account that is not closed (a closed one only has a tombstone). */
+  async openAccountEmail(userId: string, transaction?: Transaction): Promise<string | null> {
+    const [row] = await this.sequelize.query<{ email: string }>(
+      `SELECT email FROM public.usuarios WHERE id = :userId AND closed_at IS NULL`,
+      { type: QueryTypes.SELECT, replacements: { userId }, transaction },
+    );
+    return row?.email ?? null;
+  }
+
   listForUser(userId: string, filters: NotificationListInput) {
     return this.messages.findAndCountAll({
       where: {

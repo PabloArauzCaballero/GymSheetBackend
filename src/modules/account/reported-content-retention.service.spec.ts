@@ -88,4 +88,14 @@ describe("REPORTED_CONTENT_RETENTION_STEPS", () => {
       expect(sql).toContain("SKIP LOCKED");
     }
   });
+
+  it("also erases what its author deleted under an open report (evidence hold), whoever owns it", () => {
+    const held = (table: string) =>
+      REPORTED_CONTENT_RETENTION_STEPS.filter((step) => step.table === table).map((step) => reportedContentBatchSql(step));
+    for (const sql of held("profile.photos")) expect(sql).toContain("OR t.author_deleted_at IS NOT NULL");
+    for (const sql of held("community.content_comments")) expect(sql).toContain("OR t.estado = 'BORRADO_AUTOR'");
+    for (const table of ["social.reels", "community.music_playlists", "chat.messages"]) {
+      for (const sql of held(table)) expect(sql).not.toContain(" OR t.");
+    }
+  });
 });

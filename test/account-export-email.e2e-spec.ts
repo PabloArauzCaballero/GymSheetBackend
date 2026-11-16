@@ -1,3 +1,4 @@
+import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import request from 'supertest';
 import { AccountClosureService } from '../src/modules/account/account-closure.service';
@@ -103,6 +104,39 @@ describe('Account export and email change (e2e)', () => {
       expect(rows('social.photo_verifications')[0]).not.toHaveProperty('selfie_storage_key');
       expect(rows('social.photo_verifications')[0]).not.toHaveProperty('reviewer_id');
       expect(download.body as string).not.toContain('/verificaciones/');
+    });
+
+    it('tells the owner once, in the app and by email, that the copy is ready (B6)', async () => {
+      const notices = await e2e.as(owner.token).get('/notifications/me').expect(200);
+      const ready = (notices.body.data.items as { asunto: string; tipo: string | null }[])
+        .filter((item) => item.asunto === 'Tu copia de datos está lista');
+      expect(ready).toHaveLength(1);
+      const [message] = await sequelize.query<{ metadata: Record<string, unknown> }>(
+        `SELECT metadata FROM notifications.messages WHERE recipient_user_id = :userId AND deduplication_key = :key`,
+        { type: QueryTypes.SELECT, replacements: { userId: owner.id, key: `account-export.ready:${exportId}` } });
+      expect(message.metadata).toMatchObject({ type: 'ACCOUNT_EXPORT_READY', exportId, downloadPath: `/me/export/${exportId}/download` });
+      const emails = () => sequelize.query<{ payload: { to: string; subject: string } }>(
+        `SELECT payload FROM integration.outbox_jobs WHERE deduplication_key = :key`,
+        { type: QueryTypes.SELECT, replacements: { key: `notice-email:account-export.ready:${exportId}` } });
+      expect((await emails())[0].payload).toMatchObject({ to: await emailOf(owner.id) });
+      expect((await emails())[0].payload.subject).toContain('Tu copia de datos está lista');
+
+      // A retried job finds the export READY and says nothing again.
+      await e2e.app.get(AccountExportService).build(exportId);
+      await e2e.app.get(AccountExportService).markFailed(exportId, 'Error');
+      expect(await emails()).toHaveLength(1);
+      const again = await e2e.as(owner.token).get('/notifications/me').expect(200);
+      expect((again.body.data.items as { asunto: string }[]).filter((item) => item.asunto === 'Tu copia de datos está lista')).toHaveLength(1);
+    });
+
+    it('tells the owner when the copy could not be prepared (B6)', async () => {
+      const failed = await e2e.as(stranger.token).post('/me/export').expect(202);
+      const failedId = failed.body.data.id as string;
+      await e2e.app.get(AccountExportService).markFailed(failedId, 'TimeoutError');
+      const status = await e2e.as(stranger.token).get(`/me/export/${failedId}`).expect(200);
+      expect(status.body.data.status).toBe('FAILED');
+      const notices = await e2e.as(stranger.token).get('/notifications/me').expect(200);
+      expect((notices.body.data.items as { asunto: string }[]).map((item) => item.asunto)).toContain('No pudimos preparar tu copia de datos');
     });
   });
 

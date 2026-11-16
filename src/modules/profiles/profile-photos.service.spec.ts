@@ -133,6 +133,7 @@ describe("ProfilePhotosService.remove", () => {
           .fn()
           .mockResolvedValue({ id: "photo-1", userId, storageKey: "profile-photos/key.jpg" }),
         delete: repositoryDelete,
+        holdIfReported: jest.fn().mockResolvedValue(false),
       },
       { remove: storageRemove },
     );
@@ -158,6 +159,7 @@ describe("ProfilePhotosService.remove", () => {
           .fn()
           .mockResolvedValue({ id: "photo-1", userId, storageKey: "shared-key.jpg" }),
         delete: repositoryDelete,
+        holdIfReported: jest.fn().mockResolvedValue(false),
       },
       { remove: storageRemove },
       true,
@@ -166,5 +168,31 @@ describe("ProfilePhotosService.remove", () => {
     await expect(service.remove(userId, "photo-1")).resolves.toEqual({ deleted: true });
     expect(repositoryDelete).toHaveBeenCalled();
     expect(storageRemove).not.toHaveBeenCalled();
+  });
+
+  it("holds a photo under an open report instead of deleting it: the row stays, so its file does too", async () => {
+    const storageRemove = jest.fn().mockResolvedValue(undefined);
+    const repositoryDelete = jest.fn().mockResolvedValue(undefined);
+    const holdIfReported = jest.fn().mockResolvedValue(true);
+    const service = createService(
+      {
+        findByIdForUser: jest.fn().mockResolvedValue({ id: "photo-1", userId, storageKey: "profile-photos/key.jpg" }),
+        delete: repositoryDelete,
+        holdIfReported,
+      },
+      { remove: storageRemove },
+      // The held row itself still references the key.
+      true,
+    );
+
+    await expect(service.remove(userId, "photo-1")).resolves.toEqual({ deleted: true });
+    expect(holdIfReported).toHaveBeenCalledWith("photo-1", expect.anything());
+    expect(repositoryDelete).not.toHaveBeenCalled();
+    expect(storageRemove).not.toHaveBeenCalled();
+    // A held photo is gone for the verification too: the badge rule runs after the hold.
+    expect(revokeIfComparedPhotosGone).toHaveBeenCalledWith(userId, transaction);
+    expect(holdIfReported.mock.invocationCallOrder[0]).toBeLessThan(
+      revokeIfComparedPhotosGone.mock.invocationCallOrder.at(-1) ?? 0,
+    );
   });
 });

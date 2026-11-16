@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { z } from 'zod';
 import { Sequelize } from 'sequelize-typescript';
-import { NotificationStatus } from '../../common/enums/domain.enums';
+import { NotificationChannel, NotificationStatus } from '../../common/enums/domain.enums';
 import { OutboxJobModel } from '../integration/outbox-job.model';
 import { NotificationAdapterFactory } from './delivery/notification-adapter.factory';
 import { NotificationRepository } from './notification.repository';
+import { NoticeEmailPayload, noticeEmailPayloadSchema } from './notice-email.service';
 
 /** What a secret message's body becomes once delivered. */
 export const SECRET_BODY_REDACTED = '[Código enviado por correo]';
@@ -22,6 +23,8 @@ export class NotificationDeliveryService {
   ) {}
 
   async deliver(job: OutboxJobModel): Promise<void> {
+    const notice = noticeEmailPayloadSchema.safeParse(job.payload);
+    if (notice.success) return this.deliverNoticeEmail(job, notice.data);
     const payload = deliveryPayloadSchema.parse(job.payload);
     const message = await this.repository.findMessage(payload.notificationId);
     if (!message) throw new NotFoundException('Notification no longer exists.');
@@ -101,6 +104,23 @@ export class NotificationDeliveryService {
         },
         transaction,
       );
+    });
+  }
+
+  /**
+   * A self-contained notice email (see `NoticeEmailService`): no message row
+   * to update, so the outbox job itself is the delivery record (attempts,
+   * backoff, dead letter) and the address is the one the job carries.
+   */
+  private async deliverNoticeEmail(job: OutboxJobModel, notice: NoticeEmailPayload): Promise<void> {
+    await this.adapterFactory.forChannel(NotificationChannel.EMAIL).deliver({
+      notificationId: job.id,
+      recipientUserId: notice.recipientUserId,
+      recipientEmail: notice.to,
+      subject: notice.subject,
+      body: notice.body,
+      daysRemaining: null,
+      idempotencyKey: job.deduplicationKey,
     });
   }
 

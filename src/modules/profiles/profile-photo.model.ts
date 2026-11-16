@@ -58,4 +58,12 @@ export class ProfilePhotoModel extends Model {
 
   @Column({ type: DataType.STRING(30), allowNull: true, field: "hidden_reason" })
   declare hiddenReason: string | null;
+
+  /**
+   * Its author deleted it while a report on it was open: hidden from everyone,
+   * the author included, and kept with its file as evidence until the reports
+   * close (see migration 202611190101).
+   */
+  @Column({ type: DataType.DATE, allowNull: true, field: "author_deleted_at" })
+  declare authorDeletedAt: Date | null;
 }

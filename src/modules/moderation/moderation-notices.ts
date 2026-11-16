@@ -1,6 +1,7 @@
 import { Transaction } from "sequelize";
 import { NotificationChannel } from "../../common/enums/domain.enums";
 import { NotificationService } from "../notifications/notification.service";
+import { NoticeEmailService } from "../notifications/notice-email.service";
 import {
   ModerationReasonValue,
   ModerationTargetKindValue,
@@ -129,5 +130,30 @@ export async function sendModerationNotice(
       metadata: notice.metadata,
     },
     transaction,
+  );
+}
+
+/**
+ * Emails the same notice. Suspension, expulsion and the minor flow need it:
+ * a suspended or banned account cannot open the in-app inbox, and a closed
+ * one no longer has it. `survivesClosure` keeps the job through the closure
+ * the notice announces.
+ */
+export async function emailModerationNotice(
+  noticeEmails: NoticeEmailService,
+  recipientUserId: string,
+  notice: ModerationNotice,
+  deduplicationKey: string,
+  options: { survivesClosure?: boolean; transaction?: Transaction } = {},
+): Promise<boolean> {
+  return noticeEmails.enqueue(
+    {
+      recipientUserId,
+      subject: notice.subject,
+      body: notice.body,
+      deduplicationKey,
+      survivesClosure: options.survivesClosure ?? false,
+    },
+    options.transaction,
   );
 }

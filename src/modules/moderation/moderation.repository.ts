@@ -393,8 +393,12 @@ export class ModerationRepository {
     };
     const table = hiddenAtTables[input.targetKind];
     if (!table) return;
+    // Restoring never brings back what its author deleted while the report was
+    // open (evidence hold): for the author and everyone else it is gone.
+    const notAuthorDeleted =
+      !input.hidden && (input.targetKind === "STORY" || input.targetKind === "PROFILE_PHOTO") ? " AND author_deleted_at IS NULL" : "";
     await this.sequelize.query(
-      `UPDATE ${table} SET hidden_at = ${input.hidden ? "now()" : "NULL"}, hidden_by_user_id = ${input.hidden ? ":moderatorUserId" : "NULL"}, hidden_reason = ${input.hidden ? ":reason" : "NULL"} WHERE id = :targetId`,
+      `UPDATE ${table} SET hidden_at = ${input.hidden ? "now()" : "NULL"}, hidden_by_user_id = ${input.hidden ? ":moderatorUserId" : "NULL"}, hidden_reason = ${input.hidden ? ":reason" : "NULL"} WHERE id = :targetId${notAuthorDeleted}`,
       { type: QueryTypes.UPDATE, replacements: { targetId: input.targetId, ...(input.hidden ? { moderatorUserId: input.moderatorUserId, reason: input.reason } : {}) }, transaction },
     );
   }
@@ -407,10 +411,10 @@ export class ModerationRepository {
     const queries: Record<string, string | null> = {
       STORY: `SELECT s.user_id AS "userId", u.tenant_id AS "tenantId"
                 FROM profile.stories s JOIN public.usuarios u ON u.id = s.user_id
-               WHERE s.id = :targetId`,
+               WHERE s.id = :targetId AND s.author_deleted_at IS NULL`,
       PROFILE_PHOTO: `SELECT p.user_id AS "userId", u.tenant_id AS "tenantId"
                         FROM profile.photos p JOIN public.usuarios u ON u.id = p.user_id
-                       WHERE p.id = :targetId`,
+                       WHERE p.id = :targetId AND p.author_deleted_at IS NULL`,
       CHAT_MESSAGE: `SELECT m.sender_id AS "userId", u.tenant_id AS "tenantId"
                        FROM chat.messages m JOIN public.usuarios u ON u.id = m.sender_id
                       WHERE m.id = :targetId`,

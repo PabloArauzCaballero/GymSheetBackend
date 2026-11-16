@@ -342,6 +342,7 @@ describe("StoriesService.remove", () => {
       {
         findByIdForUser: jest.fn().mockResolvedValue({ storageKey: "stories/some-key.jpg", destroy }),
         delete: jest.fn().mockImplementation((story: { destroy: () => Promise<void> }) => story.destroy()),
+        holdIfReported: jest.fn().mockResolvedValue(false),
       },
       { remove },
     );
@@ -361,6 +362,7 @@ describe("StoriesService.remove", () => {
       {
         findByIdForUser: jest.fn().mockResolvedValue({ storageKey: "stories/shared-key.jpg", destroy }),
         delete: jest.fn().mockImplementation((story: { destroy: () => Promise<void> }) => story.destroy()),
+        holdIfReported: jest.fn().mockResolvedValue(false),
       },
       { remove },
       true,
@@ -368,6 +370,27 @@ describe("StoriesService.remove", () => {
 
     await expect(service.remove("story-1", userId)).resolves.toEqual({ deleted: true });
     expect(destroy).toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("holds a story under an open report instead of deleting it", async () => {
+    const destroy = jest.fn().mockResolvedValue(undefined);
+    const remove = jest.fn().mockResolvedValue(undefined);
+    const holdIfReported = jest.fn().mockResolvedValue(true);
+    const service = createService(
+      {
+        findByIdForUser: jest.fn().mockResolvedValue({ id: "story-1", storageKey: "stories/some-key.jpg", destroy }),
+        delete: jest.fn().mockImplementation((story: { destroy: () => Promise<void> }) => story.destroy()),
+        holdIfReported,
+      },
+      { remove },
+      // The held row itself still references the key.
+      true,
+    );
+
+    await expect(service.remove("story-1", userId)).resolves.toEqual({ deleted: true });
+    expect(holdIfReported).toHaveBeenCalledWith("story-1", expect.anything());
+    expect(destroy).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
   });
 });

@@ -129,6 +129,7 @@ import { privacyIpHmacAndConsentsMigration } from "./202611180201-privacy-ip-hma
 import { accountRightsMigration } from "./202611180101-account-rights";
 import { downloadAuditIpContractAndClosedAccountSanctionsMigration } from "./202611180301-download-audit-ip-contract-and-closed-account-sanctions";
 import { moderationLegalSafeguardsMigration } from "./202611180401-moderation-legal-safeguards";
+import { authorDeletedEvidenceHoldMigration } from "./202611190101-author-deleted-evidence-hold";
 import { discoveryRankingMigration } from "./202611190101-discovery-ranking";
 import { photoVerificationsMigration } from "./202611200101-photo-verifications";
 import { photoVerificationSelfieKeyIndexMigration } from "./202611200201-photo-verification-selfie-key-index";
@@ -267,6 +268,7 @@ export const databaseMigrations: DatabaseMigration[] = [
   accountRightsMigration,
   downloadAuditIpContractAndClosedAccountSanctionsMigration,
   moderationLegalSafeguardsMigration,
+  authorDeletedEvidenceHoldMigration,
   discoveryRankingMigration,
   photoVerificationsMigration,
   photoVerificationSelfieKeyIndexMigration,

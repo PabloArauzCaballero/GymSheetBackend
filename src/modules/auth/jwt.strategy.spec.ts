@@ -3,6 +3,7 @@ import { UserRole } from '../../common/enums/domain.enums';
 import { PENDING_REVIEW_SUSPENSION_UNTIL } from '../../common/moderation/account-suspension';
 import { JwtPayload } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
+import { SanctionStatusService } from '../sanction-status/sanction-status.service';
 import { UsersRepository } from '../users/users.repository';
 import { JwtStrategy } from './jwt.strategy';
 
@@ -16,7 +17,10 @@ function strategyFor(account: Record<string, unknown> | null): JwtStrategy {
   const usersRepository = {
     findActiveById: jest.fn().mockResolvedValue(account),
   } as unknown as UsersRepository;
-  return new JwtStrategy(usersRepository);
+  const sanctionStatus = {
+    suspensionReason: jest.fn().mockResolvedValue({ code: 'SPAM', label: 'Spam', text: 'publicidad' }),
+  } as unknown as SanctionStatusService;
+  return new JwtStrategy(usersRepository, sanctionStatus);
 }
 
 describe('JwtStrategy', () => {
@@ -25,6 +29,15 @@ describe('JwtStrategy', () => {
     await expect(dated.validate(payload)).rejects.toThrow('Tu cuenta está suspendida temporalmente');
     const pending = strategyFor({ id: payload.sub, role: UserRole.CLIENT, suspendedUntil: PENDING_REVIEW_SUSPENSION_UNTIL });
     await expect(pending.validate(payload)).rejects.toThrow('Tu cuenta está suspendida mientras revisamos un reporte.');
+  });
+
+  it('tells a suspended session why, in details.reason', async () => {
+    const dated = strategyFor({ id: payload.sub, role: UserRole.CLIENT, suspendedUntil: new Date(Date.now() + 86_400_000) });
+    const error: unknown = await dated.validate(payload).catch((caught: unknown) => caught);
+    expect((error as UnauthorizedException).getResponse()).toMatchObject({
+      code: 'ACCOUNT_SUSPENDED',
+      details: { pendingReview: false, reason: { code: 'SPAM', label: 'Spam' } },
+    });
   });
 
   it('returns the current persisted role for an active principal', async () => {

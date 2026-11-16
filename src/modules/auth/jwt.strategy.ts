@@ -5,6 +5,7 @@ import { UserRole } from '../../common/enums/domain.enums';
 import { suspendedSessionError } from '../../common/moderation/account-suspension';
 import { AuthenticatedUser, JwtPayload } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
+import { SanctionStatusService } from '../sanction-status/sanction-status.service';
 import { UsersRepository } from '../users/users.repository';
 import { UserActivityService } from '../users/user-activity.service';
 
@@ -12,6 +13,7 @@ import { UserActivityService } from '../users/user-activity.service';
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private readonly usersRepository: UsersRepository,
+    private readonly sanctionStatus: SanctionStatusService,
     @Optional() private readonly activity?: UserActivityService,
   ) {
     super({
@@ -52,7 +54,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // que salga. Se compara contra el reloj y no se limpia la columna: la
     // suspensión termina sola cuando pasa la fecha.
     if (activeUser.suspendedUntil && activeUser.suspendedUntil.getTime() > Date.now()) {
-      throw suspendedSessionError(activeUser.suspendedUntil);
+      // The reason travels in `details`: a suspended session cannot open the
+      // inbox where the notice waits, so the refusal itself has to say why.
+      throw suspendedSessionError(
+        activeUser.suspendedUntil,
+        await this.sanctionStatus.suspensionReason(activeUser.id, activeUser.suspendedUntil),
+      );
     }
 
     // Se lee de la cuenta y no del token: así un cambio de gimnasio surte
