@@ -398,7 +398,7 @@ moderator.
 | ------ | ----- | ------ | ------- |
 | POST   | `/me/reports` | authenticated | Report content (unchanged) |
 | GET    | `/admin/moderation/queue?page&pageSize≤50` | MODERATOR, SYSTEM_ADMIN | Open cases of every gym; each row (snake_case) carries `tenant_id` and `tenant_name` |
-| GET    | `/admin/moderation/cases/:targetKind/:targetId` | MODERATOR, SYSTEM_ADMIN | Case file, now with `tenantId` |
+| GET    | `/admin/moderation/cases/:targetKind/:targetId` | MODERATOR, SYSTEM_ADMIN | Case file, with `tenantId` and the read-only snapshot of the reported target: `content` (by `content.kind`, below), `contentUnavailableReason` (`null`, `ERASED` when the target no longer exists, `CHAT_EVIDENCE` for a chat message) and `evidence` (chat message copy). Hidden content is included. Same `403 MODERATION_SELF_CASE` / `MODERATION_PEER_CASE` refusals (ADR-0018 §8) |
 | POST   | `/admin/moderation/cases/:targetKind/:targetId/claim` | MODERATOR, SYSTEM_ADMIN | Claim (`409` if someone else holds it); audited `moderation/claim` |
 | POST   | `/admin/moderation/cases/:targetKind/:targetId/release` | MODERATOR, SYSTEM_ADMIN | Release own claim; audited `moderation/release` |
 | POST   | `/admin/moderation/cases/:targetKind/:targetId/resolve` | MODERATOR, SYSTEM_ADMIN | Verdict (hide/restore content, sanction, confirm/dismiss minor). Response adds `tenantId` and `resolution`. Audited `moderation/resolve` with `metadata { caseKind, tenantId, resolution, sanction, contentHidden, minorConfirmed, reportsClosed }` |
@@ -408,6 +408,19 @@ moderator.
 | GET    | `/admin/platform/moderators` | SYSTEM_ADMIN | List the team `[{ id, email, nombreCompleto, estado }]` |
 | PUT    | `/admin/platform/moderators/:userId` | SYSTEM_ADMIN | Make an active member account (`CLIENTE`) a `MODERATOR`; idempotent `200`. Unknown/closed: `404`; staff or `SYSTEM_ADMIN`: `409 MODERATOR_NOT_ASSIGNABLE`. Audited `moderation/moderator-assign` |
 | DELETE | `/admin/platform/moderators/:userId` | SYSTEM_ADMIN | Back to `CLIENTE`, its claimed cases return to the queue; `204`, `404` if not a moderator. Audited `moderation/moderator-revoke` |
+
+`content` of the case file (ADR-0018 §9) — the moderator reads the target here, never through the
+author's routes (`GET /routines/:id` stays author or `SYSTEM_ADMIN`):
+
+| `kind` | Fields |
+| ------ | ------ |
+| `ROUTINE` | `name`, `description`, `visibility`, `days[] { name, weekday (1 = Monday), exercises[] { name, sets, repsMin, repsMax, weightKg, durationSeconds } }` (day order, then exercise order; exercises without a day form a last unnamed day), `reach { copies, liveCopies, activations }` |
+| `EXERCISE` | `name`, `description`, `muscleGroups[]`, `instructions[]` (Spanish steps, else English), `media[] { type, url }` |
+| `COMMENT` | `text`, `attachmentUrl`, `attachmentType`, `deletedByAuthor` |
+| `REEL`, `STORY`, `PROFILE_PHOTO` | `mediaUrl` (a reel: `/me/reels/:id/media`), `mediaType`, `caption` (stories only) |
+| `USER` | `displayName`, `mainPhotoUrl` (first gallery photo, hidden or not); a closed account is `ERASED` |
+| `MUSIC_PLAYLIST` | `name`, `url`, `type`, `imageUrl` (tracks are not stored: the playlist is a provider link) |
+| `CHAT_MESSAGE` | `content: null`, the message is in `evidence` |
 
 Audit rows of a `MODERATOR` are platform rows (`tenant_scope` null). Every notice to the people
 involved names «el equipo de moderación de REPP», never the gym.

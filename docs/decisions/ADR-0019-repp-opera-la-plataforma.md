@@ -39,6 +39,8 @@ en recepción salen del producto. Eso se hace por franjas; esta es la primera.
    visibles para el socio en `GET /routines/assignments/me` y siguen abriendo la rutina asignada.
 4. **Política de rutinas.** Ver y editar una rutina privada ajena: sólo el autor y `SYSTEM_ADMIN`
    (las oficiales, sólo `SYSTEM_ADMIN`). Se elimina la rama del `ADMIN` del gimnasio del autor.
+   El moderador central no lee la rutina por esta política: la lee en el expediente del caso
+   (`content`, con su alcance en recuentos; [ADR-0018](./ADR-0018-moderacion-central-de-repp.md) §9).
 5. **Catálogo global.** Gestionar medios de un ejercicio global exige `SYSTEM_ADMIN`, también en el
    worker `exercise-media-command`, que usa la cuenta de `SEED_ADMIN_EMAIL` con alcance nulo.
 6. **Chat de sistema `TENANT_ADMIN`: se elimina.** No se crea ni se lista (el listado lo excluye

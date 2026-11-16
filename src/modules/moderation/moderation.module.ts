@@ -17,6 +17,8 @@ import { ReelsModule } from "../reels/reels.module";
 import { SocialModule } from "../social/social.module";
 import { MediaModule } from "../media/media.module";
 import { ModerationAutoHideService } from "./moderation-auto-hide.service";
+import { ModerationCaseContentRepository } from "./moderation-case-content.repository";
+import { ModerationCaseContentService } from "./moderation-case-content.service";
 import { ModerationEvidenceService } from "./moderation-evidence.service";
 import { ModerationMinorService } from "./moderation-minor.service";
 import { ModerationSafeguardsRepository } from "./moderation-safeguards.repository";
@@ -49,6 +51,8 @@ import { PlatformModeratorsService } from "./platform-moderators.service";
     ModerationMinorService,
     ModerationEvidenceService,
     ModerationAutoHideService,
+    ModerationCaseContentRepository,
+    ModerationCaseContentService,
     PlatformModeratorsService,
   ],
   exports: [ModerationService, ModerationEvidenceService],
