@@ -12,7 +12,9 @@
  * the reporter, which the right of access may not do to a third party; the
  * message itself is already in `chat.messages` while the sender keeps it. The
  * review of an auto-hidden content is exported to its author, who was told
- * about the hiding, without the moderator's id.
+ * about the hiding, without the moderator's id. The same holds for the person
+ * verification: its decision is exported, the selfie (biometric data) and the
+ * moderator are not.
  */
 export type AccountExportSection = {
   /** `schema.table`; also the key in the archive. */
@@ -88,6 +90,8 @@ export const ACCOUNT_EXPORT_SECTIONS: readonly AccountExportSection[] = [
   section("social.user_blocks", "Personas que bloqueaste", "t.blocker_id = :userId"),
   section("profile.profile_views", "Vistas de perfil", "t.viewer_id = :userId OR t.viewed_user_id = :userId"),
   section("social.recommendation_profile_versions", "Versión del perfil en el recomendador", OWN),
+  // Status, gesture, dates and decision reason; never the selfie's storage key nor who reviewed it.
+  section("social.photo_verifications", "Verificación de identidad", OWN, ["selfie_storage_key", "reviewer_id"]),
   section("profile.stories", "Historias", OWN),
   section("profile.story_audiences", "Audiencias de historias", OWN),
   section("profile.story_views", "Historias que viste", "t.viewer_id = :userId"),

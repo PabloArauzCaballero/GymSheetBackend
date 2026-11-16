@@ -34,6 +34,7 @@ export function writeStoredFile(key: string): string {
 export type SeededAccount = {
   photoKey: string;
   chatKey: string;
+  selfieKey: string;
   conversationId: string;
   ownMessageId: string;
   otherMessageId: string;
@@ -54,6 +55,7 @@ export async function seedPersonalData(sequelize: Sequelize, userId: string, oth
   const storyKey = `users/${userId}/stories/${randomUUID()}.jpg`;
   const reelKey = `users/${userId}/reels/${randomUUID()}.mp4`;
   const chatKey = `users/${userId}/chats/${ids.conversation}/${randomUUID()}.bin`;
+  const selfieKey = `users/${userId}/verificaciones/${randomUUID()}.jpg`;
   const suffix = randomUUID().slice(0, 8);
   const statements = [
     `INSERT INTO profile.onboarding (user_id, physical_considerations, consent_health, consent_data)
@@ -79,6 +81,9 @@ export async function seedPersonalData(sequelize: Sequelize, userId: string, oth
        VALUES (:userId, 'default', 'http://x/${storyKey}', 'local', '${storyKey}', 'image', now() + interval '1 day')`,
     `INSERT INTO social.reels (user_id, tenant_id, storage_provider, storage_key, mime_type, duration_seconds)
        VALUES (:userId, 'default', 'local', '${reelKey}', 'video/mp4', 10)`,
+    `INSERT INTO social.photo_verifications (user_id, gesture_code, challenge_issued_at, challenge_expires_at,
+       selfie_storage_key, selfie_mime_type, status, submitted_at)
+       VALUES (:userId, 'THUMB_UP', now(), now() + interval '10 minutes', '${selfieKey}', 'image/jpeg', 'PENDING_REVIEW', now())`,
     `INSERT INTO community.content_comments (target_kind, target_id, autor_id, texto)
        VALUES ('ROUTINE', '${ids.routine}', :userId, 'Buen plan')`,
     `INSERT INTO chat.conversations (id) VALUES ('${ids.conversation}')`,
@@ -115,6 +120,7 @@ export async function seedPersonalData(sequelize: Sequelize, userId: string, oth
   return {
     photoKey,
     chatKey,
+    selfieKey,
     conversationId: ids.conversation,
     ownMessageId: ids.ownMessage,
     otherMessageId: ids.otherMessage,

@@ -54,9 +54,10 @@ export class VerificationService {
         "La verificación no está disponible en este momento.",
       );
     }
-    await this.consent.assertGranted(userId);
     try {
       const row = await this.sequelize.transaction(async (transaction) => {
+        // Consent first, as a revocation locks it: one that runs meanwhile waits and then cancels this challenge.
+        await this.consent.assertGranted(userId, transaction);
         const now = this.clock();
         const user = await this.repository.lockUser(userId, transaction);
         if (!user) throw new NotFoundException("Cuenta no encontrada.");
@@ -106,6 +107,7 @@ export class VerificationService {
   }
 
   async submitSelfie(userId: string, verificationId: string, file: UploadedSelfie | undefined): Promise<SubmissionResponse> {
+    // Unlocked check before storing anything; repeated under lock where the key is written.
     await this.consent.assertGranted(userId);
     const row = await this.repository.findByIdForUser(verificationId, userId);
     if (!row) throw new NotFoundException("Verificación no encontrada.");
@@ -119,6 +121,8 @@ export class VerificationService {
     );
     try {
       const submitted = await this.sequelize.transaction(async (transaction) => {
+        // Locked re-check: a revocation that won the race already erased; one that loses waits and erases this key.
+        await this.consent.assertGranted(userId, transaction);
         const locked = await this.repository.findByIdForUser(verificationId, userId, transaction);
         if (!locked) throw new NotFoundException("Verificación no encontrada.");
         assertTransition(locked.status, VerificationStatus.PENDING_REVIEW);

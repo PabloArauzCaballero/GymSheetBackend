@@ -15,7 +15,7 @@ export function nextPrivacyRetentionDelayMs(random: () => number = Math.random):
 /**
  * Long-running form of `yarn db:privacy:retention`: the same purge (spent
  * signup tickets, IP hashes, closed-account sanctions, reported content kept
- * at closure) every 24 h with jitter. The first run waits only the jitter, so
+ * at closure, verification selfies) every 24 h with jitter. The first run waits only the jitter, so
  * a deploy does not postpone it by a day. Every pass is idempotent; a failed
  * one is logged and retried on the next tick instead of killing the worker.
  */

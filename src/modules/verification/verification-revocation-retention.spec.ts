@@ -1,9 +1,8 @@
 import { Transaction } from "sequelize";
-import { MediaStorageProvider } from "../media/media-storage.port";
+import type { MediaReleaseService } from "../media/media-release.service";
 import { NotificationService } from "../notifications/notification.service";
-import { PhotoVerificationModel } from "./photo-verification.model";
 import { VerificationRepository } from "./verification.repository";
-import { VerificationRetentionService } from "./verification-retention.service";
+import { VERIFICATION_SELFIE_AGGREGATE, VerificationRetentionService } from "./verification-retention.service";
 import { VerificationRevocationService } from "./verification-revocation.service";
 
 const userId = "00000000-0000-4000-8000-000000000001";
@@ -55,56 +54,43 @@ describe("VerificationRevocationService (photo replacement rule)", () => {
 });
 
 describe("VerificationRetentionService (fixed clock)", () => {
-  const withSelfie = (id: string) => ({ id, selfieStorageKey: `users/u/verificaciones/${id}.jpg` }) as PhotoVerificationModel;
+  const due = (id: string) => ({ id, storageKey: `users/u/verificaciones/${id}.jpg` });
 
-  function setup(rows: PhotoVerificationModel[], storageOverrides: Partial<MediaStorageProvider> = {}) {
-    let pending = [...rows];
+  function setup(batches: Array<ReturnType<typeof due>[]>) {
     const repository = {
       expireAbandoned: jest.fn().mockResolvedValue(2),
-      findSelfiesToErase: jest.fn(async () => pending),
-      clearSelfie: jest.fn(async (id: string) => {
-        pending = pending.filter((row) => row.id !== id);
-      }),
+      runInTransaction: jest.fn((work: (t: Transaction) => Promise<unknown>) => work(tx)),
+      clearDueSelfies: jest.fn(async () => batches.shift() ?? []),
     };
-    const storage = { immutable: false, remove: jest.fn().mockResolvedValue(undefined), ...storageOverrides };
-    const sleep = jest.fn().mockResolvedValue(undefined);
+    const mediaRelease = { requestRelease: jest.fn().mockResolvedValue(undefined) };
     const service = new VerificationRetentionService(
       repository as unknown as VerificationRepository,
-      storage as unknown as MediaStorageProvider,
-      sleep,
+      mediaRelease as unknown as MediaReleaseService,
     );
-    return { service, repository, storage, sleep };
+    return { service, repository, mediaRelease };
   }
 
-  it("expires abandoned challenges and erases due selfies with the 24 h / 30 day cut-offs", async () => {
-    const { service, repository, storage } = setup([withSelfie("a"), withSelfie("b")]);
-    await expect(service.purge(now)).resolves.toEqual({ expiredChallenges: 2, selfiesErased: 2, failed: 0 });
+  it("expires abandoned challenges and clears due selfies with the 24 h / 30 day cut-offs", async () => {
+    const { service, repository } = setup([[due("a"), due("b")]]);
+    await expect(service.purge(now)).resolves.toEqual({ expiredChallenges: 2, selfiesErased: 2 });
     expect(repository.expireAbandoned).toHaveBeenCalledWith(new Date("2026-11-19T12:00:00.000Z"));
-    expect(repository.findSelfiesToErase).toHaveBeenCalledWith(new Date("2026-10-21T12:00:00.000Z"), 100);
-    expect(storage.remove).toHaveBeenCalledWith("users/u/verificaciones/a.jpg");
-    expect(repository.clearSelfie).toHaveBeenCalledWith("a", "users/u/verificaciones/a.jpg", now);
+    expect(repository.clearDueSelfies).toHaveBeenCalledWith(new Date("2026-10-21T12:00:00.000Z"), now, 100, tx);
   });
 
-  it("retries the storage with backoff and keeps the key when it keeps failing", async () => {
-    const remove = jest.fn().mockRejectedValue(new Error("storage down"));
-    const { service, repository, sleep } = setup([withSelfie("a")], { remove });
-    await expect(service.purge(now)).resolves.toEqual({ expiredChallenges: 2, selfiesErased: 0, failed: 1 });
-    expect(remove).toHaveBeenCalledTimes(3);
-    expect(sleep.mock.calls).toEqual([[200], [400]]);
-    expect(repository.clearSelfie).not.toHaveBeenCalled();
+  it("queues each file on media.release in the transaction that cleared its key (no in-process storage call)", async () => {
+    const { service, mediaRelease } = setup([[due("a")]]);
+    await service.purge(now);
+    expect(mediaRelease.requestRelease).toHaveBeenCalledWith(
+      { aggregateType: VERIFICATION_SELFIE_AGGREGATE, aggregateId: "a", storageKey: "users/u/verificaciones/a.jpg" },
+      tx,
+    );
   });
 
-  it("recovers on a later attempt within the same run", async () => {
-    const remove = jest.fn().mockRejectedValueOnce(new Error("blip")).mockResolvedValue(undefined);
-    const { service, repository } = setup([withSelfie("a")], { remove });
-    await expect(service.purge(now)).resolves.toMatchObject({ selfiesErased: 1, failed: 0 });
-    expect(repository.clearSelfie).toHaveBeenCalledTimes(1);
-  });
-
-  it("never claims an erasure on immutable storage", async () => {
-    const { service, storage, repository } = setup([withSelfie("a")], { immutable: true });
-    await expect(service.purge(now)).resolves.toMatchObject({ selfiesErased: 0, failed: 1 });
-    expect(storage.remove).not.toHaveBeenCalled();
-    expect(repository.clearSelfie).not.toHaveBeenCalled();
+  it("keeps taking batches until one comes back short", async () => {
+    const full = Array.from({ length: 100 }, (_, index) => due(`f${index}`));
+    const { service, repository, mediaRelease } = setup([full, [due("last")]]);
+    await expect(service.purge(now)).resolves.toEqual({ expiredChallenges: 2, selfiesErased: 101 });
+    expect(repository.clearDueSelfies).toHaveBeenCalledTimes(2);
+    expect(mediaRelease.requestRelease).toHaveBeenCalledTimes(101);
   });
 });

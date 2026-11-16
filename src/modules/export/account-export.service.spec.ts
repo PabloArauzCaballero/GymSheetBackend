@@ -74,4 +74,10 @@ describe('AccountExportService', () => {
     expect(omitted('access_control.credentials')).toContain('pin_hash');
     expect(omitted('notifications.device_tokens')).toContain('push_token');
   });
+
+  it('exports the verification attempts without the selfie key or the moderator', () => {
+    const verification = ACCOUNT_EXPORT_SECTIONS.find((section) => section.table === 'social.photo_verifications');
+    expect(verification?.where).toBe('t.user_id = :userId');
+    expect(verification?.omit).toEqual(expect.arrayContaining(['selfie_storage_key', 'reviewer_id']));
+  });
 });

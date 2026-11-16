@@ -52,6 +52,7 @@ describe('Account closure (e2e)', () => {
     let seeded: SeededAccount;
     let photoPath: string;
     let chatPath: string;
+    let selfiePath: string;
 
     beforeAll(async () => {
       closer = await e2e.register('closer');
@@ -60,6 +61,7 @@ describe('Account closure (e2e)', () => {
       seeded = await seedPersonalData(sequelize, closer.id, other.id);
       photoPath = writeStoredFile(seeded.photoKey);
       chatPath = writeStoredFile(seeded.chatKey);
+      selfiePath = writeStoredFile(seeded.selfieKey);
     });
 
     it('previews what is deleted, anonymized and kept', async () => {
@@ -98,7 +100,7 @@ describe('Account closure (e2e)', () => {
         ['social.reels', 't.user_id = :userId'], ['community.content_comments', 't.autor_id = :userId'],
         ['notifications.messages', 't.recipient_user_id = :userId'], ['notifications.device_tokens', 't.user_id = :userId'],
         ['auth.user_devices', 't.user_id = :userId'], ['auth.refresh_tokens', 't.user_id = :userId'],
-        ['auth.email_verification_pins', 't.user_id = :userId'],
+        ['auth.email_verification_pins', 't.user_id = :userId'], ['social.photo_verifications', 't.user_id = :userId'],
       ] as const;
       for (const [table, where] of seededTables) {
         expect([table, (await countRows(sequelize, table, where, closer.id)) > 0]).toEqual([table, true]);
@@ -150,9 +152,11 @@ describe('Account closure (e2e)', () => {
 
     it('erases the stored files through the shared media.release outbox queue', async () => {
       expect(existsSync(photoPath)).toBe(true);
+      expect(existsSync(selfiePath)).toBe(true);
       await e2e.app.get(MediaReleaseService).drainOnce();
       expect(existsSync(photoPath)).toBe(false);
       expect(existsSync(chatPath)).toBe(false);
+      expect(existsSync(selfiePath)).toBe(false);
     });
 
     it('rejects the old session and the old credentials with the generic message', async () => {

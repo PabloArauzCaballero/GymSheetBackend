@@ -88,6 +88,13 @@ describe('Account export and email change (e2e)', () => {
       expect(rows('chat.messages').map((message) => message.body)).toEqual(['Mi secreto']);
       expect(download.body as string).not.toContain('Respuesta ajena');
       expect(rows('chat.participants')).toHaveLength(1);
+      // Verification: status, gesture and dates; never the selfie's storage key or the reviewer.
+      expect(rows('social.photo_verifications')).toEqual([
+        expect.objectContaining({ status: 'PENDING_REVIEW', gesture_code: 'THUMB_UP', submitted_at: expect.any(String) }),
+      ]);
+      expect(rows('social.photo_verifications')[0]).not.toHaveProperty('selfie_storage_key');
+      expect(rows('social.photo_verifications')[0]).not.toHaveProperty('reviewer_id');
+      expect(download.body as string).not.toContain('/verificaciones/');
     });
   });
 

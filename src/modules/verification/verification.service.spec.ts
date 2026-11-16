@@ -79,7 +79,8 @@ describe("VerificationService.issueChallenge", () => {
       findLatestForUser: jest.fn().mockResolvedValue(row({ gestureCode: "PEACE_SIGN", status: "REJECTED" })),
     });
     const challenge = await service.issueChallenge(userId);
-    expect(consent.assertGranted).toHaveBeenCalledWith(userId);
+    // Inside the challenge transaction: a concurrent revocation waits for it, then cancels the challenge.
+    expect(consent.assertGranted).toHaveBeenCalledWith(userId, tx);
     expect(challenge.gesture.code).not.toBe("PEACE_SIGN");
     expect(challenge.gesture.instruction).toEqual(expect.any(String));
     expect(challenge.expiresAt).toBe("2026-11-20T12:10:00.000Z");
@@ -154,6 +155,20 @@ describe("VerificationService.submitSelfie", () => {
       expect.objectContaining({ status: "PENDING_REVIEW", selfieStorageKey: "users/u/verificaciones/k.jpg", selfieMimeType: "image/jpeg" }),
       tx,
     );
+  });
+
+  it("checks the consent before uploading and again, locked, in the transaction that stores the key", async () => {
+    const { service, consent } = setup();
+    await service.submitSelfie(userId, verificationId, selfie);
+    expect(consent.assertGranted.mock.calls).toEqual([[userId], [userId, tx]]);
+  });
+
+  it("discards the uploaded file when the consent was revoked meanwhile", async () => {
+    const { service, consent, storage, repository } = setup();
+    consent.assertGranted.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new HttpException("sin consentimiento", 400));
+    await expect(service.submitSelfie(userId, verificationId, selfie)).rejects.toThrow(HttpException);
+    expect(storage.remove).toHaveBeenCalledWith("users/u/verificaciones/k.jpg");
+    expect(repository.update).not.toHaveBeenCalled();
   });
 
   it("answers 404 for another member's verification", async () => {

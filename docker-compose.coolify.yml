@@ -610,7 +610,8 @@ services:
   #   privacy-retention → `db:privacy:retention` cada 24 h con jitter: tickets de alta gastados,
   #                       HMAC de IP de más de 90 días, sanciones de cuentas cerradas vencidas y
   #                       contenido denunciado de cuentas cerradas 180 días después de la última
-  #                       denuncia. El comando de una sola pasada sigue disponible.
+  #                       denuncia, y selfies de verificación vencidas. El comando de una sola
+  #                       pasada sigue disponible.
   # Cada uno es un proceso Node (~200 MB); el VPS tiene que tener margen para los tres.
   # ---------------------------------------------------------------------------
 

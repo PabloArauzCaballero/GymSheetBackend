@@ -10,11 +10,13 @@ import { PrivacyMaintenanceModule } from './privacy-maintenance.module';
  *  - nulls every keyed IP hash older than 90 days (signup audit, legal
  *    acceptances, devices, password resets, admin audit, coach downloads);
  *  - deletes ban-evasion records of closed accounts whose strikes expired (ADR-0015);
- *  - erases content a closure kept because it was reported, 180 days after its last report closed.
+ *  - erases content a closure kept because it was reported, 180 days after its last report closed;
+ *  - closes selfie challenges left unanswered for 24 h and erases verification selfies (EXPIRED
+ *    attempts at once, decided ones 30 days after the decision) through `media.release`.
  * It has no dry run: it only removes data the retention policy says must not
  * be kept. The log carries counts only, never a value.
  *
- *   yarn db:privacy:retention   (alias: yarn db:signups:retention)
+ *   yarn db:privacy:retention   (aliases: yarn db:signups:retention, yarn db:verification:retention)
  */
 async function run(): Promise<void> {
   const application = await NestFactory.createApplicationContext(PrivacyMaintenanceModule, {

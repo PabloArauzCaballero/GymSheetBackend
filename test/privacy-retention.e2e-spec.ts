@@ -1,8 +1,8 @@
 import { createHmac, randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Sequelize } from 'sequelize-typescript';
 import request from 'supertest';
 import { env } from '../src/config/env';
@@ -13,6 +13,8 @@ import { TicketLedgerRepository } from '../src/modules/antibot/ticket-ledger.rep
 import { ReportedContentRetentionService } from '../src/modules/account/reported-content-retention.service';
 import { PrivacyRetentionRepository } from '../src/modules/privacy/privacy-retention.repository';
 import { PrivacyRetentionService } from '../src/modules/privacy/privacy-retention.service';
+import { VerificationRepository } from '../src/modules/verification/verification.repository';
+import { VerificationRetentionService } from '../src/modules/verification/verification-retention.service';
 import { bootE2eApp, createPersonalExercise, E2eApp } from './support/e2e-app';
 import { openConversation, selectRows } from './support/privacy-e2e';
 
@@ -94,18 +96,45 @@ describe('Privacy retention and minimisation (e2e)', () => {
       });
     }
 
+    // Verification selfies are a step of the same pass: one decided 61 days before `now`, one abandoned challenge.
+    const [decidedId, abandonedId] = [randomUUID(), randomUUID()];
+    const selfieKey = `users/${id}/verificaciones/${randomUUID()}.jpg`;
+    mkdirSync(dirname(join(mediaRoot, selfieKey)), { recursive: true });
+    writeFileSync(join(mediaRoot, selfieKey), 'ciphertext');
+    await e2e.sql(
+      `INSERT INTO social.photo_verifications (id, user_id, gesture_code, challenge_issued_at, challenge_expires_at,
+              selfie_storage_key, selfie_mime_type, status, decided_at, submitted_at, created_at)
+       VALUES (:decidedId, :id, 'THUMB_UP', '2026-09-01T00:00:00Z', '2026-09-01T00:10:00Z', :selfieKey, 'image/jpeg',
+               'APPROVED', '2026-09-01T01:00:00Z', '2026-09-01T00:05:00Z', '2026-09-01T00:00:00Z'),
+              (:abandonedId, :id, 'PEACE_SIGN', '2026-10-20T00:00:00Z', '2026-10-20T00:10:00Z', NULL, NULL,
+               'PENDING_UPLOAD', NULL, NULL, '2026-10-20T00:00:00Z')`,
+      { decidedId, abandonedId, id, selfieKey });
+
     // Built on the app connection: a second Nest context would rebind the global models.
+    const mediaRelease = e2e.app.get(MediaReleaseService, { strict: false });
     const retention = new PrivacyRetentionService(
       e2e.app.get(TicketLedgerRepository, { strict: false }),
       new PrivacyRetentionRepository(e2e.app.get(Sequelize)),
       new ReportedContentRetentionService(
         e2e.app.get(Sequelize),
         e2e.app.get(MediaReferencesRepository, { strict: false }),
-        e2e.app.get(MediaReleaseService, { strict: false }),
+        mediaRelease,
       ),
+      new VerificationRetentionService(e2e.app.get(VerificationRepository, { strict: false }), mediaRelease),
     );
     const result = await retention.purge(now);
     expect(result.ipHashesCleared).toBeGreaterThanOrEqual(6);
+    expect(result.verification.expiredChallenges).toBeGreaterThanOrEqual(1);
+    expect(result.verification.selfiesErased).toBeGreaterThanOrEqual(1);
+    const verifications = await selectRows<{ id: string; status: string; key: string | null }>(e2e,
+      `SELECT id, status, selfie_storage_key AS key FROM social.photo_verifications WHERE user_id = :id ORDER BY created_at`, { id });
+    expect(verifications).toEqual([
+      { id: decidedId, status: 'APPROVED', key: null },
+      { id: abandonedId, status: 'EXPIRED', key: null },
+    ]);
+    expect(existsSync(join(mediaRoot, selfieKey))).toBe(true);
+    await mediaRelease.drainOnce();
+    expect(existsSync(join(mediaRoot, selfieKey))).toBe(false);
 
     const remaining = await selectRows<{ source: string; hash: string | null }>(e2e, `
       SELECT 'signup' AS source, ip_hmac AS hash FROM auth.signup_audit WHERE user_id = :id

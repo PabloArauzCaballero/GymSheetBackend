@@ -412,7 +412,7 @@ services:
   # Personal-data retention (ADR-0014): runs `db:privacy:retention` every 24 h
   # with jitter (spent signup tickets, 90-day IP hashes, expired closed-account
   # sanctions, reported content of closed accounts 180 days after its last
-  # report closed). Releases files through the media queue, so it mounts the
+  # report closed, verification selfies when due). Releases files through the media queue, so it mounts the
   # same media volume as the api.
   worker-privacy-retention:
     <<: [*app-image, *app-security, *worker-runtime]

@@ -1,22 +1,28 @@
 import type { Transaction } from "sequelize";
 import { CONSENT_VERSIONS } from "../legal/consent-versions";
-import type { ConsentRow, ConsentsRepository } from "./consents.repository";
+import type { MediaReleaseService } from "../media/media-release.service";
+import type { ConsentRow, ConsentsRepository, ErasedMedia } from "./consents.repository";
 import { setConsentSchema } from "./consents.schemas";
 import { ConsentsService } from "./consents.service";
 
 const userId = "00000000-0000-4000-8000-0000000000c1";
 const transaction = {} as Transaction;
 
-function setup(open: ConsentRow | null = null, latest: ConsentRow[] = []) {
+function setup(open: ConsentRow | null = null, latest: ConsentRow[] = [], erased: ErasedMedia[] = []) {
   const repository = {
     runInTransaction: jest.fn((work: (t: Transaction) => Promise<unknown>) => work(transaction)),
     latestPerKind: jest.fn().mockResolvedValue(latest),
     findOpen: jest.fn().mockResolvedValue(open),
     close: jest.fn().mockResolvedValue(undefined),
     open: jest.fn().mockResolvedValue(undefined),
-    eraseData: jest.fn().mockResolvedValue(undefined),
+    eraseData: jest.fn().mockResolvedValue(erased),
   };
-  return { service: new ConsentsService(repository as unknown as ConsentsRepository), repository };
+  const mediaRelease = { requestRelease: jest.fn().mockResolvedValue(undefined) };
+  const service = new ConsentsService(
+    repository as unknown as ConsentsRepository,
+    mediaRelease as unknown as MediaReleaseService,
+  );
+  return { service, repository, mediaRelease };
 }
 
 const row = (overrides: Partial<ConsentRow> = {}): ConsentRow => ({
@@ -80,6 +86,34 @@ describe("ConsentsService", () => {
     });
     expect(repository.findOpen).toHaveBeenCalledWith(userId, "PRECISE_LOCATION", transaction, "SHARE");
     await expect(setup(row()).service.assertGranted(userId, "ORIENTATION", transaction)).resolves.toBeUndefined();
+  });
+
+  it("revoking VERIFICATION_SELFIE queues the release of every erased selfie in the revocation transaction", async () => {
+    const selfie = { aggregateType: "social.photo_verifications", aggregateId: "v1", storageKey: "users/u/verificaciones/a.jpg" };
+    const { service, mediaRelease } = setup(row({ kind: "VERIFICATION_SELFIE" }), [], [selfie]);
+    await service.set(userId, "VERIFICATION_SELFIE", { granted: false }, "WEB");
+    expect(mediaRelease.requestRelease).toHaveBeenCalledTimes(1);
+    expect(mediaRelease.requestRelease).toHaveBeenCalledWith(selfie, transaction);
+  });
+
+  it("requires the CURRENT text for assertCurrentGranted, with the same 400 CONSENT_REQUIRED shape", async () => {
+    const kind = "VERIFICATION_SELFIE" as const;
+    const current = row({ kind, version: CONSENT_VERSIONS[kind] });
+    for (const open of [null, row({ kind, version: "2000-01-01" })]) {
+      await expect(setup(open).service.assertCurrentGranted(userId, kind, transaction)).rejects.toMatchObject({
+        code: "CONSENT_REQUIRED",
+        status: 400,
+        details: { kind },
+      });
+    }
+    const locked = setup(current);
+    await expect(locked.service.assertCurrentGranted(userId, kind, transaction)).resolves.toBeUndefined();
+    expect(locked.repository.findOpen).toHaveBeenCalledWith(userId, kind, transaction, "SHARE");
+
+    // Without a transaction it reads the latest grant (no lock): a revoked or outdated one does not count.
+    const revoked = row({ kind, revokedAt: new Date("2026-11-02T00:00:00.000Z") });
+    await expect(setup(null, [revoked]).service.assertCurrentGranted(userId, kind)).rejects.toMatchObject({ code: "CONSENT_REQUIRED" });
+    await expect(setup(null, [current]).service.assertCurrentGranted(userId, kind)).resolves.toBeUndefined();
   });
 
   it("requires a version only to grant", () => {

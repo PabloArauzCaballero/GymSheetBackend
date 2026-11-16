@@ -1550,7 +1550,8 @@ docker run -d --name gymsheet_redis -p 6379:6379 redis:7-alpine
 #   y REGISTRATION_TICKET_SECRET (>= 32 caracteres cada uno).
 # El arranque falla de inmediato si falta cualquiera de ellas.
 # Los workers de privacidad (stories-purge, account-data, privacy-retention)
-# corren siempre: privacy-retention ejecuta db:privacy:retention cada 24 h.
+# corren siempre: privacy-retention ejecuta db:privacy:retention cada 24 h
+# (incluye la retención de selfies de verificación; db:verification:retention es un alias).
 cp .env.example .env.deploy   # y completar los valores
 
 docker compose --env-file .env.deploy up -d --build

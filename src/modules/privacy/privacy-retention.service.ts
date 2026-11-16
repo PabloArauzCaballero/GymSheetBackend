@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { IP_HASH_RETENTION_DAYS } from "../../common/privacy/client-ip-hash";
 import { ReportedContentRetentionService } from "../account/reported-content-retention.service";
 import { TicketLedgerRepository } from "../antibot/ticket-ledger.repository";
+import { VerificationRetentionResult, VerificationRetentionService } from "../verification/verification-retention.service";
 import { IpHmacTable, PrivacyRetentionRepository } from "./privacy-retention.repository";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -16,6 +17,8 @@ export type PrivacyRetentionResult = {
   closedAccountSanctionsDeleted: number;
   /** Content kept at closure because it was reported, erased per target kind (reports closed 180+ days ago). */
   reportedContentErased: Record<string, number>;
+  /** Abandoned selfie challenges closed and selfie files queued for deletion (franja 6). */
+  verification: VerificationRetentionResult;
 };
 
 /** Data minimisation across every table holding personal data with a retention limit (ADR-0014). */
@@ -25,6 +28,7 @@ export class PrivacyRetentionService {
     private readonly ledger: TicketLedgerRepository,
     private readonly repository: PrivacyRetentionRepository,
     private readonly reportedContent: ReportedContentRetentionService,
+    private readonly verification: VerificationRetentionService,
   ) {}
 
   async purge(now: Date): Promise<PrivacyRetentionResult> {
@@ -37,6 +41,14 @@ export class PrivacyRetentionService {
     const ipHashesCleared = Object.values(ipHashesClearedByTable).reduce((total, count) => total + count, 0);
     const closedAccountSanctionsDeleted = await this.repository.deleteExpiredClosedAccountSanctions(now);
     const reportedContentErased = await this.reportedContent.purge(now);
-    return { ticketsDeleted, ipHashesClearedByTable, ipHashesCleared, closedAccountSanctionsDeleted, reportedContentErased };
+    const verification = await this.verification.purge(now);
+    return {
+      ticketsDeleted,
+      ipHashesClearedByTable,
+      ipHashesCleared,
+      closedAccountSanctionsDeleted,
+      reportedContentErased,
+      verification,
+    };
   }
 }

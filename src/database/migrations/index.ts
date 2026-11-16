@@ -131,6 +131,7 @@ import { downloadAuditIpContractAndClosedAccountSanctionsMigration } from "./202
 import { moderationLegalSafeguardsMigration } from "./202611180401-moderation-legal-safeguards";
 import { discoveryRankingMigration } from "./202611190101-discovery-ranking";
 import { photoVerificationsMigration } from "./202611200101-photo-verifications";
+import { photoVerificationSelfieKeyIndexMigration } from "./202611200201-photo-verification-selfie-key-index";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
 export const databaseMigrations: DatabaseMigration[] = [
@@ -268,4 +269,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   moderationLegalSafeguardsMigration,
   discoveryRankingMigration,
   photoVerificationsMigration,
+  photoVerificationSelfieKeyIndexMigration,
 ];

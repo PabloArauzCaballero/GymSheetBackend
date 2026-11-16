@@ -53,7 +53,13 @@ El comando de un solo disparo sigue disponible. La pasada incluye además el con
 cierre de cuenta conservó por estar denunciado: se borra (o queda como «borrado», si otras
 personas le respondieron) cuando todas sus denuncias llevan cerradas más de
 `REPORT_EVIDENCE_RETENTION_DAYS` (180 días, el mismo plazo que la copia de evidencia del chat), y
-sus archivos salen por la cola `media.release`.
+sus archivos salen por la cola `media.release`. También incluye la retención de selfies de
+verificación (franja 6): cierra los gestos sin respuesta a las 24 h y borra la clave de la selfie de
+inmediato si el intento quedó `EXPIRED`, o 30 días después de la decisión; cada lote borra las claves
+y encola los archivos en `media.release` en una transacción (reintentos, dead-letter, recuento de
+referencias —que ahora incluye `social.photo_verifications.selfie_storage_key`, con índice parcial
+de la migración `202611200201`— y almacenamiento inmutable). `yarn db:verification:retention` es un
+alias de `yarn db:privacy:retention`.
 
 ### 3. Registro de consentimientos (`auth.consents`)
 
@@ -66,8 +72,16 @@ persona y tipo (índice único parcial). Las versiones vigentes viven en
   versión nueva cierra la anterior y abre otra.
 - **Revocar borra el dato en la misma transacción**: `HEALTH` → texto de consideraciones físicas y
   `consent_health`; `ORIENTATION` → orientación y su visibilidad; `PRECISE_LOCATION` → última
-  coordenada del mapa y apaga el mapa; `VERIFICATION_SELFIE` → sólo se registra (la función llega en
-  la franja 6).
+  coordenada del mapa y apaga el mapa; `VERIFICATION_SELFIE` → borra la clave de **toda** selfie
+  guardada (sin esperar los 30 días) y encola su archivo en `media.release` en la misma transacción;
+  los intentos abiertos (`PENDING_UPLOAD`, `PENDING_REVIEW`) pasan a `EXPIRED` y salen de la cola de
+  moderación. La aprobación ya tomada **se conserva** (`verified_at`, la fila con estado, gesto,
+  fechas y motivo): el consentimiento cubre el tratamiento de la imagen, y la decisión del moderador
+  es un hecho; la imagen, en cambio, desaparece.
+- La verificación con selfie (franja 6) exige el consentimiento abierto **de la versión vigente**
+  (`400 CONSENT_REQUIRED`, `details: { kind: 'VERIFICATION_SELFIE' }`): un dato biométrico sólo se
+  trata bajo el texto en vigor. Se comprueba al pedir el gesto y, con `FOR SHARE`, en la transacción
+  que guarda la clave de la selfie.
 - Guardar una orientación o una ubicación del mapa exige el consentimiento abierto
   (`400 CONSENT_REQUIRED`). La comprobación toma `FOR SHARE` sobre la fila del consentimiento dentro
   de la transacción de la escritura: una revocación concurrente espera y luego borra lo escrito.

@@ -11,11 +11,16 @@ export type ConsentRow = {
   revokedAt: Date | null;
 };
 
+/** A stored file whose last reference an erasure statement just cleared. */
+export type ErasedMedia = { aggregateType: string; aggregateId: string; storageKey: string };
+
 /**
  * What revoking a consent erases, in the same transaction that closes it. The
  * statements reach into the tables that hold the datum (onboarding, social
- * profile, map) on purpose: the revocation and the erasure must commit or
- * fail together, and the owning modules depend on this one, not the reverse.
+ * profile, map, selfies) on purpose: the revocation and the erasure must
+ * commit or fail together, and the owning modules depend on this one, not the
+ * reverse. A statement that clears a storage key RETURNS it as `ErasedMedia`
+ * so the service queues the file on `media.release` in the same transaction.
  */
 const ERASURE: Record<ConsentKind, readonly string[]> = {
   HEALTH: [
@@ -34,8 +39,23 @@ const ERASURE: Record<ConsentKind, readonly string[]> = {
         SET map_enabled = FALSE, map_enabled_since = NULL, version = version + 1, updated_at = NOW()
       WHERE user_id = :userId AND map_enabled`,
   ],
-  // The selfie check arrives in franja 6; until then there is nothing stored to erase.
-  VERIFICATION_SELFIE: [],
+  // Every stored selfie goes now, whatever its retention date; open attempts are cancelled
+  // (EXPIRED). The decision record and `verified_at` stay: the consent covers processing the
+  // image, and the moderator's decision is a fact already taken (ADR-0014, franja 6).
+  VERIFICATION_SELFIE: [
+    `WITH target AS (
+       SELECT id, selfie_storage_key FROM social.photo_verifications
+        WHERE user_id = :userId
+          AND (selfie_storage_key IS NOT NULL OR status IN ('PENDING_UPLOAD', 'PENDING_REVIEW'))
+        FOR UPDATE)
+     UPDATE social.photo_verifications v
+        SET status = CASE WHEN v.status IN ('PENDING_UPLOAD', 'PENDING_REVIEW') THEN 'EXPIRED' ELSE v.status END,
+            selfie_storage_key = NULL, selfie_mime_type = NULL,
+            selfie_deleted_at = CASE WHEN target.selfie_storage_key IS NULL THEN v.selfie_deleted_at ELSE NOW() END
+       FROM target WHERE v.id = target.id
+     RETURNING 'social.photo_verifications' AS "aggregateType", v.id::text AS "aggregateId",
+               target.selfie_storage_key AS "storageKey"`,
+  ],
 };
 
 const ROW_COLUMNS = `kind, version, granted_at AS "grantedAt", revoked_at AS "revokedAt"`;
@@ -102,9 +122,19 @@ export class ConsentsRepository {
     );
   }
 
-  async eraseData(userId: string, kind: ConsentKind, transaction: Transaction): Promise<void> {
+  /** Runs the erasure of `kind`; returns the stored files it unreferenced. */
+  async eraseData(userId: string, kind: ConsentKind, transaction: Transaction): Promise<ErasedMedia[]> {
+    const erased: ErasedMedia[] = [];
     for (const statement of ERASURE[kind]) {
-      await this.sequelize.query(statement, { replacements: { userId }, transaction });
+      const rows = await this.sequelize.query<Partial<ErasedMedia>>(statement, {
+        type: QueryTypes.SELECT,
+        replacements: { userId },
+        transaction,
+      });
+      for (const { aggregateType, aggregateId, storageKey } of rows) {
+        if (aggregateType && aggregateId && storageKey) erased.push({ aggregateType, aggregateId, storageKey });
+      }
     }
+    return erased;
   }
 }

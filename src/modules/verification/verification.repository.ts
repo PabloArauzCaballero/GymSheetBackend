@@ -12,6 +12,7 @@ import {
 
 export type QueueRow = { verification: PhotoVerificationModel; memberName: string };
 export type MemberPhoto = { userId: string; id: string; url: string };
+export type ClearedSelfie = { id: string; storageKey: string };
 
 /** Data access of `social.photo_verifications` plus the user/photo facts it needs. */
 @Injectable()
@@ -20,6 +21,10 @@ export class VerificationRepository {
     private readonly sequelize: Sequelize,
     @InjectModel(PhotoVerificationModel) private readonly rows: typeof PhotoVerificationModel,
   ) {}
+
+  runInTransaction<T>(work: (transaction: Transaction) => Promise<T>): Promise<T> {
+    return this.sequelize.transaction(work);
+  }
 
   /** Locks the account row: serializes challenges and decisions per member. */
   async lockUser(userId: string, transaction: Transaction): Promise<{ verifiedAt: Date | null } | null> {
@@ -188,28 +193,25 @@ export class VerificationRepository {
     return count;
   }
 
-  findSelfiesToErase(decidedBefore: Date, limit: number): Promise<PhotoVerificationModel[]> {
-    return this.rows.findAll({
-      where: {
-        selfieStorageKey: { [Op.ne]: null },
-        [Op.or]: [
-          { status: VerificationStatus.EXPIRED },
-          {
-            status: [VerificationStatus.APPROVED, VerificationStatus.REJECTED],
-            decidedAt: { [Op.lte]: decidedBefore },
-          },
-        ],
-      },
-      order: [["createdAt", "ASC"]],
-      limit,
-    });
-  }
-
-  /** Clears the key only if it is still the one whose file was removed. */
-  async clearSelfie(id: string, storageKey: string, now: Date): Promise<void> {
-    await this.rows.update(
-      { selfieStorageKey: null, selfieMimeType: null, selfieDeletedAt: now },
-      { where: { id, selfieStorageKey: storageKey } },
+  /**
+   * Clears the key of up to `limit` selfies due for erasure (EXPIRED attempts,
+   * and decided ones once `decidedBefore` passed) and returns the cleared keys.
+   * SKIP LOCKED leaves rows a decision or a revocation holds to the next run.
+   */
+  clearDueSelfies(decidedBefore: Date, now: Date, limit: number, transaction: Transaction): Promise<ClearedSelfie[]> {
+    return this.sequelize.query<ClearedSelfie>(
+      `WITH due AS (
+         SELECT id, selfie_storage_key FROM social.photo_verifications
+          WHERE selfie_storage_key IS NOT NULL
+            AND (status = 'EXPIRED' OR (status IN ('APPROVED', 'REJECTED') AND decided_at <= :decidedBefore))
+          ORDER BY created_at
+          LIMIT :limit
+          FOR UPDATE SKIP LOCKED)
+       UPDATE social.photo_verifications v
+          SET selfie_storage_key = NULL, selfie_mime_type = NULL, selfie_deleted_at = :now
+         FROM due WHERE v.id = due.id
+       RETURNING v.id, due.selfie_storage_key AS "storageKey"`,
+      { type: QueryTypes.SELECT, replacements: { decidedBefore, now, limit }, transaction },
     );
   }
 }

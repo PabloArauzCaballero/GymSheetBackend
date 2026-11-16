@@ -17,9 +17,16 @@ describe('ACCOUNT_CLOSURE_STEPS', () => {
     expect(ACCOUNT_CLOSURE_STEPS.some((step) => step.table === 'public.usuarios')).toBe(false);
   });
 
-  it('collects the files of photos, stories, reels, chat media and comment attachments', () => {
+  it('collects the files of photos, stories, reels, chat media, comment attachments and verification selfies', () => {
     const withMedia = new Set(ACCOUNT_CLOSURE_STEPS.filter((step) => step.mediaKey).map((step) => step.table));
-    expect([...withMedia].sort()).toEqual(['chat.messages', 'community.content_comments', 'profile.photos', 'profile.stories', 'social.reels']);
+    expect([...withMedia].sort()).toEqual([
+      'chat.messages', 'community.content_comments', 'profile.photos', 'profile.stories', 'social.photo_verifications', 'social.reels',
+    ]);
+  });
+
+  it('deletes every verification attempt of the member and releases its selfie', () => {
+    const steps = ACCOUNT_CLOSURE_STEPS.filter((step) => step.table === 'social.photo_verifications');
+    expect(steps).toEqual([expect.objectContaining({ disposition: 'DELETED', where: 't.user_id = :userId', mediaKey: 't.selfie_storage_key' })]);
   });
 
   it('keeps the moderation evidence of franja 4 (no FK, so the e2e FK scan cannot see it)', () => {

@@ -3,6 +3,7 @@ import { Transaction } from "sequelize";
 import { DomainException } from "../../common/errors/domain.exception";
 import { CONSENT_VERSIONS, ConsentKind } from "../legal/consent-versions";
 import type { LegalChannel } from "../legal/legal-client-context";
+import { MediaReleaseService } from "../media/media-release.service";
 import { ConsentResponse, mapConsent, mapConsents } from "./consents.mapper";
 import { ConsentsRepository } from "./consents.repository";
 import type { SetConsentInput } from "./consents.schemas";
@@ -17,12 +18,17 @@ const REQUIRED_MESSAGES: Record<ConsentKind, string> = {
 /**
  * Ledger of separate, revocable consents (ADR-0014). Granting records the
  * text version and the channel; revoking closes the grant AND erases the
- * datum it covered, in one transaction. The other modules call
- * `assertGranted` inside the transaction of the write that needs consent.
+ * datum it covered, in one transaction; stored files it covered (selfies)
+ * are queued on the shared `media.release` outbox in that same transaction.
+ * The other modules call `assertGranted` inside the transaction of the write
+ * that needs consent.
  */
 @Injectable()
 export class ConsentsService {
-  constructor(private readonly repository: ConsentsRepository) {}
+  constructor(
+    private readonly repository: ConsentsRepository,
+    private readonly mediaRelease: MediaReleaseService,
+  ) {}
 
   async list(userId: string): Promise<{ consents: ConsentResponse[] }> {
     return { consents: mapConsents(await this.repository.latestPerKind(userId)) };
@@ -69,12 +75,31 @@ export class ConsentsService {
   async revoke(userId: string, kind: ConsentKind, transaction: Transaction): Promise<void> {
     await this.repository.findOpen(userId, kind, transaction, "UPDATE");
     await this.repository.close(userId, kind, transaction);
-    await this.repository.eraseData(userId, kind, transaction);
+    const erasedFiles = await this.repository.eraseData(userId, kind, transaction);
+    for (const file of erasedFiles) await this.mediaRelease.requestRelease(file, transaction);
   }
 
   /** 400 CONSENT_REQUIRED without an open consent; holds a share lock until `transaction` ends. */
   async assertGranted(userId: string, kind: ConsentKind, transaction: Transaction): Promise<void> {
     if (await this.repository.findOpen(userId, kind, transaction, "SHARE")) return;
-    throw new DomainException(HttpStatus.BAD_REQUEST, "CONSENT_REQUIRED", REQUIRED_MESSAGES[kind], { kind });
+    throw consentRequired(kind);
   }
+
+  /**
+   * Stricter than `assertGranted`: the open grant must be of the CURRENT text
+   * (biometric data is processed only under the text in force). With
+   * `transaction` it holds the same share lock; without one it is a plain read,
+   * for a cheap check before expensive work that a locked check repeats.
+   */
+  async assertCurrentGranted(userId: string, kind: ConsentKind, transaction?: Transaction): Promise<void> {
+    const open = transaction
+      ? await this.repository.findOpen(userId, kind, transaction, "SHARE")
+      : (await this.repository.latestPerKind(userId)).find((row) => row.kind === kind && row.revokedAt === null);
+    if (open?.version === CONSENT_VERSIONS[kind]) return;
+    throw consentRequired(kind);
+  }
+}
+
+function consentRequired(kind: ConsentKind): DomainException {
+  return new DomainException(HttpStatus.BAD_REQUEST, "CONSENT_REQUIRED", REQUIRED_MESSAGES[kind], { kind });
 }

@@ -117,6 +117,8 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
   del("social.reels", "Reels", `${OWN} AND NOT ${reported("REEL")}`, "t.storage_key"),
   keep("social.reels", "Reels denunciados", `${OWN} AND ${reported("REEL")}`,
     "Evidencia de una denuncia en revisión de moderación."),
+  // The reviewer FK is staff-only (closure is for members) and SET NULL on its own.
+  del("social.photo_verifications", "Verificación de identidad con selfie", OWN, "t.selfie_storage_key"),
   del("social.profile_details", "Perfil de Conocer (intereses, hábitos, bio, orientación)", OWN),
   del("social.profile_settings", "Ajustes de visibilidad", OWN),
   del("social.discovery_preferences", "Preferencias de Conocer", OWN),

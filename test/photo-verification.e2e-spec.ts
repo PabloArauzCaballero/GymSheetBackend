@@ -1,26 +1,29 @@
-import { INestApplicationContext } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { env } from '../src/config/env';
+import { MediaReleaseService } from '../src/modules/media/media-release.service';
+import { VerificationRepository } from '../src/modules/verification/verification.repository';
 import { VerificationRetentionService } from '../src/modules/verification/verification-retention.service';
-import { VerificationMaintenanceModule } from '../src/workers/verification-maintenance.module';
 import { bootE2eApp, type E2eApp } from './support/e2e-app';
+import { grantConsent } from './support/privacy-e2e';
 
 /**
  * Person verification (franja 6) against PostgreSQL: gesture challenge →
  * private selfie → moderation queue → decision → verified_at, its effect on the
- * Conocer deck, the photo replacement rule, limits and authorization.
+ * Conocer deck, the photo replacement rule, the VERIFICATION_SELFIE consent
+ * (required; revoking it erases the selfies), limits and authorization.
  */
 describe('Photo verification (e2e)', () => {
   jest.setTimeout(90000);
   let e2e: E2eApp;
   let sequelize: Sequelize;
-  // The same DI context `yarn db:verification:retention` boots.
-  let maintenance: INestApplicationContext;
+  // The selfie step of `yarn db:privacy:retention`, built on the app connection
+  // (a second Nest context would rebind the global models).
+  let retention: VerificationRetentionService;
+  let mediaRelease: MediaReleaseService;
   const tenant = `verif-e2e-${Date.now().toString(36)}`;
   const otherTenant = `${tenant}-b`;
   const branch = randomUUID();
@@ -42,6 +45,7 @@ describe('Photo verification (e2e)', () => {
         { id: account.id, key: `verif-e2e/${account.id}/${position}`, position },
       );
     }
+    await grantConsent(e2e, account.token, 'VERIFICATION_SELFIE');
     const api = e2e.as(account.token);
     await api.patch('/me/social-discovery-settings')
       .send({ profileEnabled: true, crossGymEnabled: false, mapEnabled: false, expectedVersion: 0 }).expect(200);
@@ -84,7 +88,8 @@ describe('Photo verification (e2e)', () => {
   beforeAll(async () => {
     e2e = await bootE2eApp();
     sequelize = e2e.app.get(Sequelize);
-    maintenance = await NestFactory.createApplicationContext(VerificationMaintenanceModule, { logger: false });
+    mediaRelease = e2e.app.get(MediaReleaseService, { strict: false });
+    retention = new VerificationRetentionService(e2e.app.get(VerificationRepository, { strict: false }), mediaRelease);
     for (const id of [tenant, otherTenant]) await e2e.sql('INSERT INTO tenants (id, nombre) VALUES (:id, :id)', { id });
     await e2e.sql(
       `INSERT INTO facilities.branches (id, code, name, time_zone, latitude, longitude, tenant_id)
@@ -94,7 +99,6 @@ describe('Photo verification (e2e)', () => {
   }, 60000);
 
   afterAll(async () => {
-    await maintenance?.close();
     await e2e?.app.close();
   });
 
@@ -176,8 +180,11 @@ describe('Photo verification (e2e)', () => {
 
     // Retention: 30 days after the decision the selfie file and key are gone, the row stays.
     await e2e.sql(`UPDATE social.photo_verifications SET decided_at = now() - interval '31 days' WHERE id = :id`, { id: challenge.id });
-    const result = await maintenance.get(VerificationRetentionService).purge(new Date());
+    const result = await retention.purge(new Date());
     expect(result.selfiesErased).toBeGreaterThanOrEqual(1);
+    // The file goes through the shared media.release outbox queue.
+    expect(existsSync(join(env.MEDIA_STORAGE_LOCAL_ROOT, stored.key))).toBe(true);
+    await mediaRelease.drainOnce();
     const after = await one<{ key: string | null; status: string; deleted: Date | null }>(
       `SELECT selfie_storage_key AS key, status, selfie_deleted_at AS deleted FROM social.photo_verifications WHERE id = :id`,
       { id: challenge.id });
@@ -202,7 +209,8 @@ describe('Photo verification (e2e)', () => {
     const retry = (await e2e.as(cata.token).post('/me/verification/challenge').expect(201)).body.data;
     expect(retry.gesture.code).not.toBe(first.code);
     await e2e.sql(`UPDATE social.photo_verifications SET decided_at = now() - interval '31 days' WHERE id = :id`, { id });
-    await maintenance.get(VerificationRetentionService).purge(new Date());
+    await retention.purge(new Date());
+    await mediaRelease.drainOnce();
   });
 
   it('expires the challenge after 10 minutes and caps attempts at three per 24 h', async () => {
