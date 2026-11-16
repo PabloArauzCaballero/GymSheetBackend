@@ -46,7 +46,7 @@ function setup(overrides: Partial<Record<keyof VerificationRepository, jest.Mock
     ...overrides,
   };
   const storage = {
-    immutable: false,
+    canRemove: jest.fn().mockReturnValue(true),
     upload: jest.fn().mockResolvedValue({ key: "users/u/verificaciones/k.jpg" }),
     remove: jest.fn().mockResolvedValue(undefined),
   };
@@ -89,11 +89,13 @@ describe("VerificationService.issueChallenge", () => {
 
   it("stays closed on storage that cannot delete: the selfie must be erasable after 30 days", async () => {
     const { service, storage, repository } = setup();
-    storage.immutable = true;
+    storage.canRemove.mockReturnValue(false);
     await expect(service.issueChallenge(userId)).rejects.toMatchObject({
       response: expect.objectContaining({ code: "VERIFICATION_UNAVAILABLE" }),
     });
     expect(repository.create).not.toHaveBeenCalled();
+    // The check is about this member's selfie folder, not the storage as a whole (ADR-0017).
+    expect(storage.canRemove).toHaveBeenCalledWith(`users/${userId}/verificaciones/selfie`);
   });
 
   it("stops before anything else when consent is missing", async () => {

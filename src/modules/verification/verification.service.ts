@@ -3,7 +3,7 @@ import { UniqueConstraintError } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { DomainException } from "../../common/errors/domain.exception";
 import { ChatMediaCipher } from "../chat/chat-media-cipher";
-import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
+import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider, mediaTargetPrefix } from "../media/media-storage.port";
 import { PhotoVerificationModel } from "./photo-verification.model";
 import { UploadedSelfie, validateSelfie } from "./selfie-image";
 import { pickGesture, VerificationStatus } from "./verification.catalog";
@@ -45,8 +45,9 @@ export class VerificationService {
 
   async issueChallenge(userId: string): Promise<ChallengeResponse> {
     // A selfie is biometric data that must be deletable 30 days after the
-    // decision: on storage that cannot delete, the feature stays closed.
-    if (this.storage.immutable) {
+    // decision: if the storage cannot delete in this member's selfie folder
+    // (ADR-0017 flag off, or a provider that keeps everything), the feature stays closed.
+    if (!this.storage.canRemove(`${mediaTargetPrefix({ category: "verificaciones", ownerUserId: userId })}/selfie`)) {
       this.logger.error({ event: "verification.unavailable", reason: "immutable_storage" });
       throw new DomainException(
         HttpStatus.SERVICE_UNAVAILABLE,
