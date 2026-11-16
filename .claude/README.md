@@ -5,7 +5,8 @@ Organización para desarrollo backend profesional de este repositorio.
 - `settings.json` — configuración compartida (hooks de graphify). Fusionar, nunca reemplazar.
 - `settings.local.json` — configuración personal/temporal. **Ignorado por Git.**
 - `rules/` — reglas modulares por tema; las que llevan `paths` solo aplican en sus rutas.
-- `skills/` — procedimientos especializados, invocables por nombre.
+- `skills/` — procedimientos especializados, invocables por nombre (`legal-bolivia`: marco legal de los textos de REPP).
+- `agents/` — revisores independientes (`legal-reviewer`: revisión adversarial de los textos legales).
 - `hooks/` — scripts de graphify (preexistentes).
 - `backups/` — respaldos de configuración. Ignorado por Git.
 

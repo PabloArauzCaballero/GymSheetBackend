@@ -124,6 +124,27 @@ describe('Reported content lifecycle (e2e)', () => {
       expect(fileAt(sharedKey)).toBe(true);
     });
 
+    it("deleting a comment never releases another person's file through a traversal URL", async () => {
+      const attacker = await e2e.register('comment-traversal-attacker');
+      const victim = await e2e.register('comment-traversal-victim');
+      const routineId = randomUUID();
+      await e2e.sql(`INSERT INTO training.routines (id, nombre, created_by_user_id)
+                     VALUES (:routineId, 'Rutina atacada', :userId)`, { routineId, userId: attacker.id });
+      const victimKey = `users/${victim.id}/publicaciones/${randomUUID()}.jpg`;
+      writeStoredFile(victimKey);
+      const commentId = randomUUID();
+      // The URL starts with the attacker's own folder and climbs into the victim's.
+      const url = `${env.MEDIA_STORAGE_PUBLIC_BASE_URL}/users/${attacker.id}/publicaciones/../../${victim.id}/publicaciones/${victimKey.split('/').pop()}`;
+      await e2e.sql(`INSERT INTO community.content_comments (id, target_kind, target_id, autor_id, texto, adjunto_tipo, adjunto_url)
+                     VALUES (:id, 'ROUTINE', :routineId, :userId, 'Trampa', 'IMAGEN', :url)`,
+      { id: commentId, routineId, userId: attacker.id, url });
+
+      await e2e.as(attacker.token).del(`/comments/${commentId}`).expect(200);
+      expect(await releaseJobs(commentId)).toEqual([]);
+      await e2e.app.get(MediaReleaseService, { strict: false }).drainOnce(500);
+      expect(fileAt(victimKey)).toBe(true);
+    });
+
     it('the disappearing-message purge releases the file of the messages it deletes', async () => {
       const sender = await e2e.register('vanish-media-sender');
       const other = await e2e.register('vanish-media-other');

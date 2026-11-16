@@ -1,6 +1,10 @@
 import { Injectable } from "@nestjs/common";
 import { Sequelize } from "sequelize-typescript";
+import { ownMediaKey } from "../../common/media/own-media-key";
 import { env } from "../../config/env";
+
+/** Folder of an author's comment attachments in our storage. */
+export const COMMENT_ATTACHMENT_FOLDER = "publicaciones";
 import { MediaReferencesRepository } from "../media/media-references.repository";
 import { MediaReleaseService } from "../media/media-release.service";
 import { ContentCommentModel } from "./content-comment.model";
@@ -20,18 +24,15 @@ const WIPED_COMMENT = {
 
 /**
  * Storage key of an attachment uploaded to our storage by the author: the URL
- * is `<public base>/<key>` and the key lives in the author's folder
- * (`mediaTargetPrefix`). Giphy links and foreign URLs yield null.
+ * is `<public base>/users/<author>/publicaciones/<file>`. Giphy links, foreign
+ * URLs and any path that is not a plain key inside that folder yield null.
  */
 export function commentAttachmentKey(
   url: string | null,
   authorId: string,
   publicBaseUrl: string = env.MEDIA_STORAGE_PUBLIC_BASE_URL,
 ): string | null {
-  if (!url) return null;
-  const base = publicBaseUrl.replace(/\/+$/, "");
-  const ownFolder = `${base}/users/${authorId}/`;
-  return url.startsWith(ownFolder) ? url.slice(base.length + 1) : null;
+  return ownMediaKey(url, authorId, COMMENT_ATTACHMENT_FOLDER, publicBaseUrl);
 }
 
 /**

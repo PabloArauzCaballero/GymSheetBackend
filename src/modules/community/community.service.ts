@@ -13,6 +13,7 @@ import { CommentAttachmentRelease } from './comment-attachment-release';
 import { CommentRow, CommunityRepository } from './community.repository';
 import { env } from '../../config/env';
 import { CommentInput, CommentListQuery, ContentKind } from './community.schemas';
+import { commentAttachmentKey } from './comment-attachment-release';
 
 const COMMENTS_PER_MINUTE = 10;
 const NOTIFY_WINDOW_MS = 15 * 60 * 1000;
@@ -238,8 +239,8 @@ function isTrustedAttachmentUrl(attachment: { tipo: string; url: string }, userI
       return false;
     }
   }
-  const base = env.MEDIA_STORAGE_PUBLIC_BASE_URL.replace(/\/+$/, '');
-  return attachment.url.startsWith(`${base}/users/${userId}/publicaciones/`);
+  // Parsed, not prefix-matched: `.../users/<me>/../<other>/x.jpg` must not pass.
+  return commentAttachmentKey(attachment.url, userId) !== null;
 }
 
 const encode = (offset: number): string => Buffer.from(String(offset), 'utf8').toString('base64url');

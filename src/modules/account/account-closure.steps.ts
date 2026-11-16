@@ -60,7 +60,10 @@ export const reported = (kind: string, idColumn = "t.id"): string =>
  * same way (`mediaTargetPrefix`). URLs outside the owner's folder yield null.
  */
 export const ownFolderKey = (urlColumn: string, owner = ":userId"): string =>
+  // A URL with traversal, encoding, whitespace/control characters, a query or a
+  // fragment never yields a key: only a plain path inside the owner's folder.
   `CASE WHEN strpos(${urlColumn}, 'users/' || ${owner} || '/') > 0
+         AND ${urlColumn} !~ '(\\.\\.|%|//users/|[[:space:][:cntrl:]]|[?#])'
         THEN substr(${urlColumn}, strpos(${urlColumn}, 'users/' || ${owner} || '/')) END`;
 
 /** A routine of the person that someone else's program, session or invite snapshot still uses. */

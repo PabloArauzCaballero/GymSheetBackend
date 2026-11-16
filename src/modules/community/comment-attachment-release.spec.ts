@@ -20,6 +20,13 @@ describe("commentAttachmentKey", () => {
     expect(commentAttachmentKey(`${base}/users/someone-else/publicaciones/abc.jpg`, author, base)).toBeNull();
     expect(commentAttachmentKey(null, author, base)).toBeNull();
   });
+
+  it("never yields someone else's file through a traversal path", () => {
+    const victim = "22222222-2222-4222-8222-222222222222";
+    expect(commentAttachmentKey(`${base}/users/${author}/publicaciones/../../${victim}/publicaciones/x.jpg`, author, base)).toBeNull();
+    expect(commentAttachmentKey(`${base}/users/${author}/../${victim}/publicaciones/x.jpg`, author, base)).toBeNull();
+    expect(commentAttachmentKey(`${base}/users/${author}/publicaciones/%2e%2e/x.jpg`, author, base)).toBeNull();
+  });
 });
 
 describe("CommentAttachmentRelease", () => {
