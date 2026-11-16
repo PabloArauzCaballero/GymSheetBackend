@@ -88,6 +88,26 @@ export class StoriesController {
     return new StreamableFile(media.buffer, { type: media.mimeType, disposition: "inline" });
   }
 
+  @Get(":id/thumbnail")
+  // Same private, short cache as the full media: the thumbnail derives from
+  // immutable content, and ten minutes bound what survives a lost permission.
+  @Header("Cache-Control", "private, max-age=600")
+  @Header("X-Content-Type-Options", "nosniff")
+  async thumbnail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", UuidParamPipe) storyId: string,
+    @Headers("if-none-match") ifNoneMatch: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    const thumbnail = await this.service.thumbnail(storyId, user.id, ifNoneMatch);
+    response.setHeader("ETag", thumbnail.etag);
+    if (!thumbnail.buffer) {
+      response.status(HttpStatus.NOT_MODIFIED);
+      return new StreamableFile(Buffer.alloc(0), { type: thumbnail.mimeType });
+    }
+    return new StreamableFile(thumbnail.buffer, { type: thumbnail.mimeType, disposition: "inline" });
+  }
+
   @Get(":id/viewers")
   viewers(@CurrentUser() user: AuthenticatedUser, @Param("id", UuidParamPipe) storyId: string) {
     return this.service.viewers(storyId, user.id, user.tenantId);

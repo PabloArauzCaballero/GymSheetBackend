@@ -5,6 +5,7 @@ import request from 'supertest';
 import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { randomUUID } from 'crypto';
+import sharp from 'sharp';
 import { AppModule } from '../../src/app.module';
 import { HttpExceptionFilter } from '../../src/common/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../src/common/interceptors/response.interceptor';
@@ -622,5 +623,48 @@ describe('stories across tenant boundaries (e2e)', () => {
       .set('Authorization', `Bearer ${viewer.accessToken}`)
       .set('If-None-Match', etag)
       .expect(304);
+
+    // Miniatura del anillo: el feed la anuncia solo para fotos, con el mismo
+    // acceso que el medio completo, y mucho más liviana que la imagen.
+    const thumbnailUrl = url(`/me/stories/${captionStoryId}/thumbnail`);
+    const thumbnailFeed = await request(httpServer)
+      .get(url('/me/stories/feed'))
+      .set('Authorization', `Bearer ${viewer.accessToken}`)
+      .expect(200);
+    const feedStory = (thumbnailFeed.body.data as Array<{
+      userId: string; stories: Array<{ id: string; thumbnailUrl: string | null }>;
+    }>).find((entry) => entry.userId === owner.userId)?.stories.find((story) => story.id === captionStoryId);
+    expect(feedStory?.thumbnailUrl).toBe(`/me/stories/${captionStoryId}/thumbnail`);
+    await request(httpServer).get(thumbnailUrl).expect(401);
+    const outsider = await register('thumbnail-outsider');
+    await request(httpServer).get(thumbnailUrl).set('Authorization', `Bearer ${outsider.accessToken}`).expect(404);
+    // The mocked storage holds bytes that are not an image: no thumbnail, not a 500.
+    await request(httpServer).get(thumbnailUrl).set('Authorization', `Bearer ${viewer.accessToken}`).expect(404);
+
+    const photo = await sharp({ create: { width: 1600, height: 1200, channels: 3, background: '#1f6f5c' } }).jpeg().toBuffer();
+    (mediaProvider.download as jest.Mock).mockResolvedValueOnce(photo);
+    const thumbnail = await request(httpServer)
+      .get(thumbnailUrl)
+      .set('Authorization', `Bearer ${viewer.accessToken}`)
+      .buffer(true)
+      .parse((response, done) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => done(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    expect(thumbnail.headers['content-type']).toMatch(/^image\/webp/);
+    expect(thumbnail.headers['cache-control']).toBe('private, max-age=600');
+    expect(await sharp(thumbnail.body as Buffer).metadata()).toMatchObject({ format: 'webp', width: 192, height: 192 });
+    expect((thumbnail.body as Buffer).byteLength).toBeLessThan(photo.byteLength);
+    const thumbnailEtag = String(thumbnail.headers.etag);
+    expect(thumbnailEtag).not.toBe(etag);
+    const downloadsBefore = (mediaProvider.download as jest.Mock).mock.calls.length;
+    await request(httpServer)
+      .get(thumbnailUrl)
+      .set('Authorization', `Bearer ${viewer.accessToken}`)
+      .set('If-None-Match', thumbnailEtag)
+      .expect(304);
+    expect((mediaProvider.download as jest.Mock).mock.calls.length).toBe(downloadsBefore);
   }, 120000);
 });

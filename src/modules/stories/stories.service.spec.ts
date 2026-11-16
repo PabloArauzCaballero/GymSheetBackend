@@ -7,7 +7,9 @@ import { MediaReferencesRepository } from "../media/media-references.repository"
 import { MediaRetentionService } from "../media/media-retention.service";
 import { MediaStorageProvider } from "../media/media-storage.port";
 import { StoriesRepository, StoryFeedRow } from "./stories.repository";
+import sharp from "sharp";
 import { StoriesService, storyMediaEtag } from "./stories.service";
+import { STORY_THUMBNAIL_SIZE } from "./story-thumbnail";
 
 const userId = "00000000-0000-4000-8000-00000000000a";
 const viewerId = "00000000-0000-4000-8000-00000000000a";
@@ -609,5 +611,59 @@ describe("StoriesService.viewers", () => {
       ],
     });
     expect(viewersOf).toHaveBeenCalledWith(storyId, "default");
+  });
+});
+
+describe("StoriesService.thumbnail", () => {
+  const visibleStory = (storageKey: string) => ({
+    findById: jest.fn().mockResolvedValue({
+      id: "story-1", userId: matchId, storageKey,
+      expiresAt: new Date(Date.now() + 60_000), hiddenAt: null, audienceMode: "ALL_CONNECTIONS",
+    }),
+    hasAcceptedConnection: jest.fn().mockResolvedValue(true),
+    isSelectedRecipient: jest.fn().mockResolvedValue(true),
+    isBlockedEitherWay: jest.fn().mockResolvedValue(false),
+  });
+  const photo = () => sharp({ create: { width: 1200, height: 800, channels: 3, background: "#3a7" } }).jpeg().toBuffer();
+
+  it("renders a small square WebP of a photo story", async () => {
+    const download = jest.fn().mockResolvedValue(await photo());
+    const service = createService(visibleStory("users/owner/stories/a.jpg"), { download });
+
+    const result = await service.thumbnail("story-1", userId, undefined);
+
+    expect(result.mimeType).toBe("image/webp");
+    const metadata = await sharp(result.buffer as Buffer).metadata();
+    expect(metadata).toMatchObject({ format: "webp", width: STORY_THUMBNAIL_SIZE, height: STORY_THUMBNAIL_SIZE });
+    expect(result.etag).not.toBe(storyMediaEtag("users/owner/stories/a.jpg"));
+  });
+
+  it("answers a matching If-None-Match without downloading or decoding", async () => {
+    const download = jest.fn();
+    const service = createService(visibleStory("users/owner/stories/a.jpg"), { download });
+    const expected = storyMediaEtag("users/owner/stories/a.jpg#thumbnail");
+
+    await expect(service.thumbnail("story-1", userId, `"x", ${expected}`)).resolves.toEqual({ etag: expected, buffer: null, mimeType: "image/webp" });
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it("has no thumbnail for a video story", async () => {
+    const download = jest.fn();
+    const service = createService(visibleStory("users/owner/stories/a.mp4"), { download });
+    await expect(service.thumbnail("story-1", userId, undefined)).rejects.toThrow(NotFoundException);
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it("treats undecodable stored bytes as a story without thumbnail, not a 500", async () => {
+    const download = jest.fn().mockResolvedValue(Buffer.from("not an image"));
+    const service = createService(visibleStory("users/owner/stories/a.jpg"), { download });
+    await expect(service.thumbnail("story-1", userId, undefined)).rejects.toThrow("Esta story no tiene miniatura.");
+  });
+
+  it("applies the same access rule as the full media", async () => {
+    const download = jest.fn();
+    const service = createService({ ...visibleStory("users/owner/stories/a.jpg"), hasAcceptedConnection: jest.fn().mockResolvedValue(false) }, { download });
+    await expect(service.thumbnail("story-1", strangerId, undefined)).rejects.toThrow(NotFoundException);
+    expect(download).not.toHaveBeenCalled();
   });
 });
