@@ -53,6 +53,19 @@ describe('Moderation safeguards (e2e)', () => {
       await resolveCase(e2e, moderator, { kind: 'USER', id: reported.id }, { confirmMinor: false });
       expect(await suspendedUntil(reported.id)).toBeNull();
       await e2e.as(reported.token).get('/users/me').expect(200);
+
+      // N13: the person is told the review ended, in the app and by email, without the reporters.
+      const cleared = (await inbox(e2e, reported.token)).find((item) => item.tipo === 'MODERATION_MINOR_REVIEW_CLEARED');
+      expect(cleared?.mensaje).toContain('tu cuenta está activa otra vez');
+      const emails = await selectRows<{ payload: { subject: string; body: string } }>(e2e,
+        `SELECT payload FROM integration.outbox_jobs
+          WHERE queue_name = 'notifications.delivery' AND aggregate_id = :id AND payload->>'kind' = 'NOTICE_EMAIL'
+            AND payload->>'subject' LIKE '%Tu cuenta está activa otra vez'`, { id: reported.id });
+      expect(emails).toHaveLength(1);
+      for (const text of [cleared?.mensaje ?? '', emails[0].payload.body]) {
+        for (const reporterId of [reporter.id, second.id]) expect(text).not.toContain(reporterId);
+        expect(text).not.toContain('E2E minor-reporter');
+      }
     });
 
     it('a confirmed minor stays suspended and the account closure is requested, without a strike', async () => {

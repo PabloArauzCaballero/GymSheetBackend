@@ -461,7 +461,9 @@ export class ModerationService {
       if (input.confirmMinor) {
         await this.minors.confirm(reportedUserId, transaction);
       } else if (openReports.some((report) => report.reason === ModerationReason.MENOR_DE_EDAD)) {
-        await this.minors.liftIfCleared(reportedUserId, { kind: targetKind, id: targetId }, transaction);
+        await this.minors.liftIfCleared(reportedUserId, { kind: targetKind, id: targetId }, transaction, {
+          sanctionFollows: Boolean(input.sanction),
+        });
       }
       if (input.sanction && !input.confirmMinor) {
         const previous = await this.repository.countActiveStrikes(

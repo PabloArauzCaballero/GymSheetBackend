@@ -7,7 +7,13 @@ import { NotificationService } from "../notifications/notification.service";
 import { NoticeEmailService } from "../notifications/notice-email.service";
 import { SocialRecommendationOutboxService } from "../social/social-recommendation-outbox.service";
 import { ModerationSafeguardsRepository } from "./moderation-safeguards.repository";
-import { emailModerationNotice, minorClosureNotice, minorSuspensionNotice, sendModerationNotice } from "./moderation-notices";
+import {
+  emailModerationNotice,
+  minorClosureNotice,
+  minorReviewClearedNotice,
+  minorSuspensionNotice,
+  sendModerationNotice,
+} from "./moderation-notices";
 import { ModerationTargetKind, ModerationTargetKindValue } from "./moderation.policy";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -110,12 +116,24 @@ export class ModerationMinorService {
     });
   }
 
-  /** The case is closed without confirming a minor: the provisional suspension ends. */
-  liftIfCleared(
+  /**
+   * The case is closed without confirming a minor: the provisional suspension
+   * ends, and the person is told in the app and by email (the same notice
+   * email as the suspension) that the review ended. `sanctionFollows` is set
+   * when this same review applies another sanction, so the notice does not
+   * promise an account that is about to be suspended again.
+   */
+  async liftIfCleared(
     userId: string,
     target: { kind: ModerationTargetKindValue; id: string },
     transaction: Transaction,
+    options: { sanctionFollows: boolean },
   ): Promise<void> {
-    return this.repository.liftProvisionalSuspension(userId, PENDING_REVIEW_SUSPENSION_UNTIL, target, transaction);
+    const lifted = await this.repository.liftProvisionalSuspension(userId, PENDING_REVIEW_SUSPENSION_UNTIL, target, transaction);
+    if (!lifted) return;
+    const notice = minorReviewClearedNotice(lifted.suspendedUntil !== null || options.sanctionFollows);
+    const key = `moderation.minor-cleared:${userId}:${Date.now()}`;
+    await sendModerationNotice(this.notifications, userId, notice, key, transaction);
+    await emailModerationNotice(this.noticeEmails, userId, notice, key, { transaction });
   }
 }

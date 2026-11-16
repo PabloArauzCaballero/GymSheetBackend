@@ -379,7 +379,9 @@ describe('ModerationService', () => {
       await service.resolve(moderator, ModerationTargetKind.USER, 'author-1', {
         hideContent: false, sanction: false, confirmMinor: false, note: null,
       });
-      expect(minors.liftIfCleared).toHaveBeenCalledWith('author-1', { kind: 'USER', id: 'author-1' }, expect.anything());
+      expect(minors.liftIfCleared).toHaveBeenCalledWith('author-1', { kind: 'USER', id: 'author-1' }, expect.anything(), {
+        sanctionFollows: false,
+      });
       expect(minors.confirm).not.toHaveBeenCalled();
     });
 

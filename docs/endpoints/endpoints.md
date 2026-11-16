@@ -82,7 +82,7 @@ A suspended account answers `code: ACCOUNT_SUSPENDED` — `403` at login/signup 
 
 An account banned by moderation (expulsion: `estado = INACTIVO` with an `EXPULSION` strike, not closed) answers `403 ACCOUNT_BANNED` with the same `details.reason` at login and at Google/Apple sign-in, **only after** the password (or the provider) proved the owner; a wrong password stays the generic `401 Credenciales inválidas.` (one bcrypt comparison as always), and any other inactive account keeps that generic `401`.
 
-Suspension, expulsion, the provisional suspension of a minor report and the closure of a confirmed minor are also **emailed** to the address on file when decided: a self-contained job on `notifications.delivery` (`payload.kind = NOTICE_EMAIL` with `to`, `subject`, `body`; drained by the notifications worker through the mail transport, 10 attempts, dead-letter). The closure email is marked `survivesClosure` and outlives the closure that erases the inbox and anonymizes the address; every other pending notice email is dropped when the account closes.
+Suspension, expulsion, the provisional suspension of a minor report, the end of that review without confirming a minor (in-app and email «Tu cuenta está activa otra vez», `metadata.type = MODERATION_MINOR_REVIEW_CLEARED`; when another sanction still keeps the account suspended, or the same review applies one, it says the account stays suspended instead; it never names the reporters) and the closure of a confirmed minor are also **emailed** to the address on file when decided: a self-contained job on `notifications.delivery` (`payload.kind = NOTICE_EMAIL` with `to`, `subject`, `body`; drained by the notifications worker through the mail transport, 10 attempts, dead-letter). The closure email is marked `survivesClosure` and outlives the closure that erases the inbox and anonymizes the address; every other pending notice email is dropped when the account closes.
 
 `register` requires `genero` (`MALE`|`FEMALE`), `fechaNacimiento` (`YYYY-MM-DD`, 18–100) and `termsVersion`; an outdated version answers `409 TERMS_VERSION_OUTDATED`. The birth date is stored on the account (`usuarios.fecha_nacimiento`, the single source of age) and one row per document goes to `auth.terms_acceptances` in the same transaction.
 
@@ -144,7 +144,7 @@ All of them are exempt from the legal-acceptance gate and the password/PIN route
 
 **Export** is built by the same worker (queue `account.export`): one section per data-map table (`src/modules/export/account-export.sections.ts`), own rows only, credential hashes omitted, chats limited to the caller's own messages and conversation ids, each table capped at the routine-progress export limit (20 000 rows, `truncated: true` beyond it). The archive lives in `auth.account_exports` and is purged when it expires. When it turns `READY` the owner gets, once per export, an in-app notice «Tu copia de datos está lista» (`metadata: { type: ACCOUNT_EXPORT_READY, exportId, downloadPath, expiresAt }`) and the same notice by email; a build that dead-letters turns `FAILED` and notifies «No pudimos preparar tu copia de datos» (`ACCOUNT_EXPORT_FAILED`) the same way.
 
-**Evidence hold.** When the author deletes a profile photo (`DELETE /me/photos/:id`), a story (`DELETE /me/stories/:id`) or a community comment (`DELETE /comments/:commentId`) that has an **open** report, the call still answers success and the content disappears for everyone (author included: not listed, a second delete is `404`, it cannot be reported again), but the row and its file are kept as evidence: photos and stories get `author_deleted_at` plus `hidden_at` (a moderator's restore does not bring them back), a comment turns `BORRADO_AUTOR` keeping its text and attachment, and no `media.release` is requested. Once every report on it is closed, a photo or comment is erased by the reported-content retention 180 days after the last report closed (`REPORT_EVIDENCE_RETENTION_DAYS`; the file is then released through `media.release`), and a story by the stories purge as soon as no report on it is open and it has expired.
+**Evidence hold.** When the author deletes a profile photo (`DELETE /me/photos/:id`), a story (`DELETE /me/stories/:id`) or a community comment (`DELETE /comments/:commentId`) that has an **open** report, the call still answers success and the content disappears for everyone (author included: not listed, a second delete is `404`, it cannot be reported again), but the row and its file are kept as evidence: photos and stories get `author_deleted_at` plus `hidden_at` (a moderator's restore does not bring them back), a comment turns `BORRADO_AUTOR` keeping its text and attachment, and no `media.release` is requested. Without an open report the row is deleted and its file is queued on `media.release` in the same transaction; the call answers success once the reference is cleared, and a storage failure is retried by the queue (ADR-0017 §4). Once every report on it is closed, a photo or comment is erased by the reported-content retention 180 days after the last report closed (`REPORT_EVIDENCE_RETENTION_DAYS`; the file is then released through `media.release`), and a story by the stories purge as soon as no report on it is open and it has expired.
 
 ## Equipment
 
@@ -165,7 +165,7 @@ Exercise relationships accept only existing, linkable equipment identifiers. Inp
 | GET    | `/exercises/:id`              | visible object | Read one visible exercise                                        |
 | POST   | `/exercises/personal`         | authenticated  | Create a personal exercise                                       |
 | PATCH  | `/exercises/:id`              | owner          | Update a personal exercise                                       |
-| DELETE | `/exercises/:id`              | owner          | Inactivate a personal exercise                                   |
+| DELETE | `/exercises/:id`              | owner          | Inactivate a personal exercise and delete the files its owner uploaded to it |
 | POST   | `/admin/exercises/global`     | ADMIN          | Create a global exercise                                         |
 | PATCH  | `/admin/exercises/global/:id` | ADMIN          | Update a global exercise                                         |
 | DELETE | `/admin/exercises/global/:id` | ADMIN          | Inactivate a global exercise                                     |
@@ -200,7 +200,7 @@ The response contains `items`, `page`, `pageSize`, `total`, and `totalPages` ins
 | ------ | ------------------------------ | ------------------------- | -------------------------------------------------------- |
 | GET    | `/exercises/:exerciseId/media` | exercise visible          | List active media                                        |
 | POST   | `/exercises/:exerciseId/media` | owner or ADMIN for global | Register a media reference                               |
-| DELETE | `/exercise-media/:mediaId`     | owner or ADMIN for global | Inactivate media and promote a replacement primary asset |
+| DELETE | `/exercise-media/:mediaId`     | owner or ADMIN for global | Inactivate media (delete it, file included, for an own upload to a personal exercise) and promote a replacement primary asset |
 
 Controls:
 
@@ -210,7 +210,9 @@ Controls:
 - explicit provider and media type;
 - optional attribution, license, dimensions, MIME type, and SHA-256;
 - only one active primary asset per exercise, also enforced by the database;
-- logical inactivation to preserve traceability.
+- logical inactivation to preserve traceability, except for a member's own upload to a personal exercise.
+
+An upload (`POST /exercises/:exerciseId/media/upload`) to a **personal** exercise is the owner's content: it is stored under `users/<owner>/ejercicios/<exerciseId>/` and is deleted for real (row plus a `media.release` job in the same transaction) when the media is deleted, when the exercise is deleted, when a re-upload with the same identity replaces it and when the account closes. Uploads to global (catalog) exercises stay under the immutable `ejercicios/<exerciseId>/` and are only inactivated. Rows uploaded before this change keep their `ejercicios/` keys (ADR-0017 §7).
 
 Registering a URL does not grant copying or redistribution rights. External dataset media remains disabled unless deployment configuration explicitly confirms the applicable license.
 

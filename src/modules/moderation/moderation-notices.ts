@@ -112,6 +112,23 @@ export function minorClosureNotice(): ModerationNotice {
   };
 }
 
+/**
+ * The minor review ended without confirming a minor and the provisional
+ * suspension was lifted. It never says who reported: only that a review
+ * happened and how the account stands now. When another sanction keeps the
+ * account suspended (one still running, or one decided in this same review),
+ * the notice says so instead of promising access; that sanction has its own notice.
+ */
+export function minorReviewClearedNotice(stillSuspended: boolean): ModerationNotice {
+  return {
+    subject: stillSuspended ? "Terminamos de revisar la denuncia sobre tu edad" : "Tu cuenta está activa otra vez",
+    body: stillSuspended
+      ? "Revisamos la denuncia de que esta cuenta podría ser de una persona menor de 18 años y no lo confirmamos, así que levantamos esa suspensión. Tu cuenta sigue suspendida por otra sanción: te contamos el motivo y hasta cuándo en su propio aviso."
+      : "Revisamos la denuncia de que esta cuenta podría ser de una persona menor de 18 años y no lo confirmamos. Levantamos la suspensión: tu cuenta está activa otra vez y ya puedes entrar.",
+    metadata: { type: "MODERATION_MINOR_REVIEW_CLEARED", reason: "MENOR_DE_EDAD", stillSuspended },
+  };
+}
+
 /** Queues an in-app notice in the caller's transaction (outbox): it exists only if the decision commits. */
 export async function sendModerationNotice(
   notifications: NotificationService,

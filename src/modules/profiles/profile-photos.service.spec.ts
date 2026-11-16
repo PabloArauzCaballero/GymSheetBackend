@@ -2,7 +2,8 @@ import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { MediaReferencesRepository } from "../media/media-references.repository";
-import { MediaRetentionService } from "../media/media-retention.service";
+import { MediaReferenceReleaseService } from "../media/media-reference-release.service";
+import { MediaReleaseService } from "../media/media-release.service";
 import { MediaStorageProvider } from "../media/media-storage.port";
 import { ProfilePhotosRepository } from "./profile-photos.repository";
 import { ProfilePhotosService, UploadedProfilePhoto } from "./profile-photos.service";
@@ -21,13 +22,13 @@ function createImageFile(overrides: Partial<UploadedProfilePhoto> = {}): Uploade
   };
 }
 
-function createService(
+function createHarness(
   repositoryOverrides: Partial<ProfilePhotosRepository>,
   storageOverrides: Partial<MediaStorageProvider> = {},
   // ¿Queda otra fila (otra foto, una story, un mensaje…) apuntando al mismo
-  // binario? Decide si el fichero compartido se borra o se conserva.
+  // binario? Decide si el fichero compartido se libera o se conserva.
   referencedElsewhere = false,
-): ProfilePhotosService {
+) {
   const storage = {
     name: "local",
     upload: jest.fn().mockResolvedValue({
@@ -42,25 +43,34 @@ function createService(
     canRemove: () => true,
     ...storageOverrides,
   } as unknown as MediaStorageProvider;
+  const requestRelease = jest.fn().mockResolvedValue(undefined);
+  const lockStorageKey = jest.fn().mockResolvedValue(undefined);
 
-  const retention = new MediaRetentionService(
+  const release = new MediaReferenceReleaseService(
     {
       transaction: jest.fn(
         async (run: (t: Transaction) => Promise<unknown>) => run(transaction),
       ),
     } as unknown as Sequelize,
     {
-      lockStorageKey: jest.fn().mockResolvedValue(undefined),
+      lockStorageKey,
       isReferenced: jest.fn().mockResolvedValue(referencedElsewhere),
     } as unknown as MediaReferencesRepository,
-    storage,
+    { requestRelease } as unknown as MediaReleaseService,
   );
 
-  return new ProfilePhotosService(
+  const service = new ProfilePhotosService(
     repositoryOverrides as ProfilePhotosRepository,
     storage,
-    retention,
+    release,
   );
+  return { service, requestRelease, lockStorageKey };
+}
+
+function createService(
+  repositoryOverrides: Partial<ProfilePhotosRepository>,
+): ProfilePhotosService {
+  return createHarness(repositoryOverrides).service;
 }
 
 describe("ProfilePhotosService.upload", () => {
@@ -111,25 +121,26 @@ describe("ProfilePhotosService.upload", () => {
 });
 
 describe("ProfilePhotosService.remove", () => {
+  const ownPhoto = { id: "photo-1", userId, storageProvider: "local", storageKey: "users/u1/perfiles/key.jpg" };
+
   it("reports a photo owned by another account as not found", async () => {
     const remove = jest.fn();
-    const service = createService(
+    const { service, requestRelease } = createHarness(
       { findByIdForUser: jest.fn().mockResolvedValue(null) },
       { remove },
     );
 
     await expect(service.remove(otherUserId, "photo-1")).rejects.toThrow(NotFoundException);
     expect(remove).not.toHaveBeenCalled();
+    expect(requestRelease).not.toHaveBeenCalled();
   });
 
-  it("removes the stored asset and the row for the owner", async () => {
+  it("deletes the row and queues the file release in the same transaction, under the key lock", async () => {
     const storageRemove = jest.fn().mockResolvedValue(undefined);
     const repositoryDelete = jest.fn().mockResolvedValue(undefined);
-    const service = createService(
+    const { service, requestRelease, lockStorageKey } = createHarness(
       {
-        findByIdForUser: jest
-          .fn()
-          .mockResolvedValue({ id: "photo-1", userId, storageKey: "profile-photos/key.jpg" }),
+        findByIdForUser: jest.fn().mockResolvedValue(ownPhoto),
         delete: repositoryDelete,
         holdIfReported: jest.fn().mockResolvedValue(false),
       },
@@ -137,43 +148,60 @@ describe("ProfilePhotosService.remove", () => {
     );
 
     await expect(service.remove(userId, "photo-1")).resolves.toEqual({ deleted: true });
-    expect(storageRemove).toHaveBeenCalledWith("profile-photos/key.jpg");
-    expect(repositoryDelete).toHaveBeenCalled();
+    expect(repositoryDelete).toHaveBeenCalledWith(ownPhoto, transaction);
+    expect(lockStorageKey).toHaveBeenCalledWith(ownPhoto.storageKey, transaction);
+    expect(requestRelease).toHaveBeenCalledWith(
+      { aggregateType: "profile.photo", aggregateId: "photo-1", provider: "local", storageKey: ownPhoto.storageKey },
+      transaction,
+    );
+    // The file is removed by the media.release worker, never inline.
+    expect(storageRemove).not.toHaveBeenCalled();
+  });
+
+  it("answers success when the storage is failing: the removal is retried by the outbox, not lost", async () => {
+    const storageRemove = jest.fn().mockRejectedValue(Object.assign(new Error("denied"), { code: "AccessDenied" }));
+    const { service, requestRelease } = createHarness(
+      {
+        findByIdForUser: jest.fn().mockResolvedValue(ownPhoto),
+        delete: jest.fn().mockResolvedValue(undefined),
+        holdIfReported: jest.fn().mockResolvedValue(false),
+      },
+      { remove: storageRemove },
+    );
+
+    await expect(service.remove(userId, "photo-1")).resolves.toEqual({ deleted: true });
+    expect(requestRelease).toHaveBeenCalledTimes(1);
   });
 
   it("deletes the row but keeps a file another row still references", async () => {
     // Dos cuentas que subieron la misma imagen comparten `storageKey`: borrar
     // el fichero al eliminar una de las filas rompía la foto de la otra.
-    const storageRemove = jest.fn().mockResolvedValue(undefined);
     const repositoryDelete = jest.fn().mockResolvedValue(undefined);
-    const service = createService(
+    const { service, requestRelease } = createHarness(
       {
-        findByIdForUser: jest
-          .fn()
-          .mockResolvedValue({ id: "photo-1", userId, storageKey: "shared-key.jpg" }),
+        findByIdForUser: jest.fn().mockResolvedValue({ ...ownPhoto, storageKey: "shared-key.jpg" }),
         delete: repositoryDelete,
         holdIfReported: jest.fn().mockResolvedValue(false),
       },
-      { remove: storageRemove },
+      {},
       true,
     );
 
     await expect(service.remove(userId, "photo-1")).resolves.toEqual({ deleted: true });
     expect(repositoryDelete).toHaveBeenCalled();
-    expect(storageRemove).not.toHaveBeenCalled();
+    expect(requestRelease).not.toHaveBeenCalled();
   });
 
   it("holds a photo under an open report instead of deleting it: the row stays, so its file does too", async () => {
-    const storageRemove = jest.fn().mockResolvedValue(undefined);
     const repositoryDelete = jest.fn().mockResolvedValue(undefined);
     const holdIfReported = jest.fn().mockResolvedValue(true);
-    const service = createService(
+    const { service, requestRelease } = createHarness(
       {
-        findByIdForUser: jest.fn().mockResolvedValue({ id: "photo-1", userId, storageKey: "profile-photos/key.jpg" }),
+        findByIdForUser: jest.fn().mockResolvedValue(ownPhoto),
         delete: repositoryDelete,
         holdIfReported,
       },
-      { remove: storageRemove },
+      {},
       // The held row itself still references the key.
       true,
     );
@@ -181,6 +209,6 @@ describe("ProfilePhotosService.remove", () => {
     await expect(service.remove(userId, "photo-1")).resolves.toEqual({ deleted: true });
     expect(holdIfReported).toHaveBeenCalledWith("photo-1", expect.anything());
     expect(repositoryDelete).not.toHaveBeenCalled();
-    expect(storageRemove).not.toHaveBeenCalled();
+    expect(requestRelease).not.toHaveBeenCalled();
   });
 });

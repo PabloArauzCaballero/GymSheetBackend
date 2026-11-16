@@ -68,7 +68,18 @@ export type MediaUploadTarget =
    * El identificador del ejercicio en la clave permite listar, reemplazar y
    * borrar lo de un ejercicio concreto sin consultar la base de datos.
    */
-  | { readonly category: "ejercicios"; readonly exerciseId: string };
+  | { readonly category: "ejercicios"; readonly exerciseId: string }
+  /**
+   * A member's upload to their OWN personal exercise. It is that person's
+   * content, not the catalog: it lives under their folder
+   * (`users/{ownerUserId}/ejercicios/{exerciseId}/…`) so it can be deleted
+   * with the exercise and with the account (ADR-0017 §1).
+   */
+  | {
+      readonly category: "ejercicios";
+      readonly exerciseId: string;
+      readonly ownerUserId: string;
+    };
 
 /** Archivo entrante ya materializado en memoria (forma de Multer memoryStorage). */
 export interface MediaUploadInput {
@@ -150,7 +161,9 @@ export function isUserContentKey(key: string): boolean {
 export function mediaTargetPrefix(target: MediaUploadTarget): string {
   if (target.category === "catalog") return "catalog";
   if (target.category === "ejercicios") {
-    return `ejercicios/${target.exerciseId}`;
+    return "ownerUserId" in target
+      ? `users/${target.ownerUserId}/ejercicios/${target.exerciseId}`
+      : `ejercicios/${target.exerciseId}`;
   }
   if (target.category === "chats") {
     return `users/${target.ownerUserId}/chats/${target.conversationId}`;

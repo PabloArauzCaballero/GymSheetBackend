@@ -33,6 +33,9 @@ const EXERCISE_USED_ELSEWHERE = `(
   OR EXISTS (SELECT 1 FROM training.program_lift_targets lt JOIN training.training_programs p ON p.id = lt.program_id
               WHERE lt.ejercicio_id = t.id AND p.usuario_id <> :userId))`;
 
+/** Storage key of a personal exercise upload in the owner's folder (null for catalog or foreign URLs). */
+const OWN_EXERCISE_UPLOAD = ownFolderKey("t.url");
+
 const HAS_OTHERS_REPLIES =
   "EXISTS (SELECT 1 FROM community.content_comments c WHERE c.respuesta_a = t.id AND c.autor_id <> :userId)";
 
@@ -100,6 +103,11 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
     `t.created_by_user_id = :userId AND ${routineUsedByOthers("t")}`,
     "Siguen en el entrenamiento de esas personas, firmadas como «Cuenta cerrada»."),
   del("public.usuarios_ejercicios", "Ejercicios elegidos", OWN_ES),
+  // Uploads to personal exercises live in the owner's folder (ADR-0017): they
+  // go even when the exercise itself is kept for someone else's routine.
+  del("training.exercise_media", "Fotos y videos que subiste a tus ejercicios propios",
+    `t.ejercicio_id IN (SELECT e.id FROM public.ejercicios e WHERE e.tipo_ejercicio = 'PERSONAL' AND e.created_by_usuario_id = :userId)
+     AND ${OWN_EXERCISE_UPLOAD} LIKE 'users/' || :userId || '/ejercicios/%'`, OWN_EXERCISE_UPLOAD),
   del("public.ejercicios", "Ejercicios propios", `${OWN_PERSONAL_EXERCISE} AND NOT ${EXERCISE_USED_ELSEWHERE}`),
   keep("public.ejercicios", "Ejercicios propios que usan rutinas ajenas",
     `${OWN_PERSONAL_EXERCISE} AND ${EXERCISE_USED_ELSEWHERE}`,

@@ -82,15 +82,16 @@ export class ModerationSafeguardsRepository {
   /**
    * Lifts the provisional suspension once no other MENOR_DE_EDAD report on the
    * person stays open, falling back to the longest strike suspension still
-   * running (never shortening a sanction).
+   * running (never shortening a sanction). Returns null when nothing was lifted;
+   * otherwise the suspension that remains (null if the account is active again).
    */
   async liftProvisionalSuspension(
     userId: string,
     provisionalUntil: Date,
     exceptTarget: { kind: ModerationTargetKindValue; id: string },
     transaction: Transaction,
-  ): Promise<void> {
-    await this.sequelize.query(
+  ): Promise<{ suspendedUntil: Date | null } | null> {
+    const [row] = await this.sequelize.query<{ suspendedUntil: Date | null }>(
       `UPDATE public.usuarios u
           SET suspended_until = (SELECT max(s.suspended_until) FROM moderation.user_strikes s
                                   WHERE s.user_id = u.id AND s.suspended_until > now())
@@ -99,13 +100,15 @@ export class ModerationSafeguardsRepository {
             SELECT 1 FROM moderation.reports r
              WHERE r.reported_user_id = u.id AND r.reason = 'MENOR_DE_EDAD'
                AND r.status IN ('PENDIENTE', 'EN_REVISION')
-               AND NOT (r.target_kind = :kind AND r.target_id = :id))`,
+               AND NOT (r.target_kind = :kind AND r.target_id = :id))
+      RETURNING u.suspended_until AS "suspendedUntil"`,
       {
-        type: QueryTypes.UPDATE,
+        type: QueryTypes.SELECT,
         replacements: { userId, provisionalUntil, kind: exceptTarget.kind, id: exceptTarget.id },
         transaction,
       },
     );
+    return row ? { suspendedUntil: row.suspendedUntil } : null;
   }
 
   /** Copies the message once; later reports of the same message keep the first copy. */

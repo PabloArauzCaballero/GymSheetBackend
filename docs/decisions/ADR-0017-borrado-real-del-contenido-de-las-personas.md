@@ -27,9 +27,9 @@ persona y conserva la inmutabilidad.
 
 | Prefijo | Qué es | Con MinIO |
 |---|---|---|
-| `users/{userId}/perfiles/…`, `stories/`, `reels/`, `publicaciones/`, `chats/{conversationId}/…` | Contenido de la persona (incluidas las selfies de verificación cuando exista ese módulo, que debe guardarlas bajo `users/{userId}/`) | **Se borra**: todas las versiones |
+| `users/{userId}/perfiles/…`, `stories/`, `reels/`, `publicaciones/`, `chats/{conversationId}/…`, `ejercicios/{exerciseId}/…` | Contenido de la persona (incluidas las subidas a sus ejercicios personales, §7, y las selfies de verificación cuando exista ese módulo, que debe guardarlas bajo `users/{userId}/`) | **Se borra**: todas las versiones |
 | `catalog/…` | Mediateca del administrador y dataset espejado | No se borra (ADR-0010) |
-| `ejercicios/{exerciseId}/…` | Demostraciones del catálogo de ejercicios | No se borra (ADR-0010) |
+| `ejercicios/{exerciseId}/…` | Demostraciones del catálogo de ejercicios (ejercicios globales) | No se borra (ADR-0010) |
 
 La regla es «bajo `users/` se borra; fuera, no». Una clave con segmentos `..`, vacíos o
 codificados no cuenta como `users/` aunque empiece así (`isSafeStorageKey`).
@@ -73,10 +73,13 @@ del §6, red caída), el error se propaga:
 - en la cola `media.release` (mensaje «para todos», cierre de cuenta, retención de contenido
   denunciado, evidencia vencida) el trabajo falla, reintenta 8 veces con backoff y termina en
   **dead-letter**, visible. Antes, con el no-op, se completaba sobre un archivo que seguía ahí;
-- en los caminos síncronos (borrar una foto o una story, la purga de stories) la fila ya cayó en
-  su transacción y la llamada responde con el error; queda `media.retention.remove_failed` con la
-  clave y el `errorCode`. Esos caminos no reintentan: por eso el despliegue declara el borrado
-  sólo después de aplicar la política (§5).
+- los borrados que la persona pide en el momento (una foto de perfil, una story, la purga de
+  stories, una subida a un ejercicio personal) ya no llaman al almacén dentro de la petición: en la
+  transacción que borra la fila toman el bloqueo consultivo de la clave y, si ninguna otra fila la
+  referencia, encolan el mismo `media.release` (`MediaReferenceReleaseService`). La llamada responde
+  éxito en cuanto la referencia cae; un fallo del almacén se reintenta con backoff y termina en
+  dead-letter, visible. La retención de evidencia (`holdIfReported`) y el recuento de referencias
+  siguen decidiendo si se encola.
 
 ### 5. Configuración: `MEDIA_USER_CONTENT_DELETABLE`
 
@@ -108,6 +111,21 @@ La evidencia ya no la protege el almacén sino la base de datos, y sólo durante
 
 Mientras alguna fila lo referencia, `MediaRetentionService` no llama a `remove`. Pasado el plazo,
 se borra como cualquier otro contenido de la persona.
+
+### 7. Las subidas a ejercicios personales son de la persona
+
+Un socio puede subir archivos a su ejercicio **personal** (`POST /exercises/:id/media/upload`). Eso
+es contenido suyo, no catálogo: se guarda bajo `users/{ownerUserId}/ejercicios/{exerciseId}/`
+(`MediaUploadTarget` con `ownerUserId`), y se borra —fila y archivo por `media.release`— al borrar
+esa media, al borrar el ejercicio, al reemplazarla con una nueva subida de la misma identidad y al
+cerrar la cuenta (paso `training.exercise_media` del catálogo de cierre). La lectura anónima de
+MinIO cubre `users/*/ejercicios/*` igual que cubría `ejercicios/*`. Lo que sube un administrador a
+un ejercicio global sigue bajo `ejercicios/{exerciseId}/`, inmutable.
+
+Las filas subidas antes de este cambio **conservan su clave** bajo `ejercicios/`: no se mueven
+archivos ni se reescriben URLs (una migración de datos sobre un almacén inmutable no podría borrar
+el original). Esos archivos siguen sin poder borrarse; al borrar su media o su ejercicio, la fila
+sólo se desactiva, como antes.
 
 ## Runbook de operaciones (lo aplica el equipo; esta sesión no puede)
 
@@ -165,6 +183,9 @@ En producción el media lo sirve `datacenter-minio`. Con el alias `mc` de root d
    mc ls --versions api/gymsheet-media/users/ops-check/   # debe quedar vacío
    mc rm api/gymsheet-media/catalog/ops-check.txt   # debe responder Access Denied
    ```
+
+   La política de lectura anónima del bucket debe incluir `users/*/ejercicios/*` (§7), como la que
+   aplica `minio-init`.
 
 4. Recién entonces poner `MEDIA_USER_CONTENT_DELETABLE=true` en las variables de Coolify y
    redesplegar la API y los workers.

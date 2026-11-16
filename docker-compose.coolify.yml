@@ -595,7 +595,8 @@ services:
         # stories se excluyen, incluidos objetos históricos: sólo la API
         # autenticada entrega su media y revalida acceso en cada descarga.
         # Nunca añadir users/*/chats/*, users/*/stories/*, users/* ni bucket/*.
-        # NO se concede s3:ListBucket anónimo.
+        # NO se concede s3:ListBucket anónimo. `users/*/ejercicios/*` (subidas a
+        # ejercicios personales, ADR-0017) se lee igual que `ejercicios/*`.
         cat > /tmp/bucket-policy.json <<JSON
         {
           "Version": "2012-10-17",
@@ -607,6 +608,7 @@ services:
               "Resource": [
                 "arn:aws:s3:::$$MINIO_BUCKET/users/*/perfiles/*",
                 "arn:aws:s3:::$$MINIO_BUCKET/users/*/publicaciones/*",
+                "arn:aws:s3:::$$MINIO_BUCKET/users/*/ejercicios/*",
                 "arn:aws:s3:::$$MINIO_BUCKET/catalog/*",
                 "arn:aws:s3:::$$MINIO_BUCKET/ejercicios/*"
               ]

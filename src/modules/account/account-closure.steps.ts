@@ -55,8 +55,9 @@ export const reported = (kind: string, idColumn = "t.id"): string =>
   `EXISTS (SELECT 1 FROM moderation.reports r WHERE r.target_kind = '${kind}' AND r.target_id = ${idColumn})`;
 
 /**
- * Storage key of a comment attachment. Comments keep only the public URL; the
- * key is the part from the owner's folder on, which every adapter lays out the
+ * Storage key of a file in the owner's folder (a comment attachment, a personal
+ * exercise upload). Those rows keep only the public URL; the key is the part
+ * from the owner's folder on, which every adapter lays out the
  * same way (`mediaTargetPrefix`). URLs outside the owner's folder yield null.
  */
 export const ownFolderKey = (urlColumn: string, owner = ":userId"): string =>

@@ -3,7 +3,7 @@ import { createHash } from "crypto";
 import { extname } from "path";
 import { UniqueConstraintError } from "sequelize";
 import { env } from "../../config/env";
-import { MediaRetentionService } from "../media/media-retention.service";
+import { MediaReferenceReleaseService } from "../media/media-reference-release.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
 import {
   mapFeedRowsToResponse,
@@ -43,7 +43,7 @@ export class StoriesService {
   constructor(
     private readonly repository: StoriesRepository,
     @Inject(MEDIA_STORAGE_PROVIDER) private readonly mediaStorage: MediaStorageProvider,
-    private readonly retention: MediaRetentionService,
+    private readonly mediaRelease: MediaReferenceReleaseService,
   ) {}
 
   async upload(
@@ -112,9 +112,12 @@ export class StoriesService {
 
       // A concurrent upload may have won the unique (owner, requestId) insert.
       // Refcount-aware cleanup preserves the winner's shared asset, while
-      // removing a distinct losing upload when no row references it.
+      // queuing the removal of a distinct losing upload no row references.
       const previous = await this.repository.findByUploadRequest(userId, requestId);
-      await this.retention.deleteRowAndUnreferencedFile(stored.key, async () => undefined);
+      await this.mediaRelease.clearAndRelease(
+        { aggregateType: "story.upload", aggregateId: requestId, provider: stored.provider, storageKeys: [stored.key] },
+        async () => undefined,
+      );
       if (!previous) throw error;
       if (previous.uploadContentHash !== contentHash) {
         throw new ConflictException("El requestId de subida ya se usó con otro archivo.");
@@ -180,16 +183,20 @@ export class StoriesService {
     const story = await this.repository.findByIdForUser(storyId, userId);
     // 404, no 403: una story ajena no debe confirmar que existe.
     if (!story) throw new NotFoundException("Story no encontrada.");
-    // El fichero se comparte con quien haya subido el mismo binario (la clave
-    // es el SHA-256 del contenido): la fila siempre cae, el fichero solo si
-    // deja de estar referenciado. Ver `MediaRetentionService`.
-    // Under an OPEN report the story is evidence: held (hidden for everyone)
-    // instead of deleted, and its row keeps the file referenced.
-    await this.retention.deleteRowAndUnreferencedFile(story.storageKey, async (transaction) => {
-      if (!(await this.repository.holdIfReported(story.id, transaction))) {
-        await this.repository.delete(story, transaction);
-      }
-    });
+    // The file is shared with whoever uploaded the same binary (the key is
+    // the SHA-256 of the content): the row always goes, the file only when no
+    // other row references it. Under an OPEN report the story is evidence:
+    // held (hidden for everyone) instead of deleted, and its row keeps the
+    // file referenced. The removal goes through the `media.release` outbox in
+    // the transaction that clears the row (ADR-0017 §4).
+    await this.mediaRelease.clearAndRelease(
+      { aggregateType: "story", aggregateId: story.id, provider: story.storageProvider, storageKeys: [story.storageKey] },
+      async (transaction) => {
+        if (!(await this.repository.holdIfReported(story.id, transaction))) {
+          await this.repository.delete(story, transaction);
+        }
+      },
+    );
     return { deleted: true };
   }
 
