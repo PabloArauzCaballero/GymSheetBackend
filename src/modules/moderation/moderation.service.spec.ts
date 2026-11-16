@@ -271,6 +271,24 @@ describe('ModerationService', () => {
       );
     });
 
+    it('lee y bloquea las denuncias abiertas DENTRO de la transacción, y cierra y cuenta solo esas', async () => {
+      const { service, repository } = build({ resolveTarget: jest.fn().mockResolvedValue(1) });
+
+      const result = await service.resolve(moderator, ModerationTargetKind.STORY, 'story-1', {
+        hideContent: true,
+        sanction: false,
+        note: null,
+      });
+
+      // The 4th argument is the transaction: without it the rows are read unlocked.
+      expect(repository.findOpenReportsForTarget.mock.calls[0][3]).toBeDefined();
+      expect(repository.resolveTarget).toHaveBeenCalledWith(
+        expect.objectContaining({ reportIds: ['report-1'] }),
+        expect.anything(),
+      );
+      expect(result.reportsClosed).toBe(1);
+    });
+
     it('retira contenido sin sancionar a nadie si es lo que se pide', async () => {
       const { service, repository } = build();
 

@@ -82,6 +82,10 @@ export class ModerationReportModel extends Model {
   @Column({ type: DataType.DATE, allowNull: true, field: 'claimed_at' })
   declare claimedAt: Date | null;
 
+  /** When the reporter withdrew it. Set on any status; RETIRADO only when it was still open. */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'withdrawn_at' })
+  declare withdrawnAt: Date | null;
+
   @CreatedAt
   @Column({ field: 'created_at' })
   declare createdAt: Date;

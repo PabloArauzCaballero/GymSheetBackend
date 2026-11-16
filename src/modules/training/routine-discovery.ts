@@ -5,7 +5,8 @@
  * legacy page list of mobile «Explorar rutinas» (`scope=public|templates&page`).
  *
  * - Reports: a routine the viewer reported, in any report status (open,
- *   resolved or dismissed), stays hidden from that viewer. Others still see it.
+ *   resolved or dismissed), stays hidden from that viewer until they withdraw
+ *   the report (`withdrawn_at`, `me/reports/:id/withdraw`). Others still see it.
  * - Blocks: mutual; nothing by an author who blocked the viewer or whom the
  *   viewer blocked.
  * - Tenant scope: official REPP routines (`es_oficial`, or legacy TEMPLATE
@@ -53,7 +54,8 @@ export function crossGymDiscoverableUserSql(userId: string): string {
 export function routineNotHiddenByViewerSql(r: string): string {
   return `NOT EXISTS (
       SELECT 1 FROM moderation.reports rep
-       WHERE rep.reporter_user_id = :viewerId AND rep.target_kind = 'ROUTINE' AND rep.target_id = ${r}.id)
+       WHERE rep.reporter_user_id = :viewerId AND rep.target_kind = 'ROUTINE' AND rep.target_id = ${r}.id
+         AND rep.withdrawn_at IS NULL)
     AND NOT EXISTS (
       SELECT 1 FROM social.user_blocks blk
        WHERE (blk.blocker_id = :viewerId AND blk.blocked_id = ${r}.created_by_user_id)

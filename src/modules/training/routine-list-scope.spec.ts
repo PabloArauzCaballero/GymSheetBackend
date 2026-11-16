@@ -59,9 +59,9 @@ describe('routineWhereForScope', () => {
 describe('routineDiscoverableSql', () => {
   const sql = routineDiscoverableSql('r').replace(/\s+/gu, ' ');
 
-  it('hides routines the viewer reported', () => {
+  it('hides routines the viewer reported, until the report is withdrawn', () => {
     expect(sql).toContain(
-      "NOT EXISTS ( SELECT 1 FROM moderation.reports rep WHERE rep.reporter_user_id = :viewerId AND rep.target_kind = 'ROUTINE' AND rep.target_id = r.id)",
+      "NOT EXISTS ( SELECT 1 FROM moderation.reports rep WHERE rep.reporter_user_id = :viewerId AND rep.target_kind = 'ROUTINE' AND rep.target_id = r.id AND rep.withdrawn_at IS NULL)",
     );
   });
 

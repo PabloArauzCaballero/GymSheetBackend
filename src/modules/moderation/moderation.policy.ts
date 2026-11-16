@@ -45,9 +45,50 @@ export const ModerationStatus = {
   EN_REVISION: "EN_REVISION",
   RESUELTO: "RESUELTO",
   DESCARTADO: "DESCARTADO",
+  /** The reporter withdrew it before a moderator closed it: out of the queue, kept as record. */
+  RETIRADO: "RETIRADO",
 } as const;
 export type ModerationStatusValue =
   (typeof ModerationStatus)[keyof typeof ModerationStatus];
+
+/** Statuses a moderator still has to act on. */
+export const OPEN_MODERATION_STATUSES: readonly ModerationStatusValue[] = [
+  ModerationStatus.PENDIENTE,
+  ModerationStatus.EN_REVISION,
+];
+
+export function isOpenModerationStatus(status: ModerationStatusValue): boolean {
+  return OPEN_MODERATION_STATUSES.includes(status);
+}
+
+/**
+ * What the reporter is told about their own report. Moderation internals
+ * (claimed, discarded vs resolved, the resolution) stay with the team: the
+ * reporter only learns whether someone already looked at it.
+ */
+export const ReporterReportStatus = {
+  EN_REVISION: "EN_REVISION",
+  REVISADA: "REVISADA",
+} as const;
+export type ReporterReportStatusValue =
+  (typeof ReporterReportStatus)[keyof typeof ReporterReportStatus];
+
+export function reporterFacingStatus(status: ModerationStatusValue): ReporterReportStatusValue {
+  return isOpenModerationStatus(status) ? ReporterReportStatus.EN_REVISION : ReporterReportStatus.REVISADA;
+}
+
+/**
+ * What withdrawing does to the report row.
+ *
+ * - Still open: it becomes RETIRADO, leaves the queue and stops counting
+ *   toward the auto-hide threshold. The person may report the same thing again.
+ * - Already closed by a moderator: the status and resolution stand (a verdict
+ *   is not undone by the person who asked for it); only `withdrawnAt` is set,
+ *   which ends what the report did for the reporter (hiding the content from them).
+ */
+export function withdrawalStatus(status: ModerationStatusValue): ModerationStatusValue {
+  return isOpenModerationStatus(status) ? ModerationStatus.RETIRADO : status;
+}
 
 export const ModerationResolution = {
   SIN_ACCION: "SIN_ACCION",

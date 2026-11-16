@@ -123,6 +123,7 @@ import { profileGoalSportPerformanceMigration } from "./202611150003-profile-goa
 import { validateProfileGoalCheckMigration } from "./202611150004-validate-profile-goal-check";
 import { backfillProfileCompletionAwardsMigration } from "./202611150005-backfill-profile-completion-awards";
 import { moderationReportsReporterIndexMigration } from "./202611160001-moderation-reports-reporter-index";
+import { moderationReportWithdrawalMigration } from "./202611160002-moderation-report-withdrawal";
 import { progressionStrikesAndCoachCardsMigration } from "./202610190002-progression-strikes-and-coach-cards";
 import { DatabaseMigration } from "./migration.types";
 
@@ -256,4 +257,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   validateProfileGoalCheckMigration,
   backfillProfileCompletionAwardsMigration,
   moderationReportsReporterIndexMigration,
+  moderationReportWithdrawalMigration,
 ];

@@ -208,6 +208,10 @@ export class ModerationRepository {
         status: [ModerationStatus.PENDIENTE, ModerationStatus.EN_REVISION],
         ...(tenantScope ? { tenantId: tenantScope } : {}),
       },
+      // Inside a transaction the open reports are locked in id order BEFORE any
+      // content row is touched: withdrawing, auto-hiding and resolving all take
+      // reports first, then content, so they cannot deadlock each other.
+      ...(transaction ? { lock: transaction.LOCK.UPDATE, order: [["id", "ASC"]] as [string, string][] } : {}),
       transaction,
     });
   }
@@ -281,6 +285,8 @@ export class ModerationRepository {
       moderatorUserId: string;
       discarded: boolean;
       tenantScope: string | null;
+      /** Exactly the open reports the caller locked: a report filed meanwhile stays open for the next verdict. */
+      reportIds: string[];
     },
     transaction: Transaction,
   ): Promise<number> {
@@ -296,6 +302,7 @@ export class ModerationRepository {
       },
       {
         where: {
+          id: input.reportIds,
           targetKind: input.targetKind,
           targetId: input.targetId,
           status: [ModerationStatus.PENDIENTE, ModerationStatus.EN_REVISION],

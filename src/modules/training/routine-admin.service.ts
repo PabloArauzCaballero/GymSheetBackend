@@ -98,7 +98,8 @@ export class RoutineAdminService {
               (SELECT count(*)::int FROM community.content_comments c
                 WHERE c.target_kind = 'ROUTINE' AND c.target_id = r.id AND c.estado = 'VISIBLE') AS comentarios,
               (SELECT count(*)::int FROM moderation.reports m
-                WHERE m.target_kind = 'ROUTINE' AND m.target_id = r.id) AS denuncias,
+                WHERE m.target_kind = 'ROUTINE' AND m.target_id = r.id
+                  AND m.withdrawn_at IS NULL) AS denuncias, -- a withdrawn report no longer counts against the routine
               (SELECT count(*)::int FROM training.routines k
                 WHERE k.basada_en_rutina_id = r.id AND k.estado = 'ACTIVE') AS "copiasVivas"
          FROM training.routines r

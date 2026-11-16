@@ -12,6 +12,7 @@ import {
   ConnectionStatus,
   NotificationChannel,
 } from "../../common/enums/domain.enums";
+import { transactionWithRetry } from "../../common/sql/transaction-retry";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { ConnectionModel } from "../social/connection.model";
 import { DiscoveryPassModel } from "../social/discovery-pass.model";
@@ -56,6 +57,8 @@ export interface CasePreview {
     details: string | null;
     createdAt: string;
     status: string;
+    /** Set when the reporter withdrew it; the row stays as record. */
+    withdrawnAt: string | null;
   }[];
   activeStrikes: number;
   /** Qué sanción tocaría, calculada antes de aplicarla. */
@@ -274,14 +277,14 @@ export class ModerationService {
   ): Promise<boolean> {
     if (!isHideableTarget(targetKind)) return false;
 
-    const reporters = await this.repository.countDistinctReporters(
-      targetKind,
-      targetId,
-    );
-    if (reporters < AUTO_HIDE_DISTINCT_REPORTERS) return false;
-
-    await this.sequelize.transaction((transaction) =>
-      this.repository.setContentHidden(
+    // Count and hide in one transaction, with the open reports locked first
+    // (same order as withdrawing): a withdrawal cannot slip between the count
+    // and the hide and leave content hidden by fewer than the threshold.
+    const reporters = await transactionWithRetry(this.sequelize, async (transaction) => {
+      await this.repository.findOpenReportsForTarget(targetKind, targetId, null, transaction);
+      const count = await this.repository.countDistinctReporters(targetKind, targetId, transaction);
+      if (count < AUTO_HIDE_DISTINCT_REPORTERS) return count;
+      await this.repository.setContentHidden(
         {
           targetKind,
           targetId,
@@ -294,8 +297,10 @@ export class ModerationService {
           reason,
         },
         transaction,
-      ),
-    );
+      );
+      return count;
+    });
+    if (reporters < AUTO_HIDE_DISTINCT_REPORTERS) return false;
     this.logger.log(
       { event: "moderation.auto_hidden", targetKind, targetId, reporters },
       ModerationService.name,
@@ -356,6 +361,7 @@ export class ModerationService {
         details: report.details,
         createdAt: report.createdAt.toISOString(),
         status: report.status,
+        withdrawnAt: report.withdrawnAt?.toISOString() ?? null,
       })),
       activeStrikes,
       pendingSanction: { kind: sanction.kind, days: sanction.days },
@@ -453,23 +459,27 @@ export class ModerationService {
     targetId: string,
     input: ResolveCaseInput,
   ) {
-    const openReports = await this.repository.findOpenReportsForTarget(
-      targetKind,
-      targetId,
-      actor.tenantScope,
-    );
-    if (openReports.length === 0) {
-      throw new NotFoundException("Este caso ya no está abierto.");
-    }
-
-    const first = openReports[0];
-    const reportedUserId = first.reportedUserId;
-    const tenantId = first.tenantId;
     const now = new Date();
 
-    let sanction: Sanction | null = null;
+    // Reports are locked first (in id order), content after: the same order as
+    // withdrawing and auto-hiding, so no deadlock between them. Only the rows
+    // locked here are closed, counted and notified: a report withdrawn just
+    // before the verdict is neither closed nor told «lo revisamos».
+    const outcome = await transactionWithRetry(this.sequelize, async (transaction) => {
+      const openReports = await this.repository.findOpenReportsForTarget(
+        targetKind,
+        targetId,
+        actor.tenantScope,
+        transaction,
+      );
+      if (openReports.length === 0) {
+        throw new NotFoundException("Este caso ya no está abierto.");
+      }
+      const first = openReports[0];
+      const reportedUserId = first.reportedUserId;
+      const tenantId = first.tenantId;
+      let sanction: Sanction | null = null;
 
-    await this.sequelize.transaction(async (transaction) => {
       if (input.sanction) {
         const previous = await this.repository.countActiveStrikes(
           reportedUserId,
@@ -533,7 +543,7 @@ export class ModerationService {
         );
       }
 
-      await this.repository.resolveTarget(
+      const reportsClosed = await this.repository.resolveTarget(
         {
           targetKind,
           targetId,
@@ -542,22 +552,20 @@ export class ModerationService {
           moderatorUserId: actor.id,
           discarded: !input.sanction && !input.hideContent,
           tenantScope: actor.tenantScope,
+          reportIds: openReports.map((report) => report.id),
         },
         transaction,
       );
+      return { openReports, reportedUserId, sanction, reportsClosed };
     });
 
-    await this.notifyOutcome(openReports, reportedUserId, sanction, input);
+    const { sanction } = outcome;
+    await this.notifyOutcome(outcome.openReports, outcome.reportedUserId, sanction, input);
 
     return {
       resolved: true,
-      reportsClosed: openReports.length,
-      sanction: sanction
-        ? {
-            kind: (sanction as Sanction).kind,
-            days: (sanction as Sanction).days,
-          }
-        : null,
+      reportsClosed: outcome.reportsClosed,
+      sanction: sanction ? { kind: sanction.kind, days: sanction.days } : null,
       contentHidden: isHideableTarget(targetKind) ? input.hideContent : false,
     };
   }

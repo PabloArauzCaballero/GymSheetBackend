@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Audited } from '../../common/decorators/audited.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -10,14 +10,17 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { AdminPermissionKey } from '../admin-access/admin-permission.catalog';
 import { ModerationService } from './moderation.service';
+import { MyReportsService } from './my-reports.service';
 import { ModerationTargetKindValue } from './moderation.policy';
 import { ModerationTargetKindPipe } from './target-kind.pipe';
 import {
   CreateReportInput,
   ModerationQueueQuery,
+  MyReportsQuery,
   ResolveCaseInput,
   createReportSchema,
   moderationQueueQuerySchema,
+  myReportsQuerySchema,
   resolveCaseSchema,
 } from './moderation.schemas';
 
@@ -34,7 +37,10 @@ import {
 })
 @Controller('me/reports')
 export class ReportsController {
-  constructor(private readonly moderation: ModerationService) {}
+  constructor(
+    private readonly moderation: ModerationService,
+    private readonly myReports: MyReportsService,
+  ) {}
 
   @Post()
   create(
@@ -42,6 +48,31 @@ export class ReportsController {
     @Body(new ZodValidationPipe(createReportSchema)) input: CreateReportInput,
   ) {
     return this.moderation.report(reporter, input);
+  }
+
+  /** «Tus denuncias». A read, so it gets the ordinary per-minute budget, not the filing one. */
+  @Throttle({ default: { limit: 120, ttl: 60 * 1000 } })
+  @Get()
+  list(
+    @CurrentUser() reporter: AuthenticatedUser,
+    @Query(new ZodValidationPipe(myReportsQuerySchema)) query: MyReportsQuery,
+  ) {
+    return this.myReports.list(reporter, query);
+  }
+
+  /**
+   * Taking a report back. It removes work from the queue instead of creating
+   * it, so its budget is wider than filing; re-filing stays under the 20/h one.
+   * Someone else's report answers 404, like one that does not exist.
+   */
+  @Throttle({ default: { limit: 60, ttl: 60 * 60 * 1000 } })
+  @Post(':reportId/withdraw')
+  @HttpCode(HttpStatus.OK)
+  withdraw(
+    @CurrentUser() reporter: AuthenticatedUser,
+    @Param('reportId', UuidParamPipe) reportId: string,
+  ) {
+    return this.myReports.withdraw(reporter, reportId);
   }
 }
 

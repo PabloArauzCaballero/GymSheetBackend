@@ -65,3 +65,47 @@ export const resolveCaseSchema = z.object({
 });
 
 export type ResolveCaseInput = z.infer<typeof resolveCaseSchema>;
+
+/**
+ * Keyset cursor of «Tus denuncias»: the last row's `createdAt` and `id`.
+ * `createdAt` is the ISO text PostgreSQL printed, with microseconds: a JS Date
+ * would round to milliseconds and repeat or skip a row at the page boundary.
+ */
+export type MyReportsCursor = { createdAt: string; id: string };
+
+const myReportsCursorPayloadSchema = z.object({
+  c: z.string().datetime(),
+  i: z.string().uuid(),
+});
+
+export function encodeMyReportsCursor(cursor: MyReportsCursor): string {
+  return Buffer.from(JSON.stringify({ c: cursor.createdAt, i: cursor.id }), 'utf8').toString('base64url');
+}
+
+function decodeMyReportsCursor(raw: string): MyReportsCursor | null {
+  try {
+    const parsed = myReportsCursorPayloadSchema.safeParse(JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')));
+    return parsed.success ? { createdAt: parsed.data.c, id: parsed.data.i } : null;
+  } catch {
+    return null;
+  }
+}
+
+export const myReportsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: z
+    .string()
+    .max(200)
+    .optional()
+    .transform((value, context) => {
+      if (value === undefined || value === '') return null;
+      const cursor = decodeMyReportsCursor(value);
+      if (!cursor) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: 'Cursor inválido.' });
+        return z.NEVER;
+      }
+      return cursor;
+    }),
+});
+
+export type MyReportsQuery = z.infer<typeof myReportsQuerySchema>;

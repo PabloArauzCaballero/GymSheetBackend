@@ -5,6 +5,8 @@ import {
   ModerationResolution,
   ModerationTargetKind,
   nextSanction,
+  reporterFacingStatus,
+  withdrawalStatus,
   ReasonSeverity,
   severityOf,
   strikeExpiryFrom,
@@ -118,6 +120,22 @@ describe('Política de moderación', () => {
     it('exige varias personas distintas, no varias quejas', () => {
       // Si bastara con una, alguien insistente tumbaría contenido ajeno solo.
       expect(AUTO_HIDE_DISTINCT_REPORTERS).toBeGreaterThan(1);
+    });
+  });
+
+  describe('retirar una denuncia', () => {
+    it('una abierta pasa a RETIRADO; un veredicto ya emitido se mantiene', () => {
+      expect(withdrawalStatus('PENDIENTE')).toBe('RETIRADO');
+      expect(withdrawalStatus('EN_REVISION')).toBe('RETIRADO');
+      expect(withdrawalStatus('RESUELTO')).toBe('RESUELTO');
+      expect(withdrawalStatus('DESCARTADO')).toBe('DESCARTADO');
+    });
+
+    it('quien denunció solo sabe si ya la miraron, no cómo se resolvió', () => {
+      expect(reporterFacingStatus('PENDIENTE')).toBe('EN_REVISION');
+      expect(reporterFacingStatus('EN_REVISION')).toBe('EN_REVISION');
+      expect(reporterFacingStatus('RESUELTO')).toBe('REVISADA');
+      expect(reporterFacingStatus('DESCARTADO')).toBe('REVISADA');
     });
   });
 });

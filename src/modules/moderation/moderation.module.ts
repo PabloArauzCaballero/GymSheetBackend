@@ -9,6 +9,8 @@ import {
 } from "./moderation.controller";
 import { ModerationRepository } from "./moderation.repository";
 import { ModerationService } from "./moderation.service";
+import { MyReportsRepository } from "./my-reports.repository";
+import { MyReportsService } from "./my-reports.service";
 import { IntegrationModule } from "../integration/integration.module";
 import { ModerationReportModel } from "./report.model";
 import { UserStrikeModel } from "./user-strike.model";
@@ -31,7 +33,7 @@ import { SocialModule } from "../social/social.module";
     SocialModule,
   ],
   controllers: [ReportsController, ModerationAdminController],
-  providers: [ModerationRepository, ModerationService],
+  providers: [ModerationRepository, ModerationService, MyReportsRepository, MyReportsService],
   exports: [ModerationService],
 })
 export class ModerationModule {}
