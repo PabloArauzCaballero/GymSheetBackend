@@ -28,7 +28,7 @@ import { ModerationAutoHideService } from "./moderation-auto-hide.service";
 import { ModerationEvidenceService } from "./moderation-evidence.service";
 import { ModerationMinorService } from "./moderation-minor.service";
 import { emailModerationNotice, ModerationNotice, sanctionNotice } from "./moderation-notices";
-import { ChatMessageEvidence } from "./moderation-safeguards.repository";
+import { CaseContentSnapshot, ModerationCaseContentService } from "./moderation-case-content.service";
 import {
   caseRefusalFor,
   CaseRefusalCode,
@@ -82,8 +82,10 @@ export interface CasePreview {
   /** Qué sanción tocaría, calculada antes de aplicarla. */
   pendingSanction: { kind: string; days: number | null };
   contentHidden: boolean;
-  /** Copy of a reported chat message, kept even if its sender deleted it. */
-  evidence: ChatMessageEvidence | null;
+  /** What was reported (`content`, or `evidence` for a chat message), hidden or not. */
+  content: CaseContentSnapshot["content"];
+  contentUnavailableReason: CaseContentSnapshot["contentUnavailableReason"];
+  evidence: CaseContentSnapshot["evidence"];
 }
 
 @Injectable()
@@ -102,6 +104,7 @@ export class ModerationService {
     private readonly evidence: ModerationEvidenceService,
     private readonly autoHide: ModerationAutoHideService,
     private readonly noticeEmails: NoticeEmailService,
+    private readonly caseContent: ModerationCaseContentService,
     @Optional()
     private readonly recommendationOutbox?: SocialRecommendationOutboxService,
     @Optional() private readonly reelSocial?: ReelSocialService,
@@ -330,11 +333,11 @@ export class ModerationService {
     const reportedUserId = reports[0].reportedUserId;
     // The dossier names the reporters: it is refused where the verdict is.
     await this.assertMayDecide(actor, reportedUserId);
-    const [activeStrikes, person, contentHidden, evidence] = await Promise.all([
+    const [activeStrikes, person, contentHidden, snapshot] = await Promise.all([
       this.repository.countActiveStrikes(reportedUserId, new Date()),
       this.loadReportedPerson(reportedUserId),
       this.isContentHidden(targetKind, targetId),
-      targetKind === ModerationTargetKind.CHAT_MESSAGE ? this.evidence.findChatMessage(targetId) : null,
+      this.caseContent.snapshot(targetKind, targetId),
     ]);
     const sanction = nextSanction(activeStrikes);
 
@@ -358,7 +361,7 @@ export class ModerationService {
       activeStrikes,
       pendingSanction: { kind: sanction.kind, days: sanction.days },
       contentHidden,
-      evidence,
+      ...snapshot,
     };
   }
 

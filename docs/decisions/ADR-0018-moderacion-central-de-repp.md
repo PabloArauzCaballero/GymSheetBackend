@@ -129,6 +129,34 @@ propios casos, y los casos sobre cuentas de plataforma sólo se listan a `SYSTEM
 negativa deja un aviso estructurado `moderation.case_refused` (sin fila de auditoría: no se decidió
 nada).
 
+### 9. El moderador lee lo denunciado en el expediente
+
+La franja 7a ([ADR-0019](./ADR-0019-repp-opera-la-plataforma.md) §4) quitó la rama del `ADMIN` del
+gimnasio en `routine-access.policy`, que era como el moderador de gimnasio leía una rutina privada.
+Desde entonces un `MODERATOR` recibe `404` en `GET /routines/:id` y en los ejercicios personales
+ajenos, y no podía ver lo que tenía que juzgar. No se le abren las rutas del autor: la puerta es el
+expediente.
+
+`GET /admin/moderation/cases/:targetKind/:targetId` devuelve `content`, una copia de sólo lectura del
+contenido denunciado para cada tipo de la cola (rutina con días, ejercicios ordenados y series;
+ejercicio con grupos musculares, pasos y medios; texto y adjunto del comentario; archivo y pie de
+reel, historia y foto; nombre y foto principal de la cuenta; enlace de la playlist). El mensaje de
+chat sigue en `evidence`. Se arma con `ModerationCaseContentService` desde filas planas y un mapper
+(nunca modelos del ORM), **después** de las negativas del §8, así que quien no puede decidir el caso
+tampoco ve el contenido. Incluye el contenido oculto por moderación o borrado por su autor con la
+denuncia abierta, que es justo lo que hay que revisar. Si el contenido ya no existe (retención de
+lo denunciado, cierre de cuenta), `content` es `null` y `contentUnavailableReason` vale `ERASED`.
+Sólo se llega a un contenido que tiene denuncias: el expediente responde `404` sin ellas.
+
+**Alcance de una rutina.** Cuánta gente ya la tiene mide el daño y cambia la urgencia, así que el
+moderador lo necesita para decidir. Va dentro del expediente como `reach { copies, liveCopies,
+activations }`, sólo recuentos y sin nombres; `GET /admin/routines/:id/insights` (valoraciones,
+comentarios, versión) sigue siendo de `SYSTEM_ADMIN` (ADR-0019 §1).
+
+Límite conocido: `mediaUrl` de un reel es su ruta `/me/reels/:id/media`, que no sirve el archivo de
+un reel oculto a nadie, moderador incluido. Servir los archivos ocultos al moderador es otra puerta
+(firmada y auditada, como la selfie) y no entra en este cambio.
+
 ### 7. Fuera de alcance
 
 - **Apelaciones**: no existen; no se diseñan aquí.

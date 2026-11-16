@@ -73,7 +73,8 @@ export type DomainErrorCode =
   | 'BUSINESS_NAME_INVALID'
   | 'BUSINESS_NAME_RESERVED'
   | 'BUSINESS_NAME_TOO_SIMILAR'
-  | 'BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW';
+  | 'BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW'
+  | 'TENANT_SCOPE_REQUIRED';
 
 /**
  * Error de dominio con `code` estable y `details` opcional (por ejemplo

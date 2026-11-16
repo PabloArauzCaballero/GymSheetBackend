@@ -86,6 +86,9 @@ describe('ModerationService', () => {
       closeAutoHideReview: jest.fn().mockResolvedValue(false),
     };
     const chatEvents = { emitConversationRevoked: jest.fn() };
+    const caseContent = {
+      snapshot: jest.fn().mockResolvedValue({ content: null, contentUnavailableReason: 'ERASED', evidence: null }),
+    };
     const noticeEmails = { enqueue: jest.fn().mockResolvedValue(true) };
     const autoHide = new ModerationAutoHideService(
       sequelize as never,
@@ -104,11 +107,12 @@ describe('ModerationService', () => {
       evidence as never,
       autoHide,
       noticeEmails as never,
+      caseContent as never,
       undefined,
       undefined,
       chatEvents as never,
     );
-    return { service, repository, notifications, connections, passes, sequelize, minors, evidence, safeguards, chatEvents, noticeEmails };
+    return { service, repository, notifications, connections, passes, sequelize, minors, evidence, safeguards, chatEvents, noticeEmails, caseContent };
   }
 
   const reportInput = {
@@ -541,6 +545,8 @@ describe('ModerationService', () => {
       expect(built.minors.liftIfCleared).not.toHaveBeenCalled();
       expect(built.sequelize.query).not.toHaveBeenCalled();
       expect(built.notifications.enqueueDirectMessage).not.toHaveBeenCalled();
+      // The refused dossier never reads the reported content either.
+      expect(built.caseContent.snapshot).not.toHaveBeenCalled();
     };
 
     it('nobody claims, reads or resolves a case about their own account', async () => {
@@ -576,6 +582,15 @@ describe('ModerationService', () => {
       const verdict = await built.service.resolve(systemAdmin, ModerationTargetKind.USER, 'peer-1', { ...everything, confirmMinor: false });
       expect(verdict.sanction).toMatchObject({ kind: StrikeKind.EXPULSION });
       expect(built.repository.findAccountRole).toHaveBeenLastCalledWith('peer-1', expect.anything());
+    });
+
+    it('the case file carries the read-only snapshot of the reported content for the moderator', async () => {
+      const built = caseAbout('author-1', UserRole.CLIENT);
+      const content = { kind: 'ROUTINE', name: 'Privada', description: null, visibility: 'PRIVATE', days: [], reach: { copies: 2, liveCopies: 1, activations: 3 } };
+      built.caseContent.snapshot.mockResolvedValue({ content, contentUnavailableReason: null, evidence: null });
+      const kase = await built.service.getCase(centralModerator, ModerationTargetKind.ROUTINE, 'routine-1');
+      expect(built.caseContent.snapshot).toHaveBeenCalledWith(ModerationTargetKind.ROUTINE, 'routine-1');
+      expect(kase).toMatchObject({ content, contentUnavailableReason: null, evidence: null });
     });
 
     it('a MODERATOR still decides on a member case', async () => {
