@@ -132,13 +132,22 @@ describe('Photo verification (e2e)', () => {
 
     const outsiderQueue = (await e2e.as(outsider.token).get('/admin/verifications').expect(200)).body.data;
     expect(outsiderQueue.map((entry: { id: string }) => entry.id)).not.toContain(challenge.id);
-    await e2e.as(outsider.token).post(`/admin/verifications/${challenge.id}/decide`).send({ decision: 'APPROVE' }).expect(404);
+    await e2e.as(outsider.token).post(`/admin/verifications/${challenge.id}/decide`).send({ decision: 'APPROVE', comparedPhotoIds: [randomUUID()] }).expect(404);
 
     const before = (await e2e.as(viewer.token).get('/me/discovery/deck?limit=10').expect(200)).body.data;
     expect(before.find((card: { userId: string }) => card.userId === ana.id)?.reasons ?? []).not.toContain('VERIFIED');
 
-    await e2e.as(mod.token).post(`/admin/verifications/${challenge.id}/decide`).send({ decision: 'APPROVE' }).expect(200);
-    await e2e.as(mod.token).post(`/admin/verifications/${challenge.id}/decide`).send({ decision: 'APPROVE' }).expect(409);
+    // The approval is bound to the photos the moderator saw in the queue.
+    const comparedPhotoIds = (item.profilePhotos as Array<{ id: string }>).map((photo) => photo.id);
+    await e2e.as(mod.token).post(`/admin/verifications/${challenge.id}/decide`).send({ decision: 'APPROVE' }).expect(400);
+    const stale = await e2e
+      .as(mod.token)
+      .post(`/admin/verifications/${challenge.id}/decide`)
+      .send({ decision: 'APPROVE', comparedPhotoIds: [comparedPhotoIds[0], randomUUID()] })
+      .expect(409);
+    expect(stale.body.code).toBe('VERIFICATION_PHOTOS_CHANGED');
+    await e2e.as(mod.token).post(`/admin/verifications/${challenge.id}/decide`).send({ decision: 'APPROVE', comparedPhotoIds }).expect(200);
+    await e2e.as(mod.token).post(`/admin/verifications/${challenge.id}/decide`).send({ decision: 'APPROVE', comparedPhotoIds }).expect(409);
     const state = (await anaApi.get('/me/verification').expect(200)).body.data;
     expect(state).toMatchObject({ status: 'APPROVED', verifiedAt: expect.any(String), lastDecision: { decision: 'APPROVED' } });
     expect((await anaApi.get('/users/me').expect(200)).body.data.verified).toBe(true);
@@ -243,7 +252,7 @@ describe('Photo verification (e2e)', () => {
     await e2e.as(lone.token).post(`/me/verification/${randomUUID()}/selfie`).expect(404);
 
     const mod = await moderator('v-mod3', tenant, ['moderation:read', 'moderation:act']);
-    await e2e.as(mod.token).post(`/admin/verifications/${randomUUID()}/decide`).send({ decision: 'APPROVE' }).expect(404);
+    await e2e.as(mod.token).post(`/admin/verifications/${randomUUID()}/decide`).send({ decision: 'APPROVE', comparedPhotoIds: [randomUUID()] }).expect(404);
     await e2e.as('invalid-token').get('/me/verification').expect(401);
   });
 });

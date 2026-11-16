@@ -68,9 +68,18 @@ function setup(overrides: Partial<Record<keyof VerificationRepository, jest.Mock
 }
 
 describe("VerificationReviewService.decide", () => {
+  it("refuses an approval when the gallery changed after the moderator looked at it", async () => {
+    const { service, repository } = setup();
+    // The moderator compared p1+p3; the member has p1+p2 now.
+    await expect(
+      service.decide(moderator, verificationId, { decision: "APPROVE", comparedPhotoIds: ["p1", "p3"] }),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: "VERIFICATION_PHOTOS_CHANGED" }) });
+    expect(repository.setUserVerifiedAt).not.toHaveBeenCalled();
+  });
+
   it("approves in one transaction: status, reviewer, verified_at, compared photos and the member notice", async () => {
     const { service, repository, notifications } = setup();
-    const result = await service.decide(moderator, verificationId, { decision: "APPROVE" });
+    const result = await service.decide(moderator, verificationId, { decision: "APPROVE", comparedPhotoIds: ["p1", "p2"] });
     expect(result).toMatchObject({ id: verificationId, status: "APPROVED" });
     expect(repository.findByIdInScope).toHaveBeenCalledWith(verificationId, "gym-a", tx);
     expect(repository.update).toHaveBeenCalledWith(
@@ -105,7 +114,7 @@ describe("VerificationReviewService.decide", () => {
 
   it("answers 404 for a verification outside the moderator's gym", async () => {
     const { service, repository } = setup({ findByIdInScope: jest.fn().mockResolvedValue(null) });
-    await expect(service.decide(moderator, verificationId, { decision: "APPROVE" })).rejects.toThrow(NotFoundException);
+    await expect(service.decide(moderator, verificationId, { decision: "APPROVE", comparedPhotoIds: ["p1", "p2"] })).rejects.toThrow(NotFoundException);
     expect(repository.update).not.toHaveBeenCalled();
   });
 
@@ -117,7 +126,7 @@ describe("VerificationReviewService.decide", () => {
 
   it("does not approve against an empty gallery", async () => {
     const { service, repository } = setup({ visiblePhotos: jest.fn().mockResolvedValue([]) });
-    await expect(service.decide(moderator, verificationId, { decision: "APPROVE" })).rejects.toThrow(HttpException);
+    await expect(service.decide(moderator, verificationId, { decision: "APPROVE", comparedPhotoIds: ["p1", "p2"] })).rejects.toThrow(HttpException);
     expect(repository.setUserVerifiedAt).not.toHaveBeenCalled();
   });
 });

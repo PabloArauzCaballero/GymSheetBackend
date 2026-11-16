@@ -44,6 +44,16 @@ export class VerificationService {
   ) {}
 
   async issueChallenge(userId: string): Promise<ChallengeResponse> {
+    // A selfie is biometric data that must be deletable 30 days after the
+    // decision: on storage that cannot delete, the feature stays closed.
+    if (this.storage.immutable) {
+      this.logger.error({ event: "verification.unavailable", reason: "immutable_storage" });
+      throw new DomainException(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        "VERIFICATION_UNAVAILABLE",
+        "La verificación no está disponible en este momento.",
+      );
+    }
     await this.consent.assertGranted(userId);
     try {
       const row = await this.sequelize.transaction(async (transaction) => {

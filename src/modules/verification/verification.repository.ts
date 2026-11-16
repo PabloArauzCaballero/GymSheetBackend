@@ -59,7 +59,8 @@ export class VerificationRepository {
   async countExistingPhotos(userId: string, photoIds: readonly string[], transaction: Transaction): Promise<number> {
     if (photoIds.length === 0) return 0;
     const [row] = await this.sequelize.query<{ total: string }>(
-      `SELECT count(*) AS total FROM profile.photos WHERE user_id = :userId AND id IN (:photoIds)`,
+      `SELECT count(*) AS total FROM profile.photos
+        WHERE user_id = :userId AND id IN (:photoIds) AND hidden_at IS NULL`,
       { type: QueryTypes.SELECT, replacements: { userId, photoIds }, transaction },
     );
     return Number(row?.total ?? 0);

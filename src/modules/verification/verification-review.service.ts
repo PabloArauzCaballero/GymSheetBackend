@@ -71,7 +71,10 @@ export class VerificationReviewService {
       await this.repository.lockUser(row.userId, transaction);
       const now = this.clock();
       const reason = target === VerificationStatus.REJECTED ? (input.reason ?? "OTHER") : null;
-      const approvedPhotoIds = target === VerificationStatus.APPROVED ? await this.comparedPhotoIds(row.userId, transaction) : [];
+      const approvedPhotoIds =
+        target === VerificationStatus.APPROVED
+          ? await this.comparedPhotoIds(row.userId, input.comparedPhotoIds ?? [], transaction)
+          : [];
       await this.repository.update(
         row.id,
         {
@@ -92,7 +95,8 @@ export class VerificationReviewService {
   }
 
   /** Photos the moderator compared against; without any there is nothing to bind the approval to. */
-  private async comparedPhotoIds(userId: string, transaction: Transaction): Promise<string[]> {
+  /** The approval vouches for the photos the moderator saw, and only if they are still the gallery. */
+  private async comparedPhotoIds(userId: string, reviewed: readonly string[], transaction: Transaction): Promise<string[]> {
     const photos = await this.repository.visiblePhotos([userId], transaction);
     if (photos.length === 0) {
       throw new DomainException(
@@ -101,7 +105,16 @@ export class VerificationReviewService {
         "La persona ya no tiene fotos de perfil con las que comparar la selfie.",
       );
     }
-    return photos.map((photo) => photo.id);
+    const current = new Set(photos.map((photo) => photo.id));
+    const same = reviewed.length === current.size && reviewed.every((id) => current.has(id));
+    if (!same) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        "VERIFICATION_PHOTOS_CHANGED",
+        "Las fotos de perfil cambiaron mientras revisabas. Vuelve a abrir la verificación.",
+      );
+    }
+    return [...current];
   }
 
   private async notifyMember(
