@@ -118,6 +118,11 @@ export const environmentSchema = z
      * recommended deployment sets it or restricts the route at network level.
      */
     METRICS_SCRAPE_TOKEN: optionalSecretSchema,
+    /**
+     * Optional key for the HMAC-SHA256 of the client IP stored with each legal
+     * acceptance. Unset = no IP evidence is stored (the column stays null).
+     */
+    IP_HASH_SECRET: optionalSecretSchema,
 
     DB_HOST: z.string().trim().min(1),
     DB_PORT: z.coerce.number().int().positive().max(65535).default(5432),

@@ -55,6 +55,7 @@ x-app-environment: &app-environment
   ACCESS_MOCK_ENABLED: ${ACCESS_MOCK_ENABLED:-false}
   WHATSAPP_MEMBERSHIP_PHONE: ${WHATSAPP_MEMBERSHIP_PHONE:?WHATSAPP_MEMBERSHIP_PHONE is required}
   METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
+  IP_HASH_SECRET: ${IP_HASH_SECRET:-}
 
   # Fijos a los alias internos (con prefijo de proyecto, ver comentario en el servicio `postgres`
   # más abajo) de los servicios `postgres`/`redis` de este mismo stack. Lo que se pegue en Coolify

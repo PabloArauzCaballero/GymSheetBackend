@@ -104,7 +104,7 @@ export class OnboardingRepository {
       return existing;
     }
     return this.profiles.create(
-      { userId, age: null, ...values },
+      { userId, ...values },
       { transaction },
     );
   }

@@ -2,7 +2,7 @@
    supertest tipa los cuerpos como `any`; las aserciones los recorren tal cual. */
 import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
-import { bootE2eApp, E2eApp } from './support/e2e-app';
+import { bootE2eApp, E2E_SIGNUP_FIELDS, E2eApp } from './support/e2e-app';
 
 /**
  * Premios del gimnasio (P1) contra Postgres real: alta por el gimnasio, cupón
@@ -182,9 +182,10 @@ describe('Progression prizes (e2e)', () => {
       const veteran = await e2e.register('premios-socio-veterano');
       await e2e.as(veteran.token).get('/me/progression').expect(200);
       // `member` no ha abierto la senda: el primer rango se «cruza» en su primera lectura.
+      // Sex is mandatory at signup, so the member walks the path of the sex it registered with.
       const pathCode = (await query<{ code: string }>(
-        `SELECT code FROM progression.levels WHERE tenant_id IS NULL AND audience = 'ANY' AND active ORDER BY min_points LIMIT 1`,
-        {},
+        `SELECT code FROM progression.levels WHERE tenant_id IS NULL AND audience = :audience AND active ORDER BY min_points LIMIT 1`,
+        { audience: E2E_SIGNUP_FIELDS.genero },
       ))[0].code;
       await createPrize({ targetKind: 'LEVEL', targetCode: pathCode, title: 'Bienvenida', validDays: 7 });
       const prizes = (await e2e.as(member.token).get('/me/progression').expect(200)).body.data.prizes;

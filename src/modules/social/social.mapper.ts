@@ -2,6 +2,7 @@ import { ConnectionStatus } from "../../common/enums/domain.enums";
 import { ConnectionModel } from "./connection.model";
 import { DirectoryRow, EarnedBadgeRow, InteractionCountsRow } from "./social.repository";
 import { resolveMediaUrl } from "../../common/media/media-url";
+import { mapPublicAbout, type PublicAboutResponse } from "./social-profile.mapper";
 
 export type ConnectionResponse = {
   id: string;
@@ -51,6 +52,8 @@ export type DirectoryEntryResponse = {
   experienceLevel: string | null;
   points: number | null;
   levelCode: string | null;
+  /** Interests, habits and bio; `orientation` only when its owner made it visible. */
+  about: PublicAboutResponse;
 };
 
 export function mapDirectoryRowToResponse(row: DirectoryRow): DirectoryEntryResponse {
@@ -70,6 +73,7 @@ export function mapDirectoryRowToResponse(row: DirectoryRow): DirectoryEntryResp
     experienceLevel: row.experienceLevel,
     points: row.points,
     levelCode: row.levelCode,
+    about: mapPublicAbout(row.about),
   };
 }
 

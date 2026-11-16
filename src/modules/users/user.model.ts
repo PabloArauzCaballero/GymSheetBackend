@@ -62,6 +62,14 @@ export class UserModel extends Model {
   @Column({ type: DataType.STRING(12), allowNull: true, field: 'genero' })
   declare gender: UserGender | null;
 
+  /**
+   * `YYYY-MM-DD`. Single source of the person's age (every age read uses this
+   * column). Required at signup; null only for staff accounts and accounts
+   * created before signup asked for it.
+   */
+  @Column({ type: DataType.DATEONLY, allowNull: true, field: 'fecha_nacimiento' })
+  declare birthDate: string | null;
+
   @Default(DataType.NOW)
   @Column({ type: DataType.DATE, allowNull: false, field: 'fecha_registro' })
   declare registeredAt: Date;

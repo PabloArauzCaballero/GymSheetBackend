@@ -7,6 +7,7 @@ import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter
 import { ResponseInterceptor } from '../src/common/interceptors/response.interceptor';
 import { requestIdMiddleware } from '../src/common/middleware/request-id.middleware';
 import { env } from '../src/config/env';
+import { E2E_SIGNUP_FIELDS } from './support/e2e-app';
 
 /**
  * Horizontal authorization: two real accounts, one real workout session, and
@@ -32,7 +33,7 @@ describe('Workout session ownership isolation (e2e)', () => {
         email: `${label}-${suffix}@example.test`,
         password,
         nombreCompleto: `E2E ${label}`,
-        acceptedTerms: true,
+        ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
     return response.body.data.accessToken as string;

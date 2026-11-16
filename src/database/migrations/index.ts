@@ -118,6 +118,8 @@ import { branchLocationMigration } from "./202611080001-branch-location";
 import { tutorialProgressInitialMigration } from "./202611080001-tutorial-progress";
 import { tutorialProgressMigration } from "./202611120001-tutorial-progress";
 import { progressionStrikesAndCoachCardsMigration } from "./202610190002-progression-strikes-and-coach-cards";
+import { socialProfileDetailsMigration } from "./202611160101-social-profile-details";
+import { userBirthDateAndLegalAcceptancesMigration } from "./202611160201-user-birth-date-and-legal-acceptances";
 import { DatabaseMigration } from "./migration.types";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -244,4 +246,6 @@ export const databaseMigrations: DatabaseMigration[] = [
   // porque TEST pudo aplicar ya el primero.
   tutorialProgressInitialMigration,
   tutorialProgressMigration,
+  socialProfileDetailsMigration,
+  userBirthDateAndLegalAcceptancesMigration,
 ];

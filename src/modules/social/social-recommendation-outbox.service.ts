@@ -5,6 +5,7 @@ import { Sequelize } from "sequelize-typescript";
 import { GymDomainEvent } from "../integration/domain-event.catalog";
 import { DomainEventPublisher } from "../integration/domain-event.publisher";
 import { recommendationFeatureCodes } from "./recommendation-feature-codes";
+import type { DiscoveryIntent } from "./social.schemas";
 
 type SocialProfileSnapshot = {
   id: string;
@@ -13,7 +14,7 @@ type SocialProfileSnapshot = {
   age: number | null;
   gender: "MALE" | "FEMALE" | "UNSPECIFIED" | null;
   goal: string | null;
-  intents: ("TRAINING" | "FRIENDSHIP" | "DATING")[] | null;
+  intents: DiscoveryIntent[] | null;
   lat: number | null;
   lon: number | null;
   suspended: boolean;
@@ -117,7 +118,7 @@ export class SocialRecommendationOutboxService {
     const snapshots = await this.sequelize.query<SocialProfileSnapshot>(
       `SELECT account.id, account.estado = 'ACTIVO' AS active,
               COALESCE(settings.profile_enabled, FALSE) AS profile_enabled,
-              COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, anthropometric.fecha_nacimiento))::int, anthropometric.edad) AS age,
+              EXTRACT(YEAR FROM age(CURRENT_DATE, account.fecha_nacimiento))::int AS age,
               account.genero AS gender,
               anthropometric.objetivo AS goal,
               preferences.intents,

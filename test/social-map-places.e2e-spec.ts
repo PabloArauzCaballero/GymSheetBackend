@@ -7,6 +7,7 @@ import { HttpExceptionFilter } from "../src/common/filters/http-exception.filter
 import { ResponseInterceptor } from "../src/common/interceptors/response.interceptor";
 import { requestIdMiddleware } from "../src/common/middleware/request-id.middleware";
 import { env } from "../src/config/env";
+import { E2E_SIGNUP_FIELDS } from "./support/e2e-app";
 
 describe("social map places API (PostgreSQL integration)", () => {
   let application: INestApplication;
@@ -27,7 +28,7 @@ describe("social map places API (PostgreSQL integration)", () => {
     httpServer = application.getHttpServer();
     const response = await request(httpServer).post(url("/auth/register")).send({
       email: `map-places-${Date.now()}@example.test`, password: "map-places-qa-password",
-      nombreCompleto: "QA Map Places", acceptedTerms: true,
+      nombreCompleto: "QA Map Places", ...E2E_SIGNUP_FIELDS,
     }).expect(201);
     accessToken = response.body.data.accessToken as string;
   }, 60000);

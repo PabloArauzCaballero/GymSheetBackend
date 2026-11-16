@@ -10,6 +10,7 @@ import { requestIdMiddleware } from '../src/common/middleware/request-id.middlew
 import { WorkoutSessionStatus } from '../src/common/enums/domain.enums';
 import { env } from '../src/config/env';
 import { WorkoutSessionModel } from '../src/modules/workouts/workout-session.model';
+import { E2E_SIGNUP_FIELDS } from './support/e2e-app';
 
 /**
  * `computeStreaks()` ya tiene cobertura unitaria pura (`progression.spec.ts`).
@@ -58,7 +59,7 @@ describe('Progression streaks (e2e)', () => {
         email,
         password: 'e2e-strong-password',
         nombreCompleto: `Racha ${label}`,
-        acceptedTerms: true,
+        ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
     return {

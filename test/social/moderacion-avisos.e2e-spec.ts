@@ -17,6 +17,7 @@ import { NotificationDeliveryService } from "../../src/modules/notifications/not
 import { NotificationService } from "../../src/modules/notifications/notification.service";
 import { NotificationDeliveryRunner } from "../../src/workers/notification-delivery.runner";
 import { PushDispatcherService } from "../../src/modules/notifications/delivery/push-dispatcher.service";
+import { E2E_SIGNUP_FIELDS } from "../support/e2e-app";
 
 describe("H11 moderation notices (PostgreSQL e2e)", () => {
   let moduleRef: TestingModule | undefined;
@@ -124,7 +125,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           email: `h11-s1-m1-${label}-${suffix}@example.test`,
           password: "h11-moderation-e2e-password",
           nombreCompleto: `H11 Report ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
       return {
@@ -249,7 +250,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           email: `h11-s1-m2-${label}-${suffix}@example.test`,
           password: "h11-moderation-e2e-password",
           nombreCompleto: `H11 Scope ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
       return {
@@ -346,7 +347,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           email: `h11-s1-m3-${label}-${suffix}@example.test`,
           password: "h11-moderation-e2e-password",
           nombreCompleto: `H11 Hide ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
       return {
@@ -476,7 +477,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           email: `h11-s2-m1-${label}-${suffix}@example.test`,
           password: "h11-notice-e2e-password",
           nombreCompleto: `H11 Notice ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
       return {
@@ -658,7 +659,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           email: `h11-s2-m2-${label}-${suffix}@example.test`,
           password: "h11-notice-e2e-password",
           nombreCompleto: `H11 Suppression ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
       return {
@@ -785,7 +786,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           email: `h11-s2-m4-${label}-${suffix}@example.test`,
           password: "h11-notice-e2e-password",
           nombreCompleto: `H11 Preview ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
       return {
@@ -868,7 +869,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           email: `h11-s2-m3-${label}-${suffix}@example.test`,
           password: "h11-notice-e2e-password",
           nombreCompleto: `H11 Stale Link ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
       return {

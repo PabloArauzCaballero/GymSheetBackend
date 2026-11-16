@@ -37,6 +37,15 @@ export const updateSocialDiscoverySettingsSchema = z
     },
   );
 
+/** "Qué buscas". UNSURE ("Aún no lo sé") cannot be combined with other intents. */
+export const DISCOVERY_INTENTS = [
+  "TRAINING",
+  "FRIENDSHIP",
+  "DATING",
+  "UNSURE",
+] as const;
+export type DiscoveryIntent = (typeof DISCOVERY_INTENTS)[number];
+
 export const discoveryPreferencesInputSchema = z
   .object({
     genders: z
@@ -44,9 +53,9 @@ export const discoveryPreferencesInputSchema = z
       .min(1)
       .max(2),
     intents: z
-      .array(z.enum(["TRAINING", "FRIENDSHIP", "DATING"]))
+      .array(z.enum(DISCOVERY_INTENTS))
       .min(1)
-      .max(3),
+      .max(DISCOVERY_INTENTS.length),
     minAge: z.number().int().min(18).max(100),
     maxAge: z.number().int().min(18).max(100),
     radiusKm: z.number().finite().min(1).max(500),
@@ -74,6 +83,13 @@ export const discoveryPreferencesInputSchema = z
         code: z.ZodIssueCode.custom,
         path: ["intents"],
         message: "No se permiten intenciones duplicadas.",
+      });
+    }
+    if (preferences.intents.includes("UNSURE") && preferences.intents.length > 1) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["intents"],
+        message: "«Aún no lo sé» no se combina con otras opciones.",
       });
     }
   });

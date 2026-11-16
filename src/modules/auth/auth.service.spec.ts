@@ -4,6 +4,7 @@ import * as bcrypt from 'bcryptjs';
 import { Sequelize } from 'sequelize-typescript';
 import { UsersRepository } from '../users/users.repository';
 import { TenantsService } from '../tenants/tenants.service';
+import { LegalService } from '../legal/legal.service';
 import { AuthService } from './auth.service';
 import { RefreshTokenRepository } from './refresh-token.repository';
 
@@ -36,6 +37,7 @@ function createService(usersRepositoryOverrides: Partial<UsersRepository>): Auth
     {} as RefreshTokenRepository,
     {} as JwtService,
     {} as Sequelize,
+    {} as LegalService,
   );
 }
 

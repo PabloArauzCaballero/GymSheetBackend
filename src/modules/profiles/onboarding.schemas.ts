@@ -28,6 +28,15 @@ export const onboardingEquipmentSchema = z.object({
   availableEquipment: z.array(z.string().trim().min(1).max(80)).max(50),
 });
 
+/** Optional "Conocer" step: never blocks completing onboarding. */
+export const ONBOARDING_SOCIAL_STEP_STATES = ["PENDING", "DONE", "SKIPPED"] as const;
+export type OnboardingSocialStepState =
+  (typeof ONBOARDING_SOCIAL_STEP_STATES)[number];
+
+export const onboardingSocialStepSchema = z.object({
+  action: z.enum(["DONE", "SKIP"]),
+});
+
 export const bodyMeasurementSchema = z.object({
   weight: z.number().positive().max(1000),
   unit: z.enum(["KG", "LB"]),
@@ -42,5 +51,8 @@ export type OnboardingPreferencesInput = z.infer<
 >;
 export type OnboardingEquipmentInput = z.infer<
   typeof onboardingEquipmentSchema
+>;
+export type OnboardingSocialStepInput = z.infer<
+  typeof onboardingSocialStepSchema
 >;
 export type BodyMeasurementInput = z.infer<typeof bodyMeasurementSchema>;

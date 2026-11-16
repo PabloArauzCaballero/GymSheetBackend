@@ -15,6 +15,8 @@ import { AuthenticatedUser } from '../../../common/types/auth-context.types';
 import { env } from '../../../config/env';
 import { AuthService } from '../../../modules/auth/auth.service';
 import { registerSchema } from '../../../modules/auth/auth.schemas';
+import { LEGAL_DOCUMENTS } from '../../../modules/legal/legal-documents';
+import { SEED_USER_DEMOGRAPHICS } from '../seed-user-legal';
 import { CommunityService } from '../../../modules/community/community.service';
 import { ContentCommentModel } from '../../../modules/community/content-comment.model';
 import { ExerciseCommunityService } from '../../../modules/exercises/exercise-community.service';
@@ -232,8 +234,18 @@ export class RoutinesShowcaseSeeder {
   private async ensureUser(email: string, fullName: string, gender: 'MALE' | 'FEMALE' | null, password: string): Promise<UserModel> {
     let user = await UserModel.findOne({ where: { email } });
     if (!user) {
+      // Signup now requires sex, an adult birth date and the current terms version.
       await this.get(AuthService).register(
-        registerSchema.parse({ email, password, nombreCompleto: fullName, acceptedTerms: true, ...(gender ? { genero: gender } : {}) }),
+        registerSchema.parse({
+          email,
+          password,
+          nombreCompleto: fullName,
+          acceptedTerms: true,
+          genero: gender ?? SEED_USER_DEMOGRAPHICS.gender,
+          fechaNacimiento: SEED_USER_DEMOGRAPHICS.birthDate,
+          termsVersion: LEGAL_DOCUMENTS.TERMS,
+        }),
+        { channel: 'UNKNOWN', ipHmac: null, userAgent: null },
       );
       user = await UserModel.findOne({ where: { email }, rejectOnEmpty: true });
       this.count('usuarios_creados');

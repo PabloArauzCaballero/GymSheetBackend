@@ -48,11 +48,11 @@ export class CardioPlansService {
     return plan;
   }
 
-  /** FC máxima de Tanaka con la edad del perfil (fecha de nacimiento, o la edad guardada). */
+  /** Tanaka max heart rate from the account birth date (the single source of age). */
   async estimatedMaxHeartRate(userId: string): Promise<number | null> {
     const [row] = await this.plans.sequelize!.query<{ age: number | null }>(
-      `SELECT COALESCE(date_part('year', age(fecha_nacimiento))::int, edad) AS age
-         FROM public.perfiles_antropometricos WHERE usuario_id = :userId`,
+      `SELECT date_part('year', age(fecha_nacimiento))::int AS age
+         FROM public.usuarios WHERE id = :userId`,
       { type: QueryTypes.SELECT, replacements: { userId } },
     );
     return row?.age ? maxHeartRate(row.age) : null;

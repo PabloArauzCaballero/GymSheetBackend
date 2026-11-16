@@ -9,11 +9,13 @@ import {
   OnboardingGoalsInput,
   OnboardingPreferencesInput,
   OnboardingProfileInput,
+  OnboardingSocialStepInput,
   bodyMeasurementSchema,
   onboardingEquipmentSchema,
   onboardingGoalsSchema,
   onboardingPreferencesSchema,
   onboardingProfileSchema,
+  onboardingSocialStepSchema,
 } from "./onboarding.schemas";
 
 @Controller("me")
@@ -49,6 +51,13 @@ export class OnboardingController {
     input: OnboardingEquipmentInput,
   ) {
     return this.service.saveEquipment(user.id, input);
+  }
+  @Put("onboarding/social") social(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(onboardingSocialStepSchema))
+    input: OnboardingSocialStepInput,
+  ) {
+    return this.service.saveSocialStep(user.id, input);
   }
   @Post("onboarding/complete") complete(
     @CurrentUser() user: AuthenticatedUser,

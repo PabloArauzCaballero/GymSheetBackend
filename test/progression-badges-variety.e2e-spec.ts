@@ -191,8 +191,7 @@ describe('Progression · variedad de insignias (e2e)', () => {
     // Hoy es su cumpleaños (de hace treinta años).
     const birthday = `${Number(localDay(0).slice(0, 4)) - 30}${localDay(0).slice(4)}`;
     await e2e.sql(
-      `INSERT INTO public.perfiles_antropometricos (usuario_id, peso_kg, estatura_cm, objetivo, fecha_nacimiento)
-       VALUES (:userId, 70, 175, 'SALUD_GENERAL', :birthday::date)`,
+      `UPDATE public.usuarios SET fecha_nacimiento = :birthday::date WHERE id = :userId`,
       { userId: zoe.id, birthday },
     );
     await seed(localDay(0), '10:00');

@@ -19,6 +19,7 @@ import {
   OnboardingGoalsInput,
   OnboardingPreferencesInput,
   OnboardingProfileInput,
+  OnboardingSocialStepInput,
 } from "./onboarding.schemas";
 
 const legacyGoal: Record<FitnessGoal, TrainingGoal> = {
@@ -94,6 +95,15 @@ export class OnboardingService {
   async saveEquipment(userId: string, input: OnboardingEquipmentInput) {
     const state = await this.repository.getOrCreate(userId);
     await this.advance(state, 4, input);
+    return this.getState(userId);
+  }
+
+  /** Skippable and resumable: a later DONE replaces SKIPPED; SKIP never undoes DONE. */
+  async saveSocialStep(userId: string, input: OnboardingSocialStepInput) {
+    const state = await this.repository.getOrCreate(userId);
+    const socialStep =
+      input.action === "DONE" || state.socialStep === "DONE" ? "DONE" : "SKIPPED";
+    if (socialStep !== state.socialStep) await state.update({ socialStep });
     return this.getState(userId);
   }
 
@@ -242,6 +252,7 @@ export class OnboardingService {
       consentData: state.consentData,
       startedAt: state.startedAt,
       completedAt: state.completedAt,
+      socialStep: state.socialStep,
       missingFields,
       profileComplete:
         state.status === OnboardingStatus.COMPLETED &&

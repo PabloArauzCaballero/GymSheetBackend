@@ -10,6 +10,7 @@ import { HttpExceptionFilter } from '../../src/common/filters/http-exception.fil
 import { ResponseInterceptor } from '../../src/common/interceptors/response.interceptor';
 import { requestIdMiddleware } from '../../src/common/middleware/request-id.middleware';
 import { env } from '../../src/config/env';
+import { LEGAL_DOCUMENTS } from '../../src/modules/legal/legal-documents';
 
 export type E2eApp = {
   app: INestApplication;
@@ -30,6 +31,17 @@ export type E2eApp = {
 };
 
 const password = 'e2e-strong-password';
+
+/**
+ * Fields every signup must send: sex (MALE|FEMALE), an adult birth date and
+ * the terms version the client showed. Spread into each register body.
+ */
+export const E2E_SIGNUP_FIELDS = {
+  acceptedTerms: true,
+  genero: 'MALE',
+  fechaNacimiento: '1995-05-15',
+  termsVersion: LEGAL_DOCUMENTS.TERMS,
+} as const;
 
 /** Arranca la app completa contra la base de pruebas, igual que main.ts. */
 export async function bootE2eApp(): Promise<E2eApp> {
@@ -57,7 +69,7 @@ export async function bootE2eApp(): Promise<E2eApp> {
           email: `${label}-${suffix}@example.test`,
           password,
           nombreCompleto: `E2E ${label}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
       const token = response.body.data.accessToken as string;

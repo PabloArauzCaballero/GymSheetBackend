@@ -8,13 +8,14 @@ import { DiscoveryPassModel } from "./discovery-pass.model";
 import { ProfileSocialSettingsModel } from "./profile-social-settings.model";
 import { lockSocialPairUsers } from "./social-pair-lock";
 import type { SocialDiscoverySettings } from "./social-discovery-settings.policy";
-import type { DiscoveryPreferencesInput } from "./social.schemas";
+import type { DiscoveryIntent, DiscoveryPreferencesInput } from "./social.schemas";
 import { SocialRecommendationOutboxService } from "./social-recommendation-outbox.service";
+import type { PublicAboutRow } from "./social-profile.mapper";
 
 export interface DiscoveryPreferences {
   configured: true;
   genders: ("MALE" | "FEMALE")[];
-  intents: ("TRAINING" | "FRIENDSHIP" | "DATING")[];
+  intents: DiscoveryIntent[];
   minAge: number;
   maxAge: number;
   radiusKm: number;
@@ -55,7 +56,7 @@ export interface DirectoryRow {
    * consumidores vivos en web y móvil que la leen.
    */
   photos: { id: string; url: string }[];
-  /** Años, calculados desde `fecha_nacimiento` (o `edad` en perfiles antiguos). Nulo si no hay ninguno. */
+  /** Years derived from `usuarios.fecha_nacimiento`. Null when the account has no birth date. */
   age: number | null;
   gender: string | null;
   experienceLevel: string | null;
@@ -64,6 +65,8 @@ export interface DirectoryRow {
   /** Public gym coordinates and declared discovery intent, internal to ranking only. */
   recommendationArea?: { lat: number; lon: number } | null;
   recommendationIntents?: string[];
+  /** Optional "Conocer" answers; display only, never a ranking input. */
+  about?: PublicAboutRow | null;
 }
 
 /**
@@ -642,7 +645,7 @@ export class SocialRepository {
     const rows = await this.sequelize.query<{ allowed: boolean }>(
       `SELECT COUNT(DISTINCT u.id) = 2
                 AND BOOL_AND(u.estado = 'ACTIVO'
-                  AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad, 0) >= 18
+                  AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int, 0) >= 18
                   AND s.profile_enabled
                   AND s.cross_gym_enabled) AS allowed
          FROM public.usuarios u
@@ -706,7 +709,7 @@ export class SocialRepository {
       lat: number | null;
       lon: number | null;
     }>(
-      `SELECT COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, profile.fecha_nacimiento))::int, profile.edad) AS age,
+      `SELECT EXTRACT(YEAR FROM age(CURRENT_DATE, account.fecha_nacimiento))::int AS age,
               account.genero AS gender, profile.objetivo AS goal,
               branch.latitude::float8 AS lat, branch.longitude::float8 AS lon
          FROM public.usuarios account
@@ -1264,6 +1267,7 @@ export class SocialRepository {
       recommendation_lat: number | null;
       recommendation_lon: number | null;
       recommendation_intents: string[] | null;
+      about: PublicAboutRow | null;
     }>(
       `SELECT u.id AS usuario_id,
               u.nombre_completo AS full_name,
@@ -1278,12 +1282,17 @@ export class SocialRepository {
               s.social_status,
               s.visible AS social_visible,
               ph.items AS photos,
-              COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad) AS age,
+              EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int AS age,
               up.points,
               up.level_code,
               rank_branch.latitude::float8 AS recommendation_lat,
               rank_branch.longitude::float8 AS recommendation_lon,
-              candidate_preferences.intents AS recommendation_intents
+              candidate_preferences.intents AS recommendation_intents,
+              -- Hidden orientation never leaves the database.
+              CASE WHEN pd.user_id IS NOT NULL THEN json_build_object(
+                'interests', pd.interests, 'drinking', pd.drinking, 'smoking', pd.smoking,
+                'pets', pd.pets, 'bio', pd.bio, 'orientationVisible', pd.orientation_visible,
+                'orientation', CASE WHEN pd.orientation_visible THEN pd.orientation END) END AS about
          FROM public.usuarios u
          LEFT JOIN public.perfiles_antropometricos p ON p.usuario_id = u.id
          LEFT JOIN profile.onboarding o ON o.user_id = u.id
@@ -1305,6 +1314,7 @@ export class SocialRepository {
           AND ((c.requester_id = u.id AND c.addressee_id = :viewerId)
             OR (c.addressee_id = u.id AND c.requester_id = :viewerId))
          LEFT JOIN social.profile_settings s ON s.user_id = u.id
+         LEFT JOIN social.profile_details pd ON pd.user_id = u.id
          -- La galería entera, no sólo la portada: la tarjeta de descubrimiento
          -- pasa las fotos con el dedo, así que necesita todas. El LIMIT es el
          -- tope de producto (6) y va DENTRO del subselect: agregando primero y
@@ -1338,21 +1348,21 @@ export class SocialRepository {
               AND COALESCE(u.tenant_id, :defaultTenantId) <> :tenantId
               AND s.profile_enabled = true
               AND s.cross_gym_enabled = true
-              AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad, 0) >= 18)
+              AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int, 0) >= 18)
           )
           AND (:objetivo::text IS NULL OR p.objetivo = ANY(string_to_array(:objetivo, ',')))
           AND (:branchId::uuid IS NULL OR u.sede_id = :branchId)
           AND (:gender::text IS NULL OR u.genero = :gender)
           AND (jsonb_array_length(CAST(:gendersJson AS jsonb)) = 0 OR u.genero IN (
             SELECT jsonb_array_elements_text(CAST(:gendersJson AS jsonb))))
-          AND (:minAge::integer IS NULL OR COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad) >= :minAge)
-          AND (:maxAge::integer IS NULL OR COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad) <= :maxAge)
+          AND (:minAge::integer IS NULL OR EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int >= :minAge)
+          AND (:maxAge::integer IS NULL OR EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int <= :maxAge)
           AND (:search::text IS NULL OR u.nombre_completo ILIKE :search)
           AND (:targetUserId::uuid IS NULL OR u.id = :targetUserId)
           AND (NOT :hasUserIds::boolean OR u.id IN (:userIds))
           AND (NOT :mapOnly::boolean OR (s.profile_enabled = TRUE AND s.map_enabled = TRUE))
           AND (NOT :discoveryOnly::boolean OR s.profile_enabled = TRUE)
-          AND (NOT :adultOnly::boolean OR COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad, 0) >= 18)
+          AND (NOT :adultOnly::boolean OR COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int, 0) >= 18)
           AND (NOT :excludeDecided::boolean
             OR (NOT EXISTS (
                   SELECT 1 FROM social.connections dc
@@ -1430,6 +1440,7 @@ export class SocialRepository {
             ? null
             : { lat: row.recommendation_lat, lon: row.recommendation_lon },
         recommendationIntents: row.recommendation_intents ?? [],
+        about: row.about,
       };
     });
   }

@@ -19,6 +19,7 @@ import {
   MEDIA_STORAGE_PROVIDER,
   MediaStorageProvider,
 } from "../../src/modules/media/media-storage.port";
+import { E2E_SIGNUP_FIELDS } from "../support/e2e-app";
 
 function box(type: string, payload: Buffer): Buffer {
   const header = Buffer.alloc(8);
@@ -149,7 +150,7 @@ describe("reels publication and owner feed (e2e)", () => {
         email: `reels-social-${label}-${randomUUID()}@example.test`,
         password: "reels-e2e-password",
         nombreCompleto: `Reels Social ${label}`,
-        acceptedTerms: true,
+        ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
     const user = {
@@ -190,9 +191,14 @@ describe("reels publication and owner feed (e2e)", () => {
   const enableDiscovery = async (userId: string) => {
     await sequelize.query(
       `INSERT INTO public.perfiles_antropometricos
-         (usuario_id, edad, peso_kg, estatura_cm, objetivo)
-       VALUES (:userId, 25, 70, 175, 'HIPERTROFIA')
-       ON CONFLICT (usuario_id) DO UPDATE SET edad = 25`,
+         (usuario_id, peso_kg, estatura_cm, objetivo)
+       VALUES (:userId, 70, 175, 'HIPERTROFIA')
+       ON CONFLICT (usuario_id) DO NOTHING`,
+      { replacements: { userId } },
+    );
+    // Age lives on the account (usuarios.fecha_nacimiento): keep the person at 25.
+    await sequelize.query(
+      `UPDATE public.usuarios SET fecha_nacimiento = (CURRENT_DATE - interval '25 years')::date WHERE id = :userId`,
       { replacements: { userId } },
     );
     await sequelize.query(
@@ -274,7 +280,7 @@ describe("reels publication and owner feed (e2e)", () => {
           email: `reels-${label}-${suffix}@example.test`,
           password: "reels-e2e-password",
           nombreCompleto: `Reels ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
       const user = {
@@ -410,7 +416,7 @@ describe("reels publication and owner feed (e2e)", () => {
         email: `reels-retry-${suffix}@example.test`,
         password: "reels-e2e-password",
         nombreCompleto: `Reels Retry ${suffix}`,
-        acceptedTerms: true,
+        ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
     const userId = response.body.data.user.id as string;

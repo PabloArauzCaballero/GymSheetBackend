@@ -23,6 +23,8 @@ import { QueryTypes } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { databaseModels } from "../src/database/models";
 import { seedProgression } from "../src/database/seeders/progression.seed";
+import { seedLegalAcceptances } from "../src/database/seeders/seed-user-legal";
+import { LEGAL_DOCUMENTS } from "../src/modules/legal/legal-documents";
 
 /** Mismo canal estructurado que `src/database/seeders/seed.ts`: este script
  * es un seeder más, y su salida debe poder leerse junto a la de los otros. */
@@ -135,24 +137,35 @@ async function main(): Promise<void> {
 
         await sequelize.query(
           `INSERT INTO public.usuarios
-             (id, email, password_hash, nombre_completo, rol, estado, tenant_id, genero, fecha_registro, accepted_terms_at, terms_version)
+             (id, email, password_hash, nombre_completo, rol, estado, tenant_id, genero, fecha_nacimiento,
+              fecha_registro, accepted_terms_at, terms_version)
            VALUES
-             (:id, :email, :hash, :name, 'CLIENTE', 'ACTIVO', :tenant, :gender, now(), now(), '1')`,
+             (:id, :email, :hash, :name, 'CLIENTE', 'ACTIVO', :tenant, :gender,
+              (CURRENT_DATE - make_interval(years => :age))::date, now(), now(), :termsVersion)`,
           {
             transaction,
-            replacements: { id: userId, email, hash: passwordHash, name: fullName, tenant: TENANT_ID, gender },
+            replacements: {
+              id: userId,
+              email,
+              hash: passwordHash,
+              name: fullName,
+              tenant: TENANT_ID,
+              gender,
+              age: faker.number.int({ min: 19, max: 45 }),
+              termsVersion: LEGAL_DOCUMENTS.TERMS,
+            },
           },
         );
+        await seedLegalAcceptances(sequelize, userId, transaction);
 
         await sequelize.query(
-          `INSERT INTO public.perfiles_antropometricos (id, usuario_id, edad, peso_kg, estatura_cm, objetivo, fecha_actualizacion)
-           VALUES (:id, :userId, :edad, :peso, :estatura, :objetivo, now())`,
+          `INSERT INTO public.perfiles_antropometricos (id, usuario_id, peso_kg, estatura_cm, objetivo, fecha_actualizacion)
+           VALUES (:id, :userId, :peso, :estatura, :objetivo, now())`,
           {
             transaction,
             replacements: {
               id: randomUUID(),
               userId,
-              edad: faker.number.int({ min: 19, max: 45 }),
               peso: faker.number.float({ min: 55, max: 95, fractionDigits: 1 }),
               estatura: faker.number.int({ min: 155, max: 195 }),
               objetivo: goal,

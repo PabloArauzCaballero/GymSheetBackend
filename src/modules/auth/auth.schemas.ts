@@ -1,14 +1,9 @@
 import { z } from 'zod';
 import { UserGender } from '../../common/enums/domain.enums';
+import { adultBirthDateSchema } from '../profiles/birth-date';
 
-/**
- * Versión vigente de los términos y la política de privacidad.
- *
- * Sube cuando cambie el texto legal; las cuentas que ya aceptaron conservan la
- * versión que efectivamente vieron, no la vigente hoy — es lo que permite
- * saber más adelante a quién pedirle que vuelva a aceptar.
- */
-export const CURRENT_TERMS_VERSION = '2026-08-25';
+/** Moved to the legal catalog; re-exported for existing imports. */
+export { CURRENT_TERMS_VERSION } from '../legal/legal-documents';
 
 const normalizedEmailSchema = z
   .string()
@@ -39,11 +34,17 @@ export const registerSchema = z
       .regex(/^[a-z0-9][a-z0-9-]*$/)
       .max(60)
       .optional(),
+    /** Sex at signup is mandatory (product decision): only MALE or FEMALE. */
+    genero: z.enum([UserGender.MALE, UserGender.FEMALE], {
+      errorMap: () => ({ message: 'Elige tu sexo.' }),
+    }),
+    /** The app is 18+: same 18–100 rule as the profile, stored on the account. */
+    fechaNacimiento: adultBirthDateSchema,
     /**
-     * Opcional de verdad: la progresión tiene una rama neutra y nadie debería
-     * tener que declarar su género para poder crear una cuenta.
+     * Version of the terms the client showed. The server compares it with the
+     * current one (409 TERMS_VERSION_OUTDATED if it differs) instead of trusting it.
      */
-    genero: z.nativeEnum(UserGender).optional(),
+    termsVersion: z.string({ required_error: 'Falta la versión de los términos.' }).trim().min(1).max(20),
     /**
      * Checkbox obligatorio del registro. No se guarda tal cual: su única función
      * es dejar pasar el alta; lo que persiste es la marca de tiempo y la versión
@@ -53,10 +54,11 @@ export const registerSchema = z
       errorMap: () => ({ message: 'Debes aceptar los términos y la política de privacidad.' }),
     }),
   })
-  .transform(({ nombreCompleto, genero, acceptedTerms: _acceptedTerms, ...credentials }) => ({
+  .transform(({ nombreCompleto, genero, fechaNacimiento, acceptedTerms: _acceptedTerms, ...credentials }) => ({
     ...credentials,
     fullName: nombreCompleto,
-    gender: genero ?? null,
+    gender: genero,
+    birthDate: fechaNacimiento,
   }));
 
 export const loginSchema = z.object({

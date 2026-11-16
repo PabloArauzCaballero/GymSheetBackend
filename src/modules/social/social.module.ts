@@ -13,6 +13,9 @@ import { SocialMapService } from "./social-map.service";
 import { SocialInteractionsController } from "./social-interactions.controller";
 import { SocialInteractionsService } from "./social-interactions.service";
 import { SocialController } from "./social.controller";
+import { SocialProfileController } from "./social-profile.controller";
+import { SocialProfileRepository } from "./social-profile.repository";
+import { SocialProfileService } from "./social-profile.service";
 import { SocialRepository } from "./social.repository";
 import { SocialService } from "./social.service";
 import { RecommendationsClient } from "./recommendations-client";
@@ -38,6 +41,7 @@ import { ChatModule } from "../chat/chat.module";
     SocialController,
     SocialInteractionsController,
     SocialMapController,
+    SocialProfileController,
   ],
   providers: [
     ChatEventsService,
@@ -47,6 +51,8 @@ import { ChatModule } from "../chat/chat.module";
     SocialMapRepository,
     SocialMapService,
     RecommendationsClient,
+    SocialProfileRepository,
+    SocialProfileService,
   ],
   exports: [ChatEventsService, SocialService, SocialRepository],
 })

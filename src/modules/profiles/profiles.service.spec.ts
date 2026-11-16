@@ -7,7 +7,6 @@ import { ProfilesService } from "./profiles.service";
 const userId = "00000000-0000-4000-8000-000000000001";
 const otherUserId = "00000000-0000-4000-8000-000000000002";
 const profileInput = {
-  age: 30,
   birthDate: "1996-01-15",
   weightKg: 75,
   heightCm: 180,
@@ -15,11 +14,14 @@ const profileInput = {
 };
 
 const storedProfile = {
-  id: "00000000-0000-4000-8000-000000000010",
-  userId,
-  heightCm: 175,
-  weightKg: 72,
-  updatedAt: new Date("2026-07-19T10:00:00.000Z"),
+  profile: {
+    id: "00000000-0000-4000-8000-000000000010",
+    userId,
+    heightCm: 175,
+    weightKg: 72,
+    updatedAt: new Date("2026-07-19T10:00:00.000Z"),
+  },
+  birthDate: "1996-01-15",
 };
 
 function createService(
@@ -40,7 +42,7 @@ describe("ProfilesService", () => {
     });
 
     await expect(service.getMyProfile(userId)).resolves.toMatchObject({
-      id: storedProfile.id,
+      id: storedProfile.profile.id,
     });
   });
 
@@ -82,7 +84,7 @@ describe("ProfilesService", () => {
 
     await expect(
       service.upsertMyProfile(userId, profileInput),
-    ).resolves.toMatchObject({ id: storedProfile.id });
+    ).resolves.toMatchObject({ id: storedProfile.profile.id });
   });
 
   it("records a body-measurement history entry when the weight has not been logged yet today", async () => {

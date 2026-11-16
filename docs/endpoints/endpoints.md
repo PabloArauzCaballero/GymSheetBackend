@@ -78,6 +78,18 @@ Liveness remains independent of PostgreSQL to avoid restart loops during tempora
 
 `register` and `login` use a tighter configurable rate limit than normal API routes. Login failures use a uniform message to reduce account enumeration.
 
+`register` requires `genero` (`MALE`|`FEMALE`), `fechaNacimiento` (`YYYY-MM-DD`, 18–100) and `termsVersion`; an outdated version answers `409 TERMS_VERSION_OUTDATED`. The birth date is stored on the account (`usuarios.fecha_nacimiento`, the single source of age) and one row per document goes to `auth.terms_acceptances` in the same transaction.
+
+## Legal acceptance
+
+| Method | Route               | Access        | Purpose                                                                  |
+| ------ | ------------------- | ------------- | ------------------------------------------------------------------------ |
+| GET    | `/legal/current`    | public        | `{ documents: [{ document, version }] }` (cacheable 5 min)               |
+| GET    | `/me/legal/pending` | authenticated | `{ pending: [{ document, version }] }` not yet accepted by the caller    |
+| POST   | `/me/legal/accept`  | authenticated | `{ acceptances: [{ document, version }] }`; current versions only, idempotent |
+
+A global guard answers `428 LEGAL_ACCEPTANCE_REQUIRED` to authenticated requests from an account missing any current document, except `auth/*`, `legal/*`, `me/legal/*`, `health/*`, `@Public()` and `@SkipLegalAcceptance()` routes. It costs one indexed `NOT EXISTS` query per authenticated request. The optional `X-Client-Platform` header (`web`|`ios`|`android`) is stored as the acceptance channel; the IP is stored only as an HMAC (`IP_HASH_SECRET`).
+
 Refresh tokens are opaque, hashed, and stored in `auth.refresh_tokens`; rotating one revokes it and issues a new one in the same family, and presenting an already-rotated token revokes the whole family (theft/reuse signal). Password-reset PINs live in `public.password_reset_tokens`: hashed with bcrypt, single-use, short-lived (`PASSWORD_RESET_PIN_TTL_MINUTES`, default 10) and capped at `PASSWORD_RESET_MAX_ATTEMPTS` wrong guesses (default 5) before the code is burned. `password-reset/request` always responds `202` with the same body, matched or not, to avoid account enumeration. The code is delivered by email through the messaging port (`NotificationChannel.EMAIL`); confirming the change also revokes every refresh token the account had open.
 
 ## Users and profile

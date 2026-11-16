@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Ip, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Ip, Post, Req } from '@nestjs/common';
+import { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
@@ -8,6 +9,7 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { SocketTicketService } from '../../common/realtime/socket-ticket.service';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
+import { legalClientContext } from '../legal/legal-client-context';
 import { AuthService } from './auth.service';
 import {
   ImpersonateTenantInput,
@@ -43,8 +45,11 @@ export class AuthController {
   @Public()
   @Throttle(authThrottleOptions)
   @Post('register')
-  register(@Body(new ZodValidationPipe(registerSchema)) input: RegisterInput) {
-    return this.authService.register(input);
+  register(
+    @Body(new ZodValidationPipe(registerSchema)) input: RegisterInput,
+    @Req() request: Request,
+  ) {
+    return this.authService.register(input, legalClientContext(request));
   }
 
   @Public()

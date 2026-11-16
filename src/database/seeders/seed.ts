@@ -17,6 +17,7 @@ import { seedCustomerExperience } from "./customer-experience.seed";
 import { seedFacilities } from "./facilities.seed";
 import { seedExerciseSearchAliases } from "./exercise-search-aliases.seed";
 import { seedProgression } from "./progression.seed";
+import { SEED_USER_DEMOGRAPHICS, seedLegalAcceptances } from "./seed-user-legal";
 
 export type SeedMode = "base" | "mock" | "all";
 
@@ -149,6 +150,17 @@ export function resolveSeedUsers(
 }
 
 async function upsertUser(
+  sequelize: Sequelize,
+  seedUser: SeedUser,
+  transaction: Transaction,
+): Promise<"created" | "updated" | "unchanged"> {
+  const outcome = await upsertUserAccount(seedUser, transaction);
+  const user = await UserModel.findOne({ where: { email: seedUser.email }, transaction });
+  if (user) await seedLegalAcceptances(sequelize, user.id, transaction);
+  return outcome;
+}
+
+async function upsertUserAccount(
   seedUser: SeedUser,
   transaction: Transaction,
 ): Promise<"created" | "updated" | "unchanged"> {
@@ -165,7 +177,9 @@ async function upsertUser(
       passwordMatches &&
       existing.fullName === seedUser.fullName &&
       existing.role === seedUser.role &&
-      existing.status === seedUser.status;
+      existing.status === seedUser.status &&
+      existing.birthDate !== null &&
+      existing.gender !== null;
     if (unchanged) return "unchanged";
     const passwordHash = passwordMatches
       ? existing.passwordHash
@@ -176,6 +190,8 @@ async function upsertUser(
         passwordHash,
         role: seedUser.role,
         status: seedUser.status,
+        birthDate: existing.birthDate ?? SEED_USER_DEMOGRAPHICS.birthDate,
+        gender: existing.gender ?? SEED_USER_DEMOGRAPHICS.gender,
       },
       { transaction },
     );
@@ -190,6 +206,8 @@ async function upsertUser(
     passwordHash,
     role: seedUser.role,
     status: seedUser.status,
+    birthDate: SEED_USER_DEMOGRAPHICS.birthDate,
+    gender: SEED_USER_DEMOGRAPHICS.gender,
   };
   await UserModel.create(
     { email: seedUser.email, ...managedValues },
@@ -256,7 +274,7 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
         },
       );
       for (const user of users) {
-        counters[await upsertUser(user, transaction)] += 1;
+        counters[await upsertUser(sequelize, user, transaction)] += 1;
       }
       // El catálogo de permisos es infraestructura, no datos de prueba: se
       // siembra en todos los modos junto con el otorgamiento al admin de

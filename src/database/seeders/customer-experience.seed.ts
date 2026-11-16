@@ -298,7 +298,6 @@ export async function seedCustomerExperience(
         where: { userId: user.id },
         defaults: {
           userId: user.id,
-          age: null,
           weightKg: 75,
           heightCm: 175,
           goal: TrainingGoal.HYPERTROPHY,

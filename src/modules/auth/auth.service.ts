@@ -16,12 +16,10 @@ import { AuthenticatedUser, JwtPayload } from '../../common/types/auth-context.t
 import { env } from '../../config/env';
 import { TenantsService } from '../tenants/tenants.service';
 import { UsersRepository } from '../users/users.repository';
-import {
-  CURRENT_TERMS_VERSION,
-  ImpersonateTenantInput,
-  LoginInput,
-  RegisterInput,
-} from './auth.schemas';
+import { LegalClientContext } from '../legal/legal-client-context';
+import { LEGAL_DOCUMENTS } from '../legal/legal-documents';
+import { LegalService } from '../legal/legal.service';
+import { ImpersonateTenantInput, LoginInput, RegisterInput } from './auth.schemas';
 import { RefreshTokenRepository } from './refresh-token.repository';
 import { hashOpaqueToken, issueOpaqueToken } from './token-hash.util';
 
@@ -59,9 +57,14 @@ export class AuthService {
     private readonly refreshTokenRepository: RefreshTokenRepository,
     private readonly jwtService: JwtService,
     private readonly sequelize: Sequelize,
+    private readonly legalService: LegalService,
   ) {}
 
-  async register(input: RegisterInput): Promise<AuthResponse> {
+  async register(input: RegisterInput, clientContext: LegalClientContext): Promise<AuthResponse> {
+    // First: a client showing outdated legal text must not create an account
+    // whose acceptance record would point at a version the person never read.
+    this.legalService.assertCurrentTermsVersion(input.termsVersion);
+
     // El gimnasio que declara el cliente se comprueba contra el catálogo antes
     // de nada. Mientras `tenant_id` fue texto libre validado sólo por su forma,
     // el registro —que es público— dejaba entrar a cualquiera al perímetro de
@@ -81,19 +84,25 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(input.password, env.BCRYPT_SALT_ROUNDS);
 
     try {
-      const createdUser = await this.usersRepository.createClient({
-        email: input.email,
-        passwordHash,
-        fullName: input.fullName,
-        // El cliente manda cuando sabe por dónde entró la persona; si no, la
-        // instalación decide. Lo que ya no ocurre es quedarse sin gimnasio: eso
-        // dejaba a la cuenta sin marca y a la aplicación pintando la genérica.
-        tenantId: requestedTenantId ?? null,
-        gender: input.gender,
-        // La validación de `acceptedTerms` ya ocurrió en el schema (rechaza el
-        // registro si falta); aquí solo queda registrar cuándo y qué versión.
-        acceptedTermsAt: new Date(),
-        termsVersion: CURRENT_TERMS_VERSION,
+      // Account and legal acceptance rows commit together: an account must
+      // never exist without the evidence of what it accepted.
+      const createdUser = await this.sequelize.transaction(async (transaction) => {
+        const user = await this.usersRepository.createClient({
+          email: input.email,
+          passwordHash,
+          fullName: input.fullName,
+          // El cliente manda cuando sabe por dónde entró la persona; si no, la
+          // instalación decide. Lo que ya no ocurre es quedarse sin gimnasio: eso
+          // dejaba a la cuenta sin marca y a la aplicación pintando la genérica.
+          tenantId: requestedTenantId ?? null,
+          gender: input.gender,
+          birthDate: input.birthDate,
+          // Legacy columns kept for compatibility; the audit trail is auth.terms_acceptances.
+          acceptedTermsAt: new Date(),
+          termsVersion: LEGAL_DOCUMENTS.TERMS,
+        }, transaction);
+        await this.legalService.recordSignupAcceptances(user.id, clientContext, transaction);
+        return user;
       });
 
       return {

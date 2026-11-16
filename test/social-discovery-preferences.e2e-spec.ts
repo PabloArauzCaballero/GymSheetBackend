@@ -9,6 +9,7 @@ import { HttpExceptionFilter } from "../src/common/filters/http-exception.filter
 import { ResponseInterceptor } from "../src/common/interceptors/response.interceptor";
 import { requestIdMiddleware } from "../src/common/middleware/request-id.middleware";
 import { env } from "../src/config/env";
+import { E2E_SIGNUP_FIELDS } from "./support/e2e-app";
 
 describe("social discovery preferences API (PostgreSQL integration)", () => {
   let application: INestApplication;
@@ -33,7 +34,7 @@ describe("social discovery preferences API (PostgreSQL integration)", () => {
 
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const registered = await request(httpServer).post(url("/auth/register"))
-      .send({ email: `social-preferences-${suffix}@example.test`, password: "qa-preferences-password", nombreCompleto: "QA Preferences", acceptedTerms: true })
+      .send({ email: `social-preferences-${suffix}@example.test`, password: "qa-preferences-password", nombreCompleto: "QA Preferences", ...E2E_SIGNUP_FIELDS })
       .expect(201);
     token = registered.body.data.accessToken as string;
     userId = registered.body.data.user.id as string;

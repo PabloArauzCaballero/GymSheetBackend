@@ -10,6 +10,7 @@ import { HttpExceptionFilter } from '../../src/common/filters/http-exception.fil
 import { ResponseInterceptor } from '../../src/common/interceptors/response.interceptor';
 import { requestIdMiddleware } from '../../src/common/middleware/request-id.middleware';
 import { env } from '../../src/config/env';
+import { E2E_SIGNUP_FIELDS } from '../support/e2e-app';
 
 describe('cross-gym connections (e2e)', () => {
   let application: INestApplication;
@@ -121,7 +122,7 @@ describe('cross-gym connections (e2e)', () => {
           email,
           password: 'connections-e2e-password',
           nombreCompleto: `Connections ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
       return {
@@ -200,7 +201,7 @@ describe('cross-gym connections (e2e)', () => {
       const password = 'connections-private-password';
       const response = await request(httpServer)
         .post(url('/auth/register'))
-        .send({ email, password, nombreCompleto: `Connections ${label} ${suffix}`, acceptedTerms: true })
+        .send({ email, password, nombreCompleto: `Connections ${label} ${suffix}`, ...E2E_SIGNUP_FIELDS })
         .expect(201);
       const member = {
         accessToken: response.body.data.accessToken as string,
@@ -340,7 +341,7 @@ describe('cross-gym connections (e2e)', () => {
           email: `connections-race-${label}-${suffix}@example.test`,
           password: 'connections-race-password',
           nombreCompleto: `Connections race ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
       const member = {
@@ -399,7 +400,7 @@ describe('cross-gym connections (e2e)', () => {
           email: `connections-owner-${label}-${suffix}@example.test`,
           password: 'connections-owner-password',
           nombreCompleto: `Connections owner ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
       const member = {
@@ -448,7 +449,7 @@ describe('cross-gym connections (e2e)', () => {
           email: `connections-pass-${label}-${suffix}@example.test`,
           password: 'connections-pass-password',
           nombreCompleto: `Connections pass ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
       const member = {

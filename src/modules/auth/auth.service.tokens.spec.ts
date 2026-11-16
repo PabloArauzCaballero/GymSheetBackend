@@ -4,6 +4,7 @@ import { Sequelize } from 'sequelize-typescript';
 import { RefreshTokenRevokedReason } from '../../common/enums/domain.enums';
 import { UsersRepository } from '../users/users.repository';
 import { TenantsService } from '../tenants/tenants.service';
+import { LegalService } from '../legal/legal.service';
 import { AuthService } from './auth.service';
 import { RefreshTokenRepository } from './refresh-token.repository';
 
@@ -40,6 +41,7 @@ function buildService(overrides: {
     (overrides.refreshTokenRepository ?? {}) as RefreshTokenRepository,
     (overrides.jwtService ?? {}) as JwtService,
     sequelize,
+    {} as LegalService,
   );
 }
 

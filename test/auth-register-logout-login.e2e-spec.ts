@@ -8,6 +8,7 @@ import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter
 import { ResponseInterceptor } from '../src/common/interceptors/response.interceptor';
 import { requestIdMiddleware } from '../src/common/middleware/request-id.middleware';
 import { env } from '../src/config/env';
+import { E2E_SIGNUP_FIELDS } from './support/e2e-app';
 
 /**
  * Lo que reportó Pablo: «si creas un usuario y entras desde el registro, al
@@ -54,7 +55,7 @@ describe('Alta → cierre de sesión → acceso con la misma cuenta (e2e)', () =
   it('el alta devuelve una sesión completa y guarda el correo normalizado', async () => {
     const response = await request(httpServer)
       .post(url('/auth/register'))
-      .send({ email: typedEmail, password, nombreCompleto: 'QA Ciclo', acceptedTerms: true })
+      .send({ email: typedEmail, password, nombreCompleto: 'QA Ciclo', ...E2E_SIGNUP_FIELDS })
       .expect(201);
 
     expect(response.body.data.accessToken).toEqual(expect.any(String));

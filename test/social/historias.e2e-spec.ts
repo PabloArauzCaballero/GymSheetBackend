@@ -11,6 +11,7 @@ import { ResponseInterceptor } from '../../src/common/interceptors/response.inte
 import { requestIdMiddleware } from '../../src/common/middleware/request-id.middleware';
 import { env } from '../../src/config/env';
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from '../../src/modules/media/media-storage.port';
+import { E2E_SIGNUP_FIELDS } from '../support/e2e-app';
 
 describe('stories across tenant boundaries (e2e)', () => {
   let application: INestApplication;
@@ -104,7 +105,7 @@ describe('stories across tenant boundaries (e2e)', () => {
           email: email ?? `stories-${label}-${suffix}@example.test`,
           password: 'stories-e2e-password',
           nombreCompleto: `Stories ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
       return {

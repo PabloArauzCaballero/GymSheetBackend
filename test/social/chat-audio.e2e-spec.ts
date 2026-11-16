@@ -11,6 +11,7 @@ import { ResponseInterceptor } from "../../src/common/interceptors/response.inte
 import { requestIdMiddleware } from "../../src/common/middleware/request-id.middleware";
 import { env } from "../../src/config/env";
 import { ChatEventsService } from "../../src/modules/chat/chat-events.service";
+import { E2E_SIGNUP_FIELDS } from "../support/e2e-app";
 
 describe("H7 chat audio persistence", () => {
   let app: INestApplication | undefined;
@@ -55,7 +56,7 @@ describe("H7 chat audio persistence", () => {
       email: `h7-audio-${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`,
       password: "e2e-strong-password",
       nombreCompleto: `H7 audio ${label}`,
-      acceptedTerms: true,
+      ...E2E_SIGNUP_FIELDS,
     }).expect(201);
     return { token: response.body.data.accessToken as string, id: response.body.data.user.id as string };
   }

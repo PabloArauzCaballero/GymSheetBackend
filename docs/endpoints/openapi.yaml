@@ -2275,13 +2275,23 @@ components:
                 deleted: { type: boolean, enum: [true] }
     RegisterRequest:
       type: object
-      required: [email, password, nombreCompleto]
+      required:
+        [email, password, nombreCompleto, genero, fechaNacimiento, termsVersion, acceptedTerms]
       additionalProperties: false
       properties:
         email: { type: string, format: email, maxLength: 180 }
         password:
           { type: string, minLength: 8, maxLength: 128, format: password }
         nombreCompleto: { type: string, minLength: 3, maxLength: 180 }
+        tenantId: { type: string, maxLength: 60 }
+        genero: { type: string, enum: [MALE, FEMALE] }
+        fechaNacimiento:
+          { type: string, format: date, description: "YYYY-MM-DD; age 18 to 100 today" }
+        termsVersion:
+          type: string
+          maxLength: 20
+          description: Must equal the current TERMS version (GET /legal/current); otherwise 409 TERMS_VERSION_OUTDATED.
+        acceptedTerms: { type: boolean, enum: [true] }
     LoginRequest:
       type: object
       required: [email, password]

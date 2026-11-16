@@ -13,6 +13,7 @@ import { requestIdMiddleware } from "../../src/common/middleware/request-id.midd
 import { env } from "../../src/config/env";
 import { ChatEventsService } from "../../src/modules/chat/chat-events.service";
 import { MessageModel } from "../../src/modules/chat/message.model";
+import { E2E_SIGNUP_FIELDS } from "../support/e2e-app";
 
 describe("H7 server edit deadline", () => {
   let app: INestApplication;
@@ -53,7 +54,7 @@ describe("H7 server edit deadline", () => {
       email: `h7-${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`,
       password: "e2e-strong-password",
       nombreCompleto: `H7 ${label}`,
-      acceptedTerms: true,
+      ...E2E_SIGNUP_FIELDS,
     }).expect(201);
     return { token: response.body.data.accessToken as string, id: response.body.data.user.id as string };
   }

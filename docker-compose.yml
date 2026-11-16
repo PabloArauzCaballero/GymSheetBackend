@@ -110,6 +110,7 @@ x-app-environment: &app-environment
   REDIS_REQUIRED: "true"
 
   METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
+  IP_HASH_SECRET: ${IP_HASH_SECRET:-}
   # 3002 (puerto de la web): el socket de chat lo abre el navegador directo
   # contra este backend, no a través del BFF, así que necesita CORS propio.
   CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3002}

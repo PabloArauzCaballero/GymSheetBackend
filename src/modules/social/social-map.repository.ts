@@ -100,7 +100,7 @@ export class SocialMapRepository {
           AND settings.profile_enabled = TRUE
           AND settings.map_enabled = TRUE
           AND user_account.estado = 'ACTIVO'
-          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, profile.fecha_nacimiento))::int, profile.edad, 0) >= 18
+          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, user_account.fecha_nacimiento))::int, 0) >= 18
         GROUP BY location.cell_id`,
       { replacements: { viewerId, cellIds: cells.map((cell) => cell.id) }, type: QueryTypes.SELECT },
     );
@@ -124,7 +124,7 @@ export class SocialMapRepository {
           AND settings.profile_enabled = TRUE
           AND settings.map_enabled = TRUE
           AND user_account.estado = 'ACTIVO'
-          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, profile.fecha_nacimiento))::int, profile.edad, 0) >= 18
+          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, user_account.fecha_nacimiento))::int, 0) >= 18
         ORDER BY location.updated_at DESC, location.user_id
         LIMIT 30`,
       { replacements: { viewerId, cellId }, type: QueryTypes.SELECT },
@@ -152,7 +152,7 @@ export class SocialMapRepository {
           AND settings.profile_enabled = TRUE
           AND settings.map_enabled = TRUE
           AND user_account.estado = 'ACTIVO'
-          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, profile.fecha_nacimiento))::int, profile.edad, 0) >= 18
+          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, user_account.fecha_nacimiento))::int, 0) >= 18
         ORDER BY location.updated_at DESC, location.user_id
         LIMIT 120`,
       { replacements: { viewerId, cellIds }, type: QueryTypes.SELECT },

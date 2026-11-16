@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { RealtimeModule } from '../../common/realtime/realtime.module';
+import { LegalModule } from '../legal/legal.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { UsersModule } from '../users/users.module';
@@ -17,6 +18,7 @@ import { RefreshTokenRepository } from './refresh-token.repository';
   imports: [
     PassportModule,
     UsersModule,
+    LegalModule,
     TenantsModule,
     RealtimeModule,
     NotificationsModule,

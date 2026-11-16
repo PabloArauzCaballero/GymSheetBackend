@@ -10,6 +10,7 @@ import { ResponseInterceptor } from "../src/common/interceptors/response.interce
 import { requestIdMiddleware } from "../src/common/middleware/request-id.middleware";
 import { TrainingGoal } from "../src/common/enums/domain.enums";
 import { env } from "../src/config/env";
+import { E2E_SIGNUP_FIELDS } from "./support/e2e-app";
 
 const enabled = Boolean(
   env.RECOMMENDATIONS_URL && env.RECOMMENDATIONS_SERVICE_TOKEN,
@@ -57,7 +58,7 @@ const enabled = Boolean(
                 email: `recommendation-${label}-${suffix}@example.test`,
                 password: "qa-recommendation-password",
                 nombreCompleto: `QA ${label} ${suffix}`,
-                acceptedTerms: true,
+                ...E2E_SIGNUP_FIELDS,
               })
               .expect(201);
             return {

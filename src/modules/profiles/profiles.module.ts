@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { SequelizeModule } from "@nestjs/sequelize";
 import { MediaModule } from "../media/media.module";
+import { UserModel } from "../users/user.model";
 import { AnthropometricProfileModel } from "./anthropometric-profile.model";
 import { ProfilesController } from "./profiles.controller";
 import { ProfilesRepository } from "./profiles.repository";
@@ -27,6 +28,7 @@ import { TutorialProgressService } from "./tutorial-progress.service";
       OnboardingModel,
       BodyMeasurementModel,
       ProfilePhotoModel,
+      UserModel,
     ]),
   ],
   controllers: [ProfilesController, OnboardingController, ProfilePhotosController, TutorialProgressController],

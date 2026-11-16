@@ -19,7 +19,9 @@ export type DomainErrorCode =
   | 'SWAP_SAME_EXERCISE'
   | 'MUSIC_URL_INVALID'
   | 'MUSIC_PLAYLIST_DUPLICATE'
-  | 'DISCOVERY_PREFERENCES_REQUIRED';
+  | 'DISCOVERY_PREFERENCES_REQUIRED'
+  | 'TERMS_VERSION_OUTDATED'
+  | 'LEGAL_ACCEPTANCE_REQUIRED';
 
 /**
  * Error de dominio con `code` estable y `details` opcional (por ejemplo

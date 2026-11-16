@@ -7,6 +7,7 @@ import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter
 import { ResponseInterceptor } from '../src/common/interceptors/response.interceptor';
 import { requestIdMiddleware } from '../src/common/middleware/request-id.middleware';
 import { env } from '../src/config/env';
+import { E2E_SIGNUP_FIELDS } from './support/e2e-app';
 
 /**
  * `GET /me/conversations/pending-replies`: lo que lee el widget «Matches» de la
@@ -47,7 +48,7 @@ describe('Pending replies to matches (e2e)', () => {
         email: `pending-${label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.test`,
         password: 'e2e-strong-password',
         nombreCompleto: `${label} Apellido`,
-        acceptedTerms: true,
+        ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
     return { accessToken: response.body.data.accessToken as string, userId: response.body.data.user.id as string };

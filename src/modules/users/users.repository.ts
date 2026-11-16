@@ -12,6 +12,8 @@ export type CreateClientUserInput = {
   /** Gimnasio de la cuenta. Nulo solo en una instalación de una sola marca. */
   tenantId?: string | null;
   gender?: UserGender | null;
+  /** `YYYY-MM-DD`, already validated as 18–100. */
+  birthDate?: string | null;
   acceptedTermsAt?: Date | null;
   termsVersion?: string | null;
 };
@@ -87,6 +89,7 @@ export class UsersRepository {
       fullName: input.fullName,
       tenantId: input.tenantId ?? null,
       gender: input.gender ?? null,
+      birthDate: input.birthDate ?? null,
       acceptedTermsAt: input.acceptedTermsAt ?? null,
       termsVersion: input.termsVersion ?? null,
     }, { transaction });

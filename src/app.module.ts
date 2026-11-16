@@ -43,6 +43,8 @@ import { TenantsModule } from './modules/tenants/tenants.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 import { DirectoryModule } from './modules/directory/directory.module';
+import { LegalAcceptanceGuard } from './modules/legal/legal-acceptance.guard';
+import { LegalModule } from './modules/legal/legal.module';
 
 @Module({
   imports: [
@@ -99,6 +101,7 @@ import { DirectoryModule } from './modules/directory/directory.module';
     HealthModule,
     GatewayModule,
     AuthModule,
+    LegalModule,
     UsersModule,
     ProfilesModule,
     EquipmentModule,
@@ -129,6 +132,9 @@ import { DirectoryModule } from './modules/directory/directory.module';
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Right after authentication: an account that has not accepted the current
+    // terms/privacy versions gets 428 before any other rule runs.
+    { provide: APP_GUARD, useClass: LegalAcceptanceGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     // Runs after RolesGuard: only tightens routes that opt in via @RequirePermission().
     { provide: APP_GUARD, useClass: PermissionGuard },

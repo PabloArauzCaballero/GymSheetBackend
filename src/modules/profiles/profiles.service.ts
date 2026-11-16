@@ -17,22 +17,22 @@ export class ProfilesService {
   ) {}
 
   async getMyProfile(userId: string): Promise<AnthropometricProfileResponse> {
-    const profile = await this.profilesRepository.findByUserId(userId);
+    const stored = await this.profilesRepository.findByUserId(userId);
 
-    if (!profile) {
+    if (!stored) {
       throw new NotFoundException(
         "El perfil antropométrico todavía no fue registrado.",
       );
     }
 
-    return mapProfileToResponse(profile);
+    return mapProfileToResponse(stored.profile, stored.birthDate);
   }
 
   async upsertMyProfile(
     userId: string,
     input: UpsertProfileInput,
   ): Promise<AnthropometricProfileResponse> {
-    const profile = this.recommendationOutbox
+    const stored = this.recommendationOutbox
       ? await this.profilesRepository.runInTransaction(async (transaction) => {
           await this.recommendationOutbox!.lockProfileForUpdate(userId, transaction);
           const saved = await this.profilesRepository.upsertByUserId(userId, input, transaction);
@@ -57,6 +57,6 @@ export class ProfilesService {
         idempotencyKey,
       });
     }
-    return mapProfileToResponse(profile);
+    return mapProfileToResponse(stored.profile, stored.birthDate);
   }
 }
