@@ -3,10 +3,9 @@ import { Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { env } from "../../config/env";
 import { MediaReleaseService } from "../media/media-release.service";
+import { REPORT_EVIDENCE_RETENTION_DAYS } from "./moderation.policy";
 import { ChatMessageEvidence, ModerationSafeguardsRepository } from "./moderation-safeguards.repository";
 
-/** How long a reported chat message copy is kept after its last report is closed. */
-export const CHAT_EVIDENCE_RETENTION_DAYS = 180;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PURGE_INTERVAL_MS = 60 * 60_000;
 const PURGE_BATCH_SIZE = 200;
@@ -58,7 +57,7 @@ export class ModerationEvidenceService implements OnModuleInit, OnModuleDestroy 
 
   /** Deletes every copy whose reports were all closed more than the retention ago. */
   async purgeExpired(now: Date): Promise<number> {
-    const resolvedBefore = new Date(now.getTime() - CHAT_EVIDENCE_RETENTION_DAYS * DAY_MS);
+    const resolvedBefore = new Date(now.getTime() - REPORT_EVIDENCE_RETENTION_DAYS * DAY_MS);
     let total = 0;
     for (;;) {
       const deleted = await this.sequelize.transaction(async (transaction) => {

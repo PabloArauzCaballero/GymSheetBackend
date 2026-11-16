@@ -14,6 +14,12 @@ describe('EmailNotificationAdapter', () => {
     expect(transport.send).toHaveBeenLastCalledWith(expect.objectContaining({ to: 'account@example.test' }));
   });
 
+  it('falls back to the product name as subject, never the old brand', async () => {
+    jest.spyOn(UserModel, 'findByPk').mockResolvedValue({ id: 'u1', email: 'account@example.test' } as UserModel);
+    await adapter.deliver({ ...request, subject: null });
+    expect(transport.send).toHaveBeenLastCalledWith(expect.objectContaining({ subject: 'REPP' }));
+  });
+
   it('writes to the explicit mailbox of an email change without reading the account', async () => {
     const lookup = jest.spyOn(UserModel, 'findByPk');
     await adapter.deliver({ ...request, recipientEmail: 'new@example.test' });

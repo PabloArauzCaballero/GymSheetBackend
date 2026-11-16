@@ -1,3 +1,4 @@
+import { BrandingModule } from '../../common/branding/branding.module';
 import { Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
 import { SequelizeModule } from '@nestjs/sequelize';
@@ -30,6 +31,7 @@ import { UserDevicesController } from './user-devices.controller';
 
 @Module({
   imports: [
+    BrandingModule,
     PassportModule,
     UsersModule,
     LegalModule,

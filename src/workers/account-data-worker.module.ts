@@ -1,3 +1,4 @@
+import { BrandingModule } from "../common/branding/branding.module";
 import { Module } from "@nestjs/common";
 import { DatabaseModule } from "../database/database.module";
 import { AccountClosureRepository } from "../modules/account/account-closure.repository";
@@ -18,7 +19,7 @@ import { AccountDataRunner } from "./account-data.runner";
  * that one pulls AuthModule, whose JwtService only the HTTP app registers.
  */
 @Module({
-  imports: [DatabaseModule, IntegrationModule, UsersModule, MediaModule, NotificationsModule, ClosedAccountSanctionsModule],
+  imports: [BrandingModule, DatabaseModule, IntegrationModule, UsersModule, MediaModule, NotificationsModule, ClosedAccountSanctionsModule],
   providers: [
     AccountExportRepository,
     AccountExportService,

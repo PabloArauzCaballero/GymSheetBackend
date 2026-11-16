@@ -126,6 +126,13 @@ export const AUTO_HIDE_DISTINCT_REPORTERS = 3;
  */
 export const STRIKE_LIFETIME_DAYS = 365;
 
+/**
+ * How long the evidence of a report outlives the closing of the last report on
+ * it: the chat message copy and the content an account closure kept because
+ * it was reported. Shared so both promises read the same number.
+ */
+export const REPORT_EVIDENCE_RETENTION_DAYS = 180;
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**

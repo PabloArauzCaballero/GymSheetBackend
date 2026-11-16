@@ -53,6 +53,6 @@ import { MEDIA_STORAGE_PROVIDER } from "./media-storage.port";
       } satisfies MediaUploadConfig,
     },
   ],
-  exports: [MediaService, MediaRetentionService, MediaReleaseService, MEDIA_STORAGE_PROVIDER],
+  exports: [MediaService, MediaRetentionService, MediaReleaseService, MediaReferencesRepository, MEDIA_STORAGE_PROVIDER],
 })
 export class MediaModule {}

@@ -57,6 +57,7 @@ function buildService(options: {
     notifications as never,
     refreshTokens as never,
     sequelize as never,
+    { forUser: jest.fn().mockResolvedValue('Top Fitness') } as never,
   );
   return { service, tokens, users, notifications, refreshTokens, created };
 }
@@ -146,9 +147,14 @@ describe('PasswordResetService', () => {
 
     it('sets the new password and burns the code', async () => {
       const token = tokenFor('123456');
-      const { service, users } = buildService({ user: { id: 'user-1' }, existingToken: token });
+      const { service, users, notifications } = buildService({ user: { id: 'user-1' }, existingToken: token });
 
       await service.confirm('athlete@gymsheet.local', '123456', 'ClaveNueva2026!');
+
+      // The notice signs with the person's gym (or REPP), never the old product name.
+      expect(notifications.enqueueDirectMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'Tu contraseña de Top Fitness ha cambiado' }),
+      );
 
       expect(users.updatePasswordHash).toHaveBeenCalledTimes(1);
       // The access tokens already issued end too, not only the refresh tokens.

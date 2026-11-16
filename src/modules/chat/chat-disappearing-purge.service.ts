@@ -1,6 +1,10 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Transaction } from "sequelize";
+import { Sequelize } from "sequelize-typescript";
 import { env } from "../../config/env";
-import { ChatRepository } from "./chat.repository";
+import { MediaReferencesRepository } from "../media/media-references.repository";
+import { MediaReleaseService } from "../media/media-release.service";
+import { ChatRepository, PurgedChatMedia } from "./chat.repository";
 
 const PURGE_INTERVAL_MS = 5 * 60_000;
 const PURGE_BATCH_SIZE = 500;
@@ -13,6 +17,10 @@ const PURGE_BATCH_SIZE = 500;
  * Corre dentro del proceso de la API con un temporizador `unref`: no necesita
  * un contenedor propio, y con varias instancias el `DELETE` es idempotente.
  * En pruebas no arranca solo; los e2e llaman a `purgeOnce` directamente.
+ *
+ * The encrypted file of a purged message is released on the `media.release`
+ * queue in the same transaction as the DELETE, unless another row (or the
+ * moderation evidence copy of a reported message) still points to it.
  */
 @Injectable()
 export class ChatDisappearingPurgeService implements OnModuleInit, OnModuleDestroy {
@@ -20,7 +28,12 @@ export class ChatDisappearingPurgeService implements OnModuleInit, OnModuleDestr
   private timer: NodeJS.Timeout | null = null;
   private running = false;
 
-  constructor(private readonly repository: ChatRepository) {}
+  constructor(
+    private readonly repository: ChatRepository,
+    private readonly sequelize: Sequelize,
+    private readonly references: MediaReferencesRepository,
+    private readonly mediaRelease: MediaReleaseService,
+  ) {}
 
   onModuleInit(): void {
     if (env.NODE_ENV === "test") return;
@@ -40,7 +53,11 @@ export class ChatDisappearingPurgeService implements OnModuleInit, OnModuleDestr
     let total = 0;
     try {
       for (;;) {
-        const deleted = await this.repository.purgeExpiredMessages(PURGE_BATCH_SIZE);
+        const deleted = await this.sequelize.transaction(async (transaction) => {
+          const purged = await this.repository.purgeExpiredMessages(PURGE_BATCH_SIZE, transaction);
+          for (const message of purged) await this.releaseFile(message, transaction);
+          return purged.length;
+        });
         total += deleted;
         if (deleted < PURGE_BATCH_SIZE) break;
       }
@@ -54,5 +71,14 @@ export class ChatDisappearingPurgeService implements OnModuleInit, OnModuleDestr
       this.running = false;
     }
     return total;
+  }
+
+  private async releaseFile(message: PurgedChatMedia, transaction: Transaction): Promise<void> {
+    if (!message.mediaKey || !message.mediaProvider) return;
+    if (await this.references.isReferenced(message.mediaKey, transaction)) return;
+    await this.mediaRelease.requestRelease(
+      { aggregateType: "chat.message", aggregateId: message.id, provider: message.mediaProvider, storageKey: message.mediaKey },
+      transaction,
+    );
   }
 }

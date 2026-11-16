@@ -1,5 +1,6 @@
 import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Sequelize } from 'sequelize-typescript';
+import { BrandNameService } from '../../common/branding/brand-name.service';
 import { NotificationService } from '../notifications/notification.service';
 import { ClientDeviceContext } from './client-device-context';
 import { UserDeviceRepository } from './user-device.repository';
@@ -24,6 +25,7 @@ function build(repository: Partial<Record<keyof UserDeviceRepository, jest.Mock>
     repository as unknown as UserDeviceRepository,
     notifications as unknown as NotificationService,
     sequelize as unknown as Sequelize,
+    { forUser: jest.fn().mockResolvedValue('Top Fitness') } as unknown as BrandNameService,
   );
   return { service, notifications };
 }
@@ -44,6 +46,7 @@ describe('UserDeviceService.recordSignIn', () => {
     expect(message.channel).toBe('EMAIL');
     expect(message.subject).toBe('Nuevo inicio de sesión');
     expect(message.body).toContain('Pixel 8 (Android 15)');
+    expect(message.body).toContain('tu cuenta de Top Fitness desde un dispositivo nuevo');
     // The IP is never part of the alert, not even hashed.
     expect(message.body).not.toContain(context.ipHmac);
   });

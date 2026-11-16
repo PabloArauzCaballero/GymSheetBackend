@@ -112,6 +112,8 @@ describe('AccountClosureService.requestPin', () => {
     const provider = await build({ identity: true });
     await provider.service.requestPin(userId);
     expect(provider.pins.issuePurposePin.mock.calls[0][1]).toBe('CLOSE_ACCOUNT');
+    const message = provider.pins.issuePurposePin.mock.calls[0][2] as { subject: (brand: string) => string };
+    expect(message.subject('REPP')).toBe('Código para cerrar tu cuenta de REPP');
     const password = await build({ identity: false });
     await expect(password.service.requestPin(userId)).rejects.toMatchObject({ code: 'CLOSURE_PROOF_REQUIRED' });
   });

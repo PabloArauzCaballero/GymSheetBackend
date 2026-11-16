@@ -4,7 +4,8 @@ import { Sequelize } from 'sequelize-typescript';
 import { AccountClosureRepository } from '../src/modules/account/account-closure.repository';
 import { MediaReleaseService } from '../src/modules/media/media-release.service';
 import { ChatDisappearingPurgeService } from '../src/modules/chat/chat-disappearing-purge.service';
-import { CHAT_EVIDENCE_RETENTION_DAYS, ModerationEvidenceService } from '../src/modules/moderation/moderation-evidence.service';
+import { ModerationEvidenceService } from '../src/modules/moderation/moderation-evidence.service';
+import { REPORT_EVIDENCE_RETENTION_DAYS } from '../src/modules/moderation/moderation.policy';
 import { MINOR_ACCOUNT_CLOSURE_QUEUE } from '../src/modules/moderation/moderation-minor.service';
 import { writeStoredFile } from './support/account-fixtures';
 import { bootE2eApp, createPersonalExercise, E2eApp } from './support/e2e-app';
@@ -151,9 +152,9 @@ describe('Moderation safeguards (e2e)', () => {
       const [closed] = await selectRows<{ resolvedAt: Date }>(e2e,
         `SELECT resolved_at AS "resolvedAt" FROM moderation.reports WHERE target_id = :messageId`, { messageId });
       const purge = e2e.app.get(ModerationEvidenceService);
-      await purge.purgeExpired(new Date(closed.resolvedAt.getTime() + (CHAT_EVIDENCE_RETENTION_DAYS - 1) * DAY_MS));
+      await purge.purgeExpired(new Date(closed.resolvedAt.getTime() + (REPORT_EVIDENCE_RETENTION_DAYS - 1) * DAY_MS));
       expect(await evidence(messageId)).toHaveLength(1);
-      await purge.purgeExpired(new Date(closed.resolvedAt.getTime() + (CHAT_EVIDENCE_RETENTION_DAYS + 1) * DAY_MS));
+      await purge.purgeExpired(new Date(closed.resolvedAt.getTime() + (REPORT_EVIDENCE_RETENTION_DAYS + 1) * DAY_MS));
       expect(await evidence(messageId)).toEqual([]);
     });
 

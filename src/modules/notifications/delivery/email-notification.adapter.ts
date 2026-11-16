@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { PRODUCT_NAME } from '../../../common/branding/product-name';
 import { UserModel } from '../../users/user.model';
 import {
   NotificationDeliveryAdapter,
@@ -38,7 +39,7 @@ export class EmailNotificationAdapter implements NotificationDeliveryAdapter {
       to: recipientEmail,
       // Un correo sin asunto acaba en spam y, antes de eso, es ilegible en una
       // bandeja de entrada. Si el mensaje no traía uno, se pone el de la marca.
-      subject: request.subject ?? 'GymSheet',
+      subject: request.subject ?? PRODUCT_NAME,
       text: request.body,
       idempotencyKey: request.idempotencyKey,
     });

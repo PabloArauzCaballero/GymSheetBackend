@@ -59,7 +59,7 @@ export class AccountClosureService {
     if (!(await this.repository.hasLinkedIdentity(userId))) throw passwordRequired();
     await this.repository.runInTransaction((transaction) =>
       this.emailPins.issuePurposePin(userId, "CLOSE_ACCOUNT", {
-        subject: "Código para cerrar tu cuenta de GymSheet",
+        subject: (brand) => `Código para cerrar tu cuenta de ${brand}`,
         lines: (pin) => [
           `Tu código para cerrar la cuenta es ${pin}`,
           "",

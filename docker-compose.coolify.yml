@@ -55,7 +55,11 @@ x-app-environment: &app-environment
   ACCESS_MOCK_ENABLED: ${ACCESS_MOCK_ENABLED:-false}
   WHATSAPP_MEMBERSHIP_PHONE: ${WHATSAPP_MEMBERSHIP_PHONE:?WHATSAPP_MEMBERSHIP_PHONE is required}
   METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
-  IP_HASH_SECRET: ${IP_HASH_SECRET:-}
+  # Required: the privacy pepper (ADR-0014/0015). This stack runs with NODE_ENV=development, so
+  # the production check in env.ts would not catch a missing value; Compose refuses to deploy.
+  IP_HASH_SECRET: ${IP_HASH_SECRET:?IP_HASH_SECRET (>= 32 chars) is required}
+  # Anti-bot ticket key (ADR-0013); env.ts requires it with NODE_ENV=production.
+  REGISTRATION_TICKET_SECRET: ${REGISTRATION_TICKET_SECRET:-}
 
   # Fijos a los alias internos (con prefijo de proyecto, ver comentario en el servicio `postgres`
   # más abajo) de los servicios `postgres`/`redis` de este mismo stack. Lo que se pegue en Coolify
@@ -201,11 +205,12 @@ x-app-environment: &app-environment
 x-worker-service: &worker-service
   image: gymsheet-backend:coolify
   pull_policy: never
-  profiles: ['workers']
   environment:
     <<: *app-environment
   volumes:
-    # `worker-stories-purge` borra binarios de stories caducadas. Sin este
+    # `worker-stories-purge`, `worker-account-data` y `worker-privacy-retention` borran
+    # binarios (stories caducadas, archivos de cuentas cerradas, contenido denunciado
+    # vencido). Sin este
     # volumen veía un /app/storage/media vacío: la fila caía pero el fichero
     # quedaba huérfano en el volumen de `api`, sin error y sin rastro. Con
     # MEDIA_STORAGE_PROVIDER=minio el borrado ya no ocurre nunca (ADR-0010) y
@@ -597,8 +602,32 @@ services:
         max-file: '3'
 
   # ---------------------------------------------------------------------------
-  # Workers. Apagados por defecto: cada uno es un proceso Node completo (~200 MB
-  # con el runtime de Nest dentro) y encenderlos los cinco a ciegas puede dejar
+  # Workers de privacidad: SIEMPRE encendidos, sin perfil. Cumplen plazos que los textos legales
+  # prometen (stories a las 24 h, exportaciones y cierres de cuenta, retención diaria de datos
+  # personales); dejarlos detrás de un perfil opcional es incumplirlos en silencio.
+  #   stories-purge     → borra stories caducadas (una denunciada espera a que su denuncia se cierre)
+  #   account-data      → exportaciones completas y cierres de cuenta (colas del outbox)
+  #   privacy-retention → `db:privacy:retention` cada 24 h con jitter: tickets de alta gastados,
+  #                       HMAC de IP de más de 90 días, sanciones de cuentas cerradas vencidas y
+  #                       contenido denunciado de cuentas cerradas 180 días después de la última
+  #                       denuncia. El comando de una sola pasada sigue disponible.
+  # Cada uno es un proceso Node (~200 MB); el VPS tiene que tener margen para los tres.
+  # ---------------------------------------------------------------------------
+
+  worker-stories-purge:
+    <<: *worker-service
+    command: ['node', 'dist/workers/stories-purge.worker.js']
+
+  worker-account-data:
+    <<: *worker-service
+    command: ['node', 'dist/workers/account-data.worker.js']
+
+  worker-privacy-retention:
+    <<: *worker-service
+    command: ['node', 'dist/workers/privacy-retention.worker.js']
+
+  # Workers opcionales. Apagados por defecto: cada uno es un proceso Node completo (~200 MB
+  # con el runtime de Nest dentro) y encenderlos a ciegas puede dejar
   # sin memoria al VPS y tumbar el despliegue de la API, que es lo que de verdad
   # no puede caerse. Para encenderlos, añadir en las variables de la aplicación
   # en Coolify:
@@ -607,36 +636,35 @@ services:
   #
   # y redesplegar. Docker Compose lee COMPOSE_PROFILES del archivo de entorno que
   # Coolify pasa con --env-file, igual que el resto de variables. Si por lo que
-  # sea no lo leyera, el fallo es benigno: los workers no arrancan y todo lo
+  # sea no lo leyera, el fallo es benigno: estos workers no arrancan y todo lo
   # demás queda exactamente como hoy.
   #
   # Reparto de responsabilidades (docs/workers/notification-workers.md):
   #   access-event        → drena la bandeja de eventos de acceso física
   #   membership-reminder → avisos de vencimiento de membresía
   #   notification-delivery → entrega lo que el outbox transaccional deja listo
-  #   stories-purge       → borra stories caducadas
   #   exercises-dataset-refresh → refresco del dataset externo de ejercicios;
   #     solo hace trabajo real con EXERCISES_DATASET_ENABLED=true.
   # ---------------------------------------------------------------------------
 
   worker-access-event:
     <<: *worker-service
+    profiles: ['workers']
     command: ['node', 'dist/workers/access-event.worker.js']
 
   worker-membership-reminder:
     <<: *worker-service
+    profiles: ['workers']
     command: ['node', 'dist/workers/membership-reminder.worker.js']
 
   worker-notification-delivery:
     <<: *worker-service
+    profiles: ['workers']
     command: ['node', 'dist/workers/notification-delivery.worker.js']
-
-  worker-stories-purge:
-    <<: *worker-service
-    command: ['node', 'dist/workers/stories-purge.worker.js']
 
   worker-exercises-dataset-refresh:
     <<: *worker-service
+    profiles: ['workers']
     command: ['node', 'dist/workers/exercises-dataset-refresh.worker.js']
 
 volumes:

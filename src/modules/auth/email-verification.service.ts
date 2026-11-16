@@ -6,6 +6,7 @@ import { Sequelize } from "sequelize-typescript";
 import { NotificationChannel } from "../../common/enums/domain.enums";
 import { DomainException } from "../../common/errors/domain.exception";
 import { env } from "../../config/env";
+import { BrandNameService } from "../../common/branding/brand-name.service";
 import { NotificationService } from "../notifications/notification.service";
 import { UsersRepository } from "../users/users.repository";
 import { EmailPinPurpose, EmailVerificationPinRepository } from "./email-verification-pin.repository";
@@ -36,11 +37,14 @@ export type EmailPinOutcome =
 
 export type EmailPinFailure = Exclude<EmailPinOutcome, { kind: "VERIFIED" }>;
 
-/** Email that carries a PIN. `recipientEmail` overrides the account's address (email change). */
+/**
+ * Email that carries a PIN. `recipientEmail` overrides the account's address (email change).
+ * Subject and body receive the brand the email signs with (the person's gym, or REPP).
+ */
 export type EmailPinMessage = {
-  subject: string;
+  subject: (brand: string) => string;
   /** Body lines; receives the clear PIN, which is never stored. */
-  lines: (pin: string) => string[];
+  lines: (pin: string, brand: string) => string[];
   recipientEmail?: string;
   targetEmail?: string | null;
 };
@@ -59,6 +63,7 @@ export class EmailVerificationService {
     private readonly users: UsersRepository,
     private readonly notifications: NotificationService,
     private readonly sequelize: Sequelize,
+    private readonly brands: BrandNameService,
   ) {}
 
   /** Sends a new PIN unless the mailbox is already verified (then a silent no-op). */
@@ -76,13 +81,13 @@ export class EmailVerificationService {
    */
   issuePin(userId: string, transaction: Transaction): Promise<void> {
     return this.issuePurposePin(userId, "VERIFY_EMAIL", {
-      subject: "Confirma tu correo en GymSheet",
-      lines: (pin) => [
+      subject: (brand) => `Confirma tu correo en ${brand}`,
+      lines: (pin, brand) => [
         `Tu código para confirmar el correo es ${pin}`,
         "",
         `Caduca en ${EMAIL_PIN_POLICY.ttlMinutes} minutos y sólo sirve una vez.`,
         "",
-        "Si no creaste una cuenta en GymSheet, ignora este mensaje.",
+        `Si no creaste una cuenta en ${brand}, ignora este mensaje.`,
       ],
     }, transaction);
   }
@@ -110,6 +115,7 @@ export class EmailVerificationService {
     const pin = String(randomInt(0, 1_000_000)).padStart(6, "0");
     const pinHash = await bcrypt.hash(pin, env.BCRYPT_SALT_ROUNDS);
     const expiresAt = new Date(now + EMAIL_PIN_POLICY.ttlMinutes * 60_000);
+    const brand = await this.brands.forUser(userId, transaction);
     await this.pins.supersedePending(userId, transaction, purpose);
     await this.pins.insert(userId, pinHash, expiresAt, transaction, {
       purpose,
@@ -119,8 +125,8 @@ export class EmailVerificationService {
       {
         recipientUserId: userId,
         channel: NotificationChannel.EMAIL,
-        subject: message.subject,
-        body: message.lines(pin).join("\n"),
+        subject: message.subject(brand),
+        body: message.lines(pin, brand).join("\n"),
         deduplicationKey: `${DEDUPLICATION_PREFIX[purpose]}-${userId}-${expiresAt.getTime()}`,
         ...(message.recipientEmail ? { metadata: { recipientEmail: message.recipientEmail } } : {}),
         // Every PIN purpose is a credential (mailbox proof, account closure):

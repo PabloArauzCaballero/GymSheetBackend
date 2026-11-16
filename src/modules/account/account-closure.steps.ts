@@ -59,9 +59,9 @@ export const reported = (kind: string, idColumn = "t.id"): string =>
  * key is the part from the owner's folder on, which every adapter lays out the
  * same way (`mediaTargetPrefix`). URLs outside the owner's folder yield null.
  */
-export const ownFolderKey = (urlColumn: string): string =>
-  `CASE WHEN strpos(${urlColumn}, 'users/' || :userId || '/') > 0
-        THEN substr(${urlColumn}, strpos(${urlColumn}, 'users/' || :userId || '/')) END`;
+export const ownFolderKey = (urlColumn: string, owner = ":userId"): string =>
+  `CASE WHEN strpos(${urlColumn}, 'users/' || ${owner} || '/') > 0
+        THEN substr(${urlColumn}, strpos(${urlColumn}, 'users/' || ${owner} || '/')) END`;
 
 /** A routine of the person that someone else's program, session or invite snapshot still uses. */
 export const routineUsedByOthers = (alias: string): string => `(

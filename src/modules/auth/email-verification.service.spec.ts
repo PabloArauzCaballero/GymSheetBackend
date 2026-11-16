@@ -1,5 +1,6 @@
 import * as bcrypt from 'bcryptjs';
 import { Sequelize } from 'sequelize-typescript';
+import { BrandNameService } from '../../common/branding/brand-name.service';
 import { DomainException } from '../../common/errors/domain.exception';
 import { NotificationService } from '../notifications/notification.service';
 import { UsersRepository } from '../users/users.repository';
@@ -31,13 +32,15 @@ function build(options: {
   };
   const notifications = { enqueueDirectMessage: jest.fn().mockResolvedValue(true) };
   const sequelize = { transaction: jest.fn((work: (t: unknown) => unknown) => work(transaction)) };
+  const brands = { forUser: jest.fn().mockResolvedValue('REPP') };
   const service = new EmailVerificationService(
     pins as unknown as EmailVerificationPinRepository,
     users as unknown as UsersRepository,
     notifications as unknown as NotificationService,
     sequelize as unknown as Sequelize,
+    brands as unknown as BrandNameService,
   );
-  return { service, pins, users, notifications };
+  return { service, pins, users, notifications, brands };
 }
 
 async function pinRow(pin: string, overrides: Partial<EmailPinRow> = {}): Promise<EmailPinRow> {
@@ -61,7 +64,10 @@ describe('EmailVerificationService.issuePin', () => {
     expect(pins.supersedePending).toHaveBeenCalledWith(userId, transaction, 'VERIFY_EMAIL');
     expect(pins.insert.mock.calls[0][4]).toEqual({ purpose: 'VERIFY_EMAIL', targetEmail: null });
     const [, storedHash, expiresAt] = pins.insert.mock.calls[0] as [string, string, Date];
-    const message = (notifications.enqueueDirectMessage.mock.calls[0] as [{ body: string; channel: string }, unknown]);
+    const message = (notifications.enqueueDirectMessage.mock.calls[0] as [{ body: string; channel: string; subject: string }, unknown]);
+    expect(message[0].subject).toBe('Confirma tu correo en REPP');
+    expect(message[0].body).toContain('Si no creaste una cuenta en REPP, ignora este mensaje.');
+    expect(message[0].body).not.toContain('GymSheet');
     const pin = /(\d{6})/u.exec(message[0].body)?.[1] ?? '';
     expect(message[0].channel).toBe('EMAIL');
     expect(message[1]).toBe(transaction);
@@ -156,13 +162,15 @@ describe('EmailVerificationService purpose-scoped PINs', () => {
     await service.issuePurposePin(
       userId,
       'CHANGE_EMAIL',
-      { subject: 'Cambio', lines: (pin) => [`PIN ${pin}`], recipientEmail: 'new@example.test', targetEmail: 'new@example.test' },
+      { subject: (brand) => `Cambio en ${brand}`, lines: (pin, brand) => [`PIN ${pin} de ${brand}`], recipientEmail: 'new@example.test', targetEmail: 'new@example.test' },
       transaction as never,
     );
     expect(pins.sendWindow.mock.calls[0][3]).toBe('CHANGE_EMAIL');
     expect(pins.supersedePending).toHaveBeenCalledWith(userId, transaction, 'CHANGE_EMAIL');
     expect(pins.insert.mock.calls[0][4]).toEqual({ purpose: 'CHANGE_EMAIL', targetEmail: 'new@example.test' });
-    const [message] = notifications.enqueueDirectMessage.mock.calls[0] as [{ metadata: unknown; deduplicationKey: string }];
+    const [message] = notifications.enqueueDirectMessage.mock.calls[0] as [{ metadata: unknown; deduplicationKey: string; subject: string; body: string }];
+    expect(message.subject).toBe('Cambio en REPP');
+    expect(message.body).toMatch(/^PIN \d{6} de REPP$/u);
     expect(message.metadata).toEqual({ recipientEmail: 'new@example.test' });
     expect(message.deduplicationKey.startsWith('email-change-')).toBe(true);
   });

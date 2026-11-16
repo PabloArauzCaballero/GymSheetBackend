@@ -2,6 +2,7 @@ import { ConflictException, HttpStatus, Injectable, NotFoundException } from "@n
 import * as bcrypt from "bcryptjs";
 import { UniqueConstraintError } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
+import { BrandNameService } from "../../common/branding/brand-name.service";
 import { NotificationChannel } from "../../common/enums/domain.enums";
 import { DomainException } from "../../common/errors/domain.exception";
 import { ClosedAccountSanctionsService } from "../closed-account-sanctions/closed-account-sanctions.service";
@@ -26,6 +27,7 @@ export class EmailChangeService {
     private readonly notifications: NotificationService,
     private readonly sequelize: Sequelize,
     private readonly sanctions: ClosedAccountSanctionsService,
+    private readonly brands: BrandNameService,
   ) {}
 
   /**
@@ -43,9 +45,9 @@ export class EmailChangeService {
     if (await this.sanctions.hasActiveSanction(userId)) throw blockedBySanction();
     await this.sequelize.transaction((transaction) =>
       this.emailPins.issuePurposePin(userId, "CHANGE_EMAIL", {
-        subject: "Confirma tu nuevo correo en GymSheet",
-        lines: (pin) => [
-          `Tu código para usar este correo en GymSheet es ${pin}`,
+        subject: (brand) => `Confirma tu nuevo correo en ${brand}`,
+        lines: (pin, brand) => [
+          `Tu código para usar este correo en ${brand} es ${pin}`,
           "",
           `Caduca en ${EMAIL_PIN_POLICY.ttlMinutes} minutos y sólo sirve una vez.`,
           "",
@@ -74,12 +76,13 @@ export class EmailChangeService {
         if (holder && holder.id !== userId) throw new ConflictException(EMAIL_TAKEN);
         const oldEmail = user.email;
         await this.users.changeEmail(userId, newEmail, transaction);
+        const brand = await this.brands.forUser(userId, transaction);
         await this.notifications.enqueueDirectMessage({
           recipientUserId: userId,
           channel: NotificationChannel.EMAIL,
-          subject: "El correo de tu cuenta de GymSheet cambió",
+          subject: `El correo de tu cuenta de ${brand} cambió`,
           body: [
-            "El correo para entrar a tu cuenta de GymSheet se cambió por otro.",
+            `El correo para entrar a tu cuenta de ${brand} se cambió por otro.`,
             "",
             "Si no fuiste tú, recupera tu contraseña desde la app y escríbenos.",
           ].join("\n"),

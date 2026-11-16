@@ -7,8 +7,10 @@ import { Sequelize } from 'sequelize-typescript';
 import request from 'supertest';
 import { env } from '../src/config/env';
 import { LEGAL_DOCUMENTS, LEGAL_DOCUMENT_CONTENT_SHA256 } from '../src/modules/legal/legal-documents';
+import { MediaReferencesRepository } from '../src/modules/media/media-references.repository';
 import { MediaReleaseService } from '../src/modules/media/media-release.service';
 import { TicketLedgerRepository } from '../src/modules/antibot/ticket-ledger.repository';
+import { ReportedContentRetentionService } from '../src/modules/account/reported-content-retention.service';
 import { PrivacyRetentionRepository } from '../src/modules/privacy/privacy-retention.repository';
 import { PrivacyRetentionService } from '../src/modules/privacy/privacy-retention.service';
 import { bootE2eApp, createPersonalExercise, E2eApp } from './support/e2e-app';
@@ -96,6 +98,11 @@ describe('Privacy retention and minimisation (e2e)', () => {
     const retention = new PrivacyRetentionService(
       e2e.app.get(TicketLedgerRepository, { strict: false }),
       new PrivacyRetentionRepository(e2e.app.get(Sequelize)),
+      new ReportedContentRetentionService(
+        e2e.app.get(Sequelize),
+        e2e.app.get(MediaReferencesRepository, { strict: false }),
+        e2e.app.get(MediaReleaseService, { strict: false }),
+      ),
     );
     const result = await retention.purge(now);
     expect(result.ipHashesCleared).toBeGreaterThanOrEqual(6);

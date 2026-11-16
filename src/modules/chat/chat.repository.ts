@@ -83,6 +83,8 @@ export interface TrainingInviteConversationEvent {
 }
 
 /** Aviso de sistema «X activó/desactivó los mensajes temporales». */
+export type PurgedChatMedia = { id: string; mediaProvider: string | null; mediaKey: string | null };
+
 export interface DisappearingTimerEvent {
   readonly id: string;
   readonly conversationId: string;
@@ -912,9 +914,10 @@ export class ChatRepository {
    * desde `expires_at`; esto es la higiene posterior. Un mensaje con una
    * denuncia ABIERTA se conserva para que moderación lo revise; resuelta, se
    * purga como los demás (la copia de evidencia vive en moderación).
+   * Returns each deleted message's stored file so the caller releases it in `transaction`.
    */
-  async purgeExpiredMessages(batchSize: number): Promise<number> {
-    const rows = await this.sequelize.query<{ id: string }>(
+  async purgeExpiredMessages(batchSize: number, transaction: Transaction): Promise<PurgedChatMedia[]> {
+    return this.sequelize.query<PurgedChatMedia>(
       `DELETE FROM chat.messages
         WHERE id IN (
           SELECT m.id FROM chat.messages m
@@ -927,10 +930,9 @@ export class ChatRepository {
            ORDER BY m.expires_at
            LIMIT :batchSize
         )
-        RETURNING id`,
-      { type: QueryTypes.SELECT, replacements: { batchSize } },
+        RETURNING id, media_provider AS "mediaProvider", media_key AS "mediaKey"`,
+      { type: QueryTypes.SELECT, replacements: { batchSize }, transaction },
     );
-    return rows.length;
   }
 
   /** IDs de todas las conversaciones donde participa — para difundir presencia. */

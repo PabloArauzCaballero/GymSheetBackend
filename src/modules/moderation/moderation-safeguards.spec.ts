@@ -1,4 +1,5 @@
-import { CHAT_EVIDENCE_RETENTION_DAYS, ModerationEvidenceService } from "./moderation-evidence.service";
+import { ModerationEvidenceService } from "./moderation-evidence.service";
+import { REPORT_EVIDENCE_RETENTION_DAYS } from "./moderation.policy";
 import { PENDING_REVIEW_SUSPENSION_UNTIL } from "../../common/moderation/account-suspension";
 import {
   MINOR_ACCOUNT_CLOSURE_QUEUE,
@@ -95,7 +96,7 @@ describe("ModerationEvidenceService.purgeExpired", () => {
 
     await expect(service.purgeExpired(now)).resolves.toBe(1);
     const [cutoff] = repository.deleteExpiredChatEvidence.mock.calls[0] as [Date];
-    expect(now.getTime() - cutoff.getTime()).toBe(CHAT_EVIDENCE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    expect(now.getTime() - cutoff.getTime()).toBe(REPORT_EVIDENCE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
     expect(mediaRelease.requestRelease).toHaveBeenCalledWith(
       { aggregateType: "moderation.chat_evidence", aggregateId: "m-1", provider: "local", storageKey: "k" },
       transaction,

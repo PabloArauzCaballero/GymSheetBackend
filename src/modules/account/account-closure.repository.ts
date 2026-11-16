@@ -88,9 +88,9 @@ export class AccountClosureRepository {
   /**
    * Keys still used by a row the closure kept (reported reels, the evidence
    * copy of a reported chat message, or a shared file). The media worker
-   * re-checks stories, photos, chat and evidence copies itself; reels and
-   * comment attachments are not in its reference query, so they are filtered
-   * here. Evidence is checked on both sides: a release must never destroy it.
+   * re-checks every reference itself (`MediaReferencesRepository`); filtering
+   * here as well keeps jobs that would only end as "file kept" out of the queue.
+   * Evidence is checked on both sides: a release must never destroy it.
    */
   async keysStillInUse(keys: string[], transaction: Transaction): Promise<Set<string>> {
     if (keys.length === 0) return new Set();

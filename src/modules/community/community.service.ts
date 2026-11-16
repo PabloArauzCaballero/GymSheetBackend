@@ -9,6 +9,7 @@ import {
 import { DomainException } from '../../common/errors/domain.exception';
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from '../media/media-storage.port';
 import { RoutineNotifier } from '../training/routine-notifier';
+import { CommentAttachmentRelease } from './comment-attachment-release';
 import { CommentRow, CommunityRepository } from './community.repository';
 import { env } from '../../config/env';
 import { CommentInput, CommentListQuery, ContentKind } from './community.schemas';
@@ -61,6 +62,7 @@ export class CommunityService {
     private readonly repository: CommunityRepository,
     private readonly notifier: RoutineNotifier,
     @Inject(MEDIA_STORAGE_PROVIDER) private readonly mediaStorage: MediaStorageProvider,
+    private readonly attachments: CommentAttachmentRelease,
   ) {}
 
   /** Sube la foto, video o archivo que irá en un comentario y devuelve el adjunto listo para enviar. */
@@ -182,21 +184,11 @@ export class CommunityService {
     return { likes: await this.repository.setCommentLike(commentId, actor.id, liked), meGusta: liked };
   }
 
-  /** El autor borra el suyo: queda como BORRADO_AUTOR y sin texto. */
+  /** El autor borra el suyo: queda como BORRADO_AUTOR, sin texto y sin adjunto (el archivo se libera). */
   async remove(actor: Actor, commentId: string) {
     const comment = await this.repository.findComment(commentId);
     if (!comment || comment.authorId !== actor.id) throw new NotFoundException('Comentario no encontrado.');
-    await comment.update({
-      status: 'BORRADO_AUTOR',
-      text: '',
-      attachmentKind: null,
-      attachmentUrl: null,
-      attachmentMime: null,
-      attachmentName: null,
-      attachmentBytes: null,
-      attachmentWidth: null,
-      attachmentHeight: null,
-    });
+    await this.attachments.removeByAuthor(comment);
     return { deleted: true };
   }
 

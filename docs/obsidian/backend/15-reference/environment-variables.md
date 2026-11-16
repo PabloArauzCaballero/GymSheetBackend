@@ -87,14 +87,19 @@ tags: [backend, reference, config]
 Desde la franja 4 (ADR-0014) `IP_HASH_SECRET` firma además `public.password_reset_tokens.ip_hmac`,
 `admin.audit_log.ip_hmac` y `training.routine_progress_download_audits.ip_hmac`: la API ya no guarda
 ninguna IP en claro. La migración `202611180201` convierte las IP existentes con el secreto presente
-al correrla (sin secreto, las anula). `yarn db:privacy:retention` (alias `db:signups:retention`,
-programarlo a diario) anula todo HMAC de más de 90 días. Cambiar el secreto rompe la correlación con
+al correrla (sin secreto, las anula). `yarn db:privacy:retention` (alias `db:signups:retention`;
+el worker `privacy-retention` lo corre cada 24 h) anula todo HMAC de más de 90 días. Cambiar el secreto rompe la correlación con
 los HMAC anteriores, que de todos modos caducan a los 90 días.
 
 `IP_HASH_SECRET` es el pepper de privacidad de la API (ADR-0015): también firma el correo de una
 cuenta sancionada que se cierra (`moderation.closed_account_sanctions.email_hmac`), para que volver a
 registrarse con ese correo herede las faltas. Sin él no se guarda ese registro y cerrar la cuenta
-borra las sanciones: configurarlo en producción. Rotarlo deja sin efecto los registros existentes.
+borra las sanciones. Rotarlo deja sin efecto los registros existentes.
+
+**`IP_HASH_SECRET` es obligatoria con `NODE_ENV=production`** (32 caracteres o más; `src/config/privacy-env.ts`):
+sin ella la API y los workers no arrancan y el error de inicio nombra la variable. Fuera de producción sigue
+siendo opcional. Los dos compose la pasan a los contenedores; `docker-compose.coolify.yml` la exige (`:?`)
+porque ese despliegue arranca con `NODE_ENV=development` y la validación de producción no lo cubriría.
 
 ## Métricas / acceso
 
@@ -133,4 +138,4 @@ borra las sanciones: configurarlo en producción. Rotarlo deja sin efecto los re
 `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` (**secreto**), `SEED_ADMIN_FULL_NAME`, `SEED_MOCK_PASSWORD` (**secreto**).
 
 > [!danger] Secretos
-> `JWT_*_SECRET`, `DB_PASSWORD`, `REGISTRATION_TICKET_SECRET`, `TURNSTILE_SECRET`, `PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON`, `NOTIFICATION_GATEWAY_SECRET`, `METRICS_SCRAPE_TOKEN`, `SEED_*_PASSWORD` son secretos: solo por env, nunca en el repo ni en logs.
+> `JWT_*_SECRET`, `DB_PASSWORD`, `REGISTRATION_TICKET_SECRET`, `TURNSTILE_SECRET`, `PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON`, `NOTIFICATION_GATEWAY_SECRET`, `METRICS_SCRAPE_TOKEN`, `IP_HASH_SECRET`, `SEED_*_PASSWORD` son secretos: solo por env, nunca en el repo ni en logs.

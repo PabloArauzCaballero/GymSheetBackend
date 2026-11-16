@@ -46,6 +46,15 @@ en el almacenamiento.
 
 El log lleva conteos por tabla, nunca valores.
 
+**Programación (#26).** El worker `privacy-retention` (`dist/workers/privacy-retention.worker.js`,
+servicio sin perfil en los dos compose) corre la misma pasada cada 24 h con hasta 30 min de
+jitter, vuelca sus logs y emite `worker.started` / `worker.shutdown_requested` / `worker.stopped`.
+El comando de un solo disparo sigue disponible. La pasada incluye además el contenido que un
+cierre de cuenta conservó por estar denunciado: se borra (o queda como «borrado», si otras
+personas le respondieron) cuando todas sus denuncias llevan cerradas más de
+`REPORT_EVIDENCE_RETENTION_DAYS` (180 días, el mismo plazo que la copia de evidencia del chat), y
+sus archivos salen por la cola `media.release`.
+
 ### 3. Registro de consentimientos (`auth.consents`)
 
 Una fila por otorgamiento: `user_id`, `kind` (`HEALTH | ORIENTATION | VERIFICATION_SELFIE |

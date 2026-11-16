@@ -1,6 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { Sequelize } from 'sequelize-typescript';
+import { BrandNameService } from '../../common/branding/brand-name.service';
 import { EmailVerificationService } from '../auth/email-verification.service';
 import { ClosedAccountSanctionsService } from '../closed-account-sanctions/closed-account-sanctions.service';
 import { NotificationService } from '../notifications/notification.service';
@@ -31,6 +32,7 @@ async function build(options: { pin?: object; holderId?: string; sanctioned?: bo
     notifications as unknown as NotificationService,
     sequelize as unknown as Sequelize,
     sanctions as unknown as ClosedAccountSanctionsService,
+    { forUser: jest.fn().mockResolvedValue('Top Fitness') } as unknown as BrandNameService,
   );
   return { service, users, pins, notifications, sanctions };
 }
@@ -46,8 +48,12 @@ describe('EmailChangeService.request', () => {
   it('mails a CHANGE_EMAIL PIN to the new address', async () => {
     const { service, pins } = await build();
     await service.request(userId, { newEmail: 'new@example.test', password: 'secret-pass' });
-    const [, purpose, message] = pins.issuePurposePin.mock.calls[0] as [string, string, { recipientEmail: string; targetEmail: string }];
+    const [, purpose, message] = pins.issuePurposePin.mock.calls[0] as [string, string, {
+      recipientEmail: string; targetEmail: string; subject: (brand: string) => string; lines: (pin: string, brand: string) => string[];
+    }];
     expect(purpose).toBe('CHANGE_EMAIL');
+    expect(message.subject('REPP')).toBe('Confirma tu nuevo correo en REPP');
+    expect(message.lines('123456', 'Top Fitness')[0]).toBe('Tu código para usar este correo en Top Fitness es 123456');
     expect(message).toMatchObject({ recipientEmail: 'new@example.test', targetEmail: 'new@example.test' });
   });
 });
@@ -70,7 +76,9 @@ describe('EmailChangeService.confirm', () => {
     const { service, users, notifications } = await build();
     await expect(service.confirm(userId, '123456')).resolves.toEqual({ email: 'new@example.test', emailVerified: true });
     expect(users.changeEmail).toHaveBeenCalledWith(userId, 'new@example.test', transaction);
-    const [notice, tx] = notifications.enqueueDirectMessage.mock.calls[0] as [{ metadata: unknown; body: string }, unknown];
+    const [notice, tx] = notifications.enqueueDirectMessage.mock.calls[0] as [{ metadata: unknown; body: string; subject: string }, unknown];
+    expect(notice.subject).toBe('El correo de tu cuenta de Top Fitness cambió');
+    expect(notice.body).toContain('tu cuenta de Top Fitness');
     expect(notice.metadata).toEqual({ kind: 'EMAIL_CHANGED', recipientEmail: 'old@example.test' });
     expect(notice.body).not.toContain('new@example.test');
     expect(tx).toBe(transaction);

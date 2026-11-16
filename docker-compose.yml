@@ -110,7 +110,10 @@ x-app-environment: &app-environment
   REDIS_REQUIRED: "true"
 
   METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
+  # Required when NODE_ENV=production (the default here): env.ts refuses to start without it.
   IP_HASH_SECRET: ${IP_HASH_SECRET:-}
+  # Anti-bot ticket key (ADR-0013); env.ts requires it with NODE_ENV=production.
+  REGISTRATION_TICKET_SECRET: ${REGISTRATION_TICKET_SECRET:-}
   # 3002 (puerto de la web): el socket de chat lo abre el navegador directo
   # contra este backend, no a través del BFF, así que necesita CORS propio.
   CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3002}
@@ -390,6 +393,32 @@ services:
     # Unlike the other workers this one deletes binaries, so it needs the same
     # media volume the api writes to. Mounted over the read-only root
     # filesystem, exactly as in the api service.
+    volumes:
+      - media-data:/app/storage/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+          cpus: "0.5"
+        reservations:
+          memory: 128m
+    stop_grace_period: 45s
+
+  # Personal-data retention (ADR-0014): runs `db:privacy:retention` every 24 h
+  # with jitter (spent signup tickets, 90-day IP hashes, expired closed-account
+  # sanctions, reported content of closed accounts 180 days after its last
+  # report closed). Releases files through the media queue, so it mounts the
+  # same media volume as the api.
+  worker-privacy-retention:
+    <<: [*app-image, *app-security, *worker-runtime]
+    command: ["node", "dist/workers/privacy-retention.worker.js"]
+    environment:
+      <<: *app-environment
     volumes:
       - media-data:/app/storage/media
     depends_on:

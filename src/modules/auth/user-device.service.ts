@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, UnauthorizedException } from "@nestjs/co
 import { randomUUID } from "node:crypto";
 import { Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
+import { BrandNameService } from "../../common/branding/brand-name.service";
 import { NotificationChannel, RefreshTokenRevokedReason } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
 import { NotificationService } from "../notifications/notification.service";
@@ -22,6 +23,7 @@ export class UserDeviceService {
     private readonly devices: UserDeviceRepository,
     private readonly notifications: NotificationService,
     private readonly sequelize: Sequelize,
+    private readonly brands: BrandNameService,
   ) {}
 
   /** Signup: the account's first device, so there is nothing to alert about. */
@@ -118,13 +120,14 @@ export class UserDeviceService {
       timeStyle: "short",
       timeZone: env.BUSINESS_TIME_ZONE,
     }).format(new Date());
+    const brand = await this.brands.forUser(userId, transaction);
     await this.notifications.enqueueDirectMessage(
       {
         recipientUserId: userId,
         channel: NotificationChannel.EMAIL,
         subject: "Nuevo inicio de sesión",
         body: [
-          `Se inició sesión en tu cuenta de GymSheet desde un dispositivo nuevo: ${describeDevice(context)}.`,
+          `Se inició sesión en tu cuenta de ${brand} desde un dispositivo nuevo: ${describeDevice(context)}.`,
           `Fecha aproximada: ${when}.`,
           "",
           "Si fuiste tú, no tienes que hacer nada.",
