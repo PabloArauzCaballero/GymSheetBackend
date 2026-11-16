@@ -178,8 +178,9 @@ scored AS MATERIALIZED (
                 + :wNovelty * x.novelty - 0.05 * f.years_outside)::numeric, 6) AS score,
          array_remove(ARRAY[
            CASE WHEN f.distance_km IS NOT NULL AND f.distance_km <= 5 THEN 'NEARBY' END,
-           CASE WHEN f.training_now THEN 'TRAINING_NOW' END,
-           CASE WHEN NOT f.training_now AND f.hours_seen <= 0.25 THEN 'ACTIVE_NOW' END,
+           -- Activity (training now, online now) only ranks; it is never shown:
+           -- telling strangers someone is at the gym right now exposes their
+           -- real-time presence and location.
            CASE WHEN v.goal = f.goal THEN 'SAME_GOAL' END,
            CASE WHEN v.routines && f.routines THEN 'SAME_ROUTINE' END,
            CASE WHEN v.interests && f.interests THEN 'SHARED_INTERESTS' END,

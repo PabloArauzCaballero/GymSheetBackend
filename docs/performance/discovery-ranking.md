@@ -52,9 +52,11 @@ escriben desde la validación del JWT como máximo cada 5 minutos por cuenta
 
 ## Contrato para clientes
 
-- Cada carta de la baraja suma `reasons: string[]` (`NEARBY`, `TRAINING_NOW`, `ACTIVE_NOW`,
-  `SAME_GOAL`, `SAME_ROUTINE`, `SHARED_INTERESTS`, `VERIFIED`, `NEW_HERE`; ignorar códigos
-  desconocidos) y `distanceKm: number | null` (entero, mínimo 1).
+- Cada carta de la baraja suma `reasons: string[]` (`NEARBY`, `SAME_GOAL`, `SAME_ROUTINE`,
+  `SHARED_INTERESTS`, `VERIFIED`, `NEW_HERE`; ignorar códigos desconocidos) y
+  `distanceKm: number | null` (entero, mínimo 1). La actividad («entrenando ahora», «activo
+  ahora») ordena la baraja pero nunca se muestra: decirle a un desconocido que alguien está en el
+  gimnasio en este momento expone su presencia y su ubicación en tiempo real.
 - Cabecera nueva `X-Ranking-Config` con la versión que ordenó la página.
 - La baraja ahora puede incluir a quien ya dio like al viewer (antes quedaba oculto).
 - Cartas fuera de los filtros duros desaparecen (sin 2 fotos, sin correo verificado, fuera

@@ -101,7 +101,12 @@ describe('Discovery ranking and single match model (e2e)', () => {
     expect(ids).toEqual([verified.id, plain.id, nearer.id]);
     expect(ids).not.toContain(far.id);
     const [top] = response.body.data;
-    expect(top.reasons).toEqual(expect.arrayContaining(['NEARBY', 'VERIFIED', 'ACTIVE_NOW']));
+    expect(top.reasons).toEqual(expect.arrayContaining(['NEARBY', 'VERIFIED']));
+    // Presence is a ranking input only: no card ever says someone is online or at the gym now.
+    for (const card of response.body.data as Array<{ reasons: string[] }>) {
+      expect(card.reasons).not.toContain('ACTIVE_NOW');
+      expect(card.reasons).not.toContain('TRAINING_NOW');
+    }
     expect(top.distanceKm).toBe(1);
     expect(top.impressionId).toMatch(/^[0-9a-f-]{36}$/u);
 

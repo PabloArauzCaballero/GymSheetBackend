@@ -252,7 +252,9 @@ describe("discovery ranking SQL (PostgreSQL)", () => {
     const rows = await rank();
     expect(rows.map((row) => row.id)).toEqual([id(3), id(2), id(1)]);
     expect(rows[0].activity).toBe(1);
-    expect(rows[0].reasons).toContain("TRAINING_NOW");
+    // Training now lifts the card but is never disclosed (real-time presence).
+    expect(rows[0].reasons).not.toContain("TRAINING_NOW");
+    expect(rows[0].reasons).not.toContain("ACTIVE_NOW");
     expect(rows[2].activity).toBeLessThan(0.001);
   });
 

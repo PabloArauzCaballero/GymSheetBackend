@@ -80,8 +80,6 @@ export function mapDirectoryRowToResponse(row: DirectoryRow): DirectoryEntryResp
 /** Why a card was ranked where it is (closed list; clients ignore unknown codes). */
 export const DISCOVERY_REASON_CODES = [
   "NEARBY",
-  "TRAINING_NOW",
-  "ACTIVE_NOW",
   "SAME_GOAL",
   "SAME_ROUTINE",
   "SHARED_INTERESTS",
