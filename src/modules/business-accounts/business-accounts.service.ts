@@ -16,6 +16,7 @@ import { UploadedSelfie, sniffSelfieType } from '../verification/selfie-image';
 import { BusinessMeDto, mapBusinessMe } from './business-accounts.mapper';
 import { BusinessAccountRow, BusinessAccountsRepository } from './business-accounts.repository';
 import { BusinessMediaSlot, BusinessProfilePatch } from './business-accounts.schemas';
+import { assertBusinessNameAllowed } from './business-name';
 import { CurrentHandle, HandlesService } from './handles.service';
 
 const SLOT_COLUMN = { LOGO: 'logoUrl', COVER: 'coverUrl' } as const;
@@ -56,9 +57,20 @@ export class BusinessAccountsService {
     }
     await this.sequelize.transaction(async (transaction) => {
       const entity = await this.lockEditable(account, transaction);
+      const newName = patch.name !== undefined && patch.name !== entity.name ? patch.name : null;
+      const recategorized = patch.primaryCategoryId !== undefined && patch.primaryCategoryId !== entity.primaryCategoryId;
+      // Past DRAFT a material change needs a KYC review; the versioning that accepts it lands in franja 8b.
+      if ((newName !== null || recategorized) && entity.status !== 'DRAFT') {
+        throw new DomainException(
+          HttpStatus.CONFLICT,
+          'BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW',
+          'El nombre y la categoría de un negocio publicado solo cambian con una nueva verificación.',
+        );
+      }
+      if (newName !== null) await assertBusinessNameAllowed(this.repository, newName, account.entityType, entity.id, transaction);
       await this.repository.updateEntity(entity, patch, transaction);
       // The commercial name is also the account's display name (not person data).
-      if (patch.name) await this.users.updateFullName(account.userId, patch.name, transaction);
+      if (newName !== null) await this.users.updateFullName(account.userId, newName, transaction);
     });
     return this.me(actor);
   }

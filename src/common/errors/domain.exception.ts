@@ -68,7 +68,12 @@ export type DomainErrorCode =
   | 'HANDLE_RESERVED'
   | 'HANDLE_TAKEN'
   | 'HANDLE_TOO_SIMILAR'
-  | 'HANDLE_RENAME_LIMIT';
+  | 'HANDLE_RENAME_LIMIT'
+  | 'HANDLE_RESERVATION_EXPIRED'
+  | 'BUSINESS_NAME_INVALID'
+  | 'BUSINESS_NAME_RESERVED'
+  | 'BUSINESS_NAME_TOO_SIMILAR'
+  | 'BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW';
 
 /**
  * Error de dominio con `code` estable y `details` opcional (por ejemplo

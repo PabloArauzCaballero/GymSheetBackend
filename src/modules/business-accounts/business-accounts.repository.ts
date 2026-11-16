@@ -89,6 +89,33 @@ export class BusinessAccountsRepository {
     await entity.update(patch, { transaction });
   }
 
+  /**
+   * Who blocks a commercial name: a REPP-protected brand (`RESERVED` handle) or
+   * a public listing of the same type with the same skeleton. Served by
+   * `ix_directory_entities_active_name_skeleton`.
+   */
+  async findNameHolder(
+    name: string,
+    entityType: DirectoryEntityType,
+    exceptEntityId: string | null,
+    transaction?: Transaction,
+  ): Promise<'RESERVED' | 'TOO_SIMILAR' | null> {
+    const [row] = await this.sequelize.query<{ reason: 'RESERVED' | 'TOO_SIMILAR' | null }>(
+      `SELECT CASE
+                WHEN EXISTS (SELECT 1 FROM directory.handles h
+                              WHERE h.status = 'RESERVED' AND h.skeleton = directory.business_name_skeleton(:name))
+                  THEN 'RESERVED'
+                WHEN EXISTS (SELECT 1 FROM directory.entities e
+                              WHERE e.status = 'ACTIVE' AND e.entity_type = :entityType
+                                AND directory.business_name_skeleton(e.name) = directory.business_name_skeleton(:name)
+                                AND e.id IS DISTINCT FROM :exceptEntityId)
+                  THEN 'TOO_SIMILAR'
+              END AS reason`,
+      { replacements: { name, entityType, exceptEntityId }, type: QueryTypes.SELECT, transaction },
+    );
+    return row?.reason ?? null;
+  }
+
   /** An active category whose scope fits the listing type (or `ALL`). */
   async categoryFits(categoryId: string, entityType: DirectoryEntityType): Promise<boolean> {
     const [row] = await this.sequelize.query<{ fits: boolean }>(

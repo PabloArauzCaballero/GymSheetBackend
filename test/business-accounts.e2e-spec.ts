@@ -5,6 +5,7 @@ import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { env } from '../src/config/env';
 import { businessAccountsMigration } from '../src/database/migrations/202611200401-business-accounts';
+import { handleSkeleton } from '../src/modules/business-accounts/handle-rules';
 import { E2eApp, bootE2eApp, markEmailVerified } from './support/e2e-app';
 
 type Acceptance = { document: string; version: string; contentSha256: string | null };
@@ -31,7 +32,8 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
         ticket: ticket.body.data.ticket,
         email: `${label}-${suffix}@example.test`,
         password: 'e2e-strong-password',
-        businessName: `Negocio ${label}`,
+        // The suffix keeps names unique across runs: a published name blocks its look-alikes.
+        businessName: `Negocio ${label} ${suffix}`,
         entityType: 'GYM',
         acceptances: acceptances.map(({ document, version, contentSha256 }) => ({ document, version, ...(contentSha256 ? { contentSha256 } : {}) })),
         ...overrides,
@@ -94,7 +96,7 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
     const response = await signup('happy');
     expect(response.status).toBe(201);
     const data = response.body.data;
-    expect(data.user).toMatchObject({ rol: 'NEGOCIO', accountKind: 'BUSINESS', emailVerified: false, nombreCompleto: 'Negocio happy' });
+    expect(data.user).toMatchObject({ rol: 'NEGOCIO', accountKind: 'BUSINESS', emailVerified: false, nombreCompleto: `Negocio happy ${suffix}` });
     expect(data.business).toMatchObject({ entityType: 'GYM', legalKind: 'COMPANY', status: 'ONBOARDING', kycStatus: 'DRAFT' });
     expect(data.refreshToken).toEqual(expect.any(String));
 
@@ -191,7 +193,7 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
     const token = response.body.data.accessToken as string;
     const me = await e2e.as(token).get('/business/me').expect(200);
     expect(me.body.data.nextSteps).toEqual(['VERIFY_EMAIL', 'CHOOSE_HANDLE', 'COMPLETE_PROFILE', 'SUBMIT_KYC']);
-    expect(me.body.data.entity).toMatchObject({ status: 'DRAFT', name: 'Negocio profile', primaryCategoryId: null });
+    expect(me.body.data.entity).toMatchObject({ status: 'DRAFT', name: `Negocio profile ${suffix}`, primaryCategoryId: null });
     const unverified = await e2e.as(token).patch('/business/me/profile').send({ city: 'La Paz' });
     expect(unverified.body.code).toBe('EMAIL_VERIFICATION_REQUIRED');
 
@@ -200,12 +202,12 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
     await e2e.as(token).patch('/business/me/profile').send({ primaryCategoryId: storeCategory }).expect(400);
     await e2e.as(token).patch('/business/me/profile').send({ isVerified: true }).expect(400);
     const patched = await e2e.as(token).patch('/business/me/profile')
-      .send({ name: 'Top Fit Center', city: 'La Paz', primaryCategoryId: gymCategoryId, businessHours: { mon: { open: '06:00', close: '22:00' } } })
+      .send({ name: `Top Fit Center ${suffix}`, city: 'La Paz', primaryCategoryId: gymCategoryId, businessHours: { mon: { open: '06:00', close: '22:00' } } })
       .expect(200);
-    expect(patched.body.data.entity).toMatchObject({ name: 'Top Fit Center', city: 'La Paz', primaryCategoryId: gymCategoryId });
+    expect(patched.body.data.entity).toMatchObject({ name: `Top Fit Center ${suffix}`, city: 'La Paz', primaryCategoryId: gymCategoryId });
     expect(patched.body.data.nextSteps).toEqual(['CHOOSE_HANDLE', 'SUBMIT_KYC']);
     const auth = await e2e.as(token).get('/auth/me').expect(200);
-    expect(auth.body.data.nombreCompleto).toBe('Top Fit Center');
+    expect(auth.body.data.nombreCompleto).toBe(`Top Fit Center ${suffix}`);
   });
 
   it('POST /business/me/media: public logo under business/{entityId}/public/, the replaced one is released', async () => {
@@ -261,15 +263,70 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
     await e2e.as(rival.token).put('/business/me/handle').send({ handle }).expect(200);
   });
 
-  it('a PENDING reservation of a listing that stayed DRAFT expires after 14 days', async () => {
+  it('a PENDING reservation expires 14 days after the listing was created; re-claiming never extends it', async () => {
     const handle = `stale${suffix.slice(-6)}`;
+    const ageListing = (entityId: string, days: number) =>
+      e2e.sql(`UPDATE directory.entities SET created_at = now() - make_interval(days => :days) WHERE id = :entityId`, { entityId, days });
     const first = await business('stale-a');
     await e2e.as(first.token).put('/business/me/handle').send({ handle }).expect(200);
-    await e2e.sql(`UPDATE directory.handles SET updated_at = now() - interval '15 days' WHERE handle = :handle`, { handle });
+    // Day 13: re-claiming the same handle succeeds but moves no clock.
+    await ageListing(first.entityId, 13);
+    await e2e.as(first.token).put('/business/me/handle').send({ handle }).expect(200);
+    await ageListing(first.entityId, 15);
+    const again = await e2e.as(first.token).put('/business/me/handle').send({ handle });
+    expect(again.status).toBe(409);
+    expect(again.body.code).toBe('HANDLE_RESERVATION_EXPIRED');
+    expect((await e2e.as(first.token).get('/business/me').expect(200)).body.data.handle).toBeNull();
+    expect((await request(e2e.http).get(e2e.url(`/public/handles/${handle}/availability`))).body.data.available).toBe(true);
+
     const second = await business('stale-b');
     await e2e.as(second.token).put('/business/me/handle').send({ handle }).expect(200);
-    const me = await e2e.as(first.token).get('/business/me').expect(200);
-    expect(me.body.data.handle).toBeNull();
+    const rows = await select<{ owner_entity_id: string }>('SELECT owner_entity_id FROM directory.handles WHERE handle = :handle', { handle });
+    expect(rows).toEqual([{ owner_entity_id: second.entityId }]);
+  });
+
+  it('the business name is material: checked like a handle while DRAFT, a review once public', async () => {
+    const tag = suffix.slice(-6);
+    const owner = await business('name-a');
+    const patchName = (token: string, name: string) => e2e.as(token).patch('/business/me/profile').send({ name });
+    expect((await patchName(owner.token, 'Soporte REPP')).body.code).toBe('BUSINESS_NAME_RESERVED');
+    expect((await patchName(owner.token, 'Adm1n')).body.code).toBe('BUSINESS_NAME_RESERVED');
+    expect((await patchName(owner.token, `Top Fіt ${tag}`)).body.code).toBe('BUSINESS_NAME_INVALID'); // Cyrillic "і"
+    const brand = `acmebrand${tag}`;
+    await e2e.sql(`INSERT INTO directory.handles (handle, skeleton, status) VALUES (:brand, :skeleton, 'RESERVED')`, {
+      brand,
+      skeleton: handleSkeleton(brand),
+    });
+    const branded = await patchName(owner.token, `ACME Brand ${tag}`);
+    expect([branded.status, branded.body.code]).toEqual([422, 'BUSINESS_NAME_RESERVED']);
+    const reservedAtSignup = await signup('name-signup', { businessName: 'Repp Oficial' });
+    expect([reservedAtSignup.status, reservedAtSignup.body.code]).toEqual([422, 'BUSINESS_NAME_RESERVED']);
+
+    // A public GYM named like this blocks look-alikes of the same type, not of another type.
+    const known = await business('name-known');
+    await patchName(known.token, `Fuerza Norte ${tag}`).expect(200);
+    await publish(known.entityId, gymCategoryId);
+    const lookAlike = await patchName(owner.token, `FUERZA-N0RTE ${tag}`);
+    expect([lookAlike.status, lookAlike.body.code]).toEqual([422, 'BUSINESS_NAME_TOO_SIMILAR']);
+    const copied = await signup('name-copy', { businessName: `Fuerza Norte ${tag}` });
+    expect(copied.body.code).toBe('BUSINESS_NAME_TOO_SIMILAR');
+    expect((await signup('name-store', { businessName: `Fuerza Norte ${tag}`, entityType: 'STORE' })).status).toBe(201);
+    await patchName(owner.token, `Fuerza Sur ${tag}`).expect(200);
+
+    // Past DRAFT: the name and the category do not publish; other fields and unchanged values do.
+    const blocked = await patchName(known.token, `Nike ${tag}`);
+    expect([blocked.status, blocked.body.code]).toEqual([409, 'BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW']);
+    const [{ id: otherCategory }] = await select<{ id: string }>(
+      `INSERT INTO directory.categories (slug, path, name, entity_scope, display_order)
+       VALUES (:slug, :slug, 'E2E gym', 'GYM', 9999) RETURNING id`,
+      { slug: `e2e-gym-${suffix}` },
+    );
+    const recategorized = await e2e.as(known.token).patch('/business/me/profile').send({ primaryCategoryId: otherCategory });
+    expect(recategorized.body.code).toBe('BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW');
+    const kept = await e2e.as(known.token).patch('/business/me/profile')
+      .send({ name: `Fuerza Norte ${tag}`, primaryCategoryId: gymCategoryId, city: 'Sucre' })
+      .expect(200);
+    expect(kept.body.data.entity).toMatchObject({ name: `Fuerza Norte ${tag}`, primaryCategoryId: gymCategoryId, city: 'Sucre' });
   });
 
   it('a public handle resolves; a rename leaves a redirect, a lock and a limit', async () => {

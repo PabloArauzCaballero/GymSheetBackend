@@ -1,4 +1,4 @@
-import { addDays, handleSkeleton, normalizeHandle, parseHandle, rejectHandle, renameAllowed } from './handle-rules';
+import { addDays, handleSkeleton, normalizeHandle, parseHandle, pendingReservationOpen, rejectHandle, renameAllowed } from './handle-rules';
 
 describe('handle rules (ADR-0020)', () => {
   it('normalizes what a person types: trim, leading @, NFKC, lower case', () => {
@@ -63,5 +63,12 @@ describe('handle rules (ADR-0020)', () => {
     expect(renameAllowed([addDays(now, -31)], now)).toBe(true);
     expect(renameAllowed([addDays(now, -40), addDays(now, -100), addDays(now, -200)], now)).toBe(false);
     expect(renameAllowed([addDays(now, -40), addDays(now, -100), addDays(now, -400)], now)).toBe(true);
+  });
+
+  it('keeps a PENDING reservation open for 14 days from the listing creation, not from the last claim', () => {
+    const created = new Date('2026-11-01T12:00:00Z');
+    expect(pendingReservationOpen(created, addDays(created, 13))).toBe(true);
+    expect(pendingReservationOpen(created, addDays(created, 14))).toBe(false);
+    expect(pendingReservationOpen(created, addDays(created, 15))).toBe(false);
   });
 });

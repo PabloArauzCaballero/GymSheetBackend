@@ -75,17 +75,34 @@ una cuenta de otro tipo habría entrado a perfil, social y Conocer.
    `PENDING|ACTIVE|RESERVED` y, para lo que no cabe en el índice (retirados bloqueados, reservas
    vencidas), `pg_advisory_xact_lock` por skeleton. Reservadas en código (comparadas por skeleton,
    y `repp` en cualquier posición) más filas `RESERVED` de REPP. Mientras la ficha es `DRAFT` el
-   handle es una **reserva `PENDING`** (no pública, cambiable libremente; caduca a los 14 días sin
-   actividad). **Pasa a `ACTIVE` con la aprobación del KYC (8b)**: en 8a ningún handle ni ficha llega
+   handle es una **reserva `PENDING`** (no pública, cambiable libremente). La reserva vence a los
+   **14 días contados desde la creación de la ficha** (`directory.entities.created_at`): un inicio
+   fijo que ni volver a pedir el mismo handle ni cambiarlo por otro mueven, así que nadie acapara un
+   nombre sin terminar el KYC. Vencida, el handle queda libre para otro (se borra al reclamarlo) y la
+   ficha no reserva ninguno más mientras siga `DRAFT` (`409 HANDLE_RESERVATION_EXPIRED`); el envío del
+   KYC (8b) es el que la saca de `DRAFT`. **Pasa a `ACTIVE` con la aprobación del KYC (8b)**: en 8a ningún handle ni ficha llega
    a público y **no se añade** ningún atajo de activación. Renombre (solo ficha `ACTIVE`): 1 cada 30
    días y 3 por año (`429 HANDLE_RENAME_LIMIT`); el viejo queda `RETIRED` con redirección 90 días y
    bloqueado 180.
-10. **Medios del negocio** (logo y portada) en `business/{entityId}/public/…`: públicos (política
+10. **El nombre comercial y la categoría son materiales.** El nombre (en el alta y en
+    `PATCH /business/me/profile`) pasa por NFKC y las mismas comprobaciones que un handle: solo letras
+    latinas (`422 BUSINESS_NAME_INVALID`: una `і` cirílica esquivaría el skeleton), palabras reservadas
+    y `repp` en cualquier posición, filas `RESERVED` de REPP (`422 BUSINESS_NAME_RESERVED`) y mismo
+    skeleton que una ficha `ACTIVE` del mismo tipo (`422 BUSINESS_NAME_TOO_SIMILAR`). El skeleton del
+    nombre es `directory.business_name_skeleton` (`repp_normalize`, sin espacios, confundibles
+    plegados) con índice parcial sobre las fichas `ACTIVE`. Mientras la ficha es `DRAFT` nombre y
+    categoría cambian con esas comprobaciones; **pasado `DRAFT`, cambiar cualquiera de los dos responde
+    `409 BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW`** y nada se publica (reenviar el valor actual no es
+    un cambio). Lo que lo acepta es el versionado del KYC de la franja 8b (cambio material → versión
+    nueva en revisión, la vigente sigue publicada; plan §2.5), que también suma la similitud por
+    trigramas (≥ 0,8 → `IN_REVIEW`, plan §2.2): en 8a el skeleton rechaza en el acto y la revisión
+    humana no existe todavía.
+11. **Medios del negocio** (logo y portada) en `business/{entityId}/public/…`: públicos (política
     anónima de MinIO) y **borrables** como el contenido de una persona (ADR-0017): reemplazar o quitar
     encola el borrado en `media.release` cuando ninguna fila lo referencia (`directory.entities`
     `logo_url`/`cover_url` entran en el recuento). El bootstrap de MinIO concede borrar y listar
     versiones bajo `business/*/public/*`.
-11. **Directorio:** `POST /directory/entities` pasa a `SYSTEM_ADMIN` (semillas de REPP), sin
+12. **Directorio:** `POST /directory/entities` pasa a `SYSTEM_ADMIN` (semillas de REPP), sin
     `is_verified`, `tenant_id` ni dueño en el cuerpo (D1; cuerpo estricto). Se corrigen D2 (pinned:
     ya cerrado en 7a), D3, D4, D5, D7, D8 y D12 (ver el plan de auditoría).
 

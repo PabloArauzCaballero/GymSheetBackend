@@ -2275,6 +2275,7 @@ paths:
         "403": { $ref: "#/components/responses/Problem403" }
         "404": { description: "BUSINESS_SIGNUP_DISABLED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "409": { description: "EMAIL_ALREADY_REGISTERED | TERMS_VERSION_OUTDATED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "BUSINESS_NAME_INVALID | BUSINESS_NAME_RESERVED | BUSINESS_NAME_TOO_SIMILAR", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "429": { $ref: "#/components/responses/Problem429" }
   /business/me:
     get:
@@ -2291,7 +2292,7 @@ paths:
   /business/me/profile:
     patch:
       tags: [Business]
-      summary: Datos no materiales de la ficha (correo verificado)
+      summary: Datos de la ficha (correo verificado); nombre y categoría son materiales
       requestBody:
         required: true
         content:
@@ -2305,7 +2306,8 @@ paths:
               schema: { $ref: "#/components/schemas/BusinessMeEnvelope" }
         "400": { $ref: "#/components/responses/Problem400" }
         "403": { $ref: "#/components/responses/Problem403" }
-        "409": { $ref: "#/components/responses/Problem409" }
+        "409": { description: "BUSINESS_ACCOUNT_LOCKED | BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "BUSINESS_NAME_INVALID | BUSINESS_NAME_RESERVED | BUSINESS_NAME_TOO_SIMILAR", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
   /business/me/handle:
     put:
       tags: [Business]
@@ -2327,7 +2329,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/BusinessHandleEnvelope" }
         "403": { $ref: "#/components/responses/Problem403" }
-        "409": { description: "HANDLE_TAKEN | BUSINESS_ACCOUNT_LOCKED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "HANDLE_TAKEN | BUSINESS_ACCOUNT_LOCKED | HANDLE_RESERVATION_EXPIRED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "422": { description: "HANDLE_INVALID | HANDLE_RESERVED | HANDLE_TOO_SIMILAR", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "429": { description: "HANDLE_RENAME_LIMIT", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
   /business/me/media:

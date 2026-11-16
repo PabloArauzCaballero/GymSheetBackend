@@ -6,7 +6,11 @@
 export const HANDLE_MIN_LENGTH = 3;
 export const HANDLE_MAX_LENGTH = 30;
 
-/** A PENDING reservation of a listing that never went public expires after this. */
+/**
+ * A PENDING reservation of a listing that never went public expires this long
+ * after the listing was created. The start is fixed: re-claiming or switching
+ * handles never extends it, so a DRAFT cannot squat a handle without the KYC.
+ */
 export const PENDING_HANDLE_TTL_DAYS = 14;
 /** A retired handle redirects to the new one for this long… */
 export const RETIRED_REDIRECT_DAYS = 90;
@@ -58,10 +62,12 @@ const RESERVED_SKELETONS = new Set(RESERVED_HANDLE_WORDS.map(handleSkeleton));
 export function rejectHandle(handle: string): HandleRejection | null {
   if (handle.length < HANDLE_MIN_LENGTH || handle.length > HANDLE_MAX_LENGTH) return 'INVALID';
   if (!FORMAT.test(handle) || ONLY_DIGITS.test(handle)) return 'INVALID';
-  const skeleton = handleSkeleton(handle);
-  if (RESERVED_SKELETONS.has(skeleton)) return 'RESERVED';
-  if (PROTECTED_SUBSTRINGS.some((word) => skeleton.includes(handleSkeleton(word)))) return 'RESERVED';
-  return null;
+  return isReservedSkeleton(handleSkeleton(handle)) ? 'RESERVED' : null;
+}
+
+/** A reserved word, or anything containing the platform's own name. Shared by handles and business names. */
+export function isReservedSkeleton(skeleton: string): boolean {
+  return RESERVED_SKELETONS.has(skeleton) || PROTECTED_SUBSTRINGS.some((word) => skeleton.includes(handleSkeleton(word)));
 }
 
 /** Normalizes and validates in one step, for the edges that receive raw input. */
@@ -76,6 +82,11 @@ const DAY_MS = 86_400_000;
 
 export function addDays(from: Date, days: number): Date {
   return new Date(from.getTime() + days * DAY_MS);
+}
+
+/** Whether a DRAFT listing created at `listingCreatedAt` may still hold a PENDING reservation. */
+export function pendingReservationOpen(listingCreatedAt: Date, now: Date): boolean {
+  return listingCreatedAt > addDays(now, -PENDING_HANDLE_TTL_DAYS);
 }
 
 /**

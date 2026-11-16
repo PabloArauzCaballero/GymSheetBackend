@@ -3,6 +3,13 @@ import { normalizedEmailSchema } from '../auth/auth.schemas';
 import { entityTypeEnum } from '../directory/directory.schemas';
 import { signupAcceptanceSchema } from '../legal/legal.schemas';
 
+/** A commercial name in NFKC, so look-alike full-width or compatibility forms fold before any check. */
+const businessNameSchema = z
+  .string()
+  .max(720)
+  .transform((name) => name.normalize('NFKC').trim())
+  .pipe(z.string().min(2).max(180));
+
 export const legalKindEnum = z.enum(['COMPANY', 'INDIVIDUAL']);
 export type LegalKind = z.infer<typeof legalKindEnum>;
 
@@ -15,7 +22,7 @@ export type LegalKind = z.infer<typeof legalKindEnum>;
 export const businessSignupSchema = z.object({
   email: normalizedEmailSchema,
   password: z.string().min(8).max(128),
-  businessName: z.string().trim().min(2).max(180),
+  businessName: businessNameSchema,
   entityType: entityTypeEnum,
   /** Only SERVICE_PROVIDER chooses; the other types have a fixed one. */
   legalKind: legalKindEnum.optional(),
@@ -37,10 +44,14 @@ const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u, 'Hora en formato HH:
 const weekday = z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
 const contactKey = z.enum(['phone', 'whatsapp', 'email', 'website', 'instagram', 'facebook', 'tiktok']);
 
-/** Non-material profile fields: published as they are, no KYC review. */
+/**
+ * Profile fields. Most are non-material and published as they are; `name` and
+ * `primaryCategoryId` are material: free (with the name checks) while the
+ * listing is DRAFT, a KYC review once it is past DRAFT (ADR-0020).
+ */
 export const businessProfilePatchSchema = z
   .object({
-    name: z.string().trim().min(2).max(180),
+    name: businessNameSchema,
     headline: z.string().trim().max(255).nullable(),
     description: z.string().trim().max(5000),
     primaryCategoryId: z.string().uuid(),

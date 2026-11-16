@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { QueryTypes, Transaction } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
-import { PENDING_HANDLE_TTL_DAYS } from './handle-rules';
+import { PENDING_HANDLE_TTL_DAYS, addDays } from './handle-rules';
 
 export type HandleStatus = 'PENDING' | 'ACTIVE' | 'RETIRED' | 'RESERVED';
 
@@ -23,13 +23,15 @@ const COLUMNS = `h.handle, h.skeleton, h.owner_entity_id AS "ownerEntityId", h.s
 /**
  * Rows that still hold a skeleton: live handles, REPP reservations, retired
  * handles inside their lock, and PENDING reservations that have not expired.
- * A PENDING reservation expires when its listing stayed DRAFT for the TTL.
+ * A PENDING reservation expires when its listing is still DRAFT the TTL after
+ * the listing was created: a fixed start that no write to the handle moves.
  */
 const HOLDS_SKELETON = `(
   h.status IN ('ACTIVE', 'RESERVED')
   OR (h.status = 'RETIRED' AND h.locked_until > :now)
-  OR (h.status = 'PENDING' AND (h.updated_at > :pendingCutoff
-      OR EXISTS (SELECT 1 FROM directory.entities e WHERE e.id = h.owner_entity_id AND e.status <> 'DRAFT'))))`;
+  OR (h.status = 'PENDING' AND EXISTS (
+      SELECT 1 FROM directory.entities e
+       WHERE e.id = h.owner_entity_id AND (e.status <> 'DRAFT' OR e.created_at > :pendingCutoff))))`;
 
 @Injectable()
 export class HandlesRepository {
@@ -52,12 +54,12 @@ export class HandlesRepository {
     return row ?? null;
   }
 
-  /** The PENDING or ACTIVE handle of a listing. */
-  async findCurrent(entityId: string, transaction?: Transaction): Promise<HandleRow | null> {
+  /** The ACTIVE handle of a listing, or its PENDING reservation while it has not expired. */
+  async findCurrent(entityId: string, now: Date, transaction?: Transaction): Promise<HandleRow | null> {
     const [row] = await this.sequelize.query<HandleRow>(
       `SELECT ${COLUMNS} FROM directory.handles h
-        WHERE h.owner_entity_id = :entityId AND h.status IN ('PENDING', 'ACTIVE')`,
-      { replacements: { entityId }, type: QueryTypes.SELECT, transaction },
+        WHERE h.owner_entity_id = :entityId AND h.status IN ('PENDING', 'ACTIVE') AND ${HOLDS_SKELETON}`,
+      { replacements: { entityId, now, pendingCutoff: pendingCutoff(now) }, type: QueryTypes.SELECT, transaction },
     );
     return row ?? null;
   }
@@ -99,14 +101,6 @@ export class HandlesRepository {
 
   async deleteHandle(handle: string, transaction: Transaction): Promise<void> {
     await this.sequelize.query('DELETE FROM directory.handles WHERE handle = :handle', { replacements: { handle }, transaction });
-  }
-
-  /** Keeps a PENDING reservation alive: re-choosing the same handle restarts its TTL. */
-  async touch(handle: string, transaction: Transaction): Promise<void> {
-    await this.sequelize.query('UPDATE directory.handles SET updated_at = now() WHERE handle = :handle', {
-      replacements: { handle },
-      transaction,
-    });
   }
 
   /** The old public handle redirects to the new one and stays locked for everyone else. */
@@ -167,5 +161,5 @@ export class HandlesRepository {
 }
 
 function pendingCutoff(now: Date): Date {
-  return new Date(now.getTime() - PENDING_HANDLE_TTL_DAYS * 86_400_000);
+  return addDays(now, -PENDING_HANDLE_TTL_DAYS);
 }

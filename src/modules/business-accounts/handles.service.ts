@@ -6,11 +6,13 @@ import { DirectoryService } from '../directory/directory.service';
 import { DirectoryEntityModel } from '../directory/directory-entity.model';
 import {
   HandleRejection,
+  PENDING_HANDLE_TTL_DAYS,
   RETIRED_LOCK_DAYS,
   RETIRED_REDIRECT_DAYS,
   addDays,
   normalizeHandle,
   parseHandle,
+  pendingReservationOpen,
   renameAllowed,
 } from './handle-rules';
 import { HandleRow, HandlesRepository } from './handles.repository';
@@ -68,15 +70,17 @@ export class HandlesService {
     return { handle: parsed.handle, available: reason === null, reason };
   }
 
-  async current(entityId: string): Promise<CurrentHandle | null> {
-    const row = await this.repository.findCurrent(entityId);
+  async current(entityId: string, now = new Date()): Promise<CurrentHandle | null> {
+    const row = await this.repository.findCurrent(entityId, now);
     return row ? { handle: row.handle, status: row.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING' } : null;
   }
 
   /**
    * Claims `input` for a listing already locked by the caller (`entity` read
-   * FOR UPDATE in `transaction`). DRAFT: replaces the PENDING reservation.
-   * ACTIVE: a public rename, within the limits, retiring the old handle.
+   * FOR UPDATE in `transaction`). DRAFT: replaces the PENDING reservation,
+   * only while the listing's reservation window is open; re-claiming the same
+   * handle changes nothing, so it never extends the window. ACTIVE: a public
+   * rename, within the limits, retiring the old handle.
    */
   async claim(
     entity: DirectoryEntityModel,
@@ -91,14 +95,19 @@ export class HandlesService {
     if (entity.status !== 'DRAFT' && entity.status !== 'ACTIVE') {
       throw new DomainException(HttpStatus.CONFLICT, 'BUSINESS_ACCOUNT_LOCKED', 'Tu negocio no puede cambiar de nombre en este estado.');
     }
+    // The KYC (franja 8b) takes the listing out of DRAFT; until then the window does not reopen.
+    if (entity.status === 'DRAFT' && !pendingReservationOpen(entity.createdAt, now)) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        'HANDLE_RESERVATION_EXPIRED',
+        `Tu reserva de nombre venció: pasaron ${PENDING_HANDLE_TTL_DAYS} días desde el alta sin verificar tu negocio.`,
+      );
+    }
 
     await this.repository.lockSkeleton(skeleton, transaction);
     await this.repository.deleteExpired(skeleton, entity.id, now, transaction);
-    const current = await this.repository.findCurrent(entity.id, transaction);
-    if (current?.handle === handle) {
-      if (current.status === 'PENDING') await this.repository.touch(handle, transaction);
-      return { handle, status: current.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING' };
-    }
+    const current = await this.repository.findCurrent(entity.id, now, transaction);
+    if (current?.handle === handle) return { handle, status: current.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING' };
     const blocked = holderReason(handle, await this.repository.findHolders(skeleton, entity.id, now, transaction));
     if (blocked) throw holderError(blocked);
 

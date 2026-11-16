@@ -19,6 +19,7 @@ import { UsersRepository } from '../users/users.repository';
 import { BusinessSummaryDto, mapBusinessSummary } from './business-accounts.mapper';
 import { BusinessAccountsRepository } from './business-accounts.repository';
 import { BusinessSignupInput, LegalKind } from './business-accounts.schemas';
+import { assertBusinessNameAllowed } from './business-name';
 
 const FIXED_LEGAL_KIND: Partial<Record<DirectoryEntityType, LegalKind>> = {
   GYM: 'COMPANY',
@@ -109,6 +110,7 @@ export class BusinessSignupService {
       throw new DomainException(HttpStatus.BAD_REQUEST, 'SIGNUP_REJECTED', 'No pudimos crear tu cuenta. Inténtalo de nuevo.');
     }
     if (await this.users.findByEmail(input.email)) throw emailTaken();
+    await assertBusinessNameAllowed(this.accounts, input.businessName, input.entityType, null);
 
     const passwordHash = await bcrypt.hash(input.password, env.BCRYPT_SALT_ROUNDS);
     try {
