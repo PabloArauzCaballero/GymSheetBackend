@@ -235,6 +235,7 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
         currentPrice: '45.00',
         currency: 'USD',
         status: 'ACTIVE',
+        entity: { id: 'entity-1', status: 'ACTIVE' },
       };
       mockRepo.findPlanById.mockResolvedValue(plan);
       mockRepo.findCurrentPriceHistory.mockResolvedValue({ id: 'price-hist-active', price: '45.00' });
@@ -243,6 +244,7 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
         bankName: 'Banco Santander',
         accountNumber: '123456789',
         qrImageUrl: 'https://gym.com/qr.png',
+        taxId: '1029384756',
         isActive: true,
       });
 
@@ -269,6 +271,21 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
         durationDays: 30,
       });
       expect(paymentConfig?.bankName).toBe('Banco Santander');
+      // D5: the buyer gets what pays, never the seller's tax id nor the ORM row.
+      expect(paymentConfig).not.toHaveProperty('taxId');
+      expect(paymentConfig).not.toHaveProperty('id');
+    });
+
+    it('D7: a plan of a seller that is not public cannot be bought (404)', async () => {
+      mockRepo.findPlanById.mockResolvedValue({ id: 'plan-1', status: 'ACTIVE', entity: { id: 'entity-1', status: 'SUSPENDED' } });
+      await expect(service.createPaymentOrder(mockAthleteUser, { planId: 'plan-1' })).rejects.toThrow(NotFoundException);
+      await expect(service.getPublicPlan('plan-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('D4/D5: public reads of a listing that is not ACTIVE answer 404', async () => {
+      mockRepo.findEntityById.mockResolvedValue({ id: 'entity-1', status: 'DRAFT' });
+      await expect(service.getPaymentConfig('entity-1')).rejects.toThrow(NotFoundException);
+      await expect(service.listPublicPlans('entity-1')).rejects.toThrow(NotFoundException);
     });
 
     it('permite al atleta subir el comprobante cambiando el estado a PENDING_VERIFICATION', async () => {

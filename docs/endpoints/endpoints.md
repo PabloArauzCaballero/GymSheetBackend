@@ -52,6 +52,10 @@ The API does not return stack traces or raw infrastructure errors to clients. Un
   `admin/directory`, which the listing's owner or a `SYSTEM_ADMIN` manages (anyone else: `404`).
   Legacy gym roles (`ADMIN`, `FRONT_DESK`, `COACH`, `ENTRENADOR_EXTERNO`) get `403` on every
   `admin/*` route, whatever permission grants they hold.
+- Account kinds (ADR-0020): a business account (`rol = NEGOCIO`, `accountKind = BUSINESS`) only
+  reaches `auth/*` (not the socket ticket), `legal/*`, `me/legal/*`, `me/devices/*`, `health/*`,
+  `business/*`, `public/*` and its notifications; anything else answers
+  `403 ACCOUNT_KIND_NOT_ALLOWED`. A person gets the same `403` on `business/*`.
 - Personal exercises, media, sessions, and sets enforce object ownership.
 - Legacy Spanish v1 fields remain at the HTTP boundary; internal identifiers are English.
 - Access tokens require the expected signature, expiration, issuer, audience, and algorithm.
@@ -79,7 +83,7 @@ Liveness remains independent of PostgreSQL to avoid restart loops during tempora
 | POST   | `/auth/logout`                 | public        | Revoke a refresh token (idempotent)                            |
 | POST   | `/auth/password-reset/request` | public        | Issue a 6-digit reset PIN by email (`202`, always)             |
 | POST   | `/auth/password-reset/confirm` | public        | Redeem `{ email, pin, password }` for a new password           |
-| GET    | `/auth/me`                     | authenticated | Return the revalidated request principal                       |
+| GET    | `/auth/me`                     | authenticated | Return the revalidated request principal (`accountKind`, `businessEntityId`) |
 
 `register` and `login` use a tighter configurable rate limit than normal API routes. Login failures use a uniform message to reduce account enumeration.
 
@@ -95,11 +99,13 @@ Suspension, expulsion, the provisional suspension of a minor report, the end of 
 
 | Method | Route               | Access        | Purpose                                                                  |
 | ------ | ------------------- | ------------- | ------------------------------------------------------------------------ |
-| GET    | `/legal/current`    | public        | `{ documents: [{ document, version, contentSha256 }], consents: [{ kind, version }] }` (cacheable 5 min) |
+| GET    | `/legal/current`    | public        | `?accountKind=PERSON\|BUSINESS` (default `PERSON`) → `{ documents: [{ document, version, contentSha256 }], consents: [{ kind, version }] }` (cacheable 5 min) |
 | GET    | `/me/legal/pending` | authenticated | `{ pending: [{ document, version }] }` not yet accepted by the caller    |
 | POST   | `/me/legal/accept`  | authenticated | `{ acceptances: [{ document, version }] }`; current versions only, idempotent |
 
 A global guard answers `428 LEGAL_ACCEPTANCE_REQUIRED` to authenticated requests from an account missing any current document, except `auth/*`, `legal/*`, `me/legal/*`, `health/*`, `@Public()` and `@SkipLegalAcceptance()` routes. It costs one indexed `NOT EXISTS` query per authenticated request. The optional `X-Client-Platform` header (`web`|`ios`|`android`) is stored as the acceptance channel; the IP is stored only as an HMAC (`IP_HASH_SECRET`).
+
+Each kind of account answers for its own set (ADR-0020): a person `TERMS`, `PRIVACY`, `COMMUNITY`; a business `BUSINESS_TERMS`, `BUSINESS_DPA`, `PRIVACY`. Accepting a document of the other set is `422 LEGAL_DOCUMENT_NOT_APPLICABLE`; the 428 carries `details.accountKind`. The business texts are drafts in `docs/legal/negocios/` (their hash is recomputed by a unit test).
 
 `contentSha256` is the SHA-256 of the exact published text (`yarn legal:hash <file>` at publish time; `null` for texts published before hashing). Each acceptance stores it in `auth.terms_acceptances.content_sha256`.
 
@@ -440,6 +446,45 @@ retention, leaves the queue, and its selfie is erased through `media.release`. T
 in-app notice (`metadata.outcome = REVIEW_EXPIRED`, dedup `verification.review-expired:<id>`),
 `GET /me/verification` reports `status: EXPIRED`, and a new `POST /me/verification/challenge` is
 allowed. The decision notices name «el equipo de REPP», never the gym.
+
+## Business accounts (ADR-0020, franja 8a)
+
+Session responses (`register`, `login`, `refresh`, `business/signup`) carry `user.accountKind`
+(`PERSON`|`BUSINESS`). Errors are `application/problem+json` with a stable `code`.
+
+| Method | Route | Access | Body → response | Codes |
+| ------ | ----- | ------ | --------------- | ----- |
+| POST | `/business/signup` | public, auth rate limit, `BUSINESS_SIGNUP_ENABLED` | `{ email, password (8–128), businessName (2–180), entityType: GYM\|COACH\|CENTER\|STORE\|SERVICE_PROVIDER, legalKind?: COMPANY\|INDIVIDUAL (only SERVICE_PROVIDER, required there), acceptances: [{ document, version, contentSha256? }] (the whole set of `/legal/current?accountKind=BUSINESS`), ticket, website?, turnstileToken?, attestation? }` → session `{ accessToken, refreshToken, tokenType, user: { id, email, nombreCompleto, rol: NEGOCIO, tenantId, emailVerified: false, accountKind: BUSINESS }, business: { entityId, entityType, legalKind, status: ONBOARDING, kycStatus: DRAFT } }`; a 6-digit PIN is emailed | `201`; `400` (Zod, `SIGNUP_REJECTED`, `BUSINESS_LEGAL_KIND_INVALID`); `403 ACCOUNT_SUSPENDED` (inherited sanction); `404 BUSINESS_SIGNUP_DISABLED`; `409 EMAIL_ALREADY_REGISTERED`, `409 TERMS_VERSION_OUTDATED` (`details.documents`); `429` |
+| GET | `/business/me` | `NEGOCIO` | `{ account: { userId, email, emailVerified, accountKind, entityId, entityType, legalKind, status, kycStatus, createdAt }, entity: { id, slug, entityType, status, isVerified, name, headline, description, primaryCategoryId, city, country, address, isOnlineOnly, logoUrl, coverUrl, contactInfo, businessHours }, handle: { handle, status: PENDING\|ACTIVE } \| null, nextSteps: [VERIFY_EMAIL, CHOOSE_HANDLE, COMPLETE_PROFILE, SUBMIT_KYC] }` | `200`, `403`, `428` |
+| PATCH | `/business/me/profile` | `NEGOCIO`, verified email | any of `{ name, headline\|null, description (≤5000), primaryCategoryId (active, scope = type or ALL), city, country, address\|null, isOnlineOnly, contactInfo: { phone\|whatsapp\|email\|website\|instagram\|facebook\|tiktok: string }, businessHours: { mon..sun: { open: HH:MM, close: HH:MM } } }` (unknown keys → `400`) → same as `GET /business/me`; `name` also renames the account | `200`, `400`, `403 EMAIL_VERIFICATION_REQUIRED`, `409 BUSINESS_ACCOUNT_LOCKED` |
+| PUT | `/business/me/handle` | `NEGOCIO`, verified email | `{ handle }` (a leading `@`, spaces and case are normalized) → `{ handle, status: PENDING\|ACTIVE }` | `200`; `409 HANDLE_TAKEN`, `409 BUSINESS_ACCOUNT_LOCKED`; `422 HANDLE_INVALID\|HANDLE_RESERVED\|HANDLE_TOO_SIMILAR`; `429 HANDLE_RENAME_LIMIT` |
+| POST | `/business/me/media` | `NEGOCIO`, verified email | multipart `file` (JPEG/PNG, ≤ `MEDIA_UPLOAD_MAX_BYTES`, bytes must match) + `slot: LOGO\|COVER` → `{ slot, url }` (public, `business/{entityId}/public/…`); the replaced file is released (ADR-0017) | `201`, `400`, `413` |
+| DELETE | `/business/me/media/:slot` | `NEGOCIO` | removes the logo or cover | `204`, `400` |
+| GET | `/public/handles/:handle` | public | `{ handle, entity: <public directory detail> }` for an ACTIVE handle of an ACTIVE listing; `{ redirectTo }` for a handle retired less than 90 days ago | `200`, `404` |
+| GET | `/public/handles/:handle/availability` | public, `HANDLE_AVAILABILITY_RATE_LIMIT_MAX` | `{ handle (normalized \| null), available, reason: null\|TAKEN\|RESERVED\|INVALID\|TOO_SIMILAR }` | `200`, `429` |
+
+Handle rules: 3–30 of `[a-z0-9._]`, starting and ending alphanumeric, no double separators, not only
+digits; plain ASCII after NFKC. Look-alikes collide (`.`/`_` dropped, `0→o 1→l i→l 5→s 3→e`).
+Reserved words (and `repp` anywhere) are refused. While the listing is `DRAFT` the handle is a
+**PENDING reservation**: not public, freely replaceable, expired after 14 days without activity. It
+becomes `ACTIVE` when the KYC approves the listing (franja 8b; until then no business listing is
+public). A public rename: at most one every 30 days and three per year; the old handle redirects
+for 90 days and is locked for 180.
+
+Email verification uses the person routes (`POST /auth/email/verify/request|confirm`).
+
+## Directory (franja 8a fixes)
+
+| Method | Route | Access | Notes |
+| ------ | ----- | ------ | ----- |
+| POST | `/directory/entities` | `SYSTEM_ADMIN` | REPP seeds a listing it owns; strict body without `is_verified`, `tenant_id` or `user_id` (`400`). Anyone else: `403` |
+| GET | `/public/directory/entities/:entityId/payment-config` | public | `{ bankName, accountHolderName, accountNumber, aliasOrPhone, qrImageUrl, qrPayload, instructions, isActive } \| null` (no `taxId`, ids or dates; `null` when inactive); `404` when the listing is not `ACTIVE` |
+| GET | `/public/directory/plans`, `/public/directory/entities/:entityId/plans`, `/public/directory/plans/:planId` | public | mapped (`metadata: {}`, seller as a summary); only active plans of `ACTIVE` listings (`404` otherwise) |
+| POST | `/directory/payments/orders` | authenticated | `404` for a plan of a listing that is not `ACTIVE`; `paymentConfig` comes mapped like the public one |
+| PATCH/DELETE | `/directory/reviews/:id` | author (delete: also `SYSTEM_ADMIN`) | someone else's review: `404` |
+| POST | `/directory/entities/:id/reviews` | authenticated | `404` when the listing is not `ACTIVE` |
+
+New plans default to `BOB`.
 
 ## Main status codes
 

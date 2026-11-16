@@ -4,7 +4,7 @@ import { Transaction } from "sequelize";
 import { DomainException } from "../../common/errors/domain.exception";
 import { LegalClientContext, legalClientContext } from "./legal-client-context";
 import { CONSENT_VERSIONS } from "./consent-versions";
-import { LEGAL_DOCUMENTS, LEGAL_DOCUMENT_CONTENT_SHA256 } from "./legal-documents";
+import { LEGAL_DOCUMENTS, LEGAL_DOCUMENT_CONTENT_SHA256, currentLegalDocuments } from "./legal-documents";
 import { LegalRepository } from "./legal.repository";
 import { LegalService } from "./legal.service";
 
@@ -141,5 +141,63 @@ describe("legalClientContext", () => {
 
   it("truncates the user agent to 400 characters", () => {
     expect(legalClientContext(request({ "user-agent": "a".repeat(500) }), undefined).userAgent).toHaveLength(400);
+  });
+});
+
+describe("LegalService per account kind (ADR-0020)", () => {
+  const business = () => [
+    { document: "BUSINESS_TERMS", version: LEGAL_DOCUMENTS.BUSINESS_TERMS, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.BUSINESS_TERMS },
+    { document: "BUSINESS_DPA", version: LEGAL_DOCUMENTS.BUSINESS_DPA, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.BUSINESS_DPA },
+    { document: "PRIVACY", version: LEGAL_DOCUMENTS.PRIVACY, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.PRIVACY },
+  ];
+
+  it("a person's set has no business document and a business's set has no person terms", () => {
+    const { service } = createService();
+    expect(service.currentDocuments().documents).toEqual(current());
+    expect(service.currentDocuments("BUSINESS").documents).toEqual(business());
+  });
+
+  it("asks a business only for its own set", async () => {
+    const { service, repository } = createService();
+    await service.hasPending(userId, "BUSINESS");
+    expect(repository.findPending).toHaveBeenCalledWith(userId, business());
+  });
+
+  it("records the business set at a business signup", async () => {
+    const { service, repository } = createService();
+    await service.recordSignupAcceptances(userId, context, transaction, "BUSINESS");
+    expect(repository.insertAcceptances).toHaveBeenCalledWith(userId, business(), context, transaction);
+  });
+
+  it("a business signup must show every document of its set, current, with the right hash if sent", () => {
+    const { service } = createService();
+    const all = currentLegalDocuments("BUSINESS").map(({ document, version, contentSha256 }) => ({
+      document,
+      version,
+      contentSha256: contentSha256 ?? undefined,
+    }));
+    expect(() => service.assertCurrentAcceptances("BUSINESS", all)).not.toThrow();
+    expectDomainError(() => service.assertCurrentAcceptances("BUSINESS", all.slice(0, 2)), HttpStatus.CONFLICT, "TERMS_VERSION_OUTDATED");
+    expectDomainError(
+      () => service.assertCurrentAcceptances("BUSINESS", [{ ...all[0], version: "2000-01-01" }, ...all.slice(1)]),
+      HttpStatus.CONFLICT,
+      "TERMS_VERSION_OUTDATED",
+    );
+    expectDomainError(
+      () => service.assertCurrentAcceptances("BUSINESS", [{ ...all[0], contentSha256: "0".repeat(64) }, ...all.slice(1)]),
+      HttpStatus.CONFLICT,
+      "TERMS_VERSION_OUTDATED",
+    );
+  });
+
+  it("refuses to record a document of the other kind of account", async () => {
+    const { service, repository } = createService();
+    await expect(
+      service.accept(userId, { acceptances: [{ document: "TERMS", version: LEGAL_DOCUMENTS.TERMS }] }, context, "BUSINESS"),
+    ).rejects.toMatchObject({ code: "LEGAL_DOCUMENT_NOT_APPLICABLE" });
+    await expect(
+      service.accept(userId, { acceptances: [{ document: "BUSINESS_DPA", version: LEGAL_DOCUMENTS.BUSINESS_DPA }] }, context),
+    ).rejects.toMatchObject({ code: "LEGAL_DOCUMENT_NOT_APPLICABLE" });
+    expect(repository.insertAcceptances).not.toHaveBeenCalled();
   });
 });

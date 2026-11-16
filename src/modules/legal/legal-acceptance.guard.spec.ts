@@ -36,14 +36,14 @@ describe("LegalAcceptanceGuard", () => {
     await guard.canActivate(context).catch((error: DomainException) =>
       expect(error.getStatus()).toBe(HttpStatus.PRECONDITION_REQUIRED),
     );
-    expect(hasPending).toHaveBeenCalledWith(user.id);
+    expect(hasPending).toHaveBeenCalledWith(user.id, "PERSON");
   });
 
   it("blocks the socket ticket of an account with pending documents", async () => {
     const { context, reflector } = contextFor("/api/v1/auth/socket-ticket");
     const { guard, hasPending } = guardWith(reflector, true);
     await expect(guard.canActivate(context)).rejects.toMatchObject({ code: "LEGAL_ACCEPTANCE_REQUIRED" });
-    expect(hasPending).toHaveBeenCalledWith(user.id);
+    expect(hasPending).toHaveBeenCalledWith(user.id, "PERSON");
   });
 
   it("lets an account that accepted everything through with a single check", async () => {

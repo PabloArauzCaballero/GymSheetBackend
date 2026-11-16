@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Transaction } from 'sequelize';
+import { QueryTypes, Transaction } from 'sequelize';
 import { FacilityStatus, UserGender, UserRole, UserStatus } from '../../common/enums/domain.enums';
 import { BranchModel } from '../facilities/branch.model';
 import { UserModel } from './user.model';
@@ -65,6 +65,16 @@ export class UsersRepository {
     return this.userModel.findOne({ where: { id: userId, status: UserStatus.ACTIVE }, transaction });
   }
 
+  /** The listing a business account owns, or null (ADR-0020). One primary-key probe. */
+  async findBusinessEntityId(userId: string, transaction?: Transaction): Promise<string | null> {
+    if (!this.userModel.sequelize) throw new Error("User database connection is unavailable.");
+    const [row] = await this.userModel.sequelize.query<{ entity_id: string }>(
+      "SELECT entity_id FROM business.accounts WHERE user_id = :userId",
+      { replacements: { userId }, type: QueryTypes.SELECT, transaction },
+    );
+    return row?.entity_id ?? null;
+  }
+
   findByEmail(emailAddress: string, transaction?: Transaction): Promise<UserModel | null> {
     return this.userModel.findOne({ where: { email: emailAddress.toLowerCase() }, transaction });
   }
@@ -85,6 +95,24 @@ export class UsersRepository {
       termsVersion: input.termsVersion ?? null,
       emailVerifiedAt: input.emailVerifiedAt ?? null,
       signupRisk: input.signupRisk ?? null,
+    }, { transaction });
+  }
+
+  /**
+   * A business account (ADR-0020): role NEGOCIO and no person data — the
+   * database refuses a birth date or sex on it (ck_usuarios_business_no_person_data).
+   */
+  createBusiness(
+    input: { email: string; passwordHash: string; fullName: string; tenantId: string; signupRisk: 'LOW' | 'MEDIUM' | 'HIGH' },
+    transaction: Transaction,
+  ): Promise<UserModel> {
+    return this.userModel.create({
+      email: input.email.toLowerCase(),
+      passwordHash: input.passwordHash,
+      fullName: input.fullName,
+      role: UserRole.BUSINESS,
+      tenantId: input.tenantId,
+      signupRisk: input.signupRisk,
     }, { transaction });
   }
 

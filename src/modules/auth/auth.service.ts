@@ -12,7 +12,7 @@ import { Sequelize } from 'sequelize-typescript';
 import { UniqueConstraintError } from 'sequelize';
 import { RefreshTokenRevokedReason, UserRole, UserStatus } from '../../common/enums/domain.enums';
 import { DomainException } from '../../common/errors/domain.exception';
-import { AuthenticatedUser, JwtPayload } from '../../common/types/auth-context.types';
+import { AuthenticatedUser, JwtPayload, accountKindOf } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
 import { SignupProtectionService } from '../antibot/signup-protection.service';
 import { bannedAccountError, suspendedAccountError } from '../../common/moderation/account-suspension';
@@ -340,6 +340,8 @@ export class AuthService {
       nombreCompleto: account?.fullName ?? '',
       emailVerified: Boolean(account?.emailVerifiedAt),
       verified: Boolean(account?.verifiedAt),
+      accountKind: accountKindOf(principal.role),
+      businessEntityId: principal.businessEntityId ?? null,
     };
   }
 }

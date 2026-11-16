@@ -7,6 +7,7 @@ import { Transaction } from "sequelize";
 import {
   ConnectionStatus,
   NotificationChannel,
+  UserRole,
 } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
 import type { ChatRepository } from "../chat/chat.repository";
@@ -61,7 +62,8 @@ export class SocialMatchFlow {
       throw new NotFoundException("Usuario no encontrado.");
     }
     const target = await usersRepository.findActiveById(targetId, transaction);
-    if (!target) throw new NotFoundException("Usuario no encontrado.");
+    // A business account is not a person one connects with (ADR-0020).
+    if (!target || target.role === UserRole.BUSINESS) throw new NotFoundException("Usuario no encontrado.");
     if (
       (target.tenantId ?? env.DEFAULT_TENANT_ID) !== actorTenantId &&
       !(await repository.canInteractAcrossTenants(actorId, targetId, transaction))

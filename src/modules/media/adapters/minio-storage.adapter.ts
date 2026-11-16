@@ -2,7 +2,7 @@ import { Logger } from "@nestjs/common";
 import { createHash } from "crypto";
 import { Client } from "minio";
 import {
-  isUserContentKey,
+  isDeletableContentKey,
   MediaStorageProvider,
   MediaUploadInput,
   MediaUploadTarget,
@@ -126,7 +126,7 @@ export class MinioStorageAdapter implements MediaStorageProvider {
   }
 
   canRemove(key: string): boolean {
-    return this.userContentDeletable && isUserContentKey(key);
+    return this.userContentDeletable && isDeletableContentKey(key);
   }
 
   /**
@@ -143,7 +143,7 @@ export class MinioStorageAdapter implements MediaStorageProvider {
       this.logger.log({
         event: "media.remove.immutable_key",
         provider: this.name,
-        reason: isUserContentKey(key) ? "user_content_not_deletable" : "catalog_key",
+        reason: isDeletableContentKey(key) ? "user_content_not_deletable" : "catalog_key",
         key,
       });
       return;

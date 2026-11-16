@@ -26,6 +26,8 @@ tags: [backend, reference, config]
 | `REQUEST_BODY_LIMIT` | Límite de tamaño de body | No | `1mb` |
 | `LOG_LEVEL` | Nivel de logs | No | `info` |
 | `BUSINESS_TIME_ZONE` | Zona horaria de negocio | No | `America/Guayaquil` |
+| `BUSINESS_SIGNUP_ENABLED` | Abre `POST /business/signup` (ADR-0020). Cerrada: `404 BUSINESS_SIGNUP_DISABLED`. En producción sigue cerrada mientras los textos legales de negocios sean borradores (`BUSINESS_LEGAL_TEXTS_ARE_DRAFTS`) | No (`false`) | `false` |
+| `HANDLE_AVAILABILITY_RATE_LIMIT_MAX` | Peticiones por cliente a `GET /public/handles/:handle/availability` por ventana `RATE_LIMIT_TTL_SECONDS` | No (`30`) | `30` |
 
 ## Base de datos (PostgreSQL)
 
@@ -125,7 +127,7 @@ porque ese despliegue arranca con `NODE_ENV=development` y la validación de pro
 | `MEDIA_STORAGE_PROVIDER` | `local` (disco) o `minio` (ADR-0010, ADR-0017) | `local` | No |
 | `MEDIA_STORAGE_LOCAL_ROOT` `MEDIA_STORAGE_PUBLIC_BASE_URL` | Raíz en disco y URL pública del media | `storage/media`, `http://localhost:3000/media` | No |
 | `MINIO_ENDPOINT` `MINIO_ACCESS_KEY` `MINIO_SECRET_KEY` `MINIO_BUCKET` | Conexión a MinIO (host interno, no la URL pública) | vacío, `gymsheet-media` | Si `minio` (**secreto** la clave) |
-| `MEDIA_USER_CONTENT_DELETABLE` | `true`: el usuario MinIO de la API puede borrar todas las versiones bajo `users/*` (política en ADR-0017). `false`: el contenido de las personas se conserva y ningún texto puede prometer su borrado. Sólo `true`/`false`; el disco local siempre borra | vacío = `true` | **Sí en producción con `minio`** |
+| `MEDIA_USER_CONTENT_DELETABLE` | `true`: el usuario MinIO de la API puede borrar todas las versiones bajo `users/*` y `business/*/public/*` (política en ADR-0017 y ADR-0020). `false`: el contenido de las personas se conserva y ningún texto puede prometer su borrado. Sólo `true`/`false`; el disco local siempre borra | vacío = `true` | **Sí en producción con `minio`** |
 
 ## Notificaciones (gateway externo)
 

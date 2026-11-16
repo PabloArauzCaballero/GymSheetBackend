@@ -16,6 +16,7 @@ const payload: JwtPayload = {
 function strategyFor(account: Record<string, unknown> | null): JwtStrategy {
   const usersRepository = {
     findActiveById: jest.fn().mockResolvedValue(account),
+    findBusinessEntityId: jest.fn().mockResolvedValue('00000000-0000-4000-8000-0000000000e1'),
   } as unknown as UsersRepository;
   const sanctionStatus = {
     suspensionReason: jest.fn().mockResolvedValue({ code: 'SPAM', label: 'Spam', text: 'publicidad' }),
@@ -59,6 +60,17 @@ describe('JwtStrategy', () => {
       impersonating: false,
       emailVerified: false,
       deviceId: null,
+      accountKind: 'PERSON',
+      businessEntityId: null,
+    });
+  });
+
+  it('marks a business account and resolves the listing it owns (ADR-0020)', async () => {
+    const strategy = strategyFor({ id: payload.sub, email: payload.email, role: UserRole.BUSINESS, tenantId: 'default' });
+    await expect(strategy.validate({ ...payload, role: UserRole.BUSINESS })).resolves.toMatchObject({
+      role: UserRole.BUSINESS,
+      accountKind: 'BUSINESS',
+      businessEntityId: '00000000-0000-4000-8000-0000000000e1',
     });
   });
 

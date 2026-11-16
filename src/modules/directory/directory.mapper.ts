@@ -124,7 +124,7 @@ export function mapDirectoryEntitySummary(entity: DirectoryEntityModel): Directo
     logoUrl: resolveMediaUrl(entity.logoUrl),
     coverUrl: resolveMediaUrl(entity.coverUrl),
     primaryCategory: {
-      id: entity.primaryCategory?.id ?? entity.primaryCategoryId,
+      id: entity.primaryCategory?.id ?? entity.primaryCategoryId ?? '',
       name: entity.primaryCategory?.name ?? '',
       slug: entity.primaryCategory?.slug ?? '',
       path: entity.primaryCategory?.path ?? '',

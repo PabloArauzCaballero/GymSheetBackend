@@ -28,6 +28,7 @@ import { Sequelize } from "sequelize-typescript";
  * | `media.files`            | `storage_url`                     | URL        |
  * | `training.exercise_media`| `url`, `thumbnail_url`            | URL        |
  * | `facilities.branches`    | `cover_image_url`, `gallery_image_urls` | URL  |
+ * | `directory.entities`     | `logo_url`, `cover_url`           | URL        |
  *
  * Las tablas que solo guardan la URL pública (no la clave) se comparan por
  * sufijo exacto `"/<clave>"` con `right()`, nunca con `LIKE`: la clave viaja
@@ -100,6 +101,10 @@ export class MediaReferencesRepository {
                          SELECT 1 FROM unnest(gallery_image_urls) AS gallery(image_url)
                           WHERE right(gallery.image_url, :suffixLength) = :urlSuffix
                        )
+                 UNION ALL
+                SELECT 1 FROM directory.entities
+                 WHERE (logo_url IS NOT NULL AND right(logo_url, :suffixLength) = :urlSuffix)
+                    OR (cover_url IS NOT NULL AND right(cover_url, :suffixLength) = :urlSuffix)
               ) AS referenced`,
       {
         type: QueryTypes.SELECT,

@@ -6,6 +6,7 @@ export const MINIO_PUBLIC_OBJECT_PATTERNS: readonly string[] = [
   "users/*/ejercicios/*",
   "catalog/*",
   "ejercicios/*",
+  "business/*/public/*",
 ];
 
 /** S3 resource wildcards span '/', unlike filesystem path globs. */

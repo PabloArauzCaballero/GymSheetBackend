@@ -1,3 +1,4 @@
+import { personAccountSql } from "../../common/sql/person-accounts";
 import { Injectable, Optional } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
 import { Op, QueryTypes, Transaction } from "sequelize";
@@ -1290,6 +1291,7 @@ export class SocialRepository {
              WHERE (block.blocker_id = :viewerId AND block.blocked_id = u.id)
                 OR (block.blocker_id = u.id AND block.blocked_id = :viewerId))
           AND u.estado = 'ACTIVO'
+          AND ${personAccountSql("u")}
           AND (u.suspended_until IS NULL OR u.suspended_until <= NOW())
           AND (
             COALESCE(u.tenant_id, :defaultTenantId) = :tenantId

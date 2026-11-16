@@ -9,6 +9,8 @@ import {
   Post,
 } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../../common/enums/domain.enums';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
@@ -35,7 +37,7 @@ export class DirectoryReviewsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body(new ZodValidationPipe(createReviewBodySchema)) body: CreateReviewBody
   ) {
-    return this.service.createReview(entityId, user.id, body);
+    return this.service.createReview(entityId, user, body);
   }
 
   @Patch('reviews/:id')
@@ -84,6 +86,7 @@ export class DirectoryReviewsController {
     return this.service.deleteReviewReply(reviewId, user.id, user.role);
   }
 
+  @Roles(UserRole.SYSTEM_ADMIN)
   @Post('entities')
   @HttpCode(HttpStatus.CREATED)
   createEntity(

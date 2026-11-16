@@ -40,7 +40,8 @@ export type MediaCategory =
   | "chats"
   | "verificaciones"
   | "catalog"
-  | "ejercicios";
+  | "ejercicios"
+  | "business";
 
 /**
  * Destino de una carga. Es una unión discriminada a propósito: el compilador
@@ -62,6 +63,12 @@ export type MediaUploadTarget =
       readonly conversationId: string;
     }
   | { readonly category: "catalog" }
+  /**
+   * Public media of a business listing (logo, cover) under
+   * `business/{entityId}/public/`: readable anonymously like a profile photo
+   * and deletable like a person's content (ADR-0017, ADR-0020).
+   */
+  | { readonly category: "business"; readonly entityId: string }
   /**
    * Demostraciones de un ejercicio del catálogo: una carpeta por ejercicio.
    *
@@ -161,8 +168,22 @@ export function isUserContentKey(key: string): boolean {
   return key.startsWith(USER_CONTENT_KEY_PREFIX) && isSafeStorageKey(key);
 }
 
+/** Root of a business listing's public media (`business/{entityId}/public/…`, ADR-0020). */
+export const BUSINESS_PUBLIC_KEY_PATTERN = /^business\/[0-9a-f-]{36}\/public\/[^/]+$/u;
+
+/** Whether a key is a business listing's public media, with plain segments only. */
+export function isBusinessPublicKey(key: string): boolean {
+  return BUSINESS_PUBLIC_KEY_PATTERN.test(key) && isSafeStorageKey(key);
+}
+
+/** Keys the API deletes for real (ADR-0017): a person's content and a business's public media. */
+export function isDeletableContentKey(key: string): boolean {
+  return isUserContentKey(key) || isBusinessPublicKey(key);
+}
+
 export function mediaTargetPrefix(target: MediaUploadTarget): string {
   if (target.category === "catalog") return "catalog";
+  if (target.category === "business") return `business/${target.entityId}/public`;
   if (target.category === "ejercicios") {
     return "ownerUserId" in target
       ? `users/${target.ownerUserId}/ejercicios/${target.exerciseId}`

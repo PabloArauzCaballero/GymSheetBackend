@@ -30,7 +30,7 @@ export type DirectoryEntityType =
   | 'STORE'
   | 'SERVICE_PROVIDER';
 
-export type DirectoryEntityStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'SUSPENDED';
+export type DirectoryEntityStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'SUSPENDED' | 'CLOSED';
 
 @Table({
   tableName: 'entities',
@@ -60,8 +60,9 @@ export class DirectoryEntityModel extends Model {
   declare description: string;
 
   @ForeignKey(() => CategoryModel)
-  @Column({ type: DataType.UUID, allowNull: false, field: 'primary_category_id' })
-  declare primaryCategoryId: string;
+  // Null only while the listing is DRAFT or CLOSED (ck_directory_entity_public_category, ADR-0020).
+  @Column({ type: DataType.UUID, allowNull: true, field: 'primary_category_id' })
+  declare primaryCategoryId: string | null;
 
   @BelongsTo(() => CategoryModel, { as: 'primaryCategory', foreignKey: 'primaryCategoryId' })
   declare primaryCategory?: CategoryModel;

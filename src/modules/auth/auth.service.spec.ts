@@ -239,6 +239,8 @@ describe('AuthService me', () => {
       nombreCompleto: 'Registered User',
       emailVerified: false,
       verified: false,
+      accountKind: 'PERSON',
+      businessEntityId: null,
     });
   });
 

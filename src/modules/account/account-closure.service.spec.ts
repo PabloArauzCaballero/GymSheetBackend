@@ -183,6 +183,9 @@ describe('AccountClosureService.closeStaffByAdmin', () => {
   it('refuses a member account, the admin own account and the last admin of the gym', async () => {
     const member = await build({ role: UserRole.CLIENT, tenantId: 'gym' });
     await expect(member.service.closeStaffByAdmin(admin, userId)).rejects.toMatchObject({ status: 400, code: 'STAFF_CLOSURE_NOT_STAFF' });
+    const business = await build({ role: UserRole.BUSINESS, tenantId: 'gym' });
+    await expect(business.service.closeStaffByAdmin(admin, userId)).rejects.toMatchObject({ status: 400, code: 'STAFF_CLOSURE_NOT_STAFF' });
+    expect(business.repository.eraseAll).not.toHaveBeenCalled();
     const self = await build({ role: UserRole.ADMIN, tenantId: 'gym' });
     await expect(self.service.closeStaffByAdmin({ ...admin, id: userId }, userId)).rejects.toMatchObject({ status: 403, code: 'STAFF_CLOSURE_SELF' });
     const last = await build({ role: UserRole.ADMIN, tenantId: 'gym', admins: [userId] });

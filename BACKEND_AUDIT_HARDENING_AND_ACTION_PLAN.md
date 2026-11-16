@@ -937,6 +937,28 @@ Aflorados por F-001 y resueltos sin cambio de comportamiento:
 | Chat fijo `TENANT_ADMIN` | ni se crea ni se lista; los existentes se revocan con la migración reversible `202611200301-revoke-tenant-admin-chats` (libro `chat.tenant_admin_chat_revocations`); queda `CORPORATE` | `system-chat.service.spec.ts`, `chat.service.spec.ts`, `test/platform-operation.e2e-spec.ts` |
 | Siembras | `SEED_ADMIN_*` crea el `SYSTEM_ADMIN`; ninguna siembra crea `ADMIN` ni `COACH` | `seed.spec.ts` |
 
+### Franja 8a: cuentas de negocio, @handle, legal de negocios y agujeros del directorio (ADR-0020)
+
+| Cambio / defecto | Corrección | Prueba |
+|---|---|---|
+| No existía cuenta de negocio | Rol `NEGOCIO` sin datos de persona (CHECK), `business.accounts` 1:1 con una ficha `DRAFT`, `POST /business/signup` con antibot, legal de negocio, PIN, sanciones heredadas y sesión, tras `BUSINESS_SIGNUP_ENABLED=false` (`404 BUSINESS_SIGNUP_DISABLED`; cerrada en producción mientras los textos sean borradores); migración reversible `202611200401-business-accounts` | `test/business-accounts.e2e-spec.ts` (incluye down/up de la migración), `business-signup.service.spec.ts` |
+| `RolesGuard` deja pasar a cualquier autenticado en rutas sin `@Roles` | `AccountKindGuard` global, deny-by-default para `BUSINESS` (`403 ACCOUNT_KIND_NOT_ALLOWED`); persona → `403` en `business/*`; inventario de rutas que falla ante una ruta nueva alcanzable por un negocio | `account-kind.guard.spec.ts`, `account-kind.route-inventory.spec.ts`, `test/business-accounts.e2e-spec.ts` |
+| Un negocio aparecería entre personas | `rol <> 'NEGOCIO'` en directorio del gimnasio, pool de Conocer y clasificación; conexión o perfil de un negocio → `404` | `test/business-accounts.e2e-spec.ts` |
+| Legal único para todo tipo de cuenta | Conjuntos por tipo; `BUSINESS_TERMS`/`BUSINESS_DPA` versionados con SHA-256 del archivo (borradores); `422 LEGAL_DOCUMENT_NOT_APPLICABLE` | `legal.service.spec.ts`, `legal-documents.spec.ts`, e2e 428 |
+| @handle público | Normalización, skeleton anti-confundibles, reservadas, reserva `PENDING` hasta el KYC (8b), renombre limitado con redirección y bloqueo | `handle-rules.spec.ts`, `test/business-accounts.e2e-spec.ts` |
+| D1 · cualquiera creaba fichas `ACTIVE` con `is_verified`/`tenant_id` propios | `POST /directory/entities` solo `SYSTEM_ADMIN`, cuerpo estricto sin `is_verified`/`tenant_id`/dueño; además respondía `500` tras crear la fila (leía fuera de la transacción) | `test/directory-defects.e2e-spec.ts` (falla en 061c220) |
+| D2 · `ADMIN` de cualquier gimnasio respondía reseñas | Ya cerrado en 7a (solo dueño o `SYSTEM_ADMIN`, `403`); prueba fijada | `test/directory-defects.e2e-spec.ts` |
+| D3 · reseñar una ficha con gimnasio daba `500` | El sello «atleta verificado» consulta columnas que existen (`userId`) y el gimnasio del autor | `test/directory-defects.e2e-spec.ts` (falla en 061c220), `directory.service.spec.ts` |
+| D4 · planes públicos devolvían el modelo ORM | `mapPublicPlan`; `404` si plan o ficha no están activos | `test/directory-defects.e2e-spec.ts` |
+| D5 · cobro público con NIT y modelo ORM | DTO sin `taxId`/ids/fechas, `null` si inactivo, `404` si la ficha no es pública; también en la respuesta de crear orden. El número de cuenta se mantiene (el pago lo necesita) hasta que 8d lo pase a la orden | `test/directory-defects.e2e-spec.ts`, `directory-payments.service.spec.ts` |
+| D7 · fichas suspendidas seguían vendiendo | Listados con `INNER JOIN` a fichas `ACTIVE`; crear orden de un plan de ficha no pública → `404` | idem |
+| D8 · moneda por defecto USD | `BOB` en la base y en los esquemas | idem |
+| D12 · reseña ajena → `403` | `404` al editar o borrar | idem, `directory.service.spec.ts` |
+| Reseña de ficha no pública | `404` (una ficha `DRAFT` no existe para las personas) | `directory.service.spec.ts` |
+| El cierre administrativo de personal aceptaba una cuenta de negocio | `POST /admin/users/:id/close` la rechaza (`400 STAFF_CLOSURE_NOT_STAFF`); su cierre es de 8f | `account-closure.service.spec.ts`, `test/account-closure.e2e-spec.ts` (catálogo) |
+
+Pendiente por franja: KYC y activación (8b), sedes `directory.entity_locations` y publicaciones (8c), pedidos y D6/D9/D10 (8d), afiliación (8e), chat, cierre y exportación del negocio (8f).
+
 
 ---
 

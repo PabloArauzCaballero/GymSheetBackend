@@ -8,7 +8,7 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import { UniqueConstraintError } from "sequelize";
-import { ConnectionStatus } from "../../common/enums/domain.enums";
+import { ConnectionStatus, UserRole } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
 import { UserModel } from "../users/user.model";
 import { UsersRepository } from "../users/users.repository";
@@ -95,7 +95,7 @@ export class SocialService {
     tenantId: string,
   ): Promise<UserModel> {
     const member = await this.usersRepository.findActiveById(targetId);
-    if (!member) throw new NotFoundException("Usuario no encontrado.");
+    if (!member || member.role === UserRole.BUSINESS) throw new NotFoundException("Usuario no encontrado.");
     const memberTenantId = member.tenantId ?? env.DEFAULT_TENANT_ID;
     if (
       memberTenantId !== tenantId &&

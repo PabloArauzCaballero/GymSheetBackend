@@ -3,7 +3,7 @@ import { Reflector } from "@nestjs/core";
 import { Request } from "express";
 import { IS_PUBLIC_ROUTE_KEY } from "../../common/decorators/public.decorator";
 import { DomainException } from "../../common/errors/domain.exception";
-import { AuthenticatedUser } from "../../common/types/auth-context.types";
+import { AuthenticatedUser, accountKindOf } from "../../common/types/auth-context.types";
 import { env } from "../../config/env";
 import { LegalService } from "./legal.service";
 import { SKIP_LEGAL_ACCEPTANCE_KEY } from "./skip-legal-acceptance.decorator";
@@ -18,6 +18,8 @@ const GUARDED_UNDER_EXEMPT = ["auth/socket-ticket/"] as const;
 
 export const LEGAL_ACCEPTANCE_REQUIRED_MESSAGE =
   "Debes aceptar los términos, la política de privacidad y las normas de la comunidad vigentes para continuar.";
+export const BUSINESS_LEGAL_ACCEPTANCE_REQUIRED_MESSAGE =
+  "Debes aceptar los Términos para negocios, el Acuerdo de tratamiento de datos y la política de privacidad vigentes para continuar.";
 
 /**
  * Blocks authenticated requests from accounts that have not accepted every
@@ -46,11 +48,14 @@ export class LegalAcceptanceGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<Request & { user?: AuthenticatedUser }>();
     if (!request.user || isExemptPath(request.path)) return true;
 
-    if (await this.legalService.hasPending(request.user.id)) {
+    // Each kind of account answers for its own set (ADR-0020).
+    const kind = accountKindOf(request.user.role);
+    if (await this.legalService.hasPending(request.user.id, kind)) {
       throw new DomainException(
         HttpStatus.PRECONDITION_REQUIRED,
         "LEGAL_ACCEPTANCE_REQUIRED",
-        LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
+        kind === "BUSINESS" ? BUSINESS_LEGAL_ACCEPTANCE_REQUIRED_MESSAGE : LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
+        { accountKind: kind },
       );
     }
     return true;

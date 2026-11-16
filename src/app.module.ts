@@ -5,6 +5,8 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ThrottlerStorageService } from '@nestjs/throttler/dist/throttler.service';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { ResilientThrottlerStorage } from './common/redis/resilient-throttler.storage';
+import { BusinessAccountsModule } from './modules/business-accounts/business-accounts.module';
+import { AccountKindGuard } from './common/guards/account-kind.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { EmailVerificationGuard } from './common/guards/email-verification.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -138,11 +140,14 @@ import { ConsentsModule } from './modules/consents/consents.module';
     AdminAccessModule,
     TenantsModule,
     DirectoryModule,
+    BusinessAccountsModule,
     VerificationModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Deny-by-default for business accounts, and business/* for them only (ADR-0020).
+    { provide: APP_GUARD, useClass: AccountKindGuard },
     // Right after authentication: an account that has not accepted the current
     // terms/privacy versions gets 428 before any other rule runs.
     { provide: APP_GUARD, useClass: LegalAcceptanceGuard },

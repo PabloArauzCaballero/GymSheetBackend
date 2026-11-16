@@ -2255,6 +2255,176 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "429": { $ref: "#/components/responses/Problem429" }
+  /business/signup:
+    post:
+      tags: [Business]
+      summary: Alta de cuenta de negocio (ADR-0020), tras BUSINESS_SIGNUP_ENABLED
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BusinessSignupRequest" }
+      responses:
+        "201":
+          description: Sesión de la cuenta de negocio y su ficha DRAFT
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BusinessSignupEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { description: "BUSINESS_SIGNUP_DISABLED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "EMAIL_ALREADY_REGISTERED | TERMS_VERSION_OUTDATED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /business/me:
+    get:
+      tags: [Business]
+      summary: Cuenta, ficha, handle y pasos pendientes del negocio
+      responses:
+        "200":
+          description: Negocio propio
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BusinessMeEnvelope" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+  /business/me/profile:
+    patch:
+      tags: [Business]
+      summary: Datos no materiales de la ficha (correo verificado)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BusinessProfilePatch" }
+      responses:
+        "200":
+          description: Negocio propio actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BusinessMeEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /business/me/handle:
+    put:
+      tags: [Business]
+      summary: Elegir o cambiar el @handle (PENDING mientras la ficha es DRAFT)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [handle]
+              properties:
+                handle: { type: string, maxLength: 64 }
+      responses:
+        "200":
+          description: Handle actual
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BusinessHandleEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { description: "HANDLE_TAKEN | BUSINESS_ACCOUNT_LOCKED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "HANDLE_INVALID | HANDLE_RESERVED | HANDLE_TOO_SIMILAR", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "429": { description: "HANDLE_RENAME_LIMIT", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/media:
+    post:
+      tags: [Business]
+      summary: Subir logo o portada (públicos, borrables)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, slot]
+              properties:
+                file: { type: string, format: binary, description: JPEG o PNG }
+                slot: { type: string, enum: [LOGO, COVER] }
+      responses:
+        "201":
+          description: URL pública del medio
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          slot: { type: string, enum: [LOGO, COVER] }
+                          url: { type: string, format: uri }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "413": { $ref: "#/components/responses/Problem413" }
+  /business/me/media/{slot}:
+    delete:
+      tags: [Business]
+      summary: Quitar logo o portada
+      parameters:
+        - { name: slot, in: path, required: true, schema: { type: string, enum: [LOGO, COVER] } }
+      responses:
+        "204": { description: Quitado }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+  /public/handles/{handle}:
+    get:
+      tags: [Business]
+      summary: Resolver un @handle público
+      security: []
+      parameters:
+        - { name: handle, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: "{ handle, entity } o { redirectTo }"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        oneOf:
+                          - type: object
+                            required: [handle, entity]
+                            properties:
+                              handle: { type: string }
+                              entity: { type: object, additionalProperties: true }
+                          - type: object
+                            required: [redirectTo]
+                            properties:
+                              redirectTo: { type: string }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /public/handles/{handle}/availability:
+    get:
+      tags: [Business]
+      summary: Disponibilidad de un @handle (con límite propio)
+      security: []
+      parameters:
+        - { name: handle, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Disponibilidad y motivo
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          handle: { type: string, nullable: true }
+                          available: { type: boolean }
+                          reason: { type: string, nullable: true, enum: [TAKEN, RESERVED, INVALID, TOO_SIMILAR, null] }
+        "429": { $ref: "#/components/responses/Problem429" }
 components:
   securitySchemes:
     bearerAuth:
@@ -2392,6 +2562,118 @@ components:
         email: { type: string, format: email, maxLength: 180 }
         password:
           { type: string, minLength: 8, maxLength: 128, format: password }
+    BusinessSignupRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password, businessName, entityType, acceptances]
+      properties:
+        email: { type: string, format: email, maxLength: 180 }
+        password: { type: string, minLength: 8, maxLength: 128 }
+        businessName: { type: string, minLength: 2, maxLength: 180 }
+        entityType: { type: string, enum: [GYM, COACH, CENTER, STORE, SERVICE_PROVIDER] }
+        legalKind: { type: string, enum: [COMPANY, INDIVIDUAL], description: Solo SERVICE_PROVIDER (obligatorio ahí) }
+        acceptances:
+          type: array
+          description: Todo el conjunto de GET /legal/current?accountKind=BUSINESS
+          items:
+            type: object
+            required: [document, version]
+            properties:
+              document: { type: string, enum: [BUSINESS_TERMS, BUSINESS_DPA, PRIVACY] }
+              version: { type: string }
+              contentSha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        ticket: { type: string }
+        website: { type: string, description: Honeypot }
+        turnstileToken: { type: string }
+        attestation:
+          type: object
+          properties:
+            platform: { type: string, enum: [ios, android] }
+            token: { type: string }
+            nonce: { type: string }
+    BusinessSummary:
+      type: object
+      properties:
+        entityId: { type: string, format: uuid }
+        entityType: { type: string, enum: [GYM, COACH, CENTER, STORE, SERVICE_PROVIDER] }
+        legalKind: { type: string, enum: [COMPANY, INDIVIDUAL] }
+        status: { type: string, enum: [ONBOARDING, ACTIVE, SUSPENDED, CLOSED] }
+        kycStatus: { type: string, enum: [DRAFT, SUBMITTED, AUTO_APPROVED, IN_REVIEW, APPROVED, REJECTED, SUSPENDED] }
+    BusinessSignupEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                accessToken: { type: string }
+                refreshToken: { type: string }
+                tokenType: { type: string, enum: [Bearer] }
+                user: { $ref: "#/components/schemas/AuthUser" }
+                business: { $ref: "#/components/schemas/BusinessSummary" }
+    BusinessHandle:
+      type: object
+      properties:
+        handle: { type: string }
+        status: { type: string, enum: [PENDING, ACTIVE] }
+    BusinessHandleEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/BusinessHandle" }
+    BusinessProfilePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 2, maxLength: 180 }
+        headline: { type: string, maxLength: 255, nullable: true }
+        description: { type: string, maxLength: 5000 }
+        primaryCategoryId: { type: string, format: uuid }
+        city: { type: string, minLength: 2, maxLength: 100 }
+        country: { type: string, minLength: 2, maxLength: 60 }
+        address: { type: string, maxLength: 500, nullable: true }
+        isOnlineOnly: { type: boolean }
+        contactInfo:
+          type: object
+          description: Claves phone, whatsapp, email, website, instagram, facebook, tiktok
+          additionalProperties: { type: string, maxLength: 200 }
+        businessHours:
+          type: object
+          description: Claves mon..sun
+          additionalProperties:
+            type: object
+            properties:
+              open: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+              close: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+    BusinessMeEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                account:
+                  allOf:
+                    - $ref: "#/components/schemas/BusinessSummary"
+                    - type: object
+                      properties:
+                        userId: { type: string, format: uuid }
+                        email: { type: string, format: email }
+                        emailVerified: { type: boolean }
+                        accountKind: { type: string, enum: [BUSINESS] }
+                        createdAt: { type: string, format: date-time }
+                entity: { type: object, additionalProperties: true }
+                handle:
+                  allOf:
+                    - $ref: "#/components/schemas/BusinessHandle"
+                  nullable: true
+                nextSteps:
+                  type: array
+                  items: { type: string, enum: [VERIFY_EMAIL, CHOOSE_HANDLE, COMPLETE_PROFILE, SUBMIT_KYC] }
     AuthUser:
       type: object
       required: [id, email, nombreCompleto, rol]
@@ -2401,7 +2683,8 @@ components:
         nombreCompleto: { type: string }
         rol:
           type: string
-          enum: [ADMIN, CLIENTE, ENTRENADOR_EXTERNO, COACH, FRONT_DESK]
+          enum: [SYSTEM_ADMIN, MODERATOR, ADMIN, CLIENTE, ENTRENADOR_EXTERNO, COACH, FRONT_DESK, NEGOCIO]
+        accountKind: { type: string, enum: [PERSON, BUSINESS] }
     AuthEnvelope:
       allOf:
         - $ref: "#/components/schemas/SuccessEnvelope"
@@ -2427,7 +2710,9 @@ components:
                 email: { type: string, format: email }
                 role:
                   type: string
-                  enum: [ADMIN, CLIENTE, ENTRENADOR_EXTERNO, COACH, FRONT_DESK]
+                  enum: [SYSTEM_ADMIN, MODERATOR, ADMIN, CLIENTE, ENTRENADOR_EXTERNO, COACH, FRONT_DESK, NEGOCIO]
+                accountKind: { type: string, enum: [PERSON, BUSINESS] }
+                businessEntityId: { type: string, format: uuid, nullable: true }
     UserEnvelope:
       allOf:
         - $ref: "#/components/schemas/SuccessEnvelope"

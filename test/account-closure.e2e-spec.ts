@@ -18,6 +18,9 @@ const NOT_A_MEMBER_ROW = new Set([
   'membership.staff_profiles', 'directory.plan_price_history',
   // Cascade from training.training_invites.
   'training.training_invite_commands', 'training.training_invite_revisions',
+  // Only business accounts produce these (ADR-0020). A business cannot reach `me/account/*`
+  // (AccountKindGuard) and its closure catalogue arrives with franja 8f.
+  'business.accounts', 'directory.handle_changes',
 ]);
 
 describe('Account closure (e2e)', () => {

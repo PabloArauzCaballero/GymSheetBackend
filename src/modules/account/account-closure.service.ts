@@ -166,6 +166,14 @@ export class AccountClosureService {
         "Las cuentas de socios las cierra cada socio desde su app.",
       );
     }
+    // A business account is not staff either; its own closure (listing, handle, orders) is franja 8f (ADR-0020).
+    if (user.role === UserRole.BUSINESS) {
+      throw new DomainException(
+        HttpStatus.BAD_REQUEST,
+        "STAFF_CLOSURE_NOT_STAFF",
+        "Las cuentas de negocio no se cierran por esta vía.",
+      );
+    }
   }
 
   private async eraseInTransaction(userId: string, unusablePasswordHash: string, transaction: Transaction): Promise<Date> {

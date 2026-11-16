@@ -66,6 +66,6 @@ import { UserDevicesController } from './user-devices.controller';
     { provide: JWKS_FETCHER, useValue: fetchJwksOverHttps },
     IdentitySignInService,
   ],
-  exports: [EmailVerificationService, IdentityRepository],
+  exports: [EmailVerificationService, IdentityRepository, AuthSessionService, UserDeviceService],
 })
 export class AuthModule {}

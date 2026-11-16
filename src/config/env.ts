@@ -199,6 +199,14 @@ export const environmentSchema = z
       .positive()
       .max(1000)
       .default(60),
+    /**
+     * Opens `POST /business/signup` (ADR-0020). Off by default: the business
+     * legal texts must be signed by the lawyer first. While they are
+     * placeholders the signup stays closed in production even if this is on.
+     */
+    BUSINESS_SIGNUP_ENABLED: environmentBooleanSchema.default(false),
+    /** Per-client limit of `GET /public/handles/:handle/availability` per `RATE_LIMIT_TTL_SECONDS`. */
+    HANDLE_AVAILABILITY_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(1000).default(30),
     GATEWAY_ENABLED: environmentBooleanSchema.default(true),
     /**
      * Optional Redis connection for shared rate-limit counters. When unset the

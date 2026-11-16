@@ -1,5 +1,12 @@
 import { UserRole } from '../enums/domain.enums';
 
+/** Whether the account is a person or a business (ADR-0020). Derived from the role. */
+export type AccountKind = 'PERSON' | 'BUSINESS';
+
+export function accountKindOf(role: UserRole): AccountKind {
+  return role === UserRole.BUSINESS ? 'BUSINESS' : 'PERSON';
+}
+
 /** Authenticated request principal produced by the JWT strategy. */
 export type AuthenticatedUser = {
   id: string;
@@ -41,6 +48,13 @@ export type AuthenticatedUser = {
    * request; absent (e.g. in hand-built principals) counts as not verified.
    */
   emailVerified?: boolean;
+  /**
+   * Person or business, from the role read on every request. Absent in
+   * hand-built principals: `accountKindOf(role)` is the authority.
+   */
+  accountKind?: AccountKind;
+  /** The listing a business account owns (`business.accounts.entity_id`); null for a person. */
+  businessEntityId?: string | null;
 };
 
 /** Custom access-token claims controlled by this API. */

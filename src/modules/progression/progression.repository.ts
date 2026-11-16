@@ -1,3 +1,4 @@
+import { personAccountSql } from "../../common/sql/person-accounts";
 import { Injectable } from "@nestjs/common";
 import { MONTHLY_STRIKES_BASE } from "./user-streak-strike.model";
 import { settleStrikes, totalOf, type StrikeSettlement } from "./streak-strikes";
@@ -965,6 +966,7 @@ export class ProgressionRepository {
              ) ub
          ) top_badges ON true
         WHERE u.estado = 'ACTIVO'
+          AND ${personAccountSql("u")}
           AND (:tenantId::text IS NULL OR u.tenant_id IS NOT DISTINCT FROM :tenantId)
           AND p.points > 0
         ORDER BY ${orderBy}

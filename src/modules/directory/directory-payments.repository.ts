@@ -91,6 +91,9 @@ export class DirectoryPaymentsRepository {
       include: [
         {
           model: DirectoryEntityModel,
+          // Inner join: a plan of a seller that is not public is not for sale (D7).
+          where: { status: 'ACTIVE' },
+          required: true,
           include: [{ model: CategoryModel, as: 'primaryCategory' }],
         },
       ],

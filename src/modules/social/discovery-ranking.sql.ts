@@ -50,18 +50,18 @@ viewer AS (
 pool AS (
   SELECT DISTINCT sources.id FROM (
     (SELECT u.id FROM public.usuarios u
-      WHERE u.tenant_id = :tenantId AND u.estado = 'ACTIVO' AND u.email_verified_at IS NOT NULL
+      WHERE u.tenant_id = :tenantId AND u.estado = 'ACTIVO' AND u.rol <> 'NEGOCIO' AND u.email_verified_at IS NOT NULL
         AND u.genero IN (:genders)
       ORDER BY u.last_active_at DESC NULLS LAST, u.id LIMIT :poolLimit)
     UNION ALL
     (SELECT u.id FROM public.usuarios u, p
-      WHERE u.tenant_id = :tenantId AND u.estado = 'ACTIVO' AND u.email_verified_at IS NOT NULL
+      WHERE u.tenant_id = :tenantId AND u.estado = 'ACTIVO' AND u.rol <> 'NEGOCIO' AND u.email_verified_at IS NOT NULL
         AND u.genero IN (:genders) AND u.created_at >= p.as_of - INTERVAL '7 days'
       ORDER BY u.created_at DESC LIMIT 60)
     UNION ALL
     (SELECT u.id FROM social.profile_settings cs JOIN public.usuarios u ON u.id = cs.user_id
       WHERE :includeCrossGym AND cs.profile_enabled AND cs.cross_gym_enabled
-        AND u.tenant_id <> :tenantId AND u.estado = 'ACTIVO' AND u.email_verified_at IS NOT NULL
+        AND u.tenant_id <> :tenantId AND u.estado = 'ACTIVO' AND u.rol <> 'NEGOCIO' AND u.email_verified_at IS NOT NULL
         AND u.genero IN (:genders)
       ORDER BY u.last_active_at DESC NULLS LAST, u.id LIMIT :poolLimit)
     UNION ALL
@@ -113,7 +113,7 @@ cand AS (
    WHERE u.id <> :viewerId
      AND (v.lat IS NULL
           OR dist.distance_km <= :radiusKm * CASE WHEN :flexibleDistance THEN 1.5 ELSE 1 END)
-     AND u.estado = 'ACTIVO' AND u.email_verified_at IS NOT NULL
+     AND u.estado = 'ACTIVO' AND u.rol <> 'NEGOCIO' AND u.email_verified_at IS NOT NULL
      AND (u.suspended_until IS NULL OR u.suspended_until <= p.as_of)
      AND u.genero IN (:genders)
      AND (u.tenant_id = :tenantId OR (:includeCrossGym AND s.cross_gym_enabled))

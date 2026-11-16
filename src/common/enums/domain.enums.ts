@@ -16,6 +16,13 @@ export enum UserRole {
    */
   MODERATOR = "MODERATOR",
   /**
+   * Business account (ADR-0020): one login per marketplace business (gym,
+   * coach, center, store, service provider). It is not a person: no birth
+   * date, sex, social profile or discovery, and `AccountKindGuard` only lets
+   * it reach its own allow-list of routes.
+   */
+  BUSINESS = "NEGOCIO",
+  /**
    * Legacy gym staff roles (`ADMIN`, `COACH`, `FRONT_DESK`, and the external
    * trainer): since franja 7a they grant no power at all (ADR-0019) and are
    * removed with their staff tables in franja 7d.

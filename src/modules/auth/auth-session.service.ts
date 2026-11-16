@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { Transaction } from "sequelize";
 import { UserRole } from "../../common/enums/domain.enums";
 import { parseDurationToMs } from "../../common/time/duration.util";
-import { JwtPayload } from "../../common/types/auth-context.types";
+import { AccountKind, JwtPayload, accountKindOf } from "../../common/types/auth-context.types";
 import { env } from "../../config/env";
 import { RefreshTokenRepository } from "./refresh-token.repository";
 import { issueOpaqueToken } from "./token-hash.util";
@@ -22,6 +22,8 @@ export type AuthResponse = {
     tenantId: string | null;
     /** False until the mailbox is proven; social features stay closed until then. */
     emailVerified: boolean;
+    /** Person or business (ADR-0020): the client mounts the matching shell. */
+    accountKind: AccountKind;
   };
 };
 
@@ -87,6 +89,7 @@ export class AuthSessionService {
         // cuentas existentes sería una decisión de negocio disfrazada de esquema.
         tenantId: account.tenantId ?? env.DEFAULT_TENANT_ID ?? null,
         emailVerified: Boolean(account.emailVerifiedAt),
+        accountKind: accountKindOf(account.role),
       },
     };
   }

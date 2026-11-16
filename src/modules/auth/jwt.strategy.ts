@@ -3,7 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UserRole } from '../../common/enums/domain.enums';
 import { suspendedSessionError } from '../../common/moderation/account-suspension';
-import { AuthenticatedUser, JwtPayload } from '../../common/types/auth-context.types';
+import { AuthenticatedUser, JwtPayload, accountKindOf } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
 import { SanctionStatusService } from '../sanction-status/sanction-status.service';
 import { UsersRepository } from '../users/users.repository';
@@ -81,6 +81,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       ? (payload.tenantId as string)
       : ownTenantId;
 
+    // Only a business account pays the extra lookup of the listing it owns.
+    const accountKind = accountKindOf(activeUser.role);
+    const businessEntityId =
+      accountKind === 'BUSINESS' ? await this.usersRepository.findBusinessEntityId(activeUser.id) : null;
+
     return {
       id: activeUser.id,
       email: activeUser.email,
@@ -92,6 +97,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       impersonating,
       emailVerified: Boolean(activeUser.emailVerifiedAt),
       deviceId: typeof payload.did === "string" ? payload.did : null,
+      accountKind,
+      businessEntityId,
     };
   }
 }

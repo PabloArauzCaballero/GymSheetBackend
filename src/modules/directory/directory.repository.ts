@@ -140,7 +140,7 @@ export class DirectoryRepository {
 
   async createEntity(
     slug: string,
-    data: CreateEntityBody,
+    data: CreateEntityBody & { user_id: string },
     transaction?: Transaction
   ): Promise<DirectoryEntityModel> {
     const entity = await this.entityModel.create(
@@ -151,8 +151,9 @@ export class DirectoryRepository {
         headline: data.headline ?? null,
         description: data.description,
         primaryCategoryId: data.primary_category_id,
-        tenantId: data.tenant_id ?? null,
-        userId: data.user_id ?? null,
+        // Never from the body (D1): a listing is linked to a gym or verified by REPP, not by whoever creates it.
+        tenantId: null,
+        userId: data.user_id,
         branchId: data.branch_id ?? null,
         logoUrl: data.logo_url ?? null,
         coverUrl: data.cover_url ?? null,
@@ -165,7 +166,7 @@ export class DirectoryRepository {
         longitude: data.longitude ? String(data.longitude) : null,
         contactInfo: data.contact_info ?? {},
         businessHours: data.business_hours ?? {},
-        isVerified: data.is_verified,
+        isVerified: false,
         status: 'ACTIVE',
       },
       { transaction }
