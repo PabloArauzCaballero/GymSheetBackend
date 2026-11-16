@@ -1,5 +1,6 @@
 import request from 'supertest';
 import { bootE2eApp, E2eApp } from './support/e2e-app';
+import { grantConsent } from './support/privacy-e2e';
 
 type Body = { data: Record<string, unknown> & { about?: Record<string, unknown> } };
 
@@ -142,6 +143,8 @@ describe('Conocer: perfil social, readiness y paso de onboarding (e2e)', () => {
     const viewer = await e2e.register(`${tag}-viewer`);
     const ownerApi = e2e.as(owner.token);
     const viewerApi = e2e.as(viewer.token);
+    // Storing an orientation needs the separate ORIENTATION consent (ADR-0014).
+    await grantConsent(e2e, owner.token, 'ORIENTATION');
     await ownerApi
       .put('/me/social-profile')
       .send({ orientation: 'GAY', interests: ['CLIMBING'], smoking: 'NEVER', bio: 'Escalo los sábados.', expectedVersion: 0 })

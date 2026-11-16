@@ -3,7 +3,8 @@ import { Request } from "express";
 import { Transaction } from "sequelize";
 import { DomainException } from "../../common/errors/domain.exception";
 import { LegalClientContext, legalClientContext } from "./legal-client-context";
-import { LEGAL_DOCUMENTS } from "./legal-documents";
+import { CONSENT_VERSIONS } from "./consent-versions";
+import { LEGAL_DOCUMENTS, LEGAL_DOCUMENT_CONTENT_SHA256 } from "./legal-documents";
 import { LegalRepository } from "./legal.repository";
 import { LegalService } from "./legal.service";
 
@@ -11,8 +12,9 @@ const userId = "00000000-0000-4000-8000-000000000001";
 const context: LegalClientContext = { channel: "WEB", ipHmac: null, userAgent: "jest" };
 const transaction = {} as Transaction;
 const current = () => [
-  { document: "TERMS", version: LEGAL_DOCUMENTS.TERMS },
-  { document: "PRIVACY", version: LEGAL_DOCUMENTS.PRIVACY },
+  { document: "TERMS", version: LEGAL_DOCUMENTS.TERMS, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.TERMS },
+  { document: "PRIVACY", version: LEGAL_DOCUMENTS.PRIVACY, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.PRIVACY },
+  { document: "COMMUNITY", version: LEGAL_DOCUMENTS.COMMUNITY, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.COMMUNITY },
 ];
 
 function createService(overrides: Partial<Record<keyof LegalRepository, jest.Mock>> = {}) {
@@ -39,8 +41,43 @@ function expectDomainError(action: () => unknown, status: HttpStatus, code: stri
 }
 
 describe("LegalService", () => {
-  it("lists every current document", () => {
-    expect(createService().service.currentDocuments()).toEqual({ documents: current() });
+  afterEach(() => jest.restoreAllMocks());
+
+  it("treats the community rules as a versioned document with the same version as the others", () => {
+    expect(LEGAL_DOCUMENTS.COMMUNITY).toBe(LEGAL_DOCUMENTS.TERMS);
+    expect(LEGAL_DOCUMENT_CONTENT_SHA256.COMMUNITY).toBeNull();
+  });
+
+  it("asks for the community rules when they are the only pending document", async () => {
+    const findPending = jest.fn().mockResolvedValue([{ document: "COMMUNITY", version: LEGAL_DOCUMENTS.COMMUNITY }]);
+    const { service } = createService({ findPending });
+    await expect(service.hasPending(userId)).resolves.toBe(true);
+    expect(findPending).toHaveBeenCalledWith(userId, current());
+  });
+
+  it("lists every current document with its text hash and every consent version", () => {
+    expect(createService().service.currentDocuments()).toEqual({
+      documents: current(),
+      consents: [
+        { kind: "HEALTH", version: CONSENT_VERSIONS.HEALTH },
+        { kind: "ORIENTATION", version: CONSENT_VERSIONS.ORIENTATION },
+        { kind: "VERIFICATION_SELFIE", version: CONSENT_VERSIONS.VERIFICATION_SELFIE },
+        { kind: "PRECISE_LOCATION", version: CONSENT_VERSIONS.PRECISE_LOCATION },
+      ],
+    });
+  });
+
+  it("records the hash of the published text with the accepted version", async () => {
+    const hash = "a".repeat(64);
+    jest.replaceProperty(LEGAL_DOCUMENT_CONTENT_SHA256, "TERMS", hash);
+    const { service, repository } = createService();
+    await service.accept(userId, { acceptances: [{ document: "TERMS", version: LEGAL_DOCUMENTS.TERMS }] }, context);
+    expect(repository.insertAcceptances).toHaveBeenCalledWith(
+      userId,
+      [{ document: "TERMS", version: LEGAL_DOCUMENTS.TERMS, contentSha256: hash }],
+      context,
+      transaction,
+    );
   });
 
   it("rejects an outdated signup terms version with 409 TERMS_VERSION_OUTDATED", () => {

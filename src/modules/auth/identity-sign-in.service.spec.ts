@@ -1,4 +1,5 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { PENDING_REVIEW_SUSPENSION_UNTIL } from '../../common/moderation/account-suspension';
 import { JwtService } from '@nestjs/jwt';
 import { Sequelize } from 'sequelize-typescript';
 import { UserGender, UserRole, UserStatus } from '../../common/enums/domain.enums';
@@ -16,6 +17,7 @@ import { OidcTokenVerifier, VerifiedIdentity } from './oidc-token-verifier';
 import { SignupRequestMeta } from './signup-context';
 import { UserDeviceService } from './user-device.service';
 import { SignupProtectionService } from '../antibot/signup-protection.service';
+import { ClosedAccountSanctionsService } from '../closed-account-sanctions/closed-account-sanctions.service';
 
 const transaction = { id: 'tx' };
 const device: ClientDeviceContext = {
@@ -40,7 +42,7 @@ const account = {
   emailVerifiedAt: null,
 };
 
-function build(options: { linkedUserId?: string | null; byEmail?: unknown; verified?: VerifiedIdentity } = {}) {
+function build(options: { linkedUserId?: string | null; byEmail?: unknown; verified?: VerifiedIdentity; inherited?: Date } = {}) {
   const jwt = new JwtService();
   const signupTokens = new IdentitySignupTokenService(jwt);
   const identities = {
@@ -62,6 +64,7 @@ function build(options: { linkedUserId?: string | null; byEmail?: unknown; verif
     recordSignup: jest.fn().mockResolvedValue('device-1'),
     endAllSessions: jest.fn().mockResolvedValue(undefined),
   };
+  const sanctions = { inheritAtSignup: jest.fn().mockResolvedValue(options.inherited ?? null) };
   const signupProtection = {
     vouchedVerdict: jest.fn((source: string) => ({ allowed: true, risk: 'LOW', riskReasons: [source] })),
     recordOutcome: jest.fn().mockResolvedValue(undefined),
@@ -77,8 +80,9 @@ function build(options: { linkedUserId?: string | null; byEmail?: unknown; verif
     devices as unknown as UserDeviceService,
     signupProtection as unknown as SignupProtectionService,
     { transaction: jest.fn((work: (t: unknown) => unknown) => work(transaction)) } as unknown as Sequelize,
+    sanctions as unknown as ClosedAccountSanctionsService,
   );
-  return { service, identities, users, legal, devices, signupTokens, signupProtection };
+  return { service, identities, users, legal, devices, signupTokens, signupProtection, sanctions, refreshTokens };
 }
 
 const completion = (signupToken: string) => ({
@@ -149,6 +153,12 @@ describe('IdentitySignInService', () => {
     await expect(service.signIn('GOOGLE', 'token', undefined, device)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('says a pending-review suspension lasts while the report is reviewed, not until 9999', async () => {
+    const { service } = build({ byEmail: { ...account, suspendedUntil: PENDING_REVIEW_SUSPENSION_UNTIL } });
+    await expect(service.signIn('GOOGLE', 'token', undefined, device))
+      .rejects.toThrow('Tu cuenta está suspendida mientras revisamos un reporte.');
+  });
+
   it('asks a new person to complete the profile with a single-purpose signup token', async () => {
     const { service, signupTokens } = build();
     const result = await service.signIn('GOOGLE', 'token', undefined, device);
@@ -178,6 +188,14 @@ describe('IdentitySignInService', () => {
     expect(identities.link).toHaveBeenCalledWith('GOOGLE', 'sub-1', 'user-new', 'ana@gmail.com', transaction);
     expect(devices.recordSignup).toHaveBeenCalledWith('user-new', device, transaction);
     expect(result).toMatchObject({ status: 'AUTHENTICATED', user: { emailVerified: true } });
+  });
+
+  it('inherits the sanction of a closed account with that email and opens no session while suspended', async () => {
+    const { service, signupTokens, sanctions, refreshTokens } = build({ inherited: new Date(Date.now() + 86_400_000) });
+    const signupToken = signupTokens.issue({ provider: 'GOOGLE', subject: 'sub-1', email: 'ana@gmail.com' });
+    await expect(service.completeSignup('GOOGLE', completion(signupToken), meta)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(sanctions.inheritAtSignup).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-new' }), transaction);
+    expect(refreshTokens.create).not.toHaveBeenCalled();
   });
 
   it('rejects a tampered or foreign signup token and an email taken meanwhile', async () => {

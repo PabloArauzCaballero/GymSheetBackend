@@ -194,7 +194,7 @@ export class SocialService {
     if (!result)
       throw new NotFoundException("Solicitud o conexión no encontrada.");
     for (const conversationId of result.conversationIds) {
-      this.chatEvents.emitConversationRevoked(conversationId, userId);
+      this.chatEvents.emitConversationRevoked(conversationId);
     }
     return { deleted: true };
   }
@@ -249,7 +249,7 @@ export class SocialService {
       blockedId,
     );
     for (const conversationId of conversationIds)
-      this.chatEvents.emitConversationRevoked(conversationId, blockerId);
+      this.chatEvents.emitConversationRevoked(conversationId);
     return { blocked: true };
   }
 

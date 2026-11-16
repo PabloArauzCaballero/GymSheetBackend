@@ -2,19 +2,29 @@ import { HttpStatus, Injectable } from "@nestjs/common";
 import { Transaction } from "sequelize";
 import { DomainException } from "../../common/errors/domain.exception";
 import { LegalClientContext } from "./legal-client-context";
-import { LEGAL_DOCUMENTS, LegalDocumentVersion, currentLegalDocuments } from "./legal-documents";
+import { currentConsentVersions } from "./consent-versions";
+import {
+  LEGAL_DOCUMENTS,
+  LegalDocumentVersion,
+  PublishedLegalDocument,
+  currentLegalDocuments,
+} from "./legal-documents";
 import { LegalRepository } from "./legal.repository";
 import { AcceptLegalDocumentsInput } from "./legal.schemas";
 
 const OUTDATED_MESSAGE =
-  "Los términos o la política de privacidad cambiaron. Vuelve a leerlos y acéptalos para continuar.";
+  "Los términos, la política de privacidad o las normas de la comunidad cambiaron. Vuelve a leerlos y acéptalos para continuar.";
 
 @Injectable()
 export class LegalService {
   constructor(private readonly repository: LegalRepository) {}
 
-  currentDocuments(): { documents: LegalDocumentVersion[] } {
-    return { documents: currentLegalDocuments() };
+  /** Documents with the hash of their text, and the version of each separate consent. */
+  currentDocuments(): {
+    documents: PublishedLegalDocument[];
+    consents: ReturnType<typeof currentConsentVersions>;
+  } {
+    return { documents: currentLegalDocuments(), consents: currentConsentVersions() };
   }
 
   async pending(userId: string): Promise<{ pending: LegalDocumentVersion[] }> {
@@ -48,8 +58,11 @@ export class LegalService {
     if (input.acceptances.some(({ document, version }) => LEGAL_DOCUMENTS[document] !== version)) {
       throw this.outdated();
     }
+    const accepted = new Set(input.acceptances.map(({ document }) => document));
+    // Versions match the catalog here, so the catalog entry carries the accepted text hash.
+    const published = currentLegalDocuments().filter(({ document }) => accepted.has(document));
     await this.repository.runInTransaction(async (transaction) => {
-      await this.repository.insertAcceptances(userId, input.acceptances, context, transaction);
+      await this.repository.insertAcceptances(userId, published, context, transaction);
       if (input.acceptances.some(({ document }) => document === "TERMS")) {
         await this.repository.touchLegacyTermsColumns(userId, LEGAL_DOCUMENTS.TERMS, transaction);
       }

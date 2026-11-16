@@ -4,6 +4,7 @@ import { RealtimeModule } from "../../common/realtime/realtime.module";
 import { MediaModule } from "../media/media.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { SocialModule } from "../social/social.module";
+import { LegalModule } from "../legal/legal.module";
 import { UsersModule } from "../users/users.module";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatController } from "./chat.controller";
@@ -17,6 +18,7 @@ import { ReadReceiptSettingsService } from "./read-receipt-settings.service";
 import { ConversationParticipantModel } from "./conversation-participant.model";
 import { ConversationModel } from "./conversation.model";
 import { MessageMutationsService } from "./message-mutations.service";
+import { MessageEvidenceHoldRepository } from "./message-evidence-hold.repository";
 import { MessageVisibilityModel } from "./message-visibility.model";
 import { MessageReactionModel } from "./message-reaction.model";
 import { MessageModel } from "./message.model";
@@ -26,6 +28,7 @@ import { env } from "../../config/env";
 @Module({
   imports: [
     UsersModule,
+    LegalModule,
     forwardRef(() => SocialModule),
     RealtimeModule,
     MediaModule,
@@ -37,6 +40,7 @@ import { env } from "../../config/env";
     ChatRepository,
     ChatService,
     MessageMutationsService,
+    MessageEvidenceHoldRepository,
     { provide: ChatMediaCipher, useFactory: () => new ChatMediaCipher(env.CHAT_MEDIA_ENCRYPTION_KEY ?? env.JWT_REFRESH_SECRET) },
     ChatPresenceService,
     ChatGateway,

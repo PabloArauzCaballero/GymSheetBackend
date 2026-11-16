@@ -34,6 +34,7 @@ async function authenticatedUserId(client: Socket): Promise<string | undefined> 
 }
 import { env } from "../../config/env";
 import { SocketTicketService } from "../../common/realtime/socket-ticket.service";
+import { LegalService } from "../legal/legal.service";
 import { UsersRepository } from "../users/users.repository";
 import { ChatEventsService } from "./chat-events.service";
 import { ChatPresenceService } from "./chat-presence.service";
@@ -44,6 +45,8 @@ import { sendMessageSchema, typingSchema } from "./chat.schemas";
 import { z } from "zod";
 
 const conversationLeaveSchema = z.object({ conversationId: z.string().uuid() }).strict();
+/** Socket twin of the HTTP `428 LEGAL_ACCEPTANCE_REQUIRED`: the client shows the documents to accept. */
+const LEGAL_ACCEPTANCE_REQUIRED = "legal_acceptance_required";
 
 /**
  * Un socket se autentica una vez, al conectar, cambiando un boleto de un solo
@@ -71,6 +74,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     private readonly chatService: ChatService,
     private readonly chatEvents: ChatEventsService,
     private readonly presence: ChatPresenceService,
+    private readonly legal: LegalService,
   ) {}
 
   afterInit(server: Server): void {
@@ -145,10 +149,12 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   async joinConversation(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { conversationId?: string },
-  ): Promise<{ joined: boolean }> {
+  ): Promise<{ joined: boolean; error?: string }> {
     const userId = await authenticatedUserId(client);
     const conversationId = payload?.conversationId;
     if (!userId || !conversationId) return { joined: false };
+    // Same rule as the HTTP guard, checked per event: a socket outlives a version bump.
+    if (await this.legal.hasPending(userId)) return { joined: false, error: LEGAL_ACCEPTANCE_REQUIRED };
 
     let roomJoined = false;
     try {
@@ -194,6 +200,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   ): Promise<{ ok: boolean; error?: string; messageId?: string; clientRequestId?: string | null; message?: MessageResponse }> {
     const userId = await authenticatedUserId(client);
     if (!userId) return { ok: false, error: "unauthenticated" };
+    if (await this.legal.hasPending(userId)) return { ok: false, error: LEGAL_ACCEPTANCE_REQUIRED };
     // Same rule as the REST send route (@RequiresVerifiedEmail): chat is social.
     const sender = await this.usersRepository.findActiveById(userId);
     if (!sender?.emailVerifiedAt) return { ok: false, error: "email_verification_required" };

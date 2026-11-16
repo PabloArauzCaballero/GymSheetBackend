@@ -84,11 +84,24 @@ Liveness remains independent of PostgreSQL to avoid restart loops during tempora
 
 | Method | Route               | Access        | Purpose                                                                  |
 | ------ | ------------------- | ------------- | ------------------------------------------------------------------------ |
-| GET    | `/legal/current`    | public        | `{ documents: [{ document, version }] }` (cacheable 5 min)               |
+| GET    | `/legal/current`    | public        | `{ documents: [{ document, version, contentSha256 }], consents: [{ kind, version }] }` (cacheable 5 min) |
 | GET    | `/me/legal/pending` | authenticated | `{ pending: [{ document, version }] }` not yet accepted by the caller    |
 | POST   | `/me/legal/accept`  | authenticated | `{ acceptances: [{ document, version }] }`; current versions only, idempotent |
 
 A global guard answers `428 LEGAL_ACCEPTANCE_REQUIRED` to authenticated requests from an account missing any current document, except `auth/*`, `legal/*`, `me/legal/*`, `health/*`, `@Public()` and `@SkipLegalAcceptance()` routes. It costs one indexed `NOT EXISTS` query per authenticated request. The optional `X-Client-Platform` header (`web`|`ios`|`android`) is stored as the acceptance channel; the IP is stored only as an HMAC (`IP_HASH_SECRET`).
+
+`contentSha256` is the SHA-256 of the exact published text (`yarn legal:hash <file>` at publish time; `null` for texts published before hashing). Each acceptance stores it in `auth.terms_acceptances.content_sha256`.
+
+## Consents (ADR-0014)
+
+| Method | Route                 | Access        | Purpose |
+| ------ | --------------------- | ------------- | ------- |
+| GET    | `/me/consents`        | authenticated | `{ consents: [{ kind, granted, version, currentVersion, upToDate, grantedAt, revokedAt }] }`, one entry per kind |
+| PUT    | `/me/consents/:kind`  | authenticated | Body `{ granted: true, version }` or `{ granted: false }`; answers the updated entry |
+
+`kind` is `HEALTH`, `ORIENTATION`, `VERIFICATION_SELFIE` or `PRECISE_LOCATION`. Granting needs the current version from `GET /legal/current` (`409 CONSENT_VERSION_OUTDATED` otherwise) and is idempotent; `X-Client-Platform` is stored as the channel. **Revoking erases the datum**: `HEALTH` the onboarding physical considerations, `ORIENTATION` the social-profile orientation and its visibility, `PRECISE_LOCATION` the stored map location (and turns the map off); `VERIFICATION_SELFIE` is only recorded until the selfie check exists. Saving an orientation (`PUT /me/social-profile`) or a map location (`PATCH /me/social-map/location`) without the open consent answers `400 CONSENT_REQUIRED` with `details.kind`. A consent given to an older text stays valid and reports `upToDate: false`.
+
+Turning the map off in `PATCH /me/social-discovery-settings` (or turning the social profile off) deletes the stored precise location. Deleting a chat message for everyone also deletes its encrypted file through the outbox queue `media.release` (kept only with immutable storage, ADR-0010).
 
 Refresh tokens are opaque, hashed, and stored in `auth.refresh_tokens`; rotating one revokes it and issues a new one in the same family, and presenting an already-rotated token revokes the whole family (theft/reuse signal). Password-reset PINs live in `public.password_reset_tokens`: hashed with bcrypt, single-use, short-lived (`PASSWORD_RESET_PIN_TTL_MINUTES`, default 10) and capped at `PASSWORD_RESET_MAX_ATTEMPTS` wrong guesses (default 5) before the code is burned. `password-reset/request` always responds `202` with the same body, matched or not, to avoid account enumeration. The code is delivered by email through the messaging port (`NotificationChannel.EMAIL`); confirming the change also revokes every refresh token the account had open.
 
@@ -96,12 +109,32 @@ Refresh tokens are opaque, hashed, and stored in `auth.refresh_tokens`; rotating
 
 | Method | Route       | Purpose                                  |
 | ------ | ----------- | ---------------------------------------- |
-| GET    | `/users/me` | Return mapped persisted user data        |
+| GET    | `/users/me` | Return mapped persisted user data (name and email change: see Account rights) |
 | GET    | `/profile`  | Read the caller's anthropometric profile |
 | POST   | `/profile`  | Create or replace the caller's profile   |
 | PATCH  | `/profile`  | Update the caller's profile              |
 
 Canonical internal units are kilograms for body weight, centimeters for height, and explicit timestamps for measurement recency.
+
+## Account rights (franja 4)
+
+| Method | Route                              | Access        | Purpose |
+| ------ | ---------------------------------- | ------------- | ------- |
+| PATCH  | `/me/account`                      | authenticated | Body `{ nombreCompleto }` (3–180, same rule as signup); answers the `/users/me` shape |
+| POST   | `/me/email/change`                 | authenticated | Body `{ newEmail, password }`; `202 { accepted: true }` and a 6-digit PIN to the **new** address (sent even if taken, to avoid enumeration) |
+| POST   | `/me/email/change/confirm`         | authenticated | Body `{ pin }`; swaps the email, `emailVerified` stays true, notifies the old address; `409` if another account holds it |
+| GET    | `/me/account/closure-preview`      | authenticated | `{ allowed, proof: { password, emailPin }, account, deleted[], anonymized[], kept[] }`; each item `{ table, label, count, reason }` |
+| POST   | `/me/account/closure-pin`          | authenticated | `202`; emails a closure PIN. Only for accounts linked to Google/Apple (`400 CLOSURE_PROOF_REQUIRED` otherwise) |
+| DELETE | `/me/account`                      | authenticated (CLIENTE) | Body `{ password }` or `{ pin }` (exactly one); `200 { closed: true, closedAt }` |
+| POST   | `/me/export`                       | authenticated | `202` with the export status; one request per 24 h (`429 ACCOUNT_EXPORT_RATE_LIMITED`, `details.retryAfterSeconds`) |
+| GET    | `/me/export/:id`                   | owner         | `{ id, status: PENDING\|READY\|FAILED, requestedAt, completedAt, expiresAt, sizeBytes, downloadPath }` |
+| GET    | `/me/export/:id/download`          | owner         | `application/json` attachment while `READY` and not expired (7 days); `409 ACCOUNT_EXPORT_NOT_READY` before |
+
+All of them are exempt from the legal-acceptance gate and the password/PIN routes use the auth rate limit. Wrong password: `400 CURRENT_PASSWORD_INVALID`; PIN errors reuse `EMAIL_PIN_INVALID|EXPIRED|EXHAUSTED|COOLDOWN` (the PIN table is `auth.email_verification_pins` with `purpose` `VERIFY_EMAIL|CHANGE_EMAIL|CLOSE_ACCOUNT`, one live code, cooldown and daily cap per purpose). Someone else's export answers `404`.
+
+**Closure** runs in one transaction driven by `src/modules/account/account-closure.catalog.ts` (the preview counts with the same predicates): sessions, devices, identities, PINs, notifications, health and training data, progression, Conocer, stories, reels, photos, comments, reviews and blocks are deleted; own chat messages are wiped like "delete for everyone" (the other person keeps theirs, the chat turns read-only), the system chats with REPP/the gym are deleted; consents are revoked; content under a moderation report, moderation records, the legal acceptances and the gym's tax records (memberships, payment orders with amounts and receipts, access log) are kept de-identified (notes and phone dropped, access credentials revoked). The account row is kept for FK integrity with email `cerrada-<id>@cuenta-cerrada.invalid`, name `Cuenta cerrada`, no birth date or sex, `estado = INACTIVO`, `closed_at` set and a random password hash: login answers the generic `401 Credenciales inválidas.` and the email can register again. Staff accounts answer `403 ACCOUNT_CLOSURE_STAFF`. Files are erased after commit through the outbox queue `media.release` (one job per file, 8 attempts, dead-letter; drained by the API every minute), only when no other row references them and never on immutable storage (ADR-0010). If the account has a running suspension or strikes still counting (365 days), they are kept under the keyed hash of the email in `moderation.closed_account_sanctions`; signing up again with that email (password or Google/Apple) inherits them, and a running suspension makes the signup answer `403` like the login (ADR-0015).
+
+**Export** is built by the same worker (queue `account.export`): one section per data-map table (`src/modules/export/account-export.sections.ts`), own rows only, credential hashes omitted, chats limited to the caller's own messages and conversation ids, each table capped at the routine-progress export limit (20 000 rows, `truncated: true` beyond it). The archive lives in `auth.account_exports` and is purged when it expires.
 
 ## Equipment
 
@@ -240,11 +273,13 @@ The connector is disabled by default and applies:
 | GET    | `/me/onboarding`             | Read onboarding state, current step and missing fields |
 | PUT    | `/me/onboarding/profile`     | Save weight/height with explicit units and date  |
 | PUT    | `/me/onboarding/goals`       | Save the primary fitness goal                    |
-| PUT    | `/me/onboarding/preferences` | Save experience, frequency, location, consents   |
+| PUT    | `/me/onboarding/preferences` | Save experience, frequency, location, consents (see below) |
 | PUT    | `/me/onboarding/equipment`   | Save available equipment                         |
 | POST   | `/me/onboarding/complete`    | Idempotently complete onboarding (`201`; `409`/`422`) |
 | GET    | `/me/body-measurements`      | List the caller's body-measurement history       |
 | POST   | `/me/body-measurements`      | Append a measurement without overwriting (`201`) |
+
+The health consent is optional: `physicalConsiderations` with `consentHealth: false` answers `400 CONSENT_REQUIRED`; `consentHealth: true` records a `HEALTH` consent (optional `consentHealthVersion`, default the current one); `consentHealth: false` revokes it and keeps no text. `consentHealth` is no longer a missing field for `complete`.
 
 Body weight uses `KG`/`LB` and height `CM`/`IN` at the boundary; `measuredOn` is a date. Goals use the English `FitnessGoal` enum.
 

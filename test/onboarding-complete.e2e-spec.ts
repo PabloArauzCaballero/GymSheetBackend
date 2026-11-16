@@ -58,7 +58,9 @@ describe('Onboarding: flujo completo (e2e)', () => {
     expect(res.body.code).toBe('ONBOARDING_INCOMPLETE');
     expect(res.body.detail).toBe('Faltan datos obligatorios para completar el onboarding.');
     expect(res.body.details.missingFields).toEqual(
-      expect.arrayContaining(['weight', 'height', 'experienceLevel', 'consentHealth']),
+      expect.arrayContaining(['weight', 'height', 'experienceLevel', 'consentData']),
     );
+    // The health consent is separate and optional (ADR-0014): never a missing field by itself.
+    expect(res.body.details.missingFields).not.toContain('consentHealth');
   });
 });

@@ -9,6 +9,9 @@ import {
 } from "sequelize-typescript";
 import { UserModel } from "../users/user.model";
 
+export const DISCOVERY_PASS_ORIGIN = { SWIPE: "SWIPE", REPORT: "REPORT" } as const;
+export type DiscoveryPassOrigin = (typeof DISCOVERY_PASS_ORIGIN)[keyof typeof DISCOVERY_PASS_ORIGIN];
+
 /**
  * Descarte de la baraja de descubrimiento: `viewerId` no quiere volver a ver a
  * `targetId`.
@@ -34,6 +37,13 @@ export class DiscoveryPassModel extends Model {
   @ForeignKey(() => UserModel)
   @Column({ type: DataType.UUID, field: "target_id" })
   declare targetId: string;
+
+  /**
+   * SWIPE: the viewer passed in the deck. REPORT: implied by a report; it is
+   * never shown to the target (passes-received) so a report stays anonymous.
+   */
+  @Column({ type: DataType.STRING(10), allowNull: false, defaultValue: DISCOVERY_PASS_ORIGIN.SWIPE })
+  declare origin: DiscoveryPassOrigin;
 
   @CreatedAt
   @Column({ field: "created_at" })

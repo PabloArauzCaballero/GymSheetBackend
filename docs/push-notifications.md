@@ -41,7 +41,7 @@ viven en el proyecto de EAS. El backend solo conoce tokens
   convertir un mensaje de chat correcto en un 500. Queda en el registro
   (`push.ticket_error`, `push.request_failed`, `chat.push_notify_failed`).
 - **No hay reintentos.** Si Expo está caído en ese momento, ese aviso concreto se
-  pierde. Ver `docs/decisions/ADR-0010-push-de-chat-y-presencia.md` para por qué
+  pierde. Ver `docs/decisions/ADR-0016-push-de-chat-y-presencia.md` para por qué
   se aceptó, y qué habría que hacer si algún día se empuja algo que no se puede
   perder.
 - **La vista previa no adelanta medios.** Una foto de vista única se anuncia

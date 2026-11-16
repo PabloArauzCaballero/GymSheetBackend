@@ -23,6 +23,7 @@ import { PermissionGuard } from './modules/admin-access/permission.guard';
 import { AuthModule } from './modules/auth/auth.module';
 import { EquipmentModule } from './modules/equipment/equipment.module';
 import { ExercisesModule } from './modules/exercises/exercises.module';
+import { AccountModule } from './modules/account/account.module';
 import { ExportModule } from './modules/export/export.module';
 import { FacilitiesModule } from './modules/facilities/facilities.module';
 import { HealthModule } from './modules/health/health.module';
@@ -49,6 +50,7 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
 import { DirectoryModule } from './modules/directory/directory.module';
 import { LegalAcceptanceGuard } from './modules/legal/legal-acceptance.guard';
 import { LegalModule } from './modules/legal/legal.module';
+import { ConsentsModule } from './modules/consents/consents.module';
 
 @Module({
   imports: [
@@ -108,6 +110,7 @@ import { LegalModule } from './modules/legal/legal.module';
     AuthModule,
     AntibotModule,
     LegalModule,
+    ConsentsModule,
     UsersModule,
     ProfilesModule,
     EquipmentModule,
@@ -124,6 +127,7 @@ import { LegalModule } from './modules/legal/legal.module';
     ProgramsModule,
     ProgressionModule,
     ExportModule,
+    AccountModule,
     MediaModule,
     SocialModule,
     ChatModule,

@@ -1,7 +1,9 @@
-import { Body, Controller, Get, Post, Put } from "@nestjs/common";
+import { Body, Controller, Get, Post, Put, Req } from "@nestjs/common";
+import { Request } from "express";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
+import { legalClientContext } from "../legal/legal-client-context";
 import { OnboardingService } from "./onboarding.service";
 import {
   BodyMeasurementInput,
@@ -42,8 +44,9 @@ export class OnboardingController {
     @CurrentUser() user: AuthenticatedUser,
     @Body(new ZodValidationPipe(onboardingPreferencesSchema))
     input: OnboardingPreferencesInput,
+    @Req() request: Request,
   ) {
-    return this.service.savePreferences(user.id, input);
+    return this.service.savePreferences(user.id, input, legalClientContext(request).channel);
   }
   @Put("onboarding/equipment") equipment(
     @CurrentUser() user: AuthenticatedUser,

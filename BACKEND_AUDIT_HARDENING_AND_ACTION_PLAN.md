@@ -1546,7 +1546,11 @@ docker run -d --name gymsheet_redis -p 6379:6379 redis:7-alpine
 ```bash
 # Requiere un fichero de entorno con, como mínimo:
 #   DB_NAME, DB_USER, DB_PASSWORD, JWT_ACCESS_SECRET, JWT_REFRESH_SECRET
+#   y, con NODE_ENV=production (el valor por defecto de la pila), IP_HASH_SECRET
+#   y REGISTRATION_TICKET_SECRET (>= 32 caracteres cada uno).
 # El arranque falla de inmediato si falta cualquiera de ellas.
+# Los workers de privacidad (stories-purge, account-data, privacy-retention)
+# corren siempre: privacy-retention ejecuta db:privacy:retention cada 24 h.
 cp .env.example .env.deploy   # y completar los valores
 
 docker compose --env-file .env.deploy up -d --build
@@ -1587,6 +1591,7 @@ node dist/main.js                   # API en producción
 yarn worker:access:prod             # worker de eventos de acceso
 yarn worker:reminders:prod          # worker de recordatorios
 yarn worker:notifications:prod      # worker de notificaciones
+yarn worker:privacy-retention:prod  # retención diaria de datos personales (24 h + jitter)
 ```
 
 ## 14. Variables de entorno

@@ -1,8 +1,10 @@
+import { BrandingModule } from '../../common/branding/branding.module';
 import { Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { RealtimeModule } from '../../common/realtime/realtime.module';
 import { AntibotModule } from '../antibot/antibot.module';
+import { ClosedAccountSanctionsModule } from '../closed-account-sanctions/closed-account-sanctions.module';
 import { LegalModule } from '../legal/legal.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TenantsModule } from '../tenants/tenants.module';
@@ -29,6 +31,7 @@ import { UserDevicesController } from './user-devices.controller';
 
 @Module({
   imports: [
+    BrandingModule,
     PassportModule,
     UsersModule,
     LegalModule,
@@ -36,6 +39,7 @@ import { UserDevicesController } from './user-devices.controller';
     RealtimeModule,
     NotificationsModule,
     AntibotModule,
+    ClosedAccountSanctionsModule,
     SequelizeModule.forFeature([RefreshTokenModel, PasswordResetTokenModel]),
   ],
   controllers: [
@@ -60,5 +64,6 @@ import { UserDevicesController } from './user-devices.controller';
     { provide: JWKS_FETCHER, useValue: fetchJwksOverHttps },
     IdentitySignInService,
   ],
+  exports: [EmailVerificationService, IdentityRepository],
 })
 export class AuthModule {}

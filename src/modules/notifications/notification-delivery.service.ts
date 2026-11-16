@@ -65,6 +65,9 @@ export class NotificationDeliveryService {
     const result = await adapter.deliver({
       notificationId: message.id,
       recipientUserId: message.recipientUserId,
+      ...(typeof message.metadata.recipientEmail === 'string'
+        ? { recipientEmail: message.metadata.recipientEmail }
+        : {}),
       subject: message.subject,
       body: message.body,
       daysRemaining: message.daysRemaining,

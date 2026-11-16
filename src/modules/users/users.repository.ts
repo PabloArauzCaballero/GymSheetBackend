@@ -139,6 +139,22 @@ export class UsersRepository {
     return this.userModel.update({ passwordHash }, { where: { id: userId }, transaction });
   }
 
+  /** Writes only the display name, for the same reason as `updatePasswordHash`. */
+  async updateFullName(userId: string, fullName: string, transaction?: Transaction): Promise<void> {
+    await this.userModel.update({ fullName }, { where: { id: userId }, transaction });
+  }
+
+  /**
+   * Swaps the login address of an account whose new mailbox was just proven.
+   * Raises `UniqueConstraintError` when another account took it meanwhile.
+   */
+  async changeEmail(userId: string, email: string, transaction: Transaction): Promise<void> {
+    await this.userModel.update(
+      { email: email.toLowerCase(), emailVerifiedAt: new Date() },
+      { where: { id: userId }, transaction },
+    );
+  }
+
   /** Marca cuándo se cerró el último socket de chat activo de esta cuenta. */
   async touchLastSeen(userId: string): Promise<void> {
     await this.userModel.update({ lastSeenAt: new Date() }, { where: { id: userId } });

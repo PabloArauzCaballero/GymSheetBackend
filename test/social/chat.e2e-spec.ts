@@ -900,7 +900,7 @@ describe("H7 chat persistence", () => {
 
       await request(server).delete(url(`/me/connections/${connectionId}`))
         .set("Authorization", `Bearer ${a.token}`).expect(200);
-      expect(revokedEvents).toHaveBeenCalledWith(conversationId, a.id);
+      expect(revokedEvents).toHaveBeenCalledWith(conversationId);
 
       for (const token of [a.token, b.token]) {
         const summaries = await request(server).get(url("/me/conversations"))
@@ -965,7 +965,7 @@ describe("H7 chat persistence", () => {
         `UPDATE chat.conversations SET revoked_at = NOW()
           WHERE id = :conversationId AND revoked_at IS NULL`,
         { replacements: { conversationId } },
-      ).then(() => events.emitConversationRevoked(conversationId, a.id));
+      ).then(() => events.emitConversationRevoked(conversationId));
       if (probeAcquiredConversationLock) {
         await revoking;
         finishPolicy();
@@ -977,7 +977,7 @@ describe("H7 chat persistence", () => {
 
       expect(order).toEqual(["read", "revoked"]);
       expect(probeAcquiredConversationLock).toBe(false);
-      expect(revokedEvent).toHaveBeenCalledWith(conversationId, a.id);
+      expect(revokedEvent).toHaveBeenCalledWith(conversationId);
     } finally {
       finishPolicy();
       await marking;
@@ -1043,7 +1043,7 @@ describe("H7 chat persistence", () => {
       await expect(joining).resolves.toEqual({ joined: true });
       expect(order.indexOf("join-complete")).toBeLessThan(order.indexOf("revoked"));
       expect(probeAcquiredConversationLock).toBe(false);
-      expect(revokedEvent).toHaveBeenCalledWith(conversationId, a.id);
+      expect(revokedEvent).toHaveBeenCalledWith(conversationId);
     } finally {
       finishJoin();
       await joining;

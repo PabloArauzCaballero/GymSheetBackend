@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { QueryTypes } from "sequelize";
+import { QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import type { SocialProfileDetailsRow } from "./social-profile.mapper";
 import type { UpdateSocialProfileInput } from "./social-profile.schemas";
@@ -10,6 +10,10 @@ const RETURNED_COLUMNS = `orientation, orientation_visible AS "orientationVisibl
 @Injectable()
 export class SocialProfileRepository {
   constructor(private readonly sequelize: Sequelize) {}
+
+  runInTransaction<T>(work: (transaction: Transaction) => Promise<T>): Promise<T> {
+    return this.sequelize.transaction(work);
+  }
 
   async find(userId: string): Promise<SocialProfileDetailsRow | null> {
     const rows = await this.sequelize.query<SocialProfileDetailsRow>(
@@ -26,6 +30,7 @@ export class SocialProfileRepository {
   async save(
     userId: string,
     input: UpdateSocialProfileInput,
+    transaction?: Transaction,
   ): Promise<SocialProfileDetailsRow | null> {
     const replacements = {
       userId,
@@ -55,6 +60,7 @@ export class SocialProfileRepository {
     const rows = await this.sequelize.query<SocialProfileDetailsRow>(statement, {
       type: QueryTypes.SELECT,
       replacements,
+      transaction,
     });
     return rows[0] ?? null;
   }

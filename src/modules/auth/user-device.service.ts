@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, UnauthorizedException } from "@nestjs/co
 import { randomUUID } from "node:crypto";
 import { Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
+import { BrandNameService } from "../../common/branding/brand-name.service";
 import { NotificationChannel, RefreshTokenRevokedReason } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
 import { NotificationService } from "../notifications/notification.service";
@@ -22,6 +23,7 @@ export class UserDeviceService {
     private readonly devices: UserDeviceRepository,
     private readonly notifications: NotificationService,
     private readonly sequelize: Sequelize,
+    private readonly brands: BrandNameService,
   ) {}
 
   /** Signup: the account's first device, so there is nothing to alert about. */
@@ -34,10 +36,16 @@ export class UserDeviceService {
    * Credential sign-in (password, Google, Apple). An installation never seen
    * for an account that already has devices triggers the "new sign-in" email,
    * enqueued in the same transaction as the session.
+   *
+   * One live session per installation: signing in again from a known
+   * installation ends the sessions it had before, so a refresh token left
+   * behind on the device (e.g. one parked for quick login) cannot be used later.
    */
   async recordSignIn(userId: string, context: ClientDeviceContext, transaction: Transaction): Promise<string> {
     const device = await this.devices.upsert(userId, installationOf(context), context, { reactivate: true }, transaction);
-    if (device.inserted && (await this.devices.countOtherDevices(userId, device.id, transaction)) > 0) {
+    if (!device.inserted) {
+      await this.devices.revokeDeviceSessions(device.id, transaction);
+    } else if ((await this.devices.countOtherDevices(userId, device.id, transaction)) > 0) {
       await this.enqueueNewDeviceAlert(userId, device.id, context, transaction);
     }
     return device.id;
@@ -112,13 +120,14 @@ export class UserDeviceService {
       timeStyle: "short",
       timeZone: env.BUSINESS_TIME_ZONE,
     }).format(new Date());
+    const brand = await this.brands.forUser(userId, transaction);
     await this.notifications.enqueueDirectMessage(
       {
         recipientUserId: userId,
         channel: NotificationChannel.EMAIL,
         subject: "Nuevo inicio de sesión",
         body: [
-          `Se inició sesión en tu cuenta de GymSheet desde un dispositivo nuevo: ${describeDevice(context)}.`,
+          `Se inició sesión en tu cuenta de ${brand} desde un dispositivo nuevo: ${describeDevice(context)}.`,
           `Fecha aproximada: ${when}.`,
           "",
           "Si fuiste tú, no tienes que hacer nada.",

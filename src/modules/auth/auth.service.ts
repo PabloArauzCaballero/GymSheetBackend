@@ -15,6 +15,8 @@ import { DomainException } from '../../common/errors/domain.exception';
 import { AuthenticatedUser, JwtPayload } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
 import { SignupProtectionService } from '../antibot/signup-protection.service';
+import { suspendedAccountError } from '../../common/moderation/account-suspension';
+import { ClosedAccountSanctionsService } from '../closed-account-sanctions/closed-account-sanctions.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { UsersRepository } from '../users/users.repository';
 import { LEGAL_DOCUMENTS } from '../legal/legal-documents';
@@ -55,6 +57,7 @@ export class AuthService {
     private readonly devices: UserDeviceService,
     private readonly emailVerification: EmailVerificationService,
     private readonly signupProtection: SignupProtectionService,
+    private readonly carriedSanctions: ClosedAccountSanctionsService,
   ) {}
 
   async register(input: RegisterInput, meta: SignupRequestMeta): Promise<AuthResponse> {
@@ -103,7 +106,7 @@ export class AuthService {
       // Account, legal acceptances, signup audit, device, first email PIN and
       // session commit together: an account must never exist without the
       // evidence of what it accepted, nor half-created without its PIN.
-      return await this.sequelize.transaction(async (transaction) => {
+      const session = await this.sequelize.transaction(async (transaction) => {
         const user = await this.usersRepository.createClient({
           email: input.email,
           passwordHash,
@@ -123,8 +126,11 @@ export class AuthService {
         await this.signupProtection.recordOutcome(verdict, user.id, transaction);
         const deviceId = await this.devices.recordSignup(user.id, meta.device, transaction);
         await this.emailVerification.issuePin(user.id, transaction);
-        return this.sessions.issue(user, { deviceId }, transaction);
+        const suspendedUntil = await this.carriedSanctions.inheritAtSignup(user, transaction);
+        return suspendedUntil ?? this.sessions.issue(user, { deviceId }, transaction);
       });
+      if (session instanceof Date) throw suspendedAccountError(session);
+      return session;
     } catch (error: unknown) {
       if (error instanceof UniqueConstraintError) {
         throw new ConflictException('Ya existe una cuenta registrada con este correo.');
@@ -159,9 +165,7 @@ export class AuthService {
     // persona suspendida que se había equivocado de contraseña, y el motivo y
     // la fecha que escribimos aquí no llegaban nunca a la pantalla.
     if (activeUser.suspendedUntil && activeUser.suspendedUntil.getTime() > Date.now()) {
-      throw new ForbiddenException(
-        `Tu cuenta está suspendida hasta el ${activeUser.suspendedUntil.toLocaleDateString('es')} por incumplir las normas de la comunidad.`,
-      );
+      throw suspendedAccountError(activeUser.suspendedUntil);
     }
 
     return this.sequelize.transaction(async (transaction) => {

@@ -4,7 +4,9 @@ import { Op } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { randomInt } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
+import { BrandNameService } from '../../common/branding/brand-name.service';
 import { NotificationChannel, RefreshTokenRevokedReason } from '../../common/enums/domain.enums';
+import { hashClientIp } from '../../common/privacy/client-ip-hash';
 import { env } from '../../config/env';
 import { UsersRepository } from '../users/users.repository';
 import { NotificationService } from '../notifications/notification.service';
@@ -42,6 +44,7 @@ export class PasswordResetService {
     private readonly notifications: NotificationService,
     private readonly refreshTokens: RefreshTokenRepository,
     private readonly sequelize: Sequelize,
+    private readonly brands: BrandNameService,
   ) {}
 
   /**
@@ -80,7 +83,7 @@ export class PasswordResetService {
           expiraEn,
           consumidoEn: null,
           intentos: 0,
-          solicitadoDesdeIp: requesterIp,
+          ipHmac: hashClientIp(requesterIp),
         },
         { transaction },
       );
@@ -159,7 +162,7 @@ export class PasswordResetService {
     await this.notifications.enqueueDirectMessage({
       recipientUserId: user.id,
       channel: NotificationChannel.EMAIL,
-      subject: 'Tu contraseña de GymSheet ha cambiado',
+      subject: `Tu contraseña de ${await this.brands.forUser(user.id)} ha cambiado`,
       body: [
         'Acabas de establecer una contraseña nueva.',
         '',

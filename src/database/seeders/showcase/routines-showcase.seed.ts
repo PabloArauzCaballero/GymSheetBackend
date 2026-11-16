@@ -319,7 +319,7 @@ export class RoutinesShowcaseSeeder {
       physicalConsiderations: null,
       consentHealth: true,
       consentData: true,
-    });
+    }, 'UNKNOWN');
     await onboarding.saveEquipment(userId, { availableEquipment: demo.equipment });
     await onboarding.complete(userId);
     this.count('onboardings_completados');
@@ -516,6 +516,7 @@ export class RoutinesShowcaseSeeder {
     await moderation.resolve(asAuthenticated(moderator, null), 'COMMENT', commentId, {
       hideContent: true,
       sanction: false,
+      confirmMinor: false,
       note: 'Spam comercial (datos de demostración).',
     });
     this.count('comentarios_moderados');

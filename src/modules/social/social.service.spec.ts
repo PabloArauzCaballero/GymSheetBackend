@@ -297,10 +297,7 @@ describe("SocialService.blockUser", () => {
       blocked: true,
     });
     expect(repository.blockUser).toHaveBeenCalledWith(userA, userB);
-    expect(events.emitConversationRevoked).toHaveBeenCalledWith(
-      "conversation-1",
-      userA,
-    );
+    expect(events.emitConversationRevoked).toHaveBeenCalledWith("conversation-1");
   });
 });
 
@@ -439,7 +436,7 @@ describe("SocialService.withdrawConnection", () => {
     await expect(service.withdrawConnection("conn-1", userA)).resolves.toEqual({
       deleted: true,
     });
-    expect(emitConversationRevoked).toHaveBeenCalledWith("conv-1", userA);
+    expect(emitConversationRevoked).toHaveBeenCalledWith("conv-1");
   });
 });
 

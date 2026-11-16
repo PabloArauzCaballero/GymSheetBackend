@@ -1,5 +1,6 @@
 import type { Sequelize } from "sequelize-typescript";
 import { OnboardingStatus } from "../../common/enums/domain.enums";
+import type { ConsentsService } from "../consents/consents.service";
 import type { OnboardingRepository } from "./onboarding.repository";
 import { onboardingSocialStepSchema } from "./onboarding.schemas";
 import { OnboardingService } from "./onboarding.service";
@@ -41,6 +42,7 @@ function serviceFor(state: ReturnType<typeof fakeState>) {
   return new OnboardingService(
     repository as unknown as OnboardingRepository,
     {} as Sequelize,
+    {} as ConsentsService,
   );
 }
 

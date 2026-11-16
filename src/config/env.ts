@@ -2,6 +2,7 @@ import * as dotenv from "dotenv";
 import { z } from "zod";
 import { antibotEnvironmentShape, refineAntibotEnvironment } from "./antibot-env";
 import { identityEnvironmentShape, refineIdentityEnvironment } from "./identity-env";
+import { privacyEnvironmentShape, refinePrivacyEnvironment } from "./privacy-env";
 
 // dotenv v17 prints an unstructured banner to stdout on load, which corrupts
 // the structured JSON log stream this service emits. Values are never logged.
@@ -120,11 +121,6 @@ export const environmentSchema = z
      * recommended deployment sets it or restricts the route at network level.
      */
     METRICS_SCRAPE_TOKEN: optionalSecretSchema,
-    /**
-     * Optional key for the HMAC-SHA256 of the client IP stored with each legal
-     * acceptance. Unset = no IP evidence is stored (the column stays null).
-     */
-    IP_HASH_SECRET: optionalSecretSchema,
 
     DB_HOST: z.string().trim().min(1),
     DB_PORT: z.coerce.number().int().positive().max(65535).default(5432),
@@ -644,10 +640,12 @@ export const environmentSchema = z
     ),
     ...antibotEnvironmentShape,
     ...identityEnvironmentShape,
+    ...privacyEnvironmentShape,
   })
   .superRefine((configuration, context) => {
     refineAntibotEnvironment(configuration, context);
     refineIdentityEnvironment(configuration, context);
+    refinePrivacyEnvironment(configuration, context);
     if (configuration.DB_POOL_MIN > configuration.DB_POOL_MAX)
       context.addIssue({
         code: z.ZodIssueCode.custom,

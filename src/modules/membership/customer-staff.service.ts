@@ -9,6 +9,7 @@ import { randomBytes } from "node:crypto";
 import { randomUUID } from "node:crypto";
 import { UniqueConstraintError } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
+import { BrandNameService } from "../../common/branding/brand-name.service";
 import { EmploymentStatus, UserRole } from "../../common/enums/domain.enums";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { env } from "../../config/env";
@@ -58,6 +59,7 @@ export class CustomerStaffService {
     private readonly facilitiesRepository: FacilitiesRepository,
     private readonly events: DomainEventPublisher,
     private readonly sequelize: Sequelize,
+    private readonly brands: BrandNameService,
   ) {}
 
   async createCustomer(input: CreateCustomerInput, actorUserId: string) {
@@ -138,7 +140,7 @@ export class CustomerStaffService {
       await this.notifications.enqueueDirectMessage({
         recipientUserId: userId,
         channel: NotificationChannel.EMAIL,
-        subject: "Tu cuenta de GymSheet ya está lista",
+        subject: `Tu cuenta de ${await this.brands.forUser(userId)} ya está lista`,
         body: [
           `Hola ${input.fullName},`,
           "",

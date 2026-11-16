@@ -43,6 +43,7 @@ export class PasswordResetTokenModel extends Model {
   @Column({ type: DataType.INTEGER, allowNull: false, defaultValue: 0 })
   declare intentos: number;
 
-  @Column({ type: DataType.STRING, allowNull: true, field: 'solicitado_desde_ip' })
-  declare solicitadoDesdeIp: string | null;
+  /** HMAC-SHA256 of the requesting IP (`IP_HASH_SECRET`); null without a secret. Retention nulls it after 90 days. */
+  @Column({ type: DataType.STRING(64), allowNull: true, field: 'ip_hmac' })
+  declare ipHmac: string | null;
 }

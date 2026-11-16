@@ -20,7 +20,10 @@ export const onboardingPreferencesSchema = z.object({
   trainingLocation: z.enum(["GYM", "HOME", "OUTDOORS", "MIXED"]),
   trainingPreferences: z.array(z.string().trim().min(1).max(80)).max(20),
   physicalConsiderations: z.string().trim().max(2000).nullable().optional(),
+  /** Separate health consent: only needed when `physicalConsiderations` is sent. */
   consentHealth: z.boolean(),
+  /** Version of the health consent text shown; defaults to the current one. */
+  consentHealthVersion: z.string().trim().min(1).max(20).optional(),
   consentData: z.boolean(),
 });
 

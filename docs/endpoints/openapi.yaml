@@ -28,6 +28,7 @@ tags:
   - name: Facilities
   - name: Notifications
   - name: Training
+  - name: Account
 paths:
   /auth/register:
     post:
@@ -96,6 +97,139 @@ paths:
                 $ref: "#/components/schemas/UserEnvelope"
         "401": { $ref: "#/components/responses/Problem401" }
         "404": { $ref: "#/components/responses/Problem404" }
+  /me/account:
+    patch:
+      tags: [Account]
+      summary: Corregir el nombre de la cuenta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateAccountRequest" }
+      responses:
+        "200":
+          description: Usuario actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+    delete:
+      tags: [Account]
+      summary: Cerrar la cuenta y borrar o anonimizar los datos personales
+      description: >-
+        Una transacción. Contraseña actual o, para cuentas de Google/Apple, el PIN de
+        `/me/account/closure-pin`. Solo CLIENTE. Los archivos se borran después por el outbox.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CloseAccountRequest" }
+      responses:
+        "200":
+          description: Cuenta cerrada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObjectEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /me/account/closure-preview:
+    get:
+      tags: [Account]
+      summary: Qué se borra, qué se anonimiza y qué se conserva al cerrar la cuenta
+      responses:
+        "200":
+          description: Vista previa del cierre
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClosurePreviewEnvelope" }
+        "401": { $ref: "#/components/responses/Problem401" }
+  /me/account/closure-pin:
+    post:
+      tags: [Account]
+      summary: Enviar un PIN de cierre al correo (cuentas de Google/Apple)
+      responses:
+        "202": { description: PIN enviado }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /me/email/change:
+    post:
+      tags: [Account]
+      summary: Pedir el cambio de correo; envía un PIN a la dirección nueva
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailChangeRequest" }
+      responses:
+        "202": { description: PIN enviado a la dirección nueva (también si ya está registrada) }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /me/email/change/confirm:
+    post:
+      tags: [Account]
+      summary: Confirmar el cambio de correo con el PIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PinRequest" }
+      responses:
+        "200":
+          description: Correo cambiado; se avisa a la dirección anterior
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObjectEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /me/export:
+    post:
+      tags: [Account]
+      summary: Pedir la exportación completa de mis datos (una cada 24 h)
+      responses:
+        "202":
+          description: Exportación encolada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountExportEnvelope" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /me/export/{id}:
+    get:
+      tags: [Account]
+      summary: Estado de una exportación propia
+      parameters:
+        - { $ref: "#/components/parameters/IdParam" }
+      responses:
+        "200":
+          description: Estado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountExportEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /me/export/{id}/download:
+    get:
+      tags: [Account]
+      summary: Descargar el archivo JSON de una exportación propia lista
+      parameters:
+        - { $ref: "#/components/parameters/IdParam" }
+      responses:
+        "200":
+          description: Archivo JSON con una sección por tabla del mapa de datos
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
   /profile:
     get:
       tags: [Profile]
@@ -2344,6 +2478,75 @@ components:
             data:
               type: object
               additionalProperties: true
+    UpdateAccountRequest:
+      type: object
+      additionalProperties: false
+      required: [nombreCompleto]
+      properties:
+        nombreCompleto: { type: string, minLength: 3, maxLength: 180 }
+    CloseAccountRequest:
+      type: object
+      additionalProperties: false
+      description: Exactamente uno de los dos.
+      properties:
+        password: { type: string, maxLength: 128 }
+        pin: { type: string, pattern: "^\\d{6}$" }
+    EmailChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [newEmail, password]
+      properties:
+        newEmail: { type: string, format: email, maxLength: 180 }
+        password: { type: string, maxLength: 128 }
+    PinRequest:
+      type: object
+      additionalProperties: false
+      required: [pin]
+      properties:
+        pin: { type: string, pattern: "^\\d{6}$" }
+    ClosurePreviewItem:
+      type: object
+      required: [table, label, count, reason]
+      properties:
+        table: { type: string, example: social.map_locations }
+        label: { type: string }
+        count: { type: integer, minimum: 1 }
+        reason: { type: string, nullable: true }
+    ClosurePreviewEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [allowed, proof, account, deleted, anonymized, kept]
+              properties:
+                allowed: { type: boolean }
+                proof:
+                  type: object
+                  properties:
+                    password: { type: boolean, enum: [true] }
+                    emailPin: { type: boolean }
+                account: { type: object, additionalProperties: true }
+                deleted: { type: array, items: { $ref: "#/components/schemas/ClosurePreviewItem" } }
+                anonymized: { type: array, items: { $ref: "#/components/schemas/ClosurePreviewItem" } }
+                kept: { type: array, items: { $ref: "#/components/schemas/ClosurePreviewItem" } }
+    AccountExportEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [id, status, requestedAt, downloadPath]
+              properties:
+                id: { type: string, format: uuid }
+                status: { type: string, enum: [PENDING, READY, FAILED] }
+                requestedAt: { type: string, format: date-time }
+                completedAt: { type: string, format: date-time, nullable: true }
+                expiresAt: { type: string, format: date-time, nullable: true }
+                sizeBytes: { type: integer, nullable: true }
+                downloadPath: { type: string, nullable: true, example: "/me/export/{id}/download" }
     ProfileRequest:
       type: object
       required: [edad, pesoKg, estaturaCm, objetivo]

@@ -39,6 +39,13 @@ describe("LegalAcceptanceGuard", () => {
     expect(hasPending).toHaveBeenCalledWith(user.id);
   });
 
+  it("blocks the socket ticket of an account with pending documents", async () => {
+    const { context, reflector } = contextFor("/api/v1/auth/socket-ticket");
+    const { guard, hasPending } = guardWith(reflector, true);
+    await expect(guard.canActivate(context)).rejects.toMatchObject({ code: "LEGAL_ACCEPTANCE_REQUIRED" });
+    expect(hasPending).toHaveBeenCalledWith(user.id);
+  });
+
   it("lets an account that accepted everything through with a single check", async () => {
     const { context, reflector } = contextFor("/api/v1/workouts");
     const { guard, hasPending } = guardWith(reflector, false);
@@ -78,5 +85,11 @@ describe("isExemptPath", () => {
     expect(isExemptPath("/api/v1/me/legalese", "api/v1")).toBe(false);
     expect(isExemptPath("/api/v1/authors", "api/v1")).toBe(false);
     expect(isExemptPath("/api/v1/me/profile", "api/v1")).toBe(false);
+  });
+
+  it("guards the socket ticket although it lives under auth/: it opens the chat", () => {
+    expect(isExemptPath("/api/v1/auth/socket-ticket", "api/v1")).toBe(false);
+    expect(isExemptPath("/api/v1/auth/socket-ticket/", "api/v1")).toBe(false);
+    expect(isExemptPath("/api/v1/auth/refresh", "api/v1")).toBe(true);
   });
 });

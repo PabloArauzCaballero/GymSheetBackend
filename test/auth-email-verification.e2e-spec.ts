@@ -1,6 +1,7 @@
 import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import request from 'supertest';
+import { BrandNameService } from '../src/common/branding/brand-name.service';
 import { bootE2eApp, E2E_SIGNUP_FIELDS, E2eApp } from './support/e2e-app';
 
 /**
@@ -169,5 +170,24 @@ describe('email verification (e2e)', () => {
       replacements: { email },
     });
     expect(rows).toHaveLength(0);
+  });
+
+  it('signs the PIN email with the product name for platform accounts and with the gym name otherwise', async () => {
+    const member = await signup('brand');
+    const [email] = await e2e.app.get(Sequelize).query<{ subject: string; body: string }>(
+      `SELECT subject, body FROM notifications.messages
+        WHERE recipient_user_id = :userId AND channel = 'EMAIL' AND deduplication_key LIKE 'email-verification-%'`,
+      { type: QueryTypes.SELECT, replacements: { userId: member.id } },
+    );
+    expect(email.subject).toBe('Confirma tu correo en REPP');
+    expect(email.body).toContain('Si no creaste una cuenta en REPP');
+    expect(`${email.subject} ${email.body}`).not.toMatch(/GymSheet/iu);
+
+    const tenantId = `brand-${suffix}`.toLowerCase().replace(/[^a-z0-9-]/gu, '').slice(0, 60);
+    await e2e.sql(`INSERT INTO public.tenants (id, nombre) VALUES (:tenantId, 'Gimnasio Marca')`, { tenantId });
+    await e2e.sql('UPDATE public.usuarios SET tenant_id = :tenantId WHERE id = :userId', { tenantId, userId: member.id });
+    await expect(e2e.app.get(BrandNameService, { strict: false }).forUser(member.id)).resolves.toBe('Gimnasio Marca');
+    await e2e.sql("UPDATE public.usuarios SET tenant_id = 'default' WHERE id = :userId", { userId: member.id });
+    await e2e.sql('DELETE FROM public.tenants WHERE id = :tenantId', { tenantId });
   });
 });

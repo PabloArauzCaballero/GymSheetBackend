@@ -6,9 +6,10 @@ import { Sequelize } from "sequelize-typescript";
 import { NotificationChannel } from "../../common/enums/domain.enums";
 import { DomainException } from "../../common/errors/domain.exception";
 import { env } from "../../config/env";
+import { BrandNameService } from "../../common/branding/brand-name.service";
 import { NotificationService } from "../notifications/notification.service";
 import { UsersRepository } from "../users/users.repository";
-import { EmailVerificationPinRepository } from "./email-verification-pin.repository";
+import { EmailPinPurpose, EmailVerificationPinRepository } from "./email-verification-pin.repository";
 
 /** Same shape as the password-reset PIN; these are product decisions, not tuning knobs. */
 export const EMAIL_PIN_POLICY = {
@@ -20,11 +21,33 @@ export const EMAIL_PIN_POLICY = {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-type ConfirmOutcome =
-  | { kind: "VERIFIED" }
+/** Kept as-is for verification so in-flight deduplication keys stay stable. */
+const DEDUPLICATION_PREFIX: Record<EmailPinPurpose, string> = {
+  VERIFY_EMAIL: "email-verification",
+  CHANGE_EMAIL: "email-change",
+  CLOSE_ACCOUNT: "account-closure",
+};
+
+/** Result of checking a PIN; `targetEmail` is the new address of a `CHANGE_EMAIL` PIN. */
+export type EmailPinOutcome =
+  | { kind: "VERIFIED"; targetEmail: string | null }
   | { kind: "INVALID"; attemptsRemaining: number | null }
   | { kind: "EXPIRED" }
   | { kind: "EXHAUSTED" };
+
+export type EmailPinFailure = Exclude<EmailPinOutcome, { kind: "VERIFIED" }>;
+
+/**
+ * Email that carries a PIN. `recipientEmail` overrides the account's address (email change).
+ * Subject and body receive the brand the email signs with (the person's gym, or REPP).
+ */
+export type EmailPinMessage = {
+  subject: (brand: string) => string;
+  /** Body lines; receives the clear PIN, which is never stored. */
+  lines: (pin: string, brand: string) => string[];
+  recipientEmail?: string;
+  targetEmail?: string | null;
+};
 
 /**
  * Proves that the person owns the mailbox of the account with a 6-digit PIN.
@@ -40,6 +63,7 @@ export class EmailVerificationService {
     private readonly users: UsersRepository,
     private readonly notifications: NotificationService,
     private readonly sequelize: Sequelize,
+    private readonly brands: BrandNameService,
   ) {}
 
   /** Sends a new PIN unless the mailbox is already verified (then a silent no-op). */
@@ -55,10 +79,32 @@ export class EmailVerificationService {
    * calls this inside the account creation). The account row is locked so two
    * concurrent requests cannot both slip past the cooldown.
    */
-  async issuePin(userId: string, transaction: Transaction): Promise<void> {
+  issuePin(userId: string, transaction: Transaction): Promise<void> {
+    return this.issuePurposePin(userId, "VERIFY_EMAIL", {
+      subject: (brand) => `Confirma tu correo en ${brand}`,
+      lines: (pin, brand) => [
+        `Tu código para confirmar el correo es ${pin}`,
+        "",
+        `Caduca en ${EMAIL_PIN_POLICY.ttlMinutes} minutos y sólo sirve una vez.`,
+        "",
+        `Si no creaste una cuenta en ${brand}, ignora este mensaje.`,
+      ],
+    }, transaction);
+  }
+
+  /**
+   * Same PIN machinery for every purpose (verification, email change, account
+   * closure): one live code per purpose, per-purpose cooldown and daily cap.
+   */
+  async issuePurposePin(
+    userId: string,
+    purpose: EmailPinPurpose,
+    message: EmailPinMessage,
+    transaction: Transaction,
+  ): Promise<void> {
     await this.users.lockUserForUpdate(userId, transaction);
     const now = Date.now();
-    const window = await this.pins.sendWindow(userId, new Date(now - DAY_MS), transaction);
+    const window = await this.pins.sendWindow(userId, new Date(now - DAY_MS), transaction, purpose);
     const cooldownEndsAt = (window.latest?.getTime() ?? 0) + EMAIL_PIN_POLICY.resendCooldownSeconds * 1000;
     if (cooldownEndsAt > now) throw cooldown(cooldownEndsAt - now);
     if (window.sent >= EMAIL_PIN_POLICY.maxSendsPerDay && window.oldest) {
@@ -69,22 +115,22 @@ export class EmailVerificationService {
     const pin = String(randomInt(0, 1_000_000)).padStart(6, "0");
     const pinHash = await bcrypt.hash(pin, env.BCRYPT_SALT_ROUNDS);
     const expiresAt = new Date(now + EMAIL_PIN_POLICY.ttlMinutes * 60_000);
-    await this.pins.supersedePending(userId, transaction);
-    await this.pins.insert(userId, pinHash, expiresAt, transaction);
+    const brand = await this.brands.forUser(userId, transaction);
+    await this.pins.supersedePending(userId, transaction, purpose);
+    await this.pins.insert(userId, pinHash, expiresAt, transaction, {
+      purpose,
+      targetEmail: message.targetEmail ?? null,
+    });
     await this.notifications.enqueueDirectMessage(
       {
         recipientUserId: userId,
         channel: NotificationChannel.EMAIL,
-        subject: "Confirma tu correo en GymSheet",
-        body: [
-          `Tu código para confirmar el correo es ${pin}`,
-          "",
-          `Caduca en ${EMAIL_PIN_POLICY.ttlMinutes} minutos y sólo sirve una vez.`,
-          "",
-          "Si no creaste una cuenta en GymSheet, ignora este mensaje.",
-        ].join("\n"),
-        deduplicationKey: `email-verification-${userId}-${expiresAt.getTime()}`,
-        // The body is a credential: email only, never in the in-app inbox.
+        subject: message.subject(brand),
+        body: message.lines(pin, brand).join("\n"),
+        deduplicationKey: `${DEDUPLICATION_PREFIX[purpose]}-${userId}-${expiresAt.getTime()}`,
+        ...(message.recipientEmail ? { metadata: { recipientEmail: message.recipientEmail } } : {}),
+        // Every PIN purpose is a credential (mailbox proof, account closure):
+        // email only, never in the in-app inbox, redacted once delivered.
         secret: true,
       },
       transaction,
@@ -98,15 +144,31 @@ export class EmailVerificationService {
       this.checkPin(userId, pin, transaction),
     );
     if (outcome.kind === "VERIFIED") return { verified: true };
-    throw pinError(outcome);
+    throw emailPinError(outcome);
   }
 
-  private async checkPin(userId: string, pin: string, transaction: Transaction): Promise<ConfirmOutcome> {
+  private async checkPin(userId: string, pin: string, transaction: Transaction): Promise<EmailPinOutcome> {
     const user = await this.users.findActiveById(userId, transaction);
     if (!user) throw new UnauthorizedException("La sesión ya no es válida.");
-    if (user.emailVerifiedAt) return { kind: "VERIFIED" };
+    if (user.emailVerifiedAt) return { kind: "VERIFIED", targetEmail: null };
 
-    const latest = await this.pins.findLatestForUpdate(userId, transaction);
+    const outcome = await this.verifyPurposePin(userId, "VERIFY_EMAIL", pin, transaction);
+    if (outcome.kind === "VERIFIED") await this.users.markEmailVerified(userId, transaction);
+    return outcome;
+  }
+
+  /**
+   * Checks and, when right, spends the latest PIN of a purpose. Failed attempts
+   * are written in the caller's transaction, so callers must commit before
+   * throwing `emailPinError(outcome)`.
+   */
+  async verifyPurposePin(
+    userId: string,
+    purpose: EmailPinPurpose,
+    pin: string,
+    transaction: Transaction,
+  ): Promise<EmailPinOutcome> {
+    const latest = await this.pins.findLatestForUpdate(userId, transaction, purpose);
     if (!latest) return { kind: "INVALID", attemptsRemaining: null };
     if (latest.attempts >= EMAIL_PIN_POLICY.maxAttempts) return { kind: "EXHAUSTED" };
     if (latest.consumedAt) return { kind: "INVALID", attemptsRemaining: null };
@@ -122,8 +184,7 @@ export class EmailVerificationService {
     }
 
     await this.pins.consume(latest.id, transaction);
-    await this.users.markEmailVerified(userId, transaction);
-    return { kind: "VERIFIED" };
+    return { kind: "VERIFIED", targetEmail: latest.targetEmail ?? null };
   }
 }
 
@@ -137,7 +198,7 @@ function cooldown(remainingMs: number): DomainException {
   );
 }
 
-function pinError(outcome: Exclude<ConfirmOutcome, { kind: "VERIFIED" }>): DomainException {
+export function emailPinError(outcome: EmailPinFailure): DomainException {
   switch (outcome.kind) {
     case "EXPIRED":
       return new DomainException(

@@ -3,8 +3,9 @@ import { Sequelize } from 'sequelize-typescript';
 import { UserGender, UserRole } from '../../common/enums/domain.enums';
 import { DomainException } from '../../common/errors/domain.exception';
 import { SignupProtectionService } from '../antibot/signup-protection.service';
+import { ClosedAccountSanctionsService } from '../closed-account-sanctions/closed-account-sanctions.service';
 import type { SignupVerdict } from '../antibot/signup-protection.types';
-import { LEGAL_DOCUMENTS } from '../legal/legal-documents';
+import { LEGAL_DOCUMENTS, LEGAL_DOCUMENT_CONTENT_SHA256 } from '../legal/legal-documents';
 import { LegalRepository } from '../legal/legal.repository';
 import { LegalService } from '../legal/legal.service';
 import { TenantsService } from '../tenants/tenants.service';
@@ -54,7 +55,7 @@ function verdict(overrides: Partial<SignupVerdict> = {}): SignupVerdict {
   };
 }
 
-function build(decision: SignupVerdict = verdict()) {
+function build(decision: SignupVerdict = verdict(), inheritedSuspension: Date | null = null) {
   const createClient = jest.fn().mockResolvedValue({
     id: 'user-1',
     email: input.email,
@@ -70,6 +71,7 @@ function build(decision: SignupVerdict = verdict()) {
   const recordOutcome = jest.fn().mockResolvedValue(undefined);
   const recordSignup = jest.fn().mockResolvedValue('device-1');
   const issuePin = jest.fn().mockResolvedValue(undefined);
+  const inheritAtSignup = jest.fn().mockResolvedValue(inheritedSuspension);
   const jwt = { sign: jest.fn().mockReturnValue('access-token') } as unknown as JwtService;
   const refreshTokens = { create: refreshCreate } as unknown as RefreshTokenRepository;
   const service = new AuthService(
@@ -83,10 +85,11 @@ function build(decision: SignupVerdict = verdict()) {
     { recordSignup } as unknown as UserDeviceService,
     { issuePin } as unknown as EmailVerificationService,
     { evaluate, recordOutcome } as unknown as SignupProtectionService,
+    { inheritAtSignup } as unknown as ClosedAccountSanctionsService,
   );
   return {
     service, createClient, findByEmail, insertAcceptances, refreshCreate,
-    evaluate, recordOutcome, recordSignup, issuePin,
+    evaluate, recordOutcome, recordSignup, issuePin, inheritAtSignup,
   };
 }
 
@@ -113,8 +116,9 @@ describe('AuthService.register legal acceptance', () => {
     expect(insertAcceptances).toHaveBeenCalledWith(
       'user-1',
       [
-        { document: 'TERMS', version: LEGAL_DOCUMENTS.TERMS },
-        { document: 'PRIVACY', version: LEGAL_DOCUMENTS.PRIVACY },
+        { document: 'TERMS', version: LEGAL_DOCUMENTS.TERMS, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.TERMS },
+        { document: 'PRIVACY', version: LEGAL_DOCUMENTS.PRIVACY, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.PRIVACY },
+        { document: 'COMMUNITY', version: LEGAL_DOCUMENTS.COMMUNITY, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.COMMUNITY },
       ],
       meta.legal,
       transaction,
@@ -167,5 +171,23 @@ describe('AuthService.register signup protection', () => {
     expect(issuePin).toHaveBeenCalledWith('user-1', transaction);
     expect(refreshCreate).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'device-1' }), transaction);
     expect(response.user.emailVerified).toBe(false);
+  });
+});
+
+describe('AuthService.register after a sanctioned closure', () => {
+  it('inherits the sanction in the signup transaction and refuses the session while suspended', async () => {
+    const until = new Date(Date.now() + 3 * 86_400_000);
+    const { service, inheritAtSignup, refreshCreate, createClient } = build(verdict(), until);
+    await expect(service.register(input, meta)).rejects.toMatchObject({ status: 403 });
+    expect(inheritAtSignup).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1', email: input.email }), transaction);
+    expect(createClient).toHaveBeenCalled();
+    expect(refreshCreate).not.toHaveBeenCalled();
+  });
+
+  it('opens the session when nothing is inherited', async () => {
+    const { service, inheritAtSignup, refreshCreate } = build();
+    await expect(service.register(input, meta)).resolves.toMatchObject({ accessToken: 'access-token' });
+    expect(inheritAtSignup).toHaveBeenCalledTimes(1);
+    expect(refreshCreate).toHaveBeenCalled();
   });
 });

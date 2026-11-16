@@ -868,6 +868,10 @@ export class SocialRepository {
         },
       );
       if (!rows[0]) return null;
+      // Map off (or profile off, which forces it) erases the precise location, not just hides it.
+      if (!settings.mapEnabled) {
+        await this.sequelize.query(`DELETE FROM social.map_locations WHERE user_id = :userId`, { replacements: { userId }, transaction });
+      }
       await this.recommendationOutbox?.enqueueProfileSnapshot(
         userId,
         transaction,
@@ -1076,7 +1080,7 @@ export class SocialRepository {
               NULL::varchar,
               dp.created_at
          FROM social.discovery_passes dp
-        WHERE dp.viewer_id = :viewerId
+        WHERE dp.viewer_id = :viewerId AND dp.origin = 'SWIPE'
         ORDER BY decided_at DESC
         LIMIT 1`,
       { type: QueryTypes.SELECT, replacements: { viewerId }, transaction },
@@ -1469,7 +1473,7 @@ export class SocialRepository {
     return this.listPasses(
       `SELECT dp.viewer_id AS user_id, dp.created_at AS passed_at
          FROM social.discovery_passes dp
-        WHERE dp.target_id = :viewerId
+        WHERE dp.target_id = :viewerId AND dp.origin = 'SWIPE'
         ORDER BY dp.created_at DESC
         LIMIT :limit`,
       viewerId,
@@ -1560,6 +1564,7 @@ export class SocialRepository {
             FROM social.discovery_passes dp
             JOIN public.usuarios vu ON vu.id = dp.viewer_id
            WHERE dp.target_id = :viewerId
+             AND dp.origin = 'SWIPE'
              AND vu.estado = 'ACTIVO'
              AND COALESCE(vu.tenant_id, :defaultTenantId) = :tenantId) AS passes_received,
          (SELECT COUNT(*)

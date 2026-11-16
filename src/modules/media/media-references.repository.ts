@@ -21,6 +21,9 @@ import { Sequelize } from "sequelize-typescript";
  * | `profile.stories`        | `storage_key`                     | clave      |
  * | `profile.photos`         | `storage_key`                     | clave      |
  * | `chat.messages`          | `media_key`                       | clave      |
+ * | `moderation.chat_message_evidence` | `media_key`             | clave      |
+ * | `social.reels`           | `storage_key`                     | clave      |
+ * | `community.content_comments` | `adjunto_url`                 | URL        |
  * | `media.files`            | `storage_url`                     | URL        |
  * | `training.exercise_media`| `url`, `thumbnail_url`            | URL        |
  * | `facilities.branches`    | `cover_image_url`, `gallery_image_urls` | URL  |
@@ -69,6 +72,14 @@ export class MediaReferencesRepository {
                 SELECT 1 FROM profile.photos WHERE storage_key = :storageKey
                  UNION ALL
                 SELECT 1 FROM chat.messages WHERE media_key = :storageKey
+                 UNION ALL
+                SELECT 1 FROM moderation.chat_message_evidence WHERE media_key = :storageKey
+                 UNION ALL
+                SELECT 1 FROM social.reels WHERE storage_key = :storageKey
+                 UNION ALL
+                SELECT 1 FROM community.content_comments
+                 WHERE adjunto_url IS NOT NULL
+                   AND right(adjunto_url, :suffixLength) = :urlSuffix
                  UNION ALL
                 SELECT 1 FROM media.files
                  WHERE storage_url IS NOT NULL

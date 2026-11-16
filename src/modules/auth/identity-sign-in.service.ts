@@ -1,6 +1,5 @@
 import {
   ConflictException,
-  ForbiddenException,
   HttpStatus,
   Injectable,
   NotFoundException,
@@ -27,6 +26,8 @@ import { IdentityProvider, OidcTokenVerifier, VerifiedIdentity } from "./oidc-to
 import { SignupRequestMeta } from "./signup-context";
 import { UserDeviceService } from "./user-device.service";
 import { SignupProtectionService } from "../antibot/signup-protection.service";
+import { suspendedAccountError } from "../../common/moderation/account-suspension";
+import { ClosedAccountSanctionsService } from "../closed-account-sanctions/closed-account-sanctions.service";
 
 export type IdentitySignInResult =
   | ({ status: "AUTHENTICATED" } & AuthResponse)
@@ -52,6 +53,7 @@ export class IdentitySignInService {
     private readonly devices: UserDeviceService,
     private readonly signupProtection: SignupProtectionService,
     private readonly sequelize: Sequelize,
+    private readonly carriedSanctions: ClosedAccountSanctionsService,
   ) {}
 
   async signIn(
@@ -130,8 +132,10 @@ export class IdentitySignInService {
         );
         await this.identities.link(claims.provider, claims.subject, user.id, claims.email, transaction);
         const deviceId = await this.devices.recordSignup(user.id, meta.device, transaction);
-        return this.sessions.issue(user, { deviceId }, transaction);
+        const suspendedUntil = await this.carriedSanctions.inheritAtSignup(user, transaction);
+        return suspendedUntil ?? this.sessions.issue(user, { deviceId }, transaction);
       });
+      if (session instanceof Date) throw suspendedAccountError(session);
       return { status: "AUTHENTICATED", ...session };
     } catch (error: unknown) {
       if (error instanceof UniqueConstraintError) throw new ConflictException(ACCOUNT_EXISTS);
@@ -147,9 +151,7 @@ export class IdentitySignInService {
     options: { takeOver?: boolean } = {},
   ): Promise<IdentitySignInResult> {
     if (user.suspendedUntil && user.suspendedUntil.getTime() > Date.now()) {
-      throw new ForbiddenException(
-        `Tu cuenta está suspendida hasta el ${user.suspendedUntil.toLocaleDateString("es")} por incumplir las normas de la comunidad.`,
-      );
+      throw suspendedAccountError(user.suspendedUntil);
     }
     try {
       const session = await this.sequelize.transaction(async (transaction) => {

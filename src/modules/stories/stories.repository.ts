@@ -134,16 +134,21 @@ export class StoriesRepository {
    * El índice `ix_profile_stories_feed (tenant_id, expires_at)` no sirve aquí
    * (no filtramos por tenant), pero la tabla se mantiene pequeña justamente
    * porque esta purga corre.
+   * A story under an OPEN report is kept, with its file, for moderation to
+   * review; once every report on it is closed it is purged like any other
+   * (same rule as the disappearing chat purge).
    */
   async findExpired(
     now: Date,
     limit: number,
   ): Promise<ExpiredStoryReference[]> {
     return this.sequelize.query<ExpiredStoryReference>(
-      `SELECT id, storage_key AS "storageKey"
-         FROM profile.stories
-        WHERE expires_at <= :now
-        ORDER BY expires_at ASC
+      `SELECT s.id, s.storage_key AS "storageKey"
+         FROM profile.stories s
+        WHERE s.expires_at <= :now
+          AND NOT EXISTS (SELECT 1 FROM moderation.reports r WHERE r.target_kind = 'STORY'
+                           AND r.target_id = s.id AND r.status IN ('PENDIENTE', 'EN_REVISION'))
+        ORDER BY s.expires_at ASC
         LIMIT :limit`,
       { type: QueryTypes.SELECT, replacements: { now, limit } },
     );

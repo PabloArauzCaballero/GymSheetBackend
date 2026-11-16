@@ -59,15 +59,22 @@ describe('device registry (e2e)', () => {
     const login = await withDevice(request(e2e.http).post(e2e.url('/auth/login')), laptop, 'web')
       .send({ email, password })
       .expect(201);
-    const laptopRefresh = login.body.data.refreshToken as string;
+    const firstLaptopRefresh = login.body.data.refreshToken as string;
     const sent = await alerts(userId);
     expect(sent).toHaveLength(1);
     expect(sent[0]?.subject).toBe('Nuevo inicio de sesión');
-    // Same installation again: no second alert.
-    await withDevice(request(e2e.http).post(e2e.url('/auth/login')), laptop, 'web').send({ email, password }).expect(201);
+    // Same installation again: no second alert, and one live session per
+    // installation — the session it had before ends (no orphan refresh token).
+    const again = await withDevice(request(e2e.http).post(e2e.url('/auth/login')), laptop, 'web')
+      .send({ email, password })
+      .expect(201);
     expect(await alerts(userId)).toHaveLength(1);
+    await withDevice(request(e2e.http).post(e2e.url('/auth/refresh')), laptop, 'web')
+      .send({ refreshToken: firstLaptopRefresh })
+      .expect(401);
+    const laptopRefresh = again.body.data.refreshToken as string;
 
-    const api = e2e.as(login.body.data.accessToken as string);
+    const api = e2e.as(again.body.data.accessToken as string);
     const both = (await withDevice(api.get('/me/devices'), laptop, 'web').expect(200)).body.data as Array<{
       id: string;
       platform: string;
