@@ -1,4 +1,4 @@
-import { CONSENT_KINDS, CONSENT_VERSIONS, ConsentKind } from "../legal/consent-versions";
+import { CONSENT_VERSIONS, ConsentKind, PERSON_CONSENT_KINDS } from "../legal/consent-versions";
 import type { ConsentRow } from "./consents.repository";
 
 export type ConsentResponse = {
@@ -27,7 +27,7 @@ export function mapConsent(kind: ConsentKind, row: ConsentRow | undefined): Cons
   };
 }
 
-export function mapConsents(rows: readonly ConsentRow[]): ConsentResponse[] {
+export function mapConsents(rows: readonly ConsentRow[], kinds: readonly ConsentKind[] = PERSON_CONSENT_KINDS): ConsentResponse[] {
   const byKind = new Map(rows.map((row) => [row.kind, row]));
-  return CONSENT_KINDS.map((kind) => mapConsent(kind, byKind.get(kind)));
+  return kinds.map((kind) => mapConsent(kind, byKind.get(kind)));
 }

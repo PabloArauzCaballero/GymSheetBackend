@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { SequelizeModule } from "@nestjs/sequelize";
 import { ReportedContentRetentionService } from "../account/reported-content-retention.service";
 import { AntibotPersistenceModule } from "../antibot/antibot-persistence.module";
+import { KycRetentionService } from "../business-kyc/kyc-retention.service";
 import { MediaModule } from "../media/media.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { PhotoVerificationModel } from "../verification/photo-verification.model";
@@ -23,6 +24,7 @@ import { PrivacyRetentionService } from "./privacy-retention.service";
     ReportedContentRetentionService,
     VerificationRepository,
     VerificationRetentionService,
+    KycRetentionService,
     PrivacyRetentionService,
   ],
   exports: [PrivacyRetentionService],

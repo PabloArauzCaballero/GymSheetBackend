@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { CONSENT_KINDS } from "../legal/consent-versions";
+import { PERSON_CONSENT_KINDS } from "../legal/consent-versions";
 
-export const consentKindSchema = z.enum(CONSENT_KINDS);
+/** `me/consents` is a person surface; the business KYC selfie consent has its own route (ADR-0021). */
+export const consentKindSchema = z.enum(PERSON_CONSENT_KINDS);
 
 /** Granting names the text version shown; revoking needs no version. */
 export const setConsentSchema = z

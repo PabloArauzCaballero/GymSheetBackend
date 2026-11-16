@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { IP_HASH_RETENTION_DAYS } from "../../common/privacy/client-ip-hash";
 import { ReportedContentRetentionService } from "../account/reported-content-retention.service";
 import { TicketLedgerRepository } from "../antibot/ticket-ledger.repository";
+import { KycRetentionResult, KycRetentionService } from "../business-kyc/kyc-retention.service";
 import { VerificationRetentionResult, VerificationRetentionService } from "../verification/verification-retention.service";
 import { IpHmacTable, PrivacyRetentionRepository } from "./privacy-retention.repository";
 
@@ -19,6 +20,8 @@ export type PrivacyRetentionResult = {
   reportedContentErased: Record<string, number>;
   /** Abandoned selfie challenges and overdue reviews closed, selfie files queued for deletion (franja 6). */
   verification: VerificationRetentionResult;
+  /** KYC documents, encrypted identity data and phone codes past their period (franja 8b, ADR-0021). */
+  kyc: KycRetentionResult;
 };
 
 /** Data minimisation across every table holding personal data with a retention limit (ADR-0014). */
@@ -29,6 +32,7 @@ export class PrivacyRetentionService {
     private readonly repository: PrivacyRetentionRepository,
     private readonly reportedContent: ReportedContentRetentionService,
     private readonly verification: VerificationRetentionService,
+    private readonly kyc: KycRetentionService,
   ) {}
 
   async purge(now: Date): Promise<PrivacyRetentionResult> {
@@ -42,6 +46,7 @@ export class PrivacyRetentionService {
     const closedAccountSanctionsDeleted = await this.repository.deleteExpiredClosedAccountSanctions(now);
     const reportedContentErased = await this.reportedContent.purge(now);
     const verification = await this.verification.purge(now);
+    const kyc = await this.kyc.purge(now);
     return {
       ticketsDeleted,
       ipHashesClearedByTable,
@@ -49,6 +54,7 @@ export class PrivacyRetentionService {
       closedAccountSanctionsDeleted,
       reportedContentErased,
       verification,
+      kyc,
     };
   }
 }

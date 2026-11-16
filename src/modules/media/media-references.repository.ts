@@ -29,6 +29,7 @@ import { Sequelize } from "sequelize-typescript";
  * | `training.exercise_media`| `url`, `thumbnail_url`            | URL        |
  * | `facilities.branches`    | `cover_image_url`, `gallery_image_urls` | URL  |
  * | `directory.entities`     | `logo_url`, `cover_url`           | URL        |
+ * | `business.kyc_documents` | `storage_key`                     | clave      |
  *
  * Las tablas que solo guardan la URL pública (no la clave) se comparan por
  * sufijo exacto `"/<clave>"` con `right()`, nunca con `LIKE`: la clave viaja
@@ -117,6 +118,25 @@ export class MediaReferencesRepository {
       },
     );
 
-    return rows[0]?.referenced === true;
+    if (rows[0]?.referenced === true) return true;
+    return this.isKycDocumentReferenced(storageKey, transaction);
+  }
+
+  /**
+   * KYC documents (ADR-0021), probed apart and only while the table exists:
+   * rolling back its migration queues the remaining files on `media.release`,
+   * and those jobs must drain after the table is gone.
+   */
+  private async isKycDocumentReferenced(storageKey: string, transaction?: Transaction): Promise<boolean> {
+    const [table] = await this.sequelize.query<{ present: boolean }>(
+      "SELECT to_regclass('business.kyc_documents') IS NOT NULL AS present",
+      { type: QueryTypes.SELECT, transaction },
+    );
+    if (table?.present !== true) return false;
+    const [row] = await this.sequelize.query<{ referenced: boolean }>(
+      "SELECT EXISTS (SELECT 1 FROM business.kyc_documents WHERE storage_key = :storageKey) AS referenced",
+      { type: QueryTypes.SELECT, replacements: { storageKey }, transaction },
+    );
+    return row?.referenced === true;
   }
 }

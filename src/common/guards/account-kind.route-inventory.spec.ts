@@ -38,6 +38,18 @@ const BUSINESS_REACHABLE: string[] = [
   'POST me/legal/accept',
   'POST notifications/device-tokens',
   'PUT business/me/handle',
+  // KYC of the business (ADR-0021, franja 8b).
+  'DELETE business/me/kyc/documents/:id',
+  'GET business/me/kyc',
+  'POST business/me/kyc/changes',
+  'POST business/me/kyc/documents',
+  'POST business/me/kyc/resubmit',
+  'POST business/me/kyc/selfie-challenge',
+  'POST business/me/kyc/submit',
+  'POST business/me/phone/verify/confirm',
+  'POST business/me/phone/verify/request',
+  'PUT business/me/kyc/consent',
+  'PUT business/me/kyc/draft',
 ];
 
 type Route = { method: string; path: string; controller: Type; handler: object };

@@ -110,6 +110,16 @@ una cuenta de otro tipo habría entrado a perfil, social y Conocer.
     `is_verified`, `tenant_id` ni dueño en el cuerpo (D1; cuerpo estricto). Se corrigen D2 (pinned:
     ya cerrado en 7a), D3, D4, D5, D7, D8 y D12 (ver el plan de auditoría).
 
+## Continuación en 8b
+
+[ADR-0021](./ADR-0021-kyc-de-negocios-y-aprobacion-automatica.md) completa lo que aquí quedó
+anunciado: la ficha y el handle pasan a `ACTIVE` sólo por la máquina del KYC
+(`AUTO_APPROVED`/`APPROVED`); el `409 BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW` del §10 lleva ahora
+`details.action = "POST /business/me/kyc/changes"`, la versión nueva que lo acepta; y la reserva
+`PENDING` deja de vencer por los 14 días una vez que el negocio envió su KYC (está esperando a REPP
+o reenviando, no acaparando). Mientras el KYC está `SUBMITTED`/`IN_REVIEW`, ni el handle ni el
+nombre ni la categoría cambian (`409 KYC_NOT_EDITABLE`).
+
 ## Sedes
 
 `directory.entity_locations` queda para la franja 8c (perfil público, sedes y publicaciones): no hace

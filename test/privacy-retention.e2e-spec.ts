@@ -14,6 +14,7 @@ import { TicketLedgerRepository } from '../src/modules/antibot/ticket-ledger.rep
 import { ReportedContentRetentionService } from '../src/modules/account/reported-content-retention.service';
 import { PrivacyRetentionRepository } from '../src/modules/privacy/privacy-retention.repository';
 import { PrivacyRetentionService } from '../src/modules/privacy/privacy-retention.service';
+import { KycRetentionService } from '../src/modules/business-kyc/kyc-retention.service';
 import { VerificationRepository } from '../src/modules/verification/verification.repository';
 import { VerificationRetentionService } from '../src/modules/verification/verification-retention.service';
 import { bootE2eApp, createPersonalExercise, E2eApp } from './support/e2e-app';
@@ -138,6 +139,7 @@ describe('Privacy retention and minimisation (e2e)', () => {
         mediaRelease,
         e2e.app.get(NotificationService, { strict: false }),
       ),
+      new KycRetentionService(e2e.app.get(Sequelize), mediaRelease),
     );
     const result = await retention.purge(now);
     expect(result.ipHashesCleared).toBeGreaterThanOrEqual(6);

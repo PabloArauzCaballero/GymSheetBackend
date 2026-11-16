@@ -7,6 +7,7 @@
  * es responsabilidad del factory, gobernado por `MEDIA_STORAGE_PROVIDER`.
  */
 import { isSafeStorageKey } from "../../common/media/own-media-key";
+import { resolveMediaExtension } from "./adapters/mime-extension";
 
 /** Token de inyección de dependencias para el proveedor activo. */
 export const MEDIA_STORAGE_PROVIDER = Symbol("MEDIA_STORAGE_PROVIDER");
@@ -41,7 +42,8 @@ export type MediaCategory =
   | "verificaciones"
   | "catalog"
   | "ejercicios"
-  | "business";
+  | "business"
+  | "kyc";
 
 /**
  * Destino de una carga. Es una unión discriminada a propósito: el compilador
@@ -69,6 +71,19 @@ export type MediaUploadTarget =
    * and deletable like a person's content (ADR-0017, ADR-0020).
    */
   | { readonly category: "business"; readonly entityId: string }
+  /**
+   * A KYC document of a business (ADR-0021), already encrypted by
+   * `KycCipher`: `business/{accountId}/kyc/{submissionId}/{objectId}.bin`.
+   * Private (outside the anonymous read policy and refused by the static
+   * mount) and deletable (ADR-0017). Named by a random id, not by content:
+   * the ciphertext has a random IV, so a content hash would add nothing.
+   */
+  | {
+      readonly category: "kyc";
+      readonly accountId: string;
+      readonly submissionId: string;
+      readonly objectId: string;
+    }
   /**
    * Demostraciones de un ejercicio del catálogo: una carpeta por ejercicio.
    *
@@ -176,14 +191,32 @@ export function isBusinessPublicKey(key: string): boolean {
   return BUSINESS_PUBLIC_KEY_PATTERN.test(key) && isSafeStorageKey(key);
 }
 
-/** Keys the API deletes for real (ADR-0017): a person's content and a business's public media. */
+/** A business KYC document (`business/{accountId}/kyc/{submissionId}/{objectId}.bin`, ADR-0021). */
+export const BUSINESS_KYC_KEY_PATTERN = /^business\/[0-9a-f-]{36}\/kyc\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.bin$/u;
+
+export function isBusinessKycKey(key: string): boolean {
+  return BUSINESS_KYC_KEY_PATTERN.test(key) && isSafeStorageKey(key);
+}
+
+/** Keys the API deletes for real (ADR-0017): a person's content, a business's public media and its KYC documents. */
 export function isDeletableContentKey(key: string): boolean {
-  return isUserContentKey(key) || isBusinessPublicKey(key);
+  return isUserContentKey(key) || isBusinessPublicKey(key) || isBusinessKycKey(key);
+}
+
+/**
+ * Full key of an upload. Content-addressed (`<sha256><ext>`, the extension
+ * from the validated type only) for every target except a KYC document: an
+ * opaque ciphertext named by its random object id, `.bin`, whatever the type.
+ */
+export function mediaObjectKey(target: MediaUploadTarget, checksumSha256: string, mimeType: string): string {
+  if (target.category === "kyc") return `${mediaTargetPrefix(target)}/${target.objectId}.bin`;
+  return `${mediaTargetPrefix(target)}/${checksumSha256}${resolveMediaExtension(mimeType)}`;
 }
 
 export function mediaTargetPrefix(target: MediaUploadTarget): string {
   if (target.category === "catalog") return "catalog";
   if (target.category === "business") return `business/${target.entityId}/public`;
+  if (target.category === "kyc") return `business/${target.accountId}/kyc/${target.submissionId}`;
   if (target.category === "ejercicios") {
     return "ownerUserId" in target
       ? `users/${target.ownerUserId}/ejercicios/${target.exerciseId}`

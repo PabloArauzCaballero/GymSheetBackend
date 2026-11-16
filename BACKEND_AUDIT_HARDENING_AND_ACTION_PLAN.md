@@ -959,6 +959,22 @@ Aflorados por F-001 y resueltos sin cambio de comportamiento:
 
 Pendiente por franja: KYC y activación (8b), sedes `directory.entity_locations` y publicaciones (8c), pedidos y D6/D9/D10 (8d), afiliación (8e), chat, cierre y exportación del negocio (8f).
 
+### Franja 8b: KYC de negocios, aprobación en segundos y consola de REPP (ADR-0021)
+
+| Cambio / riesgo | Corrección | Prueba |
+|---|---|---|
+| Ningún negocio podía publicarse (todo quedaba `DRAFT`) | KYC versionado (`business.kyc_*`, migración reversible `202611200501-business-kyc`); envío síncrono con 11 comprobaciones, presupuesto `KYC_PIPELINE_BUDGET_MS` y `statement_timeout` por consulta; todo PASS → `AUTO_APPROVED` (ficha y handle `ACTIVE`, insignia «Nuevo»); si no, `IN_REVIEW` con SLA | `kyc-checks.spec.ts`, `kyc-pipeline.service.spec.ts` (vencimiento con reloj falso y check lento → `IN_REVIEW`), `test/business-kyc.e2e-spec.ts` |
+| Dos envíos simultáneos con el mismo NIT | `pg_advisory_xact_lock` por cada HMAC antes del timeout; resultado en una sola transacción | `test/business-kyc.e2e-spec.ts` (uno AUTO, otro IN_REVIEW) |
+| Datos y documentos de identidad | `KycCipher` con clave propia `KYC_ENCRYPTION_KEY` obligatoria en producción, sin respaldo; HMAC con el pepper; ruta privada `business/{accountId}/kyc/…` (404 estático, borrable ADR-0017, fuera de la lectura anónima) | `kyc-cipher.spec.ts` (ida y vuelta, bytes ≠ texto), `media-storage.port.spec.ts`, `private-media-path.spec.ts`, e2e (bytes `GSKY1`, 404 estático) |
+| Estados del KYC | Tabla de transiciones; lo demás `409 KYC_INVALID_TRANSITION` | `kyc-state-machine.spec.ts` (49 pares) |
+| Teléfono sin verificar | Puerto `PhoneOtpSender`: `disabled` (→ revisión, nunca autoaprobación) y `whatsapp-cloud` (Graph API, host fijo, `fetch` inyectado) | `whatsapp-cloud-otp.sender.spec.ts` (transporte falso, sin llamada real), e2e |
+| Selfie biométrica del representante | Gesto del catálogo de verificación y consentimiento separado `KYC_SELFIE` (`400 CONSENT_REQUIRED`); revocarlo borra las selfies | e2e |
+| Consola REPP | Colas REVIEW/POST_REVIEW con SLA (24 h hábiles / 72 h), claim/release, decisión con motivos, visor descifrado `no-store` con auditoría por vista, suspensión, reservas y renombre forzado, lista negra por HMAC, términos prohibidos, métricas; nadie revisa su propio negocio (`403 MODERATION_SELF_CASE`) | `test/business-kyc-console.e2e-spec.ts` |
+| Reenvíos y cambios materiales | Máx. 3 intentos, 24 h; cambio material = versión nueva que nunca se autoaprueba (acepta el `409 BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW` de 8a) | e2e |
+| Retención del KYC | Paso KYC en `privacy-retention` (constantes `KYC_RETENTION`, pendientes del abogado) con borrado por `media.release` | `privacy-retention.service.spec.ts`, e2e (purga y archivo borrado) |
+
+Fuera de 8b: cancelar órdenes al suspender (8d), prioridad por afiliaciones (8e), cierre y exportación del negocio (8f), verificación externa SIN/SEGIP/SEPREC, cotejo facial automático y rotación de la clave KYC.
+
 
 ---
 

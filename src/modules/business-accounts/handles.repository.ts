@@ -25,13 +25,18 @@ const COLUMNS = `h.handle, h.skeleton, h.owner_entity_id AS "ownerEntityId", h.s
  * handles inside their lock, and PENDING reservations that have not expired.
  * A PENDING reservation expires when its listing is still DRAFT the TTL after
  * the listing was created: a fixed start that no write to the handle moves.
+ * Once the business has sent its KYC (ADR-0021) the reservation no longer
+ * expires: it is not squatting, it is waiting for REPP or resubmitting.
  */
+const SUBMITTED_KYC = `EXISTS (
+  SELECT 1 FROM business.accounts a JOIN business.kyc_submissions s ON s.account_id = a.user_id
+   WHERE a.entity_id = e.id AND s.submitted_at IS NOT NULL)`;
 const HOLDS_SKELETON = `(
   h.status IN ('ACTIVE', 'RESERVED')
   OR (h.status = 'RETIRED' AND h.locked_until > :now)
   OR (h.status = 'PENDING' AND EXISTS (
       SELECT 1 FROM directory.entities e
-       WHERE e.id = h.owner_entity_id AND (e.status <> 'DRAFT' OR e.created_at > :pendingCutoff))))`;
+       WHERE e.id = h.owner_entity_id AND (e.status <> 'DRAFT' OR e.created_at > :pendingCutoff OR ${SUBMITTED_KYC}))))`;
 
 @Injectable()
 export class HandlesRepository {
@@ -43,6 +48,15 @@ export class HandlesRepository {
       replacements: { key: `handle:${skeleton}` },
       transaction,
     });
+  }
+
+  /** Whether the listing's business has sent its KYC at least once. */
+  async hasSubmittedKyc(entityId: string, transaction?: Transaction): Promise<boolean> {
+    const [row] = await this.sequelize.query<{ submitted: boolean }>(
+      `SELECT ${SUBMITTED_KYC} AS submitted FROM directory.entities e WHERE e.id = :entityId`,
+      { replacements: { entityId }, type: QueryTypes.SELECT, transaction },
+    );
+    return row?.submitted === true;
   }
 
   async findByHandle(handle: string, transaction?: Transaction): Promise<HandleRow | null> {

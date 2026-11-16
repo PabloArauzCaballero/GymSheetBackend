@@ -134,4 +134,14 @@ export const ACCOUNT_EXPORT_SECTIONS: readonly AccountExportSection[] = [
   section("notifications.messages", "Avisos recibidos", "t.recipient_user_id = :userId AND NOT t.secret"),
   section("notifications.device_tokens", "Permisos push", OWN, ["push_token", "auth", "p256dh"]),
   section("notifications.preferences", "Preferencias de avisos", OWN),
+  // Business KYC (ADR-0021): filled only for a business account, whose export opens in franja 8f.
+  // Ciphertexts, keyed hashes and the claiming moderator never leave; the automatic checks are not
+  // exported either: their outcomes would tell which datum is on the blocklist.
+  section("business.kyc_submissions", "Verificación del negocio", "t.account_id = :userId",
+    ["nit_enc", "nit_hmac", "rep_ci_enc", "rep_ci_hmac", "phone_enc", "phone_hmac", "claimed_by_user_id", "claimed_at"]),
+  section("business.kyc_documents", "Documentos de la verificación",
+    "t.submission_id IN (SELECT s.id FROM business.kyc_submissions s WHERE s.account_id = :userId)", ["storage_key", "storage_provider"]),
+  section("business.kyc_decisions", "Decisiones sobre la verificación",
+    "t.submission_id IN (SELECT s.id FROM business.kyc_submissions s WHERE s.account_id = :userId)", ["actor_user_id", "note"]),
+  section("business.phone_verifications", "Verificación del teléfono", "t.account_id = :userId", ["phone_enc", "phone_hmac", "code_hash"]),
 ];

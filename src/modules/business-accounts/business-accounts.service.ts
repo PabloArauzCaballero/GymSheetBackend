@@ -59,13 +59,18 @@ export class BusinessAccountsService {
       const entity = await this.lockEditable(account, transaction);
       const newName = patch.name !== undefined && patch.name !== entity.name ? patch.name : null;
       const recategorized = patch.primaryCategoryId !== undefined && patch.primaryCategoryId !== entity.primaryCategoryId;
-      // Past DRAFT a material change needs a KYC review; the versioning that accepts it lands in franja 8b.
+      // Past DRAFT a material change is a new KYC version reviewed by REPP (ADR-0021): never applied here.
       if ((newName !== null || recategorized) && entity.status !== 'DRAFT') {
         throw new DomainException(
           HttpStatus.CONFLICT,
           'BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW',
           'El nombre y la categoría de un negocio publicado solo cambian con una nueva verificación.',
+          { action: 'POST /business/me/kyc/changes' },
         );
+      }
+      // While REPP reviews the first verification, what it reviews does not change under it.
+      if ((newName !== null || recategorized) && (account.kycStatus === 'SUBMITTED' || account.kycStatus === 'IN_REVIEW')) {
+        throw new DomainException(HttpStatus.CONFLICT, 'KYC_NOT_EDITABLE', 'Tu solicitud ya está en revisión.', { action: 'WAIT' });
       }
       if (newName !== null) await assertBusinessNameAllowed(this.repository, newName, account.entityType, entity.id, transaction);
       await this.repository.updateEntity(entity, patch, transaction);
@@ -77,6 +82,10 @@ export class BusinessAccountsService {
 
   async claimHandle(actor: AuthenticatedUser, handle: string): Promise<CurrentHandle> {
     const account = await this.requireAccount(actor);
+    // What REPP is reviewing does not change under it (ADR-0021).
+    if (account.kycStatus === 'SUBMITTED' || account.kycStatus === 'IN_REVIEW') {
+      throw new DomainException(HttpStatus.CONFLICT, 'KYC_NOT_EDITABLE', 'Tu solicitud ya está en revisión.', { action: 'WAIT' });
+    }
     return this.sequelize.transaction(async (transaction) => {
       const entity = await this.lockEditable(account, transaction);
       return this.handles.claim(entity, handle, account.userId, transaction);

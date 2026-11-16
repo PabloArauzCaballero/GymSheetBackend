@@ -1,7 +1,7 @@
 import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import request from 'supertest';
-import { CONSENT_KINDS, CONSENT_VERSIONS } from '../src/modules/legal/consent-versions';
+import { CONSENT_VERSIONS, PERSON_CONSENT_KINDS } from '../src/modules/legal/consent-versions';
 import { LEGAL_DOCUMENTS, LEGAL_DOCUMENT_CONTENT_SHA256 } from '../src/modules/legal/legal-documents';
 import { bootE2eApp, E2E_SIGNUP_FIELDS, E2eApp } from './support/e2e-app';
 
@@ -51,7 +51,8 @@ describe('Legal acceptance and signup requirements (e2e)', () => {
         { document: 'PRIVACY', version: LEGAL_DOCUMENTS.PRIVACY, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.PRIVACY },
         { document: 'COMMUNITY', version: LEGAL_DOCUMENTS.COMMUNITY, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.COMMUNITY },
       ],
-      consents: CONSENT_KINDS.map((kind) => ({ kind, version: CONSENT_VERSIONS[kind] })),
+      // The person set: the business KYC selfie consent is published only with accountKind=BUSINESS (ADR-0021).
+      consents: PERSON_CONSENT_KINDS.map((kind) => ({ kind, version: CONSENT_VERSIONS[kind] })),
     });
     expect(response.headers['cache-control']).toContain('public');
   });

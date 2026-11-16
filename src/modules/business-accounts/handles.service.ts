@@ -95,8 +95,12 @@ export class HandlesService {
     if (entity.status !== 'DRAFT' && entity.status !== 'ACTIVE') {
       throw new DomainException(HttpStatus.CONFLICT, 'BUSINESS_ACCOUNT_LOCKED', 'Tu negocio no puede cambiar de nombre en este estado.');
     }
-    // The KYC (franja 8b) takes the listing out of DRAFT; until then the window does not reopen.
-    if (entity.status === 'DRAFT' && !pendingReservationOpen(entity.createdAt, now)) {
+    // The KYC takes the listing out of DRAFT; until it is sent once (ADR-0021) the window does not reopen.
+    if (
+      entity.status === 'DRAFT' &&
+      !pendingReservationOpen(entity.createdAt, now) &&
+      !(await this.repository.hasSubmittedKyc(entity.id, transaction))
+    ) {
       throw new DomainException(
         HttpStatus.CONFLICT,
         'HANDLE_RESERVATION_EXPIRED',

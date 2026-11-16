@@ -6,10 +6,9 @@ import {
   MediaStorageProvider,
   MediaUploadInput,
   MediaUploadTarget,
-  mediaTargetPrefix,
+  mediaObjectKey,
   StoredAsset,
 } from "../media-storage.port";
-import { resolveMediaExtension } from "./mime-extension";
 
 export interface LocalStorageConfig {
   /** Directorio raíz donde se escriben los binarios. */
@@ -49,8 +48,7 @@ export class LocalStorageAdapter implements MediaStorageProvider {
     target: MediaUploadTarget,
   ): Promise<StoredAsset> {
     const checksumSha256 = createHash("sha256").update(input.buffer).digest("hex");
-    const extension = resolveMediaExtension(input.mimeType);
-    const key = `${mediaTargetPrefix(target)}/${checksumSha256}${extension}`;
+    const key = mediaObjectKey(target, checksumSha256, input.mimeType);
     const absolutePath = this.resolveWithinRoot(key);
 
     const reused = existsSync(absolutePath);

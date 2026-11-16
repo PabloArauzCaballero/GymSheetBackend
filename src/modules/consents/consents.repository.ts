@@ -56,6 +56,20 @@ const ERASURE: Record<ConsentKind, readonly string[]> = {
      RETURNING 'social.photo_verifications' AS "aggregateType", v.id::text AS "aggregateId",
                target.selfie_storage_key AS "storageKey"`,
   ],
+  // Business KYC (ADR-0021): every stored representative selfie goes now and the pending gesture
+  // is cancelled. Decisions already taken stay; a submission waiting for REPP is reviewed without it.
+  KYC_SELFIE: [
+    `UPDATE business.kyc_submissions SET selfie_challenge_code = NULL, selfie_challenge_expires_at = NULL, updated_at = NOW()
+      WHERE account_id = :userId AND selfie_challenge_code IS NOT NULL`,
+    `WITH target AS (
+       SELECT d.id, d.storage_key FROM business.kyc_documents d
+         JOIN business.kyc_submissions s ON s.id = d.submission_id
+        WHERE s.account_id = :userId AND d.kind = 'SELFIE' AND d.deleted_at IS NULL
+        FOR UPDATE OF d)
+     UPDATE business.kyc_documents d SET storage_key = NULL, deleted_at = NOW(), delete_reason = 'USER_REQUEST'
+       FROM target WHERE d.id = target.id
+     RETURNING 'business.kyc_documents' AS "aggregateType", d.id::text AS "aggregateId", target.storage_key AS "storageKey"`,
+  ],
 };
 
 const ROW_COLUMNS = `kind, version, granted_at AS "grantedAt", revoked_at AS "revokedAt"`;

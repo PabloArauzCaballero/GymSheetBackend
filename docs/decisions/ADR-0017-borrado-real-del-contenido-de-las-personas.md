@@ -28,6 +28,8 @@ persona y conserva la inmutabilidad.
 | Prefijo | Qué es | Con MinIO |
 |---|---|---|
 | `users/{userId}/perfiles/…`, `stories/`, `reels/`, `publicaciones/`, `chats/{conversationId}/…`, `ejercicios/{exerciseId}/…` | Contenido de la persona (incluidas las subidas a sus ejercicios personales, §7, y las selfies de verificación cuando exista ese módulo, que debe guardarlas bajo `users/{userId}/`) | **Se borra**: todas las versiones |
+| `business/{entityId}/public/…` | Logo y portada de un negocio ([ADR-0020](./ADR-0020-cuentas-de-negocio-y-tipo-de-cuenta.md) §11) | **Se borra**: todas las versiones |
+| `business/{accountId}/kyc/{submissionId}/{uuid}.bin` | Documentos KYC cifrados de un negocio ([ADR-0021](./ADR-0021-kyc-de-negocios-y-aprobacion-automatica.md)): privados, fuera de la lectura anónima y rechazados por el montaje estático (`isPrivateStoredMediaPath`) | **Se borra**: todas las versiones (`isBusinessKycKey`) |
 | `catalog/…` | Mediateca del administrador y dataset espejado | No se borra (ADR-0010) |
 | `ejercicios/{exerciseId}/…` | Demostraciones del catálogo de ejercicios (ejercicios globales) | No se borra (ADR-0010) |
 

@@ -10,8 +10,9 @@ const transaction = {} as Transaction;
 
 /** A PENDING reservation lives 14 days from the listing's creation, whatever is re-claimed meanwhile. */
 describe('HandlesService.claim, PENDING expiry with a fixed clock', () => {
-  function setup(current: Partial<HandleRow> | null) {
+  function setup(current: Partial<HandleRow> | null, submittedKyc = false) {
     const repository = {
+      hasSubmittedKyc: jest.fn().mockResolvedValue(submittedKyc),
       lockSkeleton: jest.fn().mockResolvedValue(undefined),
       deleteExpired: jest.fn().mockResolvedValue(undefined),
       findCurrent: jest.fn().mockResolvedValue(current),
@@ -23,6 +24,12 @@ describe('HandlesService.claim, PENDING expiry with a fixed clock', () => {
     const entity = { id: 'entity-1', status: 'DRAFT', createdAt: T0 } as DirectoryEntityModel;
     return { service, repository, entity };
   }
+
+  it('once the KYC was sent (ADR-0021) the window no longer closes: day 15 still claims while resubmitting', async () => {
+    const { service, repository, entity } = setup({ handle: 'topfit', status: 'PENDING' }, true);
+    await expect(service.claim(entity, 'otrofit', 'user-1', transaction, addDays(T0, 15))).resolves.toEqual({ handle: 'otrofit', status: 'PENDING' });
+    expect(repository.hasSubmittedKyc).toHaveBeenCalledWith('entity-1', transaction);
+  });
 
   it('re-claiming the same handle on day 13 writes nothing, so the reservation is not extended', async () => {
     const { service, repository, entity } = setup({ handle: 'topfit', status: 'PENDING' });

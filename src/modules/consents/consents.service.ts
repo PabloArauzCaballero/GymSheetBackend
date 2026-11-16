@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import { Transaction } from "sequelize";
 import { DomainException } from "../../common/errors/domain.exception";
-import { CONSENT_VERSIONS, ConsentKind } from "../legal/consent-versions";
+import { CONSENT_VERSIONS, ConsentKind, PERSON_CONSENT_KINDS } from "../legal/consent-versions";
 import type { LegalChannel } from "../legal/legal-client-context";
 import { MediaReleaseService } from "../media/media-release.service";
 import { ConsentResponse, mapConsent, mapConsents } from "./consents.mapper";
@@ -13,6 +13,7 @@ const REQUIRED_MESSAGES: Record<ConsentKind, string> = {
   ORIENTATION: "Para guardar tu orientación primero tienes que dar tu consentimiento para ese dato.",
   VERIFICATION_SELFIE: "Para verificar tu perfil primero tienes que dar tu consentimiento para la selfie.",
   PRECISE_LOCATION: "Para compartir tu ubicación en el mapa primero tienes que dar tu consentimiento de ubicación.",
+  KYC_SELFIE: "Para tomar la selfie de verificación del negocio primero tienes que dar tu consentimiento para la selfie.",
 };
 
 /**
@@ -30,8 +31,8 @@ export class ConsentsService {
     private readonly mediaRelease: MediaReleaseService,
   ) {}
 
-  async list(userId: string): Promise<{ consents: ConsentResponse[] }> {
-    return { consents: mapConsents(await this.repository.latestPerKind(userId)) };
+  async list(userId: string, kinds: readonly ConsentKind[] = PERSON_CONSENT_KINDS): Promise<{ consents: ConsentResponse[] }> {
+    return { consents: mapConsents(await this.repository.latestPerKind(userId), kinds) };
   }
 
   async set(

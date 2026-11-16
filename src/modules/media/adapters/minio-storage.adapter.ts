@@ -6,10 +6,9 @@ import {
   MediaStorageProvider,
   MediaUploadInput,
   MediaUploadTarget,
-  mediaTargetPrefix,
+  mediaObjectKey,
   StoredAsset,
 } from "../media-storage.port";
-import { resolveMediaExtension } from "./mime-extension";
 
 export interface MinioStorageConfig {
   /** Host del servidor MinIO (sin esquema ni puerto). */
@@ -91,8 +90,7 @@ export class MinioStorageAdapter implements MediaStorageProvider {
     const checksumSha256 = createHash("sha256")
       .update(input.buffer)
       .digest("hex");
-    const extension = resolveMediaExtension(input.mimeType);
-    const key = `${mediaTargetPrefix(target)}/${checksumSha256}${extension}`;
+    const key = mediaObjectKey(target, checksumSha256, input.mimeType);
 
     const reused = await this.objectExists(key);
     if (!reused) {

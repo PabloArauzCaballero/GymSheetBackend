@@ -26,7 +26,7 @@ export class LegalService {
     documents: PublishedLegalDocument[];
     consents: ReturnType<typeof currentConsentVersions>;
   } {
-    return { documents: currentLegalDocuments(kind), consents: currentConsentVersions() };
+    return { documents: currentLegalDocuments(kind), consents: currentConsentVersions(kind) };
   }
 
   async pending(userId: string, kind: AccountKind = "PERSON"): Promise<{ pending: LegalDocumentVersion[] }> {

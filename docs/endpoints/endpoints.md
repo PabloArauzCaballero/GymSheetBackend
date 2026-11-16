@@ -116,7 +116,7 @@ Each kind of account answers for its own set (ADR-0020): a person `TERMS`, `PRIV
 | GET    | `/me/consents`        | authenticated | `{ consents: [{ kind, granted, version, currentVersion, upToDate, grantedAt, revokedAt }] }`, one entry per kind |
 | PUT    | `/me/consents/:kind`  | authenticated | Body `{ granted: true, version }` or `{ granted: false }`; answers the updated entry |
 
-`kind` is `HEALTH`, `ORIENTATION`, `VERIFICATION_SELFIE` or `PRECISE_LOCATION`. Granting needs the current version from `GET /legal/current` (`409 CONSENT_VERSION_OUTDATED` otherwise) and is idempotent; `X-Client-Platform` is stored as the channel. **Revoking erases the datum**: `HEALTH` the onboarding physical considerations, `ORIENTATION` the social-profile orientation and its visibility, `PRECISE_LOCATION` the stored map location (and turns the map off); `VERIFICATION_SELFIE` deletes every stored verification selfie (files go through the `media.release` queue) and cancels open attempts (`EXPIRED`), while an approval already given (`verified_at`, the decision record) stays. `POST /me/verification/challenge` and the selfie upload need an open `VERIFICATION_SELFIE` consent of the **current** version (`400 CONSENT_REQUIRED`, `details.kind = VERIFICATION_SELFIE`). Saving an orientation (`PUT /me/social-profile`) or a map location (`PATCH /me/social-map/location`) without the open consent answers `400 CONSENT_REQUIRED` with `details.kind`. A consent given to an older text stays valid and reports `upToDate: false`. Current version of the four kinds: `2026-12-02` (the four checkbox texts changed; every grant recorded with `2026-12-01` now reports `upToDate: false` and the client asks again).
+`kind` is `HEALTH`, `ORIENTATION`, `VERIFICATION_SELFIE` or `PRECISE_LOCATION` (the person set; `GET /legal/current` lists these). A business gives only `KYC_SELFIE`, through `PUT /business/me/kyc/consent` (`GET /legal/current?accountKind=BUSINESS` lists it, ADR-0021). Granting needs the current version from `GET /legal/current` (`409 CONSENT_VERSION_OUTDATED` otherwise) and is idempotent; `X-Client-Platform` is stored as the channel. **Revoking erases the datum**: `HEALTH` the onboarding physical considerations, `ORIENTATION` the social-profile orientation and its visibility, `PRECISE_LOCATION` the stored map location (and turns the map off); `VERIFICATION_SELFIE` deletes every stored verification selfie (files go through the `media.release` queue) and cancels open attempts (`EXPIRED`), while an approval already given (`verified_at`, the decision record) stays. `POST /me/verification/challenge` and the selfie upload need an open `VERIFICATION_SELFIE` consent of the **current** version (`400 CONSENT_REQUIRED`, `details.kind = VERIFICATION_SELFIE`). Saving an orientation (`PUT /me/social-profile`) or a map location (`PATCH /me/social-map/location`) without the open consent answers `400 CONSENT_REQUIRED` with `details.kind`. A consent given to an older text stays valid and reports `upToDate: false`. Current version of the four kinds: `2026-12-02` (the four checkbox texts changed; every grant recorded with `2026-12-01` now reports `upToDate: false` and the client asks again).
 
 Turning the map off in `PATCH /me/social-discovery-settings` (or turning the social profile off) deletes the stored precise location. Deleting a chat message for everyone also deletes its encrypted file through the outbox queue `media.release` (on MinIO every version of the object is removed; kept only with `MEDIA_USER_CONTENT_DELETABLE=false`, ADR-0017).
 
@@ -466,12 +466,66 @@ Session responses (`register`, `login`, `refresh`, `business/signup`) carry `use
 Handle rules: 3–30 of `[a-z0-9._]`, starting and ending alphanumeric, no double separators, not only
 digits; plain ASCII after NFKC. Look-alikes collide (`.`/`_` dropped, `0→o 1→l i→l 5→s 3→e`).
 Reserved words (and `repp` anywhere) are refused. While the listing is `DRAFT` the handle is a
-**PENDING reservation**: not public, freely replaceable, expired after 14 days without activity. It
-becomes `ACTIVE` when the KYC approves the listing (franja 8b; until then no business listing is
-public). A public rename: at most one every 30 days and three per year; the old handle redirects
+**PENDING reservation**: not public, freely replaceable, expired 14 days after the listing was
+created unless the KYC was already sent once. It becomes `ACTIVE` with the KYC approval
+(`AUTO_APPROVED`/`APPROVED`, ADR-0021). While the KYC is `SUBMITTED`/`IN_REVIEW` the handle, the
+name and the category do not change (`409 KYC_NOT_EDITABLE`). A public rename: at most one every 30 days and three per year; the old handle redirects
 for 90 days and is locked for 180.
 
 Email verification uses the person routes (`POST /auth/email/verify/request|confirm`).
+
+## Business KYC (ADR-0021, franja 8b)
+
+All routes: `NEGOCIO`, verified email, business legal set accepted (else `428`). A person gets
+`403 ACCOUNT_KIND_NOT_ALLOWED`. Without `KYC_ENCRYPTION_KEY`/`IP_HASH_SECRET`: `503 KYC_UNAVAILABLE`.
+A suspended or closed account: `409 BUSINESS_ACCOUNT_LOCKED`. Only a `DRAFT` attempt is editable:
+`409 KYC_NOT_EDITABLE` with `details.action` `WAIT` (in review), `RESUBMIT` (rejected) or `CHANGE`
+(approved: open a material change).
+
+| Method | Path | Body → response | Codes |
+|---|---|---|---|
+| POST | `/business/me/phone/verify/request` | `{ phone }` (Bolivian mobile, `+591` optional, 8 digits starting 6/7) → `{ phoneMasked: "+591 •••••567", codeSent, expiresAt\|null }`; a 6-digit code goes by WhatsApp. `codeSent: false` = no provider (the KYC will go to review) | `202`, `400 PHONE_INVALID`, `429 PHONE_OTP_RATE_LIMITED {retryAt}` (60 s, 5/h), `503 PHONE_OTP_UNAVAILABLE` (provider failed) |
+| POST | `/business/me/phone/verify/confirm` | `{ code: "123456" }` → `{ phoneMasked, verified: true, verifiedAt }` | `200`, `400 PHONE_OTP_INVALID {attemptsLeft}`, `409 PHONE_OTP_NOT_REQUESTED`, `410 PHONE_OTP_EXPIRED` (10 min), `429 PHONE_OTP_EXHAUSTED` (5), `503 PHONE_OTP_UNAVAILABLE` (no provider) |
+| GET | `/business/me/kyc` | → `{ kycStatus, accountStatus, badge: VERIFIED\|NEW\|null, submission: Submission\|null, missing: string[], phone: { phoneMasked, verified, verifiedAt }\|null, consent: { kind: KYC_SELFIE, granted, upToDate, currentVersion }, attempts: { used, max: 3, resubmitAvailableAt, canResubmit }, lastDecision: { decision, reasonCodes, reasons, allowResubmit, decidedAt }\|null }` | `200` |
+| PUT | `/business/me/kyc/draft` | any of `{ legalName, nit, repFullName, repCiNumber, repCiComplement (2), repCiExtension: LP\|CB\|SC\|OR\|PT\|TJ\|CH\|BE\|PD, specialty, address, seprecNumber }` (`null` clears; COMPANY: no `specialty`; INDIVIDUAL: no `legalName`/`nit`/`seprecNumber`); `tradeName`, `primaryCategoryId` only in a material change → `Submission`. The first save creates the draft | `200`, `400`, `409 KYC_NOT_EDITABLE`, `422 KYC_FIELD_INVALID {field, reason: FORMAT\|NOT_APPLICABLE\|INCOMPLETE}`, `422 BUSINESS_NAME_*` |
+| PUT | `/business/me/kyc/consent` | `{ granted: true, version: "2026-11-16" }` or `{ granted: false }` (revoking erases stored selfies) → `{ kind: KYC_SELFIE, granted, version, currentVersion, upToDate, grantedAt, revokedAt }` | `200`, `400`, `409 CONSENT_VERSION_OUTDATED {currentVersion}` |
+| POST | `/business/me/kyc/selfie-challenge` | → `{ code, instruction, expiresAt }` (15 min, one use, never the previous gesture) | `201`, `400 CONSENT_REQUIRED {kind: KYC_SELFIE}`, `409 KYC_NOT_EDITABLE` |
+| POST | `/business/me/kyc/documents` | multipart `file` (JPEG/PNG by bytes, ≤ 8 MB) + `kind: CI_FRONT\|CI_BACK\|SELFIE\|SEPREC` → `{ id, kind, readable, readabilityCodes: (TOO_SMALL\|LOW_CONTRAST\|TOO_DARK\|TOO_BRIGHT\|UNDECODABLE)[], width, height, uploadedAt }`; the same kind again replaces it. `readable: false` = ask for another photo | `201`, `400 KYC_DOCUMENT_UNSUPPORTED`, `400 CONSENT_REQUIRED` (selfie), `409 KYC_SELFIE_CHALLENGE_REQUIRED`, `409 KYC_NOT_EDITABLE`, `410 KYC_SELFIE_CHALLENGE_EXPIRED`, `413`, `422 KYC_FIELD_INVALID` (SEPREC of an individual) |
+| DELETE | `/business/me/kyc/documents/:id` | | `204`, `404`, `409` |
+| POST | `/business/me/kyc/submit` | → `{ submissionId, status: AUTO_APPROVED\|IN_REVIEW, reviewDueAt\|null, postReviewDueAt\|null, userFacingCodes: (PHONE_VERIFIED\|DOCUMENTS_READABLE\|DUPLICATE_NIT\|DUPLICATE_PHONE\|NAME_SIMILARITY\|MATERIAL_CHANGE)[], handle }`. Synchronous checks (≤ `KYC_PIPELINE_BUDGET_MS`) | `200`, `409 KYC_NOT_EDITABLE`, `422 KYC_INCOMPLETE {missing: (EMAIL_VERIFIED\|HANDLE\|CATEGORY\|CITY\|PHONE\|REP_FULL_NAME\|REP_CI\|LEGAL_NAME\|NIT\|ADDRESS\|LOGO\|SPECIALTY\|DOCUMENT_CI_FRONT\|DOCUMENT_CI_BACK\|DOCUMENT_SELFIE)[]}`, `429` |
+| POST | `/business/me/kyc/resubmit` | → `{ submissionId, version }` (new DRAFT with the data and documents of the rejected one, without the selfie) | `201`, `409 KYC_RESUBMIT_NOT_ALLOWED {reason: NOT_REJECTED_WITH_RESUBMIT\|MAX_ATTEMPTS}`, `409 KYC_RESUBMIT_COOLDOWN {retryAt}` |
+| POST | `/business/me/kyc/changes` | → `{ submissionId, version }`: material change (name, category, legal name, NIT, representative) of an approved business; never approves itself | `201`, `409 KYC_CHANGE_NOT_ALLOWED`, `409 KYC_NOT_EDITABLE`, `409 KYC_RESUBMIT_COOLDOWN` |
+
+`Submission` = `{ id, version, purpose: INITIAL\|RESUBMISSION\|MATERIAL_CHANGE, status: DRAFT\|SUBMITTED\|AUTO_APPROVED\|IN_REVIEW\|APPROVED\|REJECTED\|SUSPENDED, legalKind, fields: { tradeName, primaryCategoryId, legalName, nitMasked, repFullName, repCiMasked, repCiComplement, repCiExtension, specialty, address, seprecNumber, phoneMasked }, documents: Document[], selfieChallenge: { code, instruction, expiresAt }\|null, submittedAt, decidedAt, reviewDueAt, postReviewDueAt }`.
+`PATCH /business/me/profile` with a new name or category past DRAFT answers `409 BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW` with `details.action = "POST /business/me/kyc/changes"`.
+The public listing shows «Verificado por REPP» only after a human approval (`isVerified`); an automatic approval is «Nuevo».
+
+### REPP console (`MODERATOR`, `SYSTEM_ADMIN`)
+
+Gym staff, members and business accounts get `403`. Reading the detail and every document view write an
+`admin.audit_log` row (`business/kyc-detail-view`, `business/kyc-document-view`) before answering; claims,
+decisions and every account, handle, blocklist and banned-term change are audited too. Nobody reviews a
+business that is their own account or uses their own mailbox: `403 MODERATION_SELF_CASE`.
+
+| Method | Path | Body → response | Codes |
+|---|---|---|---|
+| GET | `/admin/business/kyc/queue` | `?queue=REVIEW\|POST_REVIEW&entityType&overdue=true\|false&cursor&limit≤100` → `{ items: [{ submissionId, accountId, entityId, entityType, tradeName, handle, version, purpose, status, submittedAt, dueAt, overdue, claimedByUserId, claimedAt, failedChecks }], nextCursor }`, oldest due first | `200`, `400` |
+| GET | `/admin/business/kyc/:submissionId` | → `{ submission, identity: { nit, repCiNumber, phone } (in clear), phoneVerified, account, entity, handle, documents: [{ …Document, deleted, deleteReason, selfieChallengeCode }], checks: [{ code, outcome, detail, durationMs, createdAt }], decisions, history, claimedByUserId }`, `no-store` | `200`, `403`, `404` |
+| GET | `/admin/business/kyc/:submissionId/documents/:documentId` | decrypted bytes, `Content-Type` of the photo, `Cache-Control: private, no-store`, `Content-Disposition: inline`, `nosniff` | `200`, `403`, `404` |
+| POST | `/admin/business/kyc/:submissionId/claim` | → `{ claimedByUserId, claimedAt }` (30 min) | `200`, `409 KYC_CLAIMED_BY_OTHER`, `409 KYC_INVALID_TRANSITION` |
+| POST | `/admin/business/kyc/:submissionId/release` | → `{ released: true }` | `200`, `409 KYC_NOT_CLAIMED\|KYC_CLAIMED_BY_OTHER` |
+| POST | `/admin/business/kyc/:submissionId/decide` | `{ decision: APPROVE\|POST_REVIEW_OK\|REJECT, reasonCodes: (DOCUMENT_UNREADABLE\|DOCUMENT_MISMATCH\|SELFIE_MISMATCH\|GESTURE_MISMATCH\|NIT_INVALID\|LEGAL_NAME_MISMATCH\|IMPERSONATION\|DUPLICATE_ACCOUNT\|PROHIBITED_ACTIVITY\|FRAUD_SUSPECTED\|OTHER)[] (≥1 to reject), note?, allowResubmit (required to reject) }` → `{ status: APPROVED\|REJECTED, decisionId }` | `200`, `400`, `409 KYC_INVALID_TRANSITION`, `409 KYC_CLAIMED_BY_OTHER` |
+| GET | `/admin/business/accounts` | `?search&status&entityType&cursor&limit` → `{ items: [{ accountId, email, entityId, entityType, name, handle, status, kycStatus, entityStatus, isVerified, createdAt }], nextCursor }` | `200` |
+| POST | `/admin/business/accounts/:id/suspend` \| `/reinstate` | `{ reasonCode: FRAUD_SUSPECTED\|IMPERSONATION\|PAYMENT_COMPLAINTS\|PROHIBITED_ACTIVITY\|KYC_MISSING\|OTHER, note? }` → `{ status: SUSPENDED\|ACTIVE }` (in-app + email notice) | `200`, `404`, `409 KYC_INVALID_TRANSITION` |
+| POST | `/admin/business/handles/reservations` | `{ handle, reason }` → `{ handle, status: RESERVED }` | `201`, `409 HANDLE_TAKEN\|HANDLE_NOT_RESERVABLE`, `422 HANDLE_INVALID` |
+| DELETE | `/admin/business/handles/reservations/:handle` | | `204`, `404` |
+| POST | `/admin/business/handles/:handle/force-rename` | `{ newHandle, reason }` → `{ handle, previous }` (old handle retired without redirect, locked 180 days) | `200`, `404`, `409 HANDLE_TAKEN`, `422 HANDLE_INVALID` |
+| GET, POST | `/admin/business/blocklist` | POST `{ kind: NIT\|CI\|PHONE\|EMAIL, value, reasonCode: [A-Z0-9_], expiresAt? }` → `{ id, kind }` (only the HMAC is stored); GET → `[{ id, kind, reasonCode, createdAt, expiresAt }]` | `200`/`201`, `409 BLOCKLIST_ENTRY_EXISTS`, `422 KYC_FIELD_INVALID` |
+| DELETE | `/admin/business/blocklist/:id` | | `204`, `404` |
+| GET, PUT | `/admin/business/banned-terms` | PUT `{ terms: [{ term, scope: NAME\|LISTING\|BOTH }] }` replaces the list → `{ terms }` | `200`, `400` |
+
+Metrics on `/health/metrics`: `gym_sheet_kyc_queue_size{queue}`, `gym_sheet_kyc_queue_overdue{queue}`,
+`gym_sheet_kyc_queue_age_p95_seconds{queue}`, `gym_sheet_kyc_auto_approval_ratio`.
 
 ## Directory (franja 8a fixes)
 

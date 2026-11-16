@@ -29,6 +29,10 @@ tags:
   - name: Notifications
   - name: Training
   - name: Account
+  - name: BusinessKyc
+    description: KYC del negocio (ADR-0021)
+  - name: AdminBusiness
+    description: Consola REPP de negocios y KYC (ADR-0021)
 paths:
   /auth/register:
     post:
@@ -2372,6 +2376,460 @@ paths:
         - { name: slot, in: path, required: true, schema: { type: string, enum: [LOGO, COVER] } }
       responses:
         "204": { description: Quitado }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+  /business/me/phone/verify/request:
+    post:
+      tags: [BusinessKyc]
+      summary: "Pedir el código de WhatsApp para el celular"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { type: object, required: [phone], properties: { phone: { type: string, example: "+591 71234567" } } }
+      responses:
+        "202":
+          description: "{ phoneMasked, codeSent, expiresAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "429": { $ref: "#/components/responses/Problem429" }
+        "503": { $ref: "#/components/responses/Problem503" }
+  /business/me/phone/verify/confirm:
+    post:
+      tags: [BusinessKyc]
+      summary: "Confirmar el código del celular"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { type: object, required: [code], properties: { code: { type: string, pattern: "^[0-9]{6}$" } } }
+      responses:
+        "200":
+          description: "{ phoneMasked, verified, verifiedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "410": { description: "Ver docs/endpoints/endpoints.md", content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "429": { $ref: "#/components/responses/Problem429" }
+        "503": { $ref: "#/components/responses/Problem503" }
+  /business/me/kyc:
+    get:
+      tags: [BusinessKyc]
+      summary: "Estado del KYC, para retomar el asistente"
+      responses:
+        "200":
+          description: "{ kycStatus, accountStatus, badge, submission, missing, phone, consent, attempts, lastDecision }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+  /business/me/kyc/draft:
+    put:
+      tags: [BusinessKyc]
+      summary: "Guardar un paso del KYC (borrador)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { type: object, additionalProperties: false, properties: { legalName: { type: string, nullable: true }, nit: { type: string, nullable: true }, repFullName: { type: string, nullable: true }, repCiNumber: { type: string, nullable: true }, repCiComplement: { type: string, maxLength: 2, nullable: true }, repCiExtension: { type: string, enum: [LP, CB, SC, OR, PT, TJ, CH, BE, PD], nullable: true }, specialty: { type: string, nullable: true }, address: { type: string, nullable: true }, seprecNumber: { type: string, nullable: true }, tradeName: { type: string }, primaryCategoryId: { type: string, format: uuid } } }
+      responses:
+        "200":
+          description: Submission
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "422": { $ref: "#/components/responses/Problem422" }
+  /business/me/kyc/consent:
+    put:
+      tags: [BusinessKyc]
+      summary: "Dar o revocar el consentimiento KYC_SELFIE"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { type: object, required: [granted], properties: { granted: { type: boolean }, version: { type: string } } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /business/me/kyc/selfie-challenge:
+    post:
+      tags: [BusinessKyc]
+      summary: "Gesto aleatorio para la selfie del representante"
+      responses:
+        "201":
+          description: "{ code, instruction, expiresAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /business/me/kyc/documents:
+    post:
+      tags: [BusinessKyc]
+      summary: "Subir un documento (cifrado, legibilidad al instante)"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              { type: object, required: [file, kind], properties: { file: { type: string, format: binary, description: "JPEG o PNG, máx. 8 MB" }, kind: { type: string, enum: [CI_FRONT, CI_BACK, SELFIE, SEPREC] } } }
+      responses:
+        "201":
+          description: "{ id, kind, readable, readabilityCodes, width, height, uploadedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "410": { description: "Ver docs/endpoints/endpoints.md", content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "413": { $ref: "#/components/responses/Problem413" }
+        "422": { $ref: "#/components/responses/Problem422" }
+  /business/me/kyc/documents/{id}:
+    delete:
+      tags: [BusinessKyc]
+      summary: "Quitar un documento del borrador"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Hecho }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /business/me/kyc/submit:
+    post:
+      tags: [BusinessKyc]
+      summary: "Enviar el KYC: comprobaciones automáticas en segundos"
+      responses:
+        "200":
+          description: "{ submissionId, status: AUTO_APPROVED|IN_REVIEW, reviewDueAt, postReviewDueAt, userFacingCodes, handle }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "422": { $ref: "#/components/responses/Problem422" }
+        "429": { $ref: "#/components/responses/Problem429" }
+        "503": { $ref: "#/components/responses/Problem503" }
+  /business/me/kyc/resubmit:
+    post:
+      tags: [BusinessKyc]
+      summary: "Nueva versión tras un rechazo (máx. 3, 24 h)"
+      responses:
+        "201":
+          description: "{ submissionId, version }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /business/me/kyc/changes:
+    post:
+      tags: [BusinessKyc]
+      summary: "Cambio material de un negocio aprobado (siempre revisión)"
+      responses:
+        "201":
+          description: "{ submissionId, version }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /admin/business/kyc/queue:
+    get:
+      tags: [AdminBusiness]
+      summary: "Colas REVIEW / POST_REVIEW"
+      parameters:
+        - { name: queue, in: query, required: true, schema: { type: string, enum: [REVIEW, POST_REVIEW] } }
+        - { name: entityType, in: query, schema: { type: string } }
+        - { name: overdue, in: query, schema: { type: string, enum: ["true", "false"] } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: "{ items, nextCursor }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { $ref: "#/components/responses/Problem403" }
+  /admin/business/kyc/{submissionId}:
+    get:
+      tags: [AdminBusiness]
+      summary: "Detalle con datos en claro (auditado)"
+      parameters:
+        - { name: submissionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /admin/business/kyc/{submissionId}/documents/{documentId}:
+    get:
+      tags: [AdminBusiness]
+      summary: "Visor: bytes descifrados (auditado por vista)"
+      parameters:
+        - { name: submissionId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: documentId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Bytes descifrados (Cache-Control private, no-store; Content-Disposition inline)"
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /admin/business/kyc/{submissionId}/claim:
+    post:
+      tags: [AdminBusiness]
+      summary: "Tomar la solicitud"
+      parameters:
+        - { name: submissionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /admin/business/kyc/{submissionId}/release:
+    post:
+      tags: [AdminBusiness]
+      summary: "Soltar la solicitud"
+      parameters:
+        - { name: submissionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /admin/business/kyc/{submissionId}/decide:
+    post:
+      tags: [AdminBusiness]
+      summary: "Decidir"
+      parameters:
+        - { name: submissionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { type: object, required: [decision], properties: { decision: { type: string, enum: [APPROVE, POST_REVIEW_OK, REJECT] }, reasonCodes: { type: array, items: { type: string } }, note: { type: string, maxLength: 1000 }, allowResubmit: { type: boolean } } }
+      responses:
+        "200":
+          description: "{ status, decisionId }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /admin/business/accounts:
+    get:
+      tags: [AdminBusiness]
+      summary: "Cuentas de negocio"
+      responses:
+        "200":
+          description: "{ items, nextCursor }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+  /admin/business/accounts/{id}/suspend:
+    post:
+      tags: [AdminBusiness]
+      summary: "Suspender"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { type: object, required: [reasonCode], properties: { reasonCode: { type: string, enum: [FRAUD_SUSPECTED, IMPERSONATION, PAYMENT_COMPLAINTS, PROHIBITED_ACTIVITY, KYC_MISSING, OTHER] }, note: { type: string } } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /admin/business/accounts/{id}/reinstate:
+    post:
+      tags: [AdminBusiness]
+      summary: "Reactivar"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { type: object, required: [reasonCode], properties: { reasonCode: { type: string, enum: [FRAUD_SUSPECTED, IMPERSONATION, PAYMENT_COMPLAINTS, PROHIBITED_ACTIVITY, KYC_MISSING, OTHER] }, note: { type: string } } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /admin/business/handles/reservations:
+    post:
+      tags: [AdminBusiness]
+      summary: "Reservar una marca"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { type: object, required: [handle, reason], properties: { handle: { type: string }, reason: { type: string } } }
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "422": { $ref: "#/components/responses/Problem422" }
+  /admin/business/handles/reservations/{handle}:
+    delete:
+      tags: [AdminBusiness]
+      summary: "Quitar una reserva"
+      parameters:
+        - { name: handle, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Hecho }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /admin/business/handles/{handle}/force-rename:
+    post:
+      tags: [AdminBusiness]
+      summary: "Renombre forzado (suplantación)"
+      parameters:
+        - { name: handle, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { type: object, required: [newHandle, reason], properties: { newHandle: { type: string }, reason: { type: string } } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "422": { $ref: "#/components/responses/Problem422" }
+  /admin/business/blocklist:
+    get:
+      tags: [AdminBusiness]
+      summary: "Lista negra (sin valores)"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+    post:
+      tags: [AdminBusiness]
+      summary: "Añadir a la lista negra (solo HMAC)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { type: object, required: [kind, value, reasonCode], properties: { kind: { type: string, enum: [NIT, CI, PHONE, EMAIL] }, value: { type: string }, reasonCode: { type: string }, expiresAt: { type: string, format: date-time } } }
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { $ref: "#/components/responses/Problem409" }
+        "422": { $ref: "#/components/responses/Problem422" }
+  /admin/business/blocklist/{id}:
+    delete:
+      tags: [AdminBusiness]
+      summary: "Quitar de la lista negra"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Hecho }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /admin/business/banned-terms:
+    get:
+      tags: [AdminBusiness]
+      summary: "Términos prohibidos"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+    put:
+      tags: [AdminBusiness]
+      summary: "Reemplazar los términos prohibidos"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { type: object, required: [terms], properties: { terms: { type: array, items: { type: object, required: [term, scope], properties: { term: { type: string }, scope: { type: string, enum: [NAME, LISTING, BOTH] } } } } } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
         "400": { $ref: "#/components/responses/Problem400" }
         "403": { $ref: "#/components/responses/Problem403" }
   /public/handles/{handle}:

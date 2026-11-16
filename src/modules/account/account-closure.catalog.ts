@@ -251,4 +251,18 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
   del("admin.retired_permission_grants", "Permisos de personal retirados", OWN),
   keep("admin.audit_log", "Bitácora de administración", "t.actor_user_id = :userId",
     "Registro de seguridad de acciones de personal."),
+
+  // REPP moderators' trace on the business KYC (ADR-0021). The business's own KYC rows hang
+  // from `business.accounts`, whose closure catalogue arrives with franja 8f.
+  anonymize("business.kyc_submissions", "Verificaciones de negocios que tenías tomadas", "t.claimed_by_user_id = :userId",
+    "claimed_by_user_id = NULL, claimed_at = NULL", "La solicitud vuelve a la cola sin tu nombre."),
+  keep("business.kyc_decisions", "Decisiones sobre verificaciones de negocios", "t.actor_user_id = :userId",
+    "Registro de las decisiones de REPP: quién aprobó o rechazó un negocio."),
+  keep("business.kyc_status_history", "Historial de verificaciones de negocios", "t.actor_user_id = :userId",
+    "Registro de las decisiones de REPP: quién aprobó o rechazó un negocio."),
+  anonymize("business.blocklist", "Lista de bloqueo de negocios", "t.created_by_user_id = :userId OR t.removed_by_user_id = :userId",
+    "created_by_user_id = NULLIF(t.created_by_user_id, CAST(:userId AS uuid)), removed_by_user_id = NULLIF(t.removed_by_user_id, CAST(:userId AS uuid))",
+    "La entrada sigue vigente sin tu nombre."),
+  anonymize("business.banned_terms", "Términos prohibidos para negocios", "t.created_by_user_id = :userId",
+    "created_by_user_id = NULL", "El término sigue vigente sin tu nombre."),
 ];

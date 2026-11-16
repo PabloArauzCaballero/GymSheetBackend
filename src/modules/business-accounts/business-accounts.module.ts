@@ -33,5 +33,7 @@ import { PublicHandlesController } from './public-handles.controller';
   ],
   controllers: [BusinessSignupController, BusinessMeController, PublicHandlesController],
   providers: [BusinessAccountsRepository, BusinessAccountsService, BusinessSignupService, HandlesRepository, HandlesService],
+  // The KYC (ADR-0021) reads the account and moves the listing's handle.
+  exports: [BusinessAccountsRepository, HandlesRepository],
 })
 export class BusinessAccountsModule {}

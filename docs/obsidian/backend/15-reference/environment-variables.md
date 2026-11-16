@@ -29,6 +29,24 @@ tags: [backend, reference, config]
 | `BUSINESS_SIGNUP_ENABLED` | Abre `POST /business/signup` (ADR-0020). Cerrada: `404 BUSINESS_SIGNUP_DISABLED`. En producción sigue cerrada mientras los textos legales de negocios sean borradores (`BUSINESS_LEGAL_TEXTS_ARE_DRAFTS`) | No (`false`) | `false` |
 | `HANDLE_AVAILABILITY_RATE_LIMIT_MAX` | Peticiones por cliente a `GET /public/handles/:handle/availability` por ventana `RATE_LIMIT_TTL_SECONDS` | No (`30`) | `30` |
 
+## KYC de negocios (ADR-0021)
+
+| Variable | Uso | Requerida | Default |
+|---|---|---|---|
+| `KYC_ENCRYPTION_KEY` | Clave propia (≥ 32) de todo cifrado KYC (NIT, CI, teléfono, documentos). **Sin respaldo** en secretos JWT; perderla pierde los documentos. Sin ella fuera de producción el KYC responde `503 KYC_UNAVAILABLE` | **Sí en producción** (el arranque falla) | — |
+| `KYC_PIPELINE_BUDGET_MS` | Presupuesto total de las comprobaciones automáticas del envío (200–10000); vencido, el resto es `ERROR` → `IN_REVIEW` | No | `2000` |
+| `KYC_CHECK_STATEMENT_TIMEOUT_MS` | `statement_timeout` de cada consulta de las comprobaciones (50–5000) | No | `500` |
+| `BUSINESS_KYC_REVIEW_SLA_HOURS` | SLA de la cola REPP de revisión, en horas hábiles (lun–vie en `BUSINESS_TIME_ZONE`, sin feriados) | No | `24` |
+| `BUSINESS_KYC_POST_REVIEW_SLA_HOURS` | SLA de la revisión posterior de una aprobación automática, en horas corridas | No | `72` |
+| `BUSINESS_PHONE_OTP_PROVIDER` | `disabled` (no envía; el teléfono queda sin verificar y el KYC va a revisión, nunca se autoaprueba) o `whatsapp-cloud` | No | `disabled` |
+| `WHATSAPP_CLOUD_ACCESS_TOKEN` | Token de la WhatsApp Business Cloud API (secreto) | Sí con `whatsapp-cloud` | — |
+| `WHATSAPP_CLOUD_PHONE_NUMBER_ID` | Id del número emisor (solo dígitos) | Sí con `whatsapp-cloud` | — |
+| `WHATSAPP_CLOUD_OTP_TEMPLATE` | Nombre de la plantilla de autenticación aprobada por Meta (`[a-z0-9_]`) | Sí con `whatsapp-cloud` | — |
+| `WHATSAPP_CLOUD_TEMPLATE_LANGUAGE` | Idioma de la plantilla | No | `es` |
+| `WHATSAPP_CLOUD_API_VERSION` | Versión de Graph API (`vNN.N`); el host es fijo (`graph.facebook.com`) | No | `v21.0` |
+
+El KYC también necesita `IP_HASH_SECRET` (los HMAC de NIT, CI, teléfono y correo); sin él responde `503 KYC_UNAVAILABLE`.
+
 ## Base de datos (PostgreSQL)
 
 | Variable | Propósito | Requerida |
@@ -149,4 +167,4 @@ porque ese despliegue arranca con `NODE_ENV=development` y la validación de pro
 `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` (**secreto**), `SEED_ADMIN_FULL_NAME`, `SEED_MOCK_PASSWORD` (**secreto**).
 
 > [!danger] Secretos
-> `JWT_*_SECRET`, `DB_PASSWORD`, `REGISTRATION_TICKET_SECRET`, `TURNSTILE_SECRET`, `PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON`, `NOTIFICATION_GATEWAY_SECRET`, `METRICS_SCRAPE_TOKEN`, `IP_HASH_SECRET`, `SEED_*_PASSWORD` son secretos: solo por env, nunca en el repo ni en logs.
+> `JWT_*_SECRET`, `DB_PASSWORD`, `REGISTRATION_TICKET_SECRET`, `TURNSTILE_SECRET`, `PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON`, `NOTIFICATION_GATEWAY_SECRET`, `METRICS_SCRAPE_TOKEN`, `IP_HASH_SECRET`, `KYC_ENCRYPTION_KEY`, `WHATSAPP_CLOUD_ACCESS_TOKEN`, `SEED_*_PASSWORD` son secretos: solo por env, nunca en el repo ni en logs.

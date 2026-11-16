@@ -114,6 +114,8 @@ x-app-environment: &app-environment
   METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
   # Required when NODE_ENV=production (the default here): env.ts refuses to start without it.
   IP_HASH_SECRET: ${IP_HASH_SECRET:-}
+  # Required when NODE_ENV=production: key of every KYC ciphertext (ADR-0021).
+  KYC_ENCRYPTION_KEY: ${KYC_ENCRYPTION_KEY:-}
   # Anti-bot ticket key (ADR-0013); env.ts requires it with NODE_ENV=production.
   REGISTRATION_TICKET_SECRET: ${REGISTRATION_TICKET_SECRET:-}
   # 3002 (puerto de la web): el socket de chat lo abre el navegador directo
