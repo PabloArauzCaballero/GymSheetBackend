@@ -973,6 +973,16 @@ Pendiente por franja: KYC y activación (8b), sedes `directory.entity_locations`
 | Reenvíos y cambios materiales | Máx. 3 intentos, 24 h; cambio material = versión nueva que nunca se autoaprueba (acepta el `409 BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW` de 8a) | e2e |
 | Retención del KYC | Paso KYC en `privacy-retention` (constantes `KYC_RETENTION`, pendientes del abogado) con borrado por `media.release` | `privacy-retention.service.spec.ts`, e2e (purga y archivo borrado) |
 
+| Revisión de seguridad de 90e3d8f | `decide`/`claim` solo sobre la versión abierta o vigente (`409 KYC_SUBMISSION_SUPERSEDED`; cuenta suspendida o cerrada `409 BUSINESS_ACCOUNT_LOCKED`; la versión reemplazada pasa a `SUPERSEDED`); HMAC del CI solo del número (el complemento ya no esquiva lista negra ni duplicado); renombre forzado con la regla de ADR-0018 §8 | tres e2e en `test/business-kyc-console.e2e-spec.ts`, que fallan en a36e545 |
+
+Evidencia (16/11/2026, base `gym_sheet_f8b` nueva: schema + migraciones + semilla base): `yarn lint` y
+`yarn type-check` limpios; `yarn build` OK; unitarias 254 suites / 2341 pruebas en verde; e2e KYC
+(`business-kyc` 13, `business-kyc-console` 14) en verde, envío medido en 5 negocios: 23–56 ms, p95 56 ms
+(límite de la prueba 3 s); e2e completa: 70 suites en verde y exactamente las 47 pruebas en rojo de la
+línea base de 8a (mismas 10 suites, mismos nombres). Arranque con `NODE_ENV=production` sin
+`KYC_ENCRYPTION_KEY`: el esquema de entorno lo rechaza con el mensaje de la variable. Sin llamada real a
+WhatsApp (adaptador probado con transporte falso).
+
 Fuera de 8b: cancelar órdenes al suspender (8d), prioridad por afiliaciones (8e), cierre y exportación del negocio (8f), verificación externa SIN/SEGIP/SEPREC, cotejo facial automático y rotación de la clave KYC.
 
 
