@@ -34,10 +34,16 @@ export class UserDeviceService {
    * Credential sign-in (password, Google, Apple). An installation never seen
    * for an account that already has devices triggers the "new sign-in" email,
    * enqueued in the same transaction as the session.
+   *
+   * One live session per installation: signing in again from a known
+   * installation ends the sessions it had before, so a refresh token left
+   * behind on the device (e.g. one parked for quick login) cannot be used later.
    */
   async recordSignIn(userId: string, context: ClientDeviceContext, transaction: Transaction): Promise<string> {
     const device = await this.devices.upsert(userId, installationOf(context), context, { reactivate: true }, transaction);
-    if (device.inserted && (await this.devices.countOtherDevices(userId, device.id, transaction)) > 0) {
+    if (!device.inserted) {
+      await this.devices.revokeDeviceSessions(device.id, transaction);
+    } else if ((await this.devices.countOtherDevices(userId, device.id, transaction)) > 0) {
       await this.enqueueNewDeviceAlert(userId, device.id, context, transaction);
     }
     return device.id;

@@ -52,6 +52,7 @@ describe('UserDeviceService.recordSignIn', () => {
     const known = build({
       upsert: jest.fn().mockResolvedValue({ id: 'device-1', revokedAt: null, inserted: false }),
       countOtherDevices: jest.fn().mockResolvedValue(3),
+      revokeDeviceSessions: jest.fn().mockResolvedValue(undefined),
     });
     await known.service.recordSignIn(userId, context, transaction as never);
     expect(known.notifications.enqueueDirectMessage).not.toHaveBeenCalled();
@@ -72,6 +73,29 @@ describe('UserDeviceService.recordSignIn', () => {
     ).resolves.toBe('device-7');
     const [, installationId] = upsert.mock.calls[0] as [string, string];
     expect(installationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+  });
+});
+
+describe('UserDeviceService.recordSignIn one session per installation', () => {
+  it('ends the earlier sessions of a known installation before the new one starts', async () => {
+    const revokeDeviceSessions = jest.fn().mockResolvedValue(undefined);
+    const { service } = build({
+      upsert: jest.fn().mockResolvedValue({ id: 'device-1', revokedAt: null, inserted: false }),
+      revokeDeviceSessions,
+    });
+    await service.recordSignIn(userId, context, transaction as never);
+    expect(revokeDeviceSessions).toHaveBeenCalledWith('device-1', transaction);
+  });
+
+  it('has nothing to end on a brand-new installation', async () => {
+    const revokeDeviceSessions = jest.fn();
+    const { service } = build({
+      upsert: jest.fn().mockResolvedValue({ id: 'device-2', revokedAt: null, inserted: true }),
+      countOtherDevices: jest.fn().mockResolvedValue(0),
+      revokeDeviceSessions,
+    });
+    await service.recordSignIn(userId, context, transaction as never);
+    expect(revokeDeviceSessions).not.toHaveBeenCalled();
   });
 });
 
