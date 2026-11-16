@@ -1,8 +1,11 @@
 import { CHAT_EVIDENCE_RETENTION_DAYS, ModerationEvidenceService } from "./moderation-evidence.service";
+import { PENDING_REVIEW_SUSPENSION_UNTIL } from "../../common/moderation/account-suspension";
 import {
   MINOR_ACCOUNT_CLOSURE_QUEUE,
+  MINOR_REPORTS_PER_REPORTER_LIMIT,
+  MINOR_SUSPENSION_MIN_REPORTERS,
+  MINOR_SUSPENSION_WINDOW_MS,
   ModerationMinorService,
-  PENDING_REVIEW_SUSPENSION_UNTIL,
 } from "./moderation-minor.service";
 import { REASON_NOTICE, sanctionNotice } from "./moderation-notices";
 import { ModerationReason, nextSanction, STRIKE_LIFETIME_DAYS } from "./moderation.policy";
@@ -10,8 +13,9 @@ import { ModerationReason, nextSanction, STRIKE_LIFETIME_DAYS } from "./moderati
 const transaction = { id: "tx" };
 
 describe("ModerationMinorService", () => {
-  function build(suspended: boolean) {
+  function build(suspended: boolean, reporters = 2) {
     const repository = {
+      countCorroboratingMinorReporters: jest.fn().mockResolvedValue(reporters),
       suspendMemberUntil: jest.fn().mockResolvedValue(suspended),
       liftProvisionalSuspension: jest.fn().mockResolvedValue(undefined),
     };
@@ -20,10 +24,23 @@ describe("ModerationMinorService", () => {
     const service = new ModerationMinorService(repository as never, outbox as never, notifications as never);
     return { service, repository, outbox, notifications };
   }
+  const profileReport = { reportedUserId: "user-1", tenantId: "gym", targetKind: "USER" as const };
 
-  it("suspends until a moderator decides and tells the person why, in the report transaction", async () => {
+  it("suspends until a moderator decides once two distinct reporters corroborate, in the report transaction", async () => {
     const { service, repository, notifications } = build(true);
-    await expect(service.suspendPendingReview("user-1", transaction as never)).resolves.toBe(true);
+    const now = new Date("2027-06-01T00:00:00.000Z");
+    await expect(service.suspendIfCorroborated(profileReport, transaction as never, now)).resolves.toBe(true);
+    expect(repository.countCorroboratingMinorReporters).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user-1",
+        tenantId: "gym",
+        since: new Date(now.getTime() - MINOR_SUSPENSION_WINDOW_MS),
+        perReporterLimit: MINOR_REPORTS_PER_REPORTER_LIMIT,
+      }),
+      transaction,
+    );
+    expect(MINOR_SUSPENSION_MIN_REPORTERS).toBe(2);
+    expect(MINOR_SUSPENSION_WINDOW_MS).toBe(7 * 24 * 60 * 60 * 1000);
     expect(repository.suspendMemberUntil).toHaveBeenCalledWith("user-1", PENDING_REVIEW_SUSPENSION_UNTIL, transaction);
     expect(PENDING_REVIEW_SUSPENSION_UNTIL.getUTCFullYear()).toBe(9999);
     const [notice, tx] = notifications.enqueueDirectMessage.mock.calls[0] as [{ body: string; recipientUserId: string }, unknown];
@@ -32,9 +49,19 @@ describe("ModerationMinorService", () => {
     expect(tx).toBe(transaction);
   });
 
+  it("a single reporter, or a report of content instead of the profile, never suspends", async () => {
+    const single = build(true, 1);
+    await expect(single.service.suspendIfCorroborated(profileReport, transaction as never)).resolves.toBe(false);
+    expect(single.repository.suspendMemberUntil).not.toHaveBeenCalled();
+    const content = build(true, 5);
+    await expect(content.service.suspendIfCorroborated({ ...profileReport, targetKind: "STORY" }, transaction as never)).resolves.toBe(false);
+    expect(content.repository.countCorroboratingMinorReporters).not.toHaveBeenCalled();
+    expect(content.repository.suspendMemberUntil).not.toHaveBeenCalled();
+  });
+
   it("does not notify when nothing was suspended (staff account or already suspended)", async () => {
     const { service, notifications } = build(false);
-    await expect(service.suspendPendingReview("staff-1", transaction as never)).resolves.toBe(false);
+    await expect(service.suspendIfCorroborated(profileReport, transaction as never)).resolves.toBe(false);
     expect(notifications.enqueueDirectMessage).not.toHaveBeenCalled();
   });
 

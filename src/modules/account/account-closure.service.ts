@@ -15,6 +15,8 @@ import { AccountClosureRepository } from "./account-closure.repository";
 import { ClosurePreview, mapClosurePreview } from "./account-closure.mapper";
 import { CloseAccountInput } from "./account.schemas";
 
+export type ModerationClosureOutcome = "CLOSED" | "ALREADY_CLOSED" | "STAFF_SKIPPED";
+
 export const closedAccountEmail = (userId: string): string => `cerrada-${userId}@cuenta-cerrada.invalid`;
 
 /**
@@ -93,6 +95,30 @@ export class AccountClosureService {
     if ("failed" in result) throw emailPinError(result.failed);
     this.logger.log({ event: "account.closed", userId });
     return { closed: true, closedAt: result.closedAt };
+  }
+
+  /**
+   * Closure decided by moderation (a confirmed minor): no password or PIN, the
+   * same erasure transaction. Members only; an account already closed, gone
+   * or belonging to staff is left as is, so a retried job is a no-op.
+   *
+   * No closed-account sanction record is written: the closure IS the outcome
+   * of the review, and its open-ended "pending review" suspension carried
+   * under the email hash would lock the person out for good once they are an
+   * adult. Strikes of other reasons go with the account for the same reason.
+   */
+  async closeByModeration(userId: string): Promise<ModerationClosureOutcome> {
+    const unusablePasswordHash = await bcrypt.hash(randomBytes(32).toString("hex"), env.BCRYPT_SALT_ROUNDS);
+    const outcome = await this.repository.runInTransaction(async (transaction): Promise<ModerationClosureOutcome> => {
+      await this.users.lockUserForUpdate(userId, transaction);
+      const user = await this.users.findById(userId, transaction);
+      if (!user || user.closedAt) return "ALREADY_CLOSED";
+      if (user.role !== UserRole.CLIENT) return "STAFF_SKIPPED";
+      await this.eraseInTransaction(userId, unusablePasswordHash, transaction);
+      return "CLOSED";
+    });
+    this.logger.log({ event: "account.closed_by_moderation", userId, outcome });
+    return outcome;
   }
 
   private async eraseInTransaction(userId: string, unusablePasswordHash: string, transaction: Transaction): Promise<Date> {

@@ -47,7 +47,10 @@ evasión: quien acumulaba sanciones cerraba la cuenta y se registraba con el mis
   `email_hmac`, `suspended_until`, `strike_count`, las faltas vigentes (tipo, motivo, gimnasio,
   vencimiento; sin nota, objetivo ni moderador) y `expires_at` = fin de la ventana (el vencimiento
   más lejano). Sin sanción, no se guarda nada.
-- `email_hmac` = `HMAC-SHA256(IP_HASH_SECRET, "email:" + correo normalizado)`. `IP_HASH_SECRET` pasa
+- `email_hmac` = `HMAC-SHA256(IP_HASH_SECRET, "email:" + correo canónico)`. El correo canónico
+  (`canonicalEmail`) une los alias de un mismo buzón: minúsculas, sin el `+sufijo` de la parte
+  local y, en Gmail (`gmail.com` y `googlemail.com` son un buzón y Gmail ignora los puntos), sin
+  puntos y con el dominio unificado. Sólo se usa para el hash; el correo se sigue enviando tal cual. `IP_HASH_SECRET` pasa
   a ser el **pepper de privacidad** de la API (IP y correo); el prefijo separa los dominios. No se
   crea `EMAIL_HASH_SECRET`: un secreto más que rotar sin beneficio. Sin el secreto no se guarda el
   registro (un hash sin clave de un correo se revierte por diccionario) y el log avisa
@@ -59,6 +62,17 @@ evasión: quien acumulaba sanciones cerraba la cuenta y se registraba con el mis
   Si la suspensión sigue en curso la cuenta se crea pero el alta responde 403 como el login, sin
   sesión.
 - `yarn db:privacy:retention` borra los registros vencidos.
+- **Cambio de correo con sanción vigente:** `POST /me/email/change` (y su confirmación, bajo el
+  bloqueo de la cuenta) responde 409 `EMAIL_CHANGE_BLOCKED_BY_SANCTION` mientras haya una
+  suspensión en curso o faltas dentro de la ventana. Así no se puede cambiar a un correo que nunca
+  se vuelve a usar, cerrar y registrarse limpio con el original. La suspensión ya cierra la sesión
+  en cada petición; el bloqueo cubre sobre todo las advertencias.
+- **Cierre por moderación (menor confirmado, cola `account.minor-closure`, worker `account-data`):**
+  `AccountClosureService.closeByModeration` corre la misma transacción de borrado sin contraseña ni
+  PIN, sólo para socios, e idempotente si la cuenta ya está cerrada. **No guarda registro de
+  sanción**: el cierre es el resultado de la revisión, y la suspensión indefinida «pendiente de
+  revisión» guardada bajo el hash del correo dejaría a la persona fuera para siempre cuando ya sea
+  adulta.
 
 ## Consecuencias y reversión
 
@@ -66,6 +80,9 @@ evasión: quien acumulaba sanciones cerraba la cuenta y se registraba con el mis
   ADR-0014 (borra `training.routine_progress_download_audits.ip`; la vista
   `v_audit_routine_progress_downloads`, que nadie lee en el código, expone `ip_hmac`). Rollback: borra
   la tabla y recrea `ip` **vacía** con la vista anterior.
-- Riesgo residual aceptado: quien cambia el correo y después cierra deja el registro bajo el correo
-  nuevo; registrarse con el anterior empieza limpio, porque el sistema no guarda correos anteriores.
+- Riesgo residual aceptado: un cambio de correo hecho **sin** sanción vigente y una sanción
+  posterior dejan el registro bajo el correo nuevo; registrarse con el anterior empieza limpio,
+  porque el sistema no guarda correos anteriores. El cambio con sanción vigente está bloqueado y los
+  alias (`+sufijo`, puntos de Gmail) ya no sirven para evadir. Los registros guardados antes de la
+  forma canónica conservan su hash anterior: sólo difieren si el correo tenía alias.
 - Rotar `IP_HASH_SECRET` deja sin efecto los registros existentes (no se pueden recalcular).

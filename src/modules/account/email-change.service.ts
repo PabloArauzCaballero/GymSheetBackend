@@ -4,6 +4,7 @@ import { UniqueConstraintError } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { NotificationChannel } from "../../common/enums/domain.enums";
 import { DomainException } from "../../common/errors/domain.exception";
+import { ClosedAccountSanctionsService } from "../closed-account-sanctions/closed-account-sanctions.service";
 import { EMAIL_PIN_POLICY, EmailPinFailure, EmailVerificationService, emailPinError } from "../auth/email-verification.service";
 import { NotificationService } from "../notifications/notification.service";
 import { UsersRepository } from "../users/users.repository";
@@ -24,6 +25,7 @@ export class EmailChangeService {
     private readonly emailPins: EmailVerificationService,
     private readonly notifications: NotificationService,
     private readonly sequelize: Sequelize,
+    private readonly sanctions: ClosedAccountSanctionsService,
   ) {}
 
   /**
@@ -38,6 +40,7 @@ export class EmailChangeService {
     if (input.newEmail === user.email) {
       throw new DomainException(HttpStatus.BAD_REQUEST, "EMAIL_UNCHANGED", "Ese ya es tu correo.");
     }
+    if (await this.sanctions.hasActiveSanction(userId)) throw blockedBySanction();
     await this.sequelize.transaction((transaction) =>
       this.emailPins.issuePurposePin(userId, "CHANGE_EMAIL", {
         subject: "Confirma tu nuevo correo en GymSheet",
@@ -61,6 +64,8 @@ export class EmailChangeService {
         await this.users.lockUserForUpdate(userId, transaction);
         const user = await this.users.findActiveById(userId, transaction);
         if (!user) throw new NotFoundException("Usuario no encontrado o inactivo.");
+        // A strike can land between the request and the PIN: checked again under the account lock.
+        if (await this.sanctions.hasActiveSanction(userId, transaction)) throw blockedBySanction();
         const outcome = await this.emailPins.verifyPurposePin(userId, "CHANGE_EMAIL", pin, transaction);
         if (outcome.kind !== "VERIFIED") return { failed: outcome };
         const newEmail = outcome.targetEmail;
@@ -90,4 +95,13 @@ export class EmailChangeService {
       throw error;
     }
   }
+}
+
+/** Ban evasion through an email change followed by a closure (ADR-0015). */
+function blockedBySanction(): DomainException {
+  return new DomainException(
+    HttpStatus.CONFLICT,
+    "EMAIL_CHANGE_BLOCKED_BY_SANCTION",
+    "No puedes cambiar el correo mientras tengas sanciones de moderación vigentes.",
+  );
 }

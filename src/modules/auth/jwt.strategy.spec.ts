@@ -1,5 +1,6 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { UserRole } from '../../common/enums/domain.enums';
+import { PENDING_REVIEW_SUSPENSION_UNTIL } from '../../common/moderation/account-suspension';
 import { JwtPayload } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
 import { UsersRepository } from '../users/users.repository';
@@ -19,6 +20,13 @@ function strategyFor(account: Record<string, unknown> | null): JwtStrategy {
 }
 
 describe('JwtStrategy', () => {
+  it('rejects a suspended account; a pending-review suspension names the review, not a date', async () => {
+    const dated = strategyFor({ id: payload.sub, role: UserRole.CLIENT, suspendedUntil: new Date(Date.now() + 86_400_000) });
+    await expect(dated.validate(payload)).rejects.toThrow('Tu cuenta está suspendida temporalmente');
+    const pending = strategyFor({ id: payload.sub, role: UserRole.CLIENT, suspendedUntil: PENDING_REVIEW_SUSPENSION_UNTIL });
+    await expect(pending.validate(payload)).rejects.toThrow('Tu cuenta está suspendida mientras revisamos un reporte.');
+  });
+
   it('returns the current persisted role for an active principal', async () => {
     const strategy = strategyFor({
       id: payload.sub,

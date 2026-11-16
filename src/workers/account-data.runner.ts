@@ -2,18 +2,22 @@ import { Injectable, Logger } from "@nestjs/common";
 import { hostname } from "node:os";
 import { z } from "zod";
 import { env } from "../config/env";
+import { AccountClosureService } from "../modules/account/account-closure.service";
 import { ACCOUNT_EXPORT_QUEUE, AccountExportService } from "../modules/export/account-export.service";
 import { OutboxJobModel } from "../modules/integration/outbox-job.model";
 import { OutboxService } from "../modules/integration/outbox.service";
+import { MINOR_ACCOUNT_CLOSURE_QUEUE } from "../modules/moderation/moderation-minor.service";
 import { runBounded, sleep } from "./worker-loop";
 
 const exportPayloadSchema = z.object({ exportId: z.string().uuid() }).strict();
+const minorClosurePayloadSchema = z.object({ schemaVersion: z.literal(1), userId: z.string().uuid() }).strict();
 
 /**
- * Account-rights jobs: building full exports. Failures go back to the outbox
- * (finite retries, backoff, dead-letter); a dead-lettered export is marked
- * FAILED so its owner can see it. The files of a closed account are erased by
- * the shared `media.release` queue (MediaReleaseService), not here.
+ * Account-rights jobs: building full exports and the closures moderation
+ * decided (a confirmed minor). Failures go back to the outbox (finite
+ * retries, backoff, dead-letter); a dead-lettered export is marked FAILED so
+ * its owner can see it. The files of a closed account are erased by the shared
+ * `media.release` queue (MediaReleaseService), not here.
  */
 @Injectable()
 export class AccountDataRunner {
@@ -23,6 +27,7 @@ export class AccountDataRunner {
   constructor(
     private readonly outbox: OutboxService,
     private readonly exports: AccountExportService,
+    private readonly closures: AccountClosureService,
   ) {}
 
   async run(signal: AbortSignal): Promise<void> {
@@ -43,21 +48,29 @@ export class AccountDataRunner {
     this.logger.log({ event: "account_data.stopped", workerId: this.workerId });
   }
 
-  /** One claim; returns how many jobs it handled. */
+  /** One claim per queue; returns how many jobs it handled. */
   async drainOnce(): Promise<number> {
-    const jobs = await this.outbox.claim(ACCOUNT_EXPORT_QUEUE, this.workerId, env.WORKER_BATCH_SIZE, env.WORKER_LOCK_TIMEOUT_MS);
-    await runBounded(jobs, env.WORKER_CONCURRENCY, (job) => this.process(job));
-    return jobs.length;
+    let handled = 0;
+    for (const queue of [ACCOUNT_EXPORT_QUEUE, MINOR_ACCOUNT_CLOSURE_QUEUE]) {
+      const jobs = await this.outbox.claim(queue, this.workerId, env.WORKER_BATCH_SIZE, env.WORKER_LOCK_TIMEOUT_MS);
+      await runBounded(jobs, env.WORKER_CONCURRENCY, (job) => this.process(job));
+      handled += jobs.length;
+    }
+    return handled;
   }
 
   private async process(job: OutboxJobModel): Promise<void> {
     try {
-      await this.exports.build(exportPayloadSchema.parse(job.payload).exportId);
+      if (job.queueName === MINOR_ACCOUNT_CLOSURE_QUEUE) {
+        await this.closures.closeByModeration(minorClosurePayloadSchema.parse(job.payload).userId);
+      } else {
+        await this.exports.build(exportPayloadSchema.parse(job.payload).exportId);
+      }
       await this.outbox.complete(job, this.workerId);
     } catch (error) {
       const failure = await this.outbox.fail(job, this.workerId, error);
       const parsed = exportPayloadSchema.safeParse(job.payload);
-      if (failure.deadLetter && parsed.success) {
+      if (failure.deadLetter && job.queueName === ACCOUNT_EXPORT_QUEUE && parsed.success) {
         await this.exports.markFailed(parsed.data.exportId, error instanceof Error ? error.name : "UnknownError");
       }
       this.logger.error({

@@ -29,7 +29,7 @@ export class ClosedAccountSanctionsRepository {
   constructor(private readonly sequelize: Sequelize) {}
 
   /** Running suspension and strikes still inside the counting window, read before the closure wipes them. */
-  async activeSanction(userId: string, now: Date, transaction: Transaction): Promise<SanctionSnapshot> {
+  async activeSanction(userId: string, now: Date, transaction?: Transaction): Promise<SanctionSnapshot> {
     const [account] = await this.sequelize.query<{ suspendedUntil: Date | null }>(
       `SELECT CASE WHEN suspended_until > :now THEN suspended_until END AS "suspendedUntil"
          FROM public.usuarios WHERE id = :userId`,

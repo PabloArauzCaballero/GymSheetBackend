@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UserRole } from '../../common/enums/domain.enums';
+import { suspendedSessionError } from '../../common/moderation/account-suspension';
 import { AuthenticatedUser, JwtPayload } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
 import { UsersRepository } from '../users/users.repository';
@@ -47,9 +48,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // que salga. Se compara contra el reloj y no se limpia la columna: la
     // suspensión termina sola cuando pasa la fecha.
     if (activeUser.suspendedUntil && activeUser.suspendedUntil.getTime() > Date.now()) {
-      throw new UnauthorizedException(
-        'Tu cuenta está suspendida temporalmente por incumplir las normas de la comunidad.',
-      );
+      throw suspendedSessionError(activeUser.suspendedUntil);
     }
 
     // Se lee de la cuenta y no del token: así un cambio de gimnasio surte

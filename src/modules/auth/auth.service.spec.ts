@@ -1,4 +1,5 @@
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { PENDING_REVIEW_SUSPENSION_UNTIL } from '../../common/moderation/account-suspension';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { Sequelize } from 'sequelize-typescript';
@@ -134,6 +135,23 @@ describe('AuthService login de una cuenta suspendida', () => {
 
     expect(error).toBeInstanceOf(ForbiddenException);
     expect((error as ForbiddenException).message).toMatch(/suspendida/u);
+  });
+
+  it('una suspensión pendiente de revisión no anuncia el año 9999', async () => {
+    const { compare } = jest.requireMock<{ compare: jest.Mock }>('bcryptjs');
+    compare.mockResolvedValueOnce(true);
+    const service = createService({
+      findActiveByEmail: jest.fn().mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        email: registeredEmail,
+        passwordHash: STORED_HASH,
+        role: 'CLIENTE',
+        suspendedUntil: PENDING_REVIEW_SUSPENSION_UNTIL,
+      }),
+    });
+
+    await expect(service.login({ email: registeredEmail, password: 'right-password' }, noDevice))
+      .rejects.toThrow('Tu cuenta está suspendida mientras revisamos un reporte.');
   });
 });
 

@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { Sequelize } from 'sequelize-typescript';
+import { AccountClosureRepository } from '../src/modules/account/account-closure.repository';
+import { MediaReleaseService } from '../src/modules/media/media-release.service';
 import { ChatDisappearingPurgeService } from '../src/modules/chat/chat-disappearing-purge.service';
 import { CHAT_EVIDENCE_RETENTION_DAYS, ModerationEvidenceService } from '../src/modules/moderation/moderation-evidence.service';
 import { MINOR_ACCOUNT_CLOSURE_QUEUE } from '../src/modules/moderation/moderation-minor.service';
+import { writeStoredFile } from './support/account-fixtures';
 import { bootE2eApp, createPersonalExercise, E2eApp } from './support/e2e-app';
 import { connectChatSocket, emitWithAck, inbox, listen, Member, registerModerator, resolveCase } from './support/moderation-e2e';
 import { openConversation, selectRows } from './support/privacy-e2e';
@@ -27,14 +32,18 @@ describe('Moderation safeguards (e2e)', () => {
     (await selectRows<{ until: Date | null }>(e2e, 'SELECT suspended_until AS until FROM public.usuarios WHERE id = :id', { id }))[0].until;
 
   describe('a report of a minor', () => {
-    it('suspends the member at once, pending review, and a dismissal lifts it', async () => {
+    it('suspends the member once a second reporter corroborates, pending review, and a dismissal lifts it', async () => {
       const reporter = await e2e.register('minor-reporter');
+      const second = await e2e.register('minor-reporter-2');
       const reported = await e2e.register('minor-reported');
       await e2e.as(reported.token).get('/users/me').expect(200);
 
       await report(reporter.token, 'USER', reported.id, 'MENOR_DE_EDAD').expect(201);
+      expect(await suspendedUntil(reported.id)).toBeNull();
+      await report(second.token, 'USER', reported.id, 'MENOR_DE_EDAD').expect(201);
 
-      await e2e.as(reported.token).get('/users/me').expect(401);
+      const refused = await e2e.as(reported.token).get('/users/me').expect(401);
+      expect(JSON.stringify(refused.body)).toContain('Tu cuenta está suspendida mientras revisamos un reporte.');
       expect((await suspendedUntil(reported.id))?.getUTCFullYear()).toBe(9999);
       const [notice] = await selectRows<{ body: string }>(
         e2e, `SELECT body FROM notifications.messages WHERE recipient_user_id = :id AND metadata->>'type' = 'MODERATION_SUSPENSION_PENDING_REVIEW'`, { id: reported.id });
@@ -66,8 +75,10 @@ describe('Moderation safeguards (e2e)', () => {
     it('never suspends a staff account (a member cannot lock out the gym)', async () => {
       const reporter = await e2e.register('minor-staff-reporter');
       const coach = await e2e.register('minor-staff-coach');
+      const second = await e2e.register('minor-staff-reporter-2');
       await e2e.promote(coach.id, 'COACH');
       await report(reporter.token, 'USER', coach.id, 'MENOR_DE_EDAD').expect(201);
+      await report(second.token, 'USER', coach.id, 'MENOR_DE_EDAD').expect(201);
       expect(await suspendedUntil(coach.id)).toBeNull();
     });
   });
@@ -165,6 +176,30 @@ describe('Moderation safeguards (e2e)', () => {
       expect(await messageRows()).toEqual([]);
       expect(await evidence(messageId)).toEqual([{ body: 'Temporal denunciado' }]);
     });
+  });
+
+  it('a file still referenced by an evidence copy survives a media release and the closure keeps it', async () => {
+    const sender = await e2e.register('evidence-media');
+    const key = `users/${sender.id}/chats/${randomUUID()}/${randomUUID()}.bin`;
+    const path = writeStoredFile(key);
+    const messageId = randomUUID();
+    await e2e.sql(`INSERT INTO moderation.chat_message_evidence (message_id, conversation_id, sender_id, type, media_provider, media_key, sent_at)
+      VALUES (:messageId, :conversationId, :senderId, 'image', 'local', :key, now())`,
+    { messageId, conversationId: randomUUID(), senderId: sender.id, key });
+    const sequelize = e2e.app.get(Sequelize);
+    const release = (aggregateId: string) => sequelize.transaction((transaction) =>
+      e2e.app.get(MediaReleaseService).requestRelease({ aggregateType: 'chat.message', aggregateId, storageKey: key }, transaction));
+    const closure = e2e.app.get(AccountClosureRepository);
+    await expect(closure.runInTransaction((transaction) => closure.keysStillInUse([key], transaction))).resolves.toEqual(new Set([key]));
+
+    await release(randomUUID());
+    await e2e.app.get(MediaReleaseService).drainOnce();
+    expect(existsSync(path)).toBe(true);
+
+    await e2e.sql('DELETE FROM moderation.chat_message_evidence WHERE message_id = :messageId', { messageId });
+    await release(randomUUID());
+    await e2e.app.get(MediaReleaseService).drainOnce();
+    expect(existsSync(path)).toBe(false);
   });
 
   it('auto-hide after 3 distinct reporters opens a review item, tells the author, and a moderator restores it', async () => {

@@ -1,6 +1,5 @@
 import {
   ConflictException,
-  ForbiddenException,
   HttpStatus,
   Injectable,
   NotFoundException,
@@ -27,7 +26,8 @@ import { IdentityProvider, OidcTokenVerifier, VerifiedIdentity } from "./oidc-to
 import { SignupRequestMeta } from "./signup-context";
 import { UserDeviceService } from "./user-device.service";
 import { SignupProtectionService } from "../antibot/signup-protection.service";
-import { ClosedAccountSanctionsService, suspendedAccountError } from "../closed-account-sanctions/closed-account-sanctions.service";
+import { suspendedAccountError } from "../../common/moderation/account-suspension";
+import { ClosedAccountSanctionsService } from "../closed-account-sanctions/closed-account-sanctions.service";
 
 export type IdentitySignInResult =
   | ({ status: "AUTHENTICATED" } & AuthResponse)
@@ -151,9 +151,7 @@ export class IdentitySignInService {
     options: { takeOver?: boolean } = {},
   ): Promise<IdentitySignInResult> {
     if (user.suspendedUntil && user.suspendedUntil.getTime() > Date.now()) {
-      throw new ForbiddenException(
-        `Tu cuenta está suspendida hasta el ${user.suspendedUntil.toLocaleDateString("es")} por incumplir las normas de la comunidad.`,
-      );
+      throw suspendedAccountError(user.suspendedUntil);
     }
     try {
       const session = await this.sequelize.transaction(async (transaction) => {

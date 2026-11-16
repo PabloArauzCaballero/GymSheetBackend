@@ -1,16 +1,9 @@
-import { ForbiddenException, Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { Transaction } from "sequelize";
 import { hashEmail } from "../../common/privacy/email-hash";
 import { ClosedAccountSanctionsRepository, SanctionSnapshot } from "./closed-account-sanctions.repository";
 
 type Account = { id: string; email: string; tenantId: string | null };
-
-/** Same wording as the login refusal of a suspended account. */
-export function suspendedAccountError(until: Date): ForbiddenException {
-  return new ForbiddenException(
-    `Tu cuenta está suspendida hasta el ${until.toLocaleDateString("es")} por incumplir las normas de la comunidad.`,
-  );
-}
 
 /**
  * Ban evasion through account closure (ADR-0015). Closing an account wipes
@@ -39,6 +32,17 @@ export class ClosedAccountSanctionsService {
     await this.repository.insert(emailHmac, snapshot, expiryOf(snapshot), transaction);
     this.logger.log({ event: "moderation.closed_sanction_recorded", userId: account.id, strikeCount: snapshot.strikes.length });
     return true;
+  }
+
+  /**
+   * Whether the account carries a running suspension or strikes still
+   * counting. The email change refuses then: changing the address first and
+   * closing afterwards would file the record under an address the person
+   * never signs up with again, and the sanction would be lost.
+   */
+  async hasActiveSanction(userId: string, transaction?: Transaction, now: Date = new Date()): Promise<boolean> {
+    const snapshot = await this.repository.activeSanction(userId, now, transaction);
+    return snapshot.suspendedUntil !== null || snapshot.strikes.length > 0;
   }
 
   /**

@@ -2,6 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { Sequelize } from 'sequelize-typescript';
 import { EmailVerificationService } from '../auth/email-verification.service';
+import { ClosedAccountSanctionsService } from '../closed-account-sanctions/closed-account-sanctions.service';
 import { NotificationService } from '../notifications/notification.service';
 import { UsersRepository } from '../users/users.repository';
 import { EmailChangeService } from './email-change.service';
@@ -9,7 +10,7 @@ import { EmailChangeService } from './email-change.service';
 const userId = '00000000-0000-4000-8000-000000000001';
 const transaction = { id: 'tx' };
 
-async function build(options: { pin?: object; holderId?: string } = {}) {
+async function build(options: { pin?: object; holderId?: string; sanctioned?: boolean } = {}) {
   const user = { id: userId, email: 'old@example.test', passwordHash: await bcrypt.hash('secret-pass', 4) };
   const users = {
     findActiveById: jest.fn().mockResolvedValue(user),
@@ -23,13 +24,15 @@ async function build(options: { pin?: object; holderId?: string } = {}) {
   };
   const notifications = { enqueueDirectMessage: jest.fn().mockResolvedValue(true) };
   const sequelize = { transaction: jest.fn((work: (t: unknown) => unknown) => work(transaction)) };
+  const sanctions = { hasActiveSanction: jest.fn().mockResolvedValue(options.sanctioned ?? false) };
   const service = new EmailChangeService(
     users as unknown as UsersRepository,
     pins as unknown as EmailVerificationService,
     notifications as unknown as NotificationService,
     sequelize as unknown as Sequelize,
+    sanctions as unknown as ClosedAccountSanctionsService,
   );
-  return { service, users, pins, notifications };
+  return { service, users, pins, notifications, sanctions };
 }
 
 describe('EmailChangeService.request', () => {
@@ -46,6 +49,19 @@ describe('EmailChangeService.request', () => {
     const [, purpose, message] = pins.issuePurposePin.mock.calls[0] as [string, string, { recipientEmail: string; targetEmail: string }];
     expect(purpose).toBe('CHANGE_EMAIL');
     expect(message).toMatchObject({ recipientEmail: 'new@example.test', targetEmail: 'new@example.test' });
+  });
+});
+
+describe('EmailChangeService while sanctioned', () => {
+  it('refuses the request and the confirmation with a stable 409 code (no ban evasion by alias + closure)', async () => {
+    const { service, pins, users, sanctions } = await build({ sanctioned: true });
+    await expect(service.request(userId, { newEmail: 'new@example.test', password: 'secret-pass' }))
+      .rejects.toMatchObject({ status: 409, code: 'EMAIL_CHANGE_BLOCKED_BY_SANCTION' });
+    expect(pins.issuePurposePin).not.toHaveBeenCalled();
+    await expect(service.confirm(userId, '123456')).rejects.toMatchObject({ code: 'EMAIL_CHANGE_BLOCKED_BY_SANCTION' });
+    expect(sanctions.hasActiveSanction).toHaveBeenLastCalledWith(userId, transaction);
+    expect(pins.verifyPurposePin).not.toHaveBeenCalled();
+    expect(users.changeEmail).not.toHaveBeenCalled();
   });
 });
 

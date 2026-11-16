@@ -1,4 +1,5 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { PENDING_REVIEW_SUSPENSION_UNTIL } from '../../common/moderation/account-suspension';
 import { JwtService } from '@nestjs/jwt';
 import { Sequelize } from 'sequelize-typescript';
 import { UserGender, UserRole, UserStatus } from '../../common/enums/domain.enums';
@@ -150,6 +151,12 @@ describe('IdentitySignInService', () => {
       byEmail: { ...account, suspendedUntil: new Date(Date.now() + 86_400_000) },
     });
     await expect(service.signIn('GOOGLE', 'token', undefined, device)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('says a pending-review suspension lasts while the report is reviewed, not until 9999', async () => {
+    const { service } = build({ byEmail: { ...account, suspendedUntil: PENDING_REVIEW_SUSPENSION_UNTIL } });
+    await expect(service.signIn('GOOGLE', 'token', undefined, device))
+      .rejects.toThrow('Tu cuenta está suspendida mientras revisamos un reporte.');
   });
 
   it('asks a new person to complete the profile with a single-purpose signup token', async () => {

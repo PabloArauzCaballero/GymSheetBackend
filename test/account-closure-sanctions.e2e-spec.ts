@@ -94,6 +94,19 @@ describe('Account closure keeps moderation sanctions (e2e)', () => {
     expect(await records(email)).toEqual([]);
   });
 
+  it('signing up again with a +alias of the closed address still inherits the strikes', async () => {
+    const member = await e2e.register('sanction-alias');
+    const email = await emailOf(member.id);
+    await addStrike(member.id, 'ADVERTENCIA', 300, null);
+    await e2e.as(member.token).del('/me/account').send({ password: PASSWORD }).expect(200);
+
+    const alias = email.replace('@', '+otra@').toUpperCase();
+    await signUp(alias).then((response) => expect(response.status).toBe(201));
+    const reborn = await accountByEmail(alias.toLowerCase());
+    expect(await activeStrikes(reborn.id)).toHaveLength(1);
+    expect(await records(email)).toEqual([]);
+  });
+
   it('an unsanctioned closure leaves no record and the next signup starts clean', async () => {
     const member = await e2e.register('sanction-clean');
     const email = await emailOf(member.id);

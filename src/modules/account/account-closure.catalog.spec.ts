@@ -22,6 +22,13 @@ describe('ACCOUNT_CLOSURE_STEPS', () => {
     expect([...withMedia].sort()).toEqual(['chat.messages', 'community.content_comments', 'profile.photos', 'profile.stories', 'social.reels']);
   });
 
+  it('keeps the moderation evidence of franja 4 (no FK, so the e2e FK scan cannot see it)', () => {
+    for (const table of ['moderation.chat_message_evidence', 'moderation.auto_hide_reviews']) {
+      const steps = ACCOUNT_CLOSURE_STEPS.filter((step) => step.table === table);
+      expect([table, steps.map((step) => step.disposition)]).toEqual([table, ['KEPT']]);
+    }
+  });
+
   it('previews only tables with rows, grouped by what happens to them', () => {
     const [deleted, kept] = [ACCOUNT_CLOSURE_STEPS[0], ACCOUNT_CLOSURE_STEPS.find((step) => step.disposition === 'KEPT')!];
     const preview = mapClosurePreview(

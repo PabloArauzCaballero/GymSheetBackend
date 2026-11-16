@@ -1,5 +1,6 @@
 import { Sequelize } from 'sequelize-typescript';
 import request from 'supertest';
+import { AccountClosureService } from '../src/modules/account/account-closure.service';
 import { ACCOUNT_EXPORT_SECTIONS } from '../src/modules/export/account-export.sections';
 import { AccountExportService } from '../src/modules/export/account-export.service';
 import { OutboxService } from '../src/modules/integration/outbox.service';
@@ -61,6 +62,7 @@ describe('Account export and email change (e2e)', () => {
       const runner = new AccountDataRunner(
         e2e.app.get(OutboxService),
         e2e.app.get(AccountExportService),
+        e2e.app.get(AccountClosureService),
       );
       await runner.drainOnce();
       const status = await e2e.as(owner.token).get(`/me/export/${exportId}`).expect(200);
@@ -87,6 +89,35 @@ describe('Account export and email change (e2e)', () => {
       expect(download.body as string).not.toContain('Respuesta ajena');
       expect(rows('chat.participants')).toHaveLength(1);
     });
+  });
+
+  it('an export taken while an email-change PIN is pending never carries the PIN', async () => {
+    const member = await e2e.register('export-pin');
+    const newEmail = `pin-${member.id.slice(0, 8)}@example.test`;
+    await e2e.as(member.token).post('/me/email/change').send({ newEmail, password: PASSWORD }).expect(202);
+    const { pin } = await latestPin(member.id, 'email-change-');
+    expect(pin).toMatch(/^\d{6}$/u);
+    const requested = await e2e.as(member.token).post('/me/export').expect(202);
+    await new AccountDataRunner(e2e.app.get(OutboxService), e2e.app.get(AccountExportService), e2e.app.get(AccountClosureService)).drainOnce();
+    const download = await e2e.as(member.token).get(`/me/export/${requested.body.data.id as string}/download`).buffer(true)
+      .parse((res, callback) => {
+        let text = '';
+        res.on('data', (chunk: Buffer) => { text += chunk.toString('utf8'); });
+        res.on('end', () => callback(null, text));
+      }).expect(200);
+    expect(download.body as string).not.toContain(pin);
+    expect(download.body as string).not.toContain('Tu código para usar este correo');
+  });
+
+  it('refuses an email change while a moderation strike still counts (ban evasion by change + closure)', async () => {
+    const member = await e2e.register('email-sanctioned');
+    await e2e.sql(`INSERT INTO moderation.user_strikes (id, user_id, tenant_id, kind, reason, expires_at)
+      SELECT uuid_generate_v4(), u.id, COALESCE(u.tenant_id, (SELECT id FROM public.tenants ORDER BY id LIMIT 1)),
+             'ADVERTENCIA', 'SPAM', now() + interval '30 days' FROM public.usuarios u WHERE u.id = :id`, { id: member.id });
+    const refused = await e2e.as(member.token).post('/me/email/change')
+      .send({ newEmail: `evade-${member.id.slice(0, 8)}@example.test`, password: PASSWORD }).expect(409);
+    expect(refused.body.code).toBe('EMAIL_CHANGE_BLOCKED_BY_SANCTION');
+    expect((await latestPin(member.id, 'email-change-')).pin).toBe('');
   });
 
   describe('email and name rectification', () => {

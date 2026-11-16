@@ -1,8 +1,18 @@
 /**
  * What the full export (`POST /me/export`) contains: one section per table of
  * the data map, own rows only. Credential material (password, token and PIN
- * hashes) is never exported. For chats, only the person's own messages and the
- * ids of their conversations: other people's content is theirs.
+ * hashes) is never exported, and neither are secret notifications (a message
+ * that carried a PIN): their body is the credential. For chats, only the
+ * person's own messages and the ids of their conversations: other people's
+ * content is theirs.
+ *
+ * Moderation follows the reporter-anonymity promise: reports received and the
+ * evidence copy of a reported chat message (`moderation.chat_message_evidence`)
+ * are NOT exported. In a one-to-one chat the mere existence of a copy names
+ * the reporter, which the right of access may not do to a third party; the
+ * message itself is already in `chat.messages` while the sender keeps it. The
+ * review of an auto-hidden content is exported to its author, who was told
+ * about the hiding, without the moderator's id.
  */
 export type AccountExportSection = {
   /** `schema.table`; also the key in the archive. */
@@ -103,6 +113,8 @@ export const ACCOUNT_EXPORT_SECTIONS: readonly AccountExportSection[] = [
   section("directory.review_helpful_votes", "Votos de utilidad", OWN),
   section("moderation.reports", "Denuncias que hiciste", "t.reporter_user_id = :userId"),
   section("moderation.user_strikes", "Sanciones", OWN),
+  section("moderation.auto_hide_reviews", "Contenido ocultado por denuncias", "t.author_user_id = :userId",
+    ["reviewed_by_user_id"]),
   // The gym's records about you.
   section("membership.customer_profiles", "Ficha de socio", OWN),
   section("membership.memberships", "Membresías", OWN),
@@ -115,7 +127,7 @@ export const ACCOUNT_EXPORT_SECTIONS: readonly AccountExportSection[] = [
   section("access_control.credentials", "Credenciales de acceso", OWN, ["pin_hash"]),
   section("access_control.decisions", "Entradas al gimnasio", OWN),
   // Notifications.
-  section("notifications.messages", "Avisos recibidos", "t.recipient_user_id = :userId"),
+  section("notifications.messages", "Avisos recibidos", "t.recipient_user_id = :userId AND NOT t.secret"),
   section("notifications.device_tokens", "Permisos push", OWN, ["push_token", "auth", "p256dh"]),
   section("notifications.preferences", "Preferencias de avisos", OWN),
 ];

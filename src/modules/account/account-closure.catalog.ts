@@ -178,6 +178,12 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
   keep("moderation.reports", "Denuncias que hiciste o recibiste",
     "t.reporter_user_id = :userId OR t.reported_user_id = :userId", "Evidencia de moderación y seguridad."),
   keep("moderation.user_strikes", "Sanciones", OWN, "Evidencia de moderación y seguridad."),
+  // Legal evidence (no FK on purpose, see migration 202611180401): kept while a report is open and
+  // then deleted by its own retention (ModerationEvidenceService.purgeExpired), never by the closure.
+  keep("moderation.chat_message_evidence", "Copias de mensajes denunciados", "t.sender_id = :userId",
+    "Evidencia legal de una denuncia: se conserva mientras está abierta y se borra 180 días después de cerrarse."),
+  keep("moderation.auto_hide_reviews", "Revisiones de contenido ocultado por denuncias", "t.author_user_id = :userId",
+    "Registro de la revisión de moderación del contenido ocultado; no lleva tu nombre ni tu correo."),
 
   // The gym's records (the gym is responsible; REPP only processes them).
   anonymize("membership.customer_profiles", "Ficha de socio del gimnasio", OWN,

@@ -169,7 +169,7 @@ export class ModerationService {
           await this.evidence.captureChatMessage(input.targetId, transaction);
         }
         if (input.reason === ModerationReason.MENOR_DE_EDAD) {
-          await this.minors.suspendPendingReview(owner.userId, transaction);
+          await this.minors.suspendIfCorroborated({ reportedUserId: owner.userId, tenantId: owner.tenantId, targetKind: input.targetKind }, transaction);
         }
         return created;
       })

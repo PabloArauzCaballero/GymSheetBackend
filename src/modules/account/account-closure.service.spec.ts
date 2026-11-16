@@ -12,8 +12,13 @@ const userId = '00000000-0000-4000-8000-000000000001';
 const transaction = { id: 'tx' };
 const closedAt = new Date('2026-11-18T10:00:00Z');
 
-async function build(options: { role?: UserRole; identity?: boolean; pinKind?: string; keys?: string[]; inUse?: string[] } = {}) {
-  const user = { id: userId, email: 'ana@example.test', tenantId: null, role: options.role ?? UserRole.CLIENT, passwordHash: await bcrypt.hash('secret-pass', 4) };
+type BuildOptions = { role?: UserRole; identity?: boolean; pinKind?: string; keys?: string[]; inUse?: string[]; closedAt?: Date | null };
+
+async function build(options: BuildOptions = {}) {
+  const user = {
+    id: userId, email: 'ana@example.test', tenantId: null, role: options.role ?? UserRole.CLIENT,
+    passwordHash: await bcrypt.hash('secret-pass', 4), closedAt: options.closedAt ?? null,
+  };
   const repository = {
     runInTransaction: jest.fn((work: (t: unknown) => unknown) => work(transaction)),
     hasLinkedIdentity: jest.fn().mockResolvedValue(options.identity ?? false),
@@ -25,6 +30,7 @@ async function build(options: { role?: UserRole; identity?: boolean; pinKind?: s
   };
   const users = {
     findActiveById: jest.fn().mockResolvedValue(user),
+    findById: jest.fn().mockResolvedValue(user),
     lockUserForUpdate: jest.fn().mockResolvedValue(undefined),
   };
   const pins = {
@@ -46,7 +52,7 @@ async function build(options: { role?: UserRole; identity?: boolean; pinKind?: s
     recommendations as unknown as SocialRecommendationOutboxService,
     sanctions as unknown as ClosedAccountSanctionsService,
   );
-  return { service, repository, pins, mediaRelease, recommendations, sanctions };
+  return { service, repository, users, pins, mediaRelease, recommendations, sanctions };
 }
 
 describe('AccountClosureService.close', () => {
@@ -108,5 +114,29 @@ describe('AccountClosureService.requestPin', () => {
     expect(provider.pins.issuePurposePin.mock.calls[0][1]).toBe('CLOSE_ACCOUNT');
     const password = await build({ identity: false });
     await expect(password.service.requestPin(userId)).rejects.toMatchObject({ code: 'CLOSURE_PROOF_REQUIRED' });
+  });
+});
+
+describe('AccountClosureService.closeByModeration', () => {
+  it('erases a member without any proof and records no carried sanction (a minor may return as an adult)', async () => {
+    const { service, repository, users, pins, sanctions } = await build();
+    await expect(service.closeByModeration(userId)).resolves.toBe('CLOSED');
+    expect(users.lockUserForUpdate).toHaveBeenCalledWith(userId, transaction);
+    expect(repository.eraseAll).toHaveBeenCalledWith(userId, transaction);
+    expect(repository.anonymizeAccount).toHaveBeenCalledWith(userId, expect.objectContaining({ tombstoneEmail: closedAccountEmail(userId) }), transaction);
+    expect(pins.verifyPurposePin).not.toHaveBeenCalled();
+    expect(sanctions.recordAtClosure).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op for an account already closed or gone, and never closes staff', async () => {
+    const closed = await build({ closedAt });
+    await expect(closed.service.closeByModeration(userId)).resolves.toBe('ALREADY_CLOSED');
+    expect(closed.repository.eraseAll).not.toHaveBeenCalled();
+    const gone = await build();
+    gone.users.findById.mockResolvedValue(null);
+    await expect(gone.service.closeByModeration(userId)).resolves.toBe('ALREADY_CLOSED');
+    const staff = await build({ role: UserRole.COACH });
+    await expect(staff.service.closeByModeration(userId)).resolves.toBe('STAFF_SKIPPED');
+    expect(staff.repository.eraseAll).not.toHaveBeenCalled();
   });
 });

@@ -81,3 +81,14 @@ describe("ClosedAccountSanctionsService.inheritAtSignup", () => {
     expect(repository.setSuspension).not.toHaveBeenCalled();
   });
 });
+
+describe("ClosedAccountSanctionsService.hasActiveSanction", () => {
+  it("is true with a running suspension or a counting strike, false for a clean account", async () => {
+    await expect(build().service.hasActiveSanction("user-1", transaction, now)).resolves.toBe(false);
+    await expect(build({ suspendedUntil: new Date("2026-12-01T00:00:00.000Z"), strikes: [] }).service.hasActiveSanction("user-1", transaction, now))
+      .resolves.toBe(true);
+    const warned = build({ suspendedUntil: null, strikes: [strike("2027-03-01T00:00:00.000Z")] });
+    await expect(warned.service.hasActiveSanction("user-1", transaction, now)).resolves.toBe(true);
+    expect(warned.repository.activeSanction).toHaveBeenCalledWith("user-1", now, transaction);
+  });
+});

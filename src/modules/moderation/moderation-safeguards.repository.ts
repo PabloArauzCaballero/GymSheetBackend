@@ -36,6 +36,50 @@ export class ModerationSafeguardsRepository {
   }
 
   /**
+   * Distinct reporters behind the open MENOR_DE_EDAD reports of a member's
+   * profile (USER kind; the report's tenant is the reported account's, and the
+   * reporter must belong to it, an account without one counting as the default) since `since`.
+   * A report counts only if its reporter filed fewer than `perReporterLimit`
+   * MENOR_DE_EDAD reports in the `rateWindowMs` before it, so one person
+   * cannot spray reports to lock accounts out.
+   *
+   * The reported account row is locked first: two reports committed at the
+   * same time are counted one after the other, so the second one sees the
+   * first and the threshold cannot be missed by a race.
+   */
+  async countCorroboratingMinorReporters(
+    input: {
+      userId: string;
+      tenantId: string;
+      defaultTenantId: string;
+      since: Date;
+      perReporterLimit: number;
+      rateWindowMs: number;
+    },
+    transaction: Transaction,
+  ): Promise<number> {
+    await this.sequelize.query("SELECT id FROM public.usuarios WHERE id = :userId FOR UPDATE", {
+      replacements: { userId: input.userId },
+      transaction,
+    });
+    const [row] = await this.sequelize.query<{ reporters: number }>(
+      `SELECT count(DISTINCT r.reporter_user_id)::int AS reporters
+         FROM moderation.reports r
+         JOIN public.usuarios reporter ON reporter.id = r.reporter_user_id
+        WHERE r.reported_user_id = :userId AND r.reason = 'MENOR_DE_EDAD' AND r.target_kind = 'USER'
+          AND r.status IN ('PENDIENTE', 'EN_REVISION') AND r.created_at >= :since
+          AND r.tenant_id = :tenantId AND COALESCE(reporter.tenant_id, :defaultTenantId) = :tenantId
+          AND (SELECT count(*) FROM moderation.reports prior
+                WHERE prior.reporter_user_id = r.reporter_user_id AND prior.reason = 'MENOR_DE_EDAD'
+                  AND prior.created_at >= r.created_at - (:rateWindowMs * interval '1 millisecond')
+                  AND (prior.created_at < r.created_at OR (prior.created_at = r.created_at AND prior.id < r.id))
+              ) < :perReporterLimit`,
+      { type: QueryTypes.SELECT, replacements: input, transaction },
+    );
+    return Number(row?.reporters ?? 0);
+  }
+
+  /**
    * Lifts the provisional suspension once no other MENOR_DE_EDAD report on the
    * person stays open, falling back to the longest strike suspension still
    * running (never shortening a sanction).

@@ -15,7 +15,8 @@ import { DomainException } from '../../common/errors/domain.exception';
 import { AuthenticatedUser, JwtPayload } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
 import { SignupProtectionService } from '../antibot/signup-protection.service';
-import { ClosedAccountSanctionsService, suspendedAccountError } from '../closed-account-sanctions/closed-account-sanctions.service';
+import { suspendedAccountError } from '../../common/moderation/account-suspension';
+import { ClosedAccountSanctionsService } from '../closed-account-sanctions/closed-account-sanctions.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { UsersRepository } from '../users/users.repository';
 import { LEGAL_DOCUMENTS } from '../legal/legal-documents';
@@ -164,9 +165,7 @@ export class AuthService {
     // persona suspendida que se había equivocado de contraseña, y el motivo y
     // la fecha que escribimos aquí no llegaban nunca a la pantalla.
     if (activeUser.suspendedUntil && activeUser.suspendedUntil.getTime() > Date.now()) {
-      throw new ForbiddenException(
-        `Tu cuenta está suspendida hasta el ${activeUser.suspendedUntil.toLocaleDateString('es')} por incumplir las normas de la comunidad.`,
-      );
+      throw suspendedAccountError(activeUser.suspendedUntil);
     }
 
     return this.sequelize.transaction(async (transaction) => {

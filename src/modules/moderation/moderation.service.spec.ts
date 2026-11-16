@@ -71,7 +71,7 @@ describe('ModerationService', () => {
     const connections = { update: jest.fn().mockResolvedValue([1]) };
     const passes = { bulkCreate: jest.fn().mockResolvedValue([]) };
     const minors = {
-      suspendPendingReview: jest.fn().mockResolvedValue(true),
+      suspendIfCorroborated: jest.fn().mockResolvedValue(true),
       confirm: jest.fn().mockResolvedValue(undefined),
       liftIfCleared: jest.fn().mockResolvedValue(undefined),
     };
@@ -239,17 +239,18 @@ describe('ModerationService', () => {
   });
 
   describe('salvaguardas al reportar', () => {
-    it('una denuncia por menor de edad suspende la cuenta en la misma transacción, sin escalera', async () => {
+    it('una denuncia por menor de edad pide la suspensión corroborada en la misma transacción, sin escalera', async () => {
       const { service, minors, repository } = build();
       await service.report(reporter, { ...reportInput, targetKind: ModerationTargetKind.USER, targetId: 'author-1', reason: ModerationReason.MENOR_DE_EDAD });
-      expect(minors.suspendPendingReview).toHaveBeenCalledWith('author-1', expect.anything());
+      expect(minors.suspendIfCorroborated).toHaveBeenCalledWith(
+        { reportedUserId: 'author-1', tenantId: expect.any(String), targetKind: ModerationTargetKind.USER }, expect.anything());
       expect(repository.createStrike).not.toHaveBeenCalled();
     });
 
     it('cualquier otro motivo no suspende a nadie', async () => {
       const { service, minors } = build();
       await service.report(reporter, reportInput);
-      expect(minors.suspendPendingReview).not.toHaveBeenCalled();
+      expect(minors.suspendIfCorroborated).not.toHaveBeenCalled();
     });
 
     it('guarda una copia de evidencia de un mensaje de chat denunciado', async () => {

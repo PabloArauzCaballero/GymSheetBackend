@@ -1,22 +1,31 @@
 import { Injectable, Optional } from "@nestjs/common";
 import { Transaction } from "sequelize";
+import { PENDING_REVIEW_SUSPENSION_UNTIL } from "../../common/moderation/account-suspension";
+import { env } from "../../config/env";
 import { OutboxService } from "../integration/outbox.service";
 import { NotificationService } from "../notifications/notification.service";
 import { SocialRecommendationOutboxService } from "../social/social-recommendation-outbox.service";
 import { ModerationSafeguardsRepository } from "./moderation-safeguards.repository";
 import { minorClosureNotice, minorSuspensionNotice, sendModerationNotice } from "./moderation-notices";
-import { ModerationTargetKindValue } from "./moderation.policy";
+import { ModerationTargetKind, ModerationTargetKindValue } from "./moderation.policy";
 
+const HOUR_MS = 60 * 60 * 1000;
 /**
- * "Indefinite, pending review": `suspended_until` is a timestamp, and a real
- * far date keeps every existing suspension check working. Only a moderator
- * decision (dismiss or confirm) ends it, never the calendar.
+ * The automatic suspension needs corroboration: this many DISTINCT reporters
+ * of the same tenant, within the window, reporting the profile itself. One
+ * report alone only puts the case at the top of the queue (critical severity).
  */
-export const PENDING_REVIEW_SUSPENSION_UNTIL = new Date("9999-12-31T23:59:59.000Z");
+export const MINOR_SUSPENSION_MIN_REPORTERS = 2;
+export const MINOR_SUSPENSION_WINDOW_MS = 7 * 24 * HOUR_MS;
+/** Beyond this many MENOR_DE_EDAD reports per reporter and window, a report is kept but does not count. */
+export const MINOR_REPORTS_PER_REPORTER_LIMIT = 3;
+export const MINOR_REPORTS_PER_REPORTER_WINDOW_MS = 24 * HOUR_MS;
+
+export type MinorReportContext = { reportedUserId: string; tenantId: string; targetKind: ModerationTargetKindValue };
 
 /**
- * Drained by the account side once it exposes an internal closure (no password
- * or PIN, decided by moderation): it closes the account with data erasure.
+ * Drained by the account-data worker (`AccountClosureService.closeByModeration`):
+ * the same erasure as a self-service closure, without password or PIN.
  */
 export const MINOR_ACCOUNT_CLOSURE_QUEUE = "account.minor-closure";
 const MINOR_ACCOUNT_CLOSURE_EVENT = "moderation.minor-confirmed.v1";
@@ -24,8 +33,10 @@ const MINOR_ACCOUNT_CLOSURE_MAX_ATTEMPTS = 10;
 
 /**
  * Accounts reported as belonging to a minor. The service is for adults only,
- * so a MENOR_DE_EDAD report suspends the account at once instead of climbing
- * the warning ladder, and a confirmed minor's account is closed and erased.
+ * so corroborated MENOR_DE_EDAD reports suspend the account at once instead
+ * of climbing the warning ladder, and a confirmed minor's account is closed
+ * and erased. A single report never suspends: otherwise anyone could lock out
+ * any member indefinitely with one tap.
  * Staff accounts are excluded: the gym manages them, and a member must not be
  * able to lock out the front desk with one report.
  */
@@ -38,8 +49,28 @@ export class ModerationMinorService {
     @Optional() private readonly recommendationOutbox?: SocialRecommendationOutboxService,
   ) {}
 
-  /** Runs inside the report transaction. Returns whether the account got suspended now. */
-  async suspendPendingReview(userId: string, transaction: Transaction): Promise<boolean> {
+  /**
+   * Runs inside the report transaction, after the report row exists. Returns
+   * whether the account got suspended now.
+   */
+  async suspendIfCorroborated(report: MinorReportContext, transaction: Transaction, now: Date = new Date()): Promise<boolean> {
+    if (report.targetKind !== ModerationTargetKind.USER) return false;
+    const reporters = await this.repository.countCorroboratingMinorReporters(
+      {
+        userId: report.reportedUserId,
+        tenantId: report.tenantId,
+        defaultTenantId: env.DEFAULT_TENANT_ID,
+        since: new Date(now.getTime() - MINOR_SUSPENSION_WINDOW_MS),
+        perReporterLimit: MINOR_REPORTS_PER_REPORTER_LIMIT,
+        rateWindowMs: MINOR_REPORTS_PER_REPORTER_WINDOW_MS,
+      },
+      transaction,
+    );
+    if (reporters < MINOR_SUSPENSION_MIN_REPORTERS) return false;
+    return this.suspendPendingReview(report.reportedUserId, transaction);
+  }
+
+  private async suspendPendingReview(userId: string, transaction: Transaction): Promise<boolean> {
     const suspended = await this.repository.suspendMemberUntil(userId, PENDING_REVIEW_SUSPENSION_UNTIL, transaction);
     if (!suspended) return false;
     await this.recommendationOutbox?.enqueueProfileSnapshot(userId, transaction);

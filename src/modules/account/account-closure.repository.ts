@@ -86,16 +86,18 @@ export class AccountClosureRepository {
   }
 
   /**
-   * Keys still used by a row the closure kept (reported reels, or a shared
-   * file). The media worker re-checks stories, photos and chat itself; reels
-   * and comment attachments are not in its reference query, so they are
-   * filtered here.
+   * Keys still used by a row the closure kept (reported reels, the evidence
+   * copy of a reported chat message, or a shared file). The media worker
+   * re-checks stories, photos, chat and evidence copies itself; reels and
+   * comment attachments are not in its reference query, so they are filtered
+   * here. Evidence is checked on both sides: a release must never destroy it.
    */
   async keysStillInUse(keys: string[], transaction: Transaction): Promise<Set<string>> {
     if (keys.length === 0) return new Set();
     const rows = await this.sequelize.query<{ key: string }>(
       `SELECT k.key FROM unnest(ARRAY[:keys]::text[]) AS k(key)
         WHERE EXISTS (SELECT 1 FROM social.reels r WHERE r.storage_key = k.key)
+           OR EXISTS (SELECT 1 FROM moderation.chat_message_evidence e WHERE e.media_key = k.key)
            OR EXISTS (SELECT 1 FROM community.content_comments c
                        WHERE c.adjunto_url IS NOT NULL AND right(c.adjunto_url, length(k.key) + 1) = '/' || k.key)`,
       { type: QueryTypes.SELECT, replacements: { keys }, transaction },
