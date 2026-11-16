@@ -1,4 +1,5 @@
 import { ConflictException } from "@nestjs/common";
+import type { ConsentsService } from "../consents/consents.service";
 import type { SocialProfileRepository } from "./social-profile.repository";
 import { SocialProfileService } from "./social-profile.service";
 import type { SocialRepository } from "./social.repository";
@@ -10,11 +11,13 @@ function createService(options: {
   profileEnabled?: boolean;
   photos?: number;
   saved?: unknown;
+  orientationConsent?: boolean;
 }) {
   const profileRepository = {
     find: jest.fn().mockResolvedValue(null),
     save: jest.fn().mockResolvedValue(options.saved ?? null),
     countVisiblePhotos: jest.fn().mockResolvedValue(options.photos ?? 0),
+    runInTransaction: jest.fn((work: (transaction: unknown) => Promise<unknown>) => work({})),
   };
   const socialRepository = {
     discoveryPreferences: jest
@@ -31,11 +34,17 @@ function createService(options: {
       version: 0,
     }),
   };
+  const consents = {
+    assertGranted: options.orientationConsent === false
+      ? jest.fn().mockRejectedValue(Object.assign(new Error("consent"), { code: "CONSENT_REQUIRED" }))
+      : jest.fn().mockResolvedValue(undefined),
+  };
   const service = new SocialProfileService(
     profileRepository as unknown as SocialProfileRepository,
     socialRepository as unknown as SocialRepository,
+    consents as unknown as ConsentsService,
   );
-  return { service, profileRepository };
+  return { service, profileRepository, consents };
 }
 
 const input = {
@@ -50,6 +59,22 @@ const input = {
 };
 
 describe("SocialProfileService", () => {
+  it("refuses to store an orientation without an open ORIENTATION consent", async () => {
+    const { service, profileRepository, consents } = createService({ orientationConsent: false });
+    await expect(service.updateMine(userId, { ...input, orientation: "GAY" })).rejects.toMatchObject({
+      code: "CONSENT_REQUIRED",
+    });
+    expect(consents.assertGranted).toHaveBeenCalledWith(userId, "ORIENTATION", {});
+    expect(profileRepository.save).not.toHaveBeenCalled();
+  });
+
+  it("saves a profile without orientation without asking for consent", async () => {
+    const { service, profileRepository, consents } = createService({ saved: { version: 3, interests: [] } });
+    await service.updateMine(userId, input);
+    expect(consents.assertGranted).not.toHaveBeenCalled();
+    expect(profileRepository.save).toHaveBeenCalledWith(userId, input, {});
+  });
+
   it("returns an unconfigured profile with version 0 before the first answer", async () => {
     const { service } = createService({});
     await expect(service.getMine(userId)).resolves.toEqual({
@@ -68,7 +93,7 @@ describe("SocialProfileService", () => {
   it("answers 409 when the stored version moved on", async () => {
     const { service, profileRepository } = createService({ saved: null });
     await expect(service.updateMine(userId, input)).rejects.toBeInstanceOf(ConflictException);
-    expect(profileRepository.save).toHaveBeenCalledWith(userId, input);
+    expect(profileRepository.save).toHaveBeenCalledWith(userId, input, {});
   });
 
   it("returns the owner's full answers, including a hidden orientation", async () => {

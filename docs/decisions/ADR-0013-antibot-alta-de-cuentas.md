@@ -64,6 +64,8 @@ para que un ataque no se convierta en tráfico pagado hacia Cloudflare o Google.
   suplantar ve todo, rechazos incluidos. Nunca se expone `ip_hmac`.
 - `yarn db:signups:retention` (un solo disparo, como `db:outbox:prune`; programarlo a diario):
   borra tokens gastados de más de 1 día y anula `ip_hmac` de auditorías de más de 90 días.
+  Desde la franja 4 es un alias de `yarn db:privacy:retention`, que además anula el HMAC de IP en
+  todas las tablas que lo guardan ([ADR-0014](ADR-0014-privacidad-retencion-y-consentimientos.md)).
 
 ### Salidas a terceros
 

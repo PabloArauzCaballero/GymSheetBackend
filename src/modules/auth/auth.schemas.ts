@@ -5,7 +5,7 @@ import { adultBirthDateSchema } from '../profiles/birth-date';
 /** Moved to the legal catalog; re-exported for existing imports. */
 export { CURRENT_TERMS_VERSION } from '../legal/legal-documents';
 
-const normalizedEmailSchema = z
+export const normalizedEmailSchema = z
   .string()
   .trim()
   .email()
@@ -17,8 +17,11 @@ const normalizedEmailSchema = z
  * Keeps the v1 request field `nombreCompleto` for compatibility; the transform
  * below exposes it as the English internal identifier `fullName`.
  */
+/** Display name rule shared by signup and the later name change. */
+export const fullNameSchema = z.string().trim().min(3).max(180);
+
 const signupProfileShape = {
-  nombreCompleto: z.string().trim().min(3).max(180),
+  nombreCompleto: fullNameSchema,
   /**
    * Gimnasio al que se apunta la cuenta. Lo envía el cliente porque solo él
    * sabe por dónde entró la persona: la web lo resuelve por el dominio y una

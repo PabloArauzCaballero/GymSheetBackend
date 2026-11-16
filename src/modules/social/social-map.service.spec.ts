@@ -8,11 +8,38 @@ describe("SocialMapService", () => {
   it("does not store an exact map location until the profile and map are both enabled", async () => {
     const repository = { savePrivateLocation: jest.fn(), listEligibleMapCells: jest.fn() };
     const settings = { discoverySettings: jest.fn().mockResolvedValue({ profileEnabled: true, mapEnabled: false }) };
-    const service = new SocialMapService(repository as never, settings as never);
+    const service = new SocialMapService(repository as never, settings as never, {} as never);
 
     await expect(service.setLocation("viewer", { latitude: -16.5, longitude: -68.15 }))
       .rejects.toThrow(ForbiddenException);
     expect(repository.savePrivateLocation).not.toHaveBeenCalled();
+  });
+
+  it("refuses to store a precise location without an open PRECISE_LOCATION consent", async () => {
+    const repository = {
+      savePrivateLocation: jest.fn(),
+      runInTransaction: jest.fn((work: (transaction: unknown) => Promise<unknown>) => work({ id: "tx" })),
+    };
+    const settings = { discoverySettings: jest.fn().mockResolvedValue({ profileEnabled: true, mapEnabled: true }) };
+    const consents = { assertGranted: jest.fn().mockRejectedValue(new Error("CONSENT_REQUIRED")) };
+    const service = new SocialMapService(repository as never, settings as never, consents as never);
+
+    await expect(service.setLocation("viewer", { latitude: -16.5, longitude: -68.15 })).rejects.toThrow("CONSENT_REQUIRED");
+    expect(consents.assertGranted).toHaveBeenCalledWith("viewer", "PRECISE_LOCATION", { id: "tx" });
+    expect(repository.savePrivateLocation).not.toHaveBeenCalled();
+  });
+
+  it("stores the location inside the transaction that checked the consent", async () => {
+    const repository = {
+      savePrivateLocation: jest.fn(),
+      runInTransaction: jest.fn((work: (transaction: unknown) => Promise<unknown>) => work({ id: "tx" })),
+    };
+    const settings = { discoverySettings: jest.fn().mockResolvedValue({ profileEnabled: true, mapEnabled: true }) };
+    const consents = { assertGranted: jest.fn().mockResolvedValue(undefined) };
+    const service = new SocialMapService(repository as never, settings as never, consents as never);
+
+    await expect(service.setLocation("viewer", { latitude: -16.5, longitude: -68.15 })).resolves.toEqual({ saved: true });
+    expect(repository.savePrivateLocation).toHaveBeenCalledWith("viewer", { latitude: -16.5, longitude: -68.15 }, expect.any(String), { id: "tx" });
   });
 
   it("returns only approximate cell centers and counts from the repository", async () => {
@@ -21,7 +48,7 @@ describe("SocialMapService", () => {
       listEligibleMapCells: jest.fn(async (_viewerId: string, cells: { id: string }[]) => [{ cellId: cells[0].id, count: 3 }]),
     };
     const settings = { discoverySettings: jest.fn() };
-    const service = new SocialMapService(repository as never, settings as never);
+    const service = new SocialMapService(repository as never, settings as never, {} as never);
 
     const result = await service.areas("viewer", bounds);
 
@@ -61,7 +88,7 @@ describe("SocialMapService", () => {
       }),
       directory,
     };
-    const service = new SocialMapService(mapRepository as never, socialRepository as never);
+    const service = new SocialMapService(mapRepository as never, socialRepository as never, {} as never);
 
     await expect(service.peopleInCell("viewer", "tenant-a", "row:column")).resolves.toMatchObject([
       { userId: "person-2", displayName: "María L." },
@@ -99,7 +126,7 @@ describe("SocialMapService", () => {
       }),
       directory,
     };
-    const service = new SocialMapService(mapRepository as never, socialRepository as never);
+    const service = new SocialMapService(mapRepository as never, socialRepository as never, {} as never);
 
     const result = await service.nearby("viewer", "tenant-a", gym);
 
@@ -119,7 +146,7 @@ describe("SocialMapService", () => {
       discoveryPreferences: jest.fn().mockResolvedValue({ configured: false, version: 0 }),
       directory: jest.fn(),
     };
-    const service = new SocialMapService(mapRepository as never, socialRepository as never);
+    const service = new SocialMapService(mapRepository as never, socialRepository as never, {} as never);
 
     await expect(service.nearby("viewer", "tenant-a", { latitude: -16.5, longitude: -68.15 }))
       .resolves.toEqual({ preferencesApplied: false, people: [] });
@@ -128,7 +155,7 @@ describe("SocialMapService", () => {
 
   it("lists gyms for a whole city but refuses a box wider than three degrees", async () => {
     const mapRepository = { listExternalGyms: jest.fn().mockResolvedValue([]) };
-    const service = new SocialMapService(mapRepository as never, {} as never);
+    const service = new SocialMapService(mapRepository as never, {} as never, {} as never);
     const laPaz = { south: -16.75, west: -68.35, north: -16.25, east: -67.85 };
 
     await expect(service.gyms(laPaz)).resolves.toEqual([]);

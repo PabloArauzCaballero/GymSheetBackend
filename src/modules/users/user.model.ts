@@ -109,6 +109,10 @@ export class UserModel extends Model {
   @Column({ type: DataType.STRING(6), allowNull: true, field: 'signup_risk' })
   declare signupRisk: 'LOW' | 'MEDIUM' | 'HIGH' | null;
 
+  /** When the person closed the account (row kept anonymized); null otherwise. */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'closed_at' })
+  declare closedAt: Date | null;
+
   @HasOne(() => AnthropometricProfileModel)
   declare anthropometricProfile?: AnthropometricProfileModel;
 

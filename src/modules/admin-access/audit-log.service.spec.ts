@@ -1,5 +1,7 @@
+import { createHmac } from 'node:crypto';
 import { UserRole } from '../../common/enums/domain.enums';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
+import { withIpHashSecret } from '../../common/privacy/testing/with-ip-hash-secret';
 import { AuditLogService } from './audit-log.service';
 
 describe('AuditLogService', () => {
@@ -61,6 +63,26 @@ describe('AuditLogService', () => {
       expect(repository.record).toHaveBeenCalledWith(
         expect.objectContaining({ tenantScope: null, actorRole: UserRole.SYSTEM_ADMIN }),
       );
+    });
+
+    it('stores the keyed hash of the actor IP instead of the raw address', async () => {
+      const secret = 'audit-ip-hash-secret-0123456789abcdef';
+      const { service, repository } = build();
+
+      await withIpHashSecret(secret, () =>
+        service.record(systemAdmin, {
+          domain: 'users',
+          action: 'deactivate',
+          targetKind: 'user',
+          targetId: 'target-9',
+          ip: '203.0.113.7',
+          userAgent: null,
+        }),
+      );
+
+      const [[entry]] = repository.record.mock.calls as [[Record<string, unknown>]];
+      expect(entry.ipHmac).toBe(createHmac('sha256', secret).update('203.0.113.7').digest('hex'));
+      expect(JSON.stringify(entry)).not.toContain('203.0.113.7');
     });
 
     it('flags impersonation in the metadata', async () => {

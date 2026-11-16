@@ -200,6 +200,7 @@ describe("MessageMutationsService.setReaction", () => {
       {} as never,
       repository as never,
       reactions as never,
+      {} as never,
     );
     return { service, reactions, events, repository };
   }

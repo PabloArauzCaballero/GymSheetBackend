@@ -61,8 +61,9 @@ export class AdminAuditLogModel extends Model {
   @Column({ type: DataType.JSONB, allowNull: false })
   declare metadata: Record<string, unknown>;
 
-  @Column({ type: DataType.INET, allowNull: true })
-  declare ip: string | null;
+  /** HMAC-SHA256 of the actor IP (`IP_HASH_SECRET`), never the raw address; retention nulls it after 90 days. */
+  @Column({ type: DataType.STRING(64), allowNull: true, field: 'ip_hmac' })
+  declare ipHmac: string | null;
 
   @Column({ type: DataType.TEXT, allowNull: true, field: 'user_agent' })
   declare userAgent: string | null;

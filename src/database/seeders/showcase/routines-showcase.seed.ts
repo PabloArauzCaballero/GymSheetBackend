@@ -319,7 +319,7 @@ export class RoutinesShowcaseSeeder {
       physicalConsiderations: null,
       consentHealth: true,
       consentData: true,
-    });
+    }, 'UNKNOWN');
     await onboarding.saveEquipment(userId, { availableEquipment: demo.equipment });
     await onboarding.complete(userId);
     this.count('onboardings_completados');

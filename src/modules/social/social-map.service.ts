@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable } from "@nestjs/common";
+import { ConsentsService } from "../consents/consents.service";
 import { SocialRepository } from "./social.repository";
 import { env } from "../../config/env";
 import { mapDirectoryRowToResponse } from "./social.mapper";
@@ -10,6 +11,7 @@ export class SocialMapService {
   constructor(
     private readonly repository: SocialMapRepository,
     private readonly socialRepository: SocialRepository,
+    private readonly consents: ConsentsService,
   ) {}
 
   async setLocation(userId: string, location: MapCoordinates): Promise<{ saved: true }> {
@@ -18,7 +20,11 @@ export class SocialMapService {
       throw new ForbiddenException("Activa tu perfil social y la visibilidad en el mapa para guardar esta ubicación.");
     }
     const cell = mapCellForLocation(location);
-    await this.repository.savePrivateLocation(userId, location, cell.id);
+    // Precise location needs its own consent; the share lock makes a concurrent revocation erase this write.
+    await this.repository.runInTransaction(async (transaction) => {
+      await this.consents.assertGranted(userId, "PRECISE_LOCATION", transaction);
+      await this.repository.savePrivateLocation(userId, location, cell.id, transaction);
+    });
     return { saved: true };
   }
 

@@ -13,6 +13,10 @@ import { TrainingProgramModel, ProgramLiftTargetModel } from '../programs/progra
 import { WorkoutSessionModel } from '../workouts/workout-session.model';
 import { WorkoutSessionExerciseModel } from '../workouts/workout-session-exercise.model';
 import { WorkoutSetModel } from '../workouts/workout-set.model';
+import { IntegrationModule } from '../integration/integration.module';
+import { AccountExportController } from './account-export.controller';
+import { AccountExportRepository } from './account-export.repository';
+import { AccountExportService } from './account-export.service';
 import { ExportController } from './export.controller';
 import { ExportService } from './export.service';
 import { RoutineProgressDownloadAuditModel } from './routine-progress-download-audit.model';
@@ -23,6 +27,7 @@ import { RoutineProgressDownloadAuditModel } from './routine-progress-download-a
     ProfilesModule,
     WorkoutsModule,
     EquipmentModule,
+    IntegrationModule,
     SequelizeModule.forFeature([
       RoutineProgressDownloadAuditModel,
       RoutineModel,
@@ -36,8 +41,8 @@ import { RoutineProgressDownloadAuditModel } from './routine-progress-download-a
       WorkoutSetModel,
     ]),
   ],
-  controllers: [ExportController],
-  providers: [ExportService, ProductEvents],
+  controllers: [ExportController, AccountExportController],
+  providers: [ExportService, ProductEvents, AccountExportRepository, AccountExportService],
   exports: [ExportService],
 })
 export class ExportModule {}

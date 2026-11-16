@@ -123,6 +123,8 @@ import { userBirthDateAndLegalAcceptancesMigration } from "./202611160201-user-b
 import { emailVerificationDevicesIdentitiesMigration } from "./202611170101-email-verification-devices-identities";
 import { DatabaseMigration } from "./migration.types";
 import { signupAntibotMigration } from "./202611170201-signup-antibot";
+import { privacyIpHmacAndConsentsMigration } from "./202611180201-privacy-ip-hmac-and-consents";
+import { accountRightsMigration } from "./202611180101-account-rights";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
 export const databaseMigrations: DatabaseMigration[] = [
@@ -252,4 +254,6 @@ export const databaseMigrations: DatabaseMigration[] = [
   userBirthDateAndLegalAcceptancesMigration,
   emailVerificationDevicesIdentitiesMigration,
   signupAntibotMigration,
+  privacyIpHmacAndConsentsMigration,
+  accountRightsMigration,
 ];

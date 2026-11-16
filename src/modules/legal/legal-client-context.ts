@@ -1,6 +1,6 @@
-import { createHmac } from "crypto";
 import { Request } from "express";
 import { env } from "../../config/env";
+import { hashClientIp } from "../../common/privacy/client-ip-hash";
 
 export const LEGAL_CHANNELS = ["WEB", "IOS", "ANDROID", "UNKNOWN"] as const;
 export type LegalChannel = (typeof LEGAL_CHANNELS)[number];
@@ -33,7 +33,7 @@ export function legalClientContext(
   const userAgent = request.header("user-agent")?.slice(0, USER_AGENT_MAX_LENGTH) ?? null;
   return {
     channel: channelFrom(request.header("x-client-platform")),
-    ipHmac: ipHashSecret && ip ? createHmac("sha256", ipHashSecret).update(ip).digest("hex") : null,
+    ipHmac: hashClientIp(ip, ipHashSecret),
     userAgent: userAgent || null,
   };
 }

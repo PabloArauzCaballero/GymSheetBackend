@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { SequelizeModule } from "@nestjs/sequelize";
+import { ConsentsModule } from "../consents/consents.module";
 import { MediaModule } from "../media/media.module";
 import { UserModel } from "../users/user.model";
 import { AnthropometricProfileModel } from "./anthropometric-profile.model";
@@ -21,6 +22,7 @@ import { TutorialProgressService } from "./tutorial-progress.service";
 
 @Module({
   imports: [
+    ConsentsModule,
     MediaModule,
     IntegrationModule,
     SequelizeModule.forFeature([

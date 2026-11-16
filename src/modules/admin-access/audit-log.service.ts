@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { hashClientIp } from '../../common/privacy/client-ip-hash';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { AdminAuditLogModel } from './audit-log.model';
 import {
@@ -14,6 +15,7 @@ export type AuditableAction = {
   targetKind: string | null;
   targetId: string | null;
   metadata?: Record<string, unknown>;
+  /** Raw client IP as seen by the interceptor; only its keyed hash is stored. */
   ip: string | null;
   userAgent: string | null;
 };
@@ -92,7 +94,7 @@ export class AuditLogService {
         ...(action.metadata ?? {}),
         ...(actor.impersonating ? { impersonating: true } : {}),
       },
-      ip: action.ip,
+      ipHmac: hashClientIp(action.ip),
       userAgent: action.userAgent,
     };
 

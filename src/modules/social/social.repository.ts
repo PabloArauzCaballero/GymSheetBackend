@@ -863,6 +863,10 @@ export class SocialRepository {
         },
       );
       if (!rows[0]) return null;
+      // Map off (or profile off, which forces it) erases the precise location, not just hides it.
+      if (!settings.mapEnabled) {
+        await this.sequelize.query(`DELETE FROM social.map_locations WHERE user_id = :userId`, { replacements: { userId }, transaction });
+      }
       await this.recommendationOutbox?.enqueueProfileSnapshot(
         userId,
         transaction,

@@ -1,7 +1,8 @@
 import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import request from 'supertest';
-import { LEGAL_DOCUMENTS } from '../src/modules/legal/legal-documents';
+import { CONSENT_KINDS, CONSENT_VERSIONS } from '../src/modules/legal/consent-versions';
+import { LEGAL_DOCUMENTS, LEGAL_DOCUMENT_CONTENT_SHA256 } from '../src/modules/legal/legal-documents';
 import { bootE2eApp, E2E_SIGNUP_FIELDS, E2eApp } from './support/e2e-app';
 
 /**
@@ -46,9 +47,10 @@ describe('Legal acceptance and signup requirements (e2e)', () => {
     const response = await request(e2e.http).get(e2e.url('/legal/current')).expect(200);
     expect(response.body.data).toEqual({
       documents: [
-        { document: 'TERMS', version: LEGAL_DOCUMENTS.TERMS },
-        { document: 'PRIVACY', version: LEGAL_DOCUMENTS.PRIVACY },
+        { document: 'TERMS', version: LEGAL_DOCUMENTS.TERMS, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.TERMS },
+        { document: 'PRIVACY', version: LEGAL_DOCUMENTS.PRIVACY, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.PRIVACY },
       ],
+      consents: CONSENT_KINDS.map((kind) => ({ kind, version: CONSENT_VERSIONS[kind] })),
     });
     expect(response.headers['cache-control']).toContain('public');
   });

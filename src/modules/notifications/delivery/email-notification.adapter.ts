@@ -24,18 +24,18 @@ export class EmailNotificationAdapter implements NotificationDeliveryAdapter {
   constructor(@Inject(MAIL_TRANSPORT) private readonly transport: MailTransport) {}
 
   async deliver(request: NotificationDeliveryRequest): Promise<NotificationDeliveryResult> {
-    const recipient = await UserModel.findByPk(request.recipientUserId, {
-      attributes: ['id', 'email'],
-    });
+    // An explicit mailbox (the new address of an email change, or the old one
+    // being told about it) wins over the account's current address.
+    const recipientEmail = request.recipientEmail ?? (await this.accountEmail(request.recipientUserId));
     // Un mensaje encolado para alguien que ya no existe no es un fallo
     // transitorio: reintentarlo no lo va a arreglar nunca, y por eso se
     // distingue de un error de red.
-    if (!recipient?.email) {
+    if (!recipientEmail) {
       throw new NotFoundException('The recipient has no email address.');
     }
 
     const result = await this.transport.send({
-      to: recipient.email,
+      to: recipientEmail,
       // Un correo sin asunto acaba en spam y, antes de eso, es ilegible en una
       // bandeja de entrada. Si el mensaje no traía uno, se pone el de la marca.
       subject: request.subject ?? 'GymSheet',
@@ -48,5 +48,10 @@ export class EmailNotificationAdapter implements NotificationDeliveryAdapter {
       providerMessageId: result.messageId,
       responseCode: 'SENT',
     };
+  }
+
+  private async accountEmail(userId: string): Promise<string | null> {
+    const recipient = await UserModel.findByPk(userId, { attributes: ['id', 'email'] });
+    return recipient?.email ?? null;
   }
 }

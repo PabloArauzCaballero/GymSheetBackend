@@ -5,6 +5,7 @@ import { Sequelize } from 'sequelize-typescript';
 import { randomInt } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import { NotificationChannel, RefreshTokenRevokedReason } from '../../common/enums/domain.enums';
+import { hashClientIp } from '../../common/privacy/client-ip-hash';
 import { env } from '../../config/env';
 import { UsersRepository } from '../users/users.repository';
 import { NotificationService } from '../notifications/notification.service';
@@ -80,7 +81,7 @@ export class PasswordResetService {
           expiraEn,
           consumidoEn: null,
           intentos: 0,
-          solicitadoDesdeIp: requesterIp,
+          ipHmac: hashClientIp(requesterIp),
         },
         { transaction },
       );

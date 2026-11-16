@@ -16,6 +16,7 @@ import { SocialController } from "./social.controller";
 import { SocialProfileController } from "./social-profile.controller";
 import { SocialProfileRepository } from "./social-profile.repository";
 import { SocialProfileService } from "./social-profile.service";
+import { ConsentsModule } from "../consents/consents.module";
 import { SocialRepository } from "./social.repository";
 import { SocialService } from "./social.service";
 import { RecommendationsClient } from "./recommendations-client";
@@ -25,6 +26,7 @@ import { ChatModule } from "../chat/chat.module";
 
 @Module({
   imports: [
+    ConsentsModule,
     forwardRef(() => ChatModule),
     IntegrationModule,
     NotificationsModule,

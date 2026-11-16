@@ -4,7 +4,7 @@ import { UserGender, UserRole } from '../../common/enums/domain.enums';
 import { DomainException } from '../../common/errors/domain.exception';
 import { SignupProtectionService } from '../antibot/signup-protection.service';
 import type { SignupVerdict } from '../antibot/signup-protection.types';
-import { LEGAL_DOCUMENTS } from '../legal/legal-documents';
+import { LEGAL_DOCUMENTS, LEGAL_DOCUMENT_CONTENT_SHA256 } from '../legal/legal-documents';
 import { LegalRepository } from '../legal/legal.repository';
 import { LegalService } from '../legal/legal.service';
 import { TenantsService } from '../tenants/tenants.service';
@@ -113,8 +113,8 @@ describe('AuthService.register legal acceptance', () => {
     expect(insertAcceptances).toHaveBeenCalledWith(
       'user-1',
       [
-        { document: 'TERMS', version: LEGAL_DOCUMENTS.TERMS },
-        { document: 'PRIVACY', version: LEGAL_DOCUMENTS.PRIVACY },
+        { document: 'TERMS', version: LEGAL_DOCUMENTS.TERMS, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.TERMS },
+        { document: 'PRIVACY', version: LEGAL_DOCUMENTS.PRIVACY, contentSha256: LEGAL_DOCUMENT_CONTENT_SHA256.PRIVACY },
       ],
       meta.legal,
       transaction,

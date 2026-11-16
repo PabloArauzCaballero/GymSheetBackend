@@ -13,6 +13,7 @@ import { ConversationParticipantModel } from "./conversation-participant.model";
 import { MessageVisibilityModel } from "./message-visibility.model";
 import { MessageModel } from "./message.model";
 import { isExpired } from "./chat-disappearing";
+import { MediaReleaseService } from "../media/media-release.service";
 
 /** Como WhatsApp: «Eliminar para todos» dura unos dos días (60 h); editar, 15 minutos. */
 export const DELETE_FOR_EVERYONE_WINDOW_MS = 60 * 60 * 60 * 1000;
@@ -29,6 +30,7 @@ export class MessageMutationsService {
     @InjectModel(MessageVisibilityModel) private readonly visibility: typeof MessageVisibilityModel,
     private readonly repository: ChatRepository,
     @InjectModel(MessageReactionModel) private readonly reactions: typeof MessageReactionModel,
+    private readonly mediaRelease: MediaReleaseService,
   ) {}
 
   async deleteMessage(conversationId: string, messageId: string, userId: string, input: DeleteMessageInput) {
@@ -52,6 +54,11 @@ export class MessageMutationsService {
           type: message.type, body: message.idempotencyBody ?? message.body,
           locationLat: message.locationLat, locationLng: message.locationLng, storyId: message.storyId,
         }) : null;
+        // The encrypted blob goes too: queued in this transaction, removed after commit with retries.
+        if (message.mediaKey && message.mediaProvider) {
+          await this.mediaRelease.requestRelease({ aggregateType: "chat.message", aggregateId: messageId,
+            provider: message.mediaProvider, storageKey: message.mediaKey }, transaction);
+        }
         await message.update({ deletedAt: now, deletedRequestHash, body: null, idempotencyBody: null,
           type: "text", editedAt: null, mediaProvider: null, mediaKey: null, mediaUrl: null,
           mediaMimeType: null, mediaSizeBytes: null, locationLat: null, locationLng: null,

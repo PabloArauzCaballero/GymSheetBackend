@@ -21,7 +21,7 @@ const MAX_EXPORTED_SESSIONS = 1000;
  * archivo se arma en memoria y viaja en base64 al móvil: sin tope, un socio con
  * años de historial dejaba el servidor sin memoria. Por encima, se pide filtrar.
  */
-const MAX_ROUTINE_PROGRESS_ROWS = 20000;
+export const MAX_ROUTINE_PROGRESS_ROWS = 20000;
 
 export interface RoutineProgressRow {
   usuario_id: string;

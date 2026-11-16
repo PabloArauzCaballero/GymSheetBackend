@@ -14,7 +14,7 @@ export type AuditLogEntry = {
   targetKind: string | null;
   targetId: string | null;
   metadata: Record<string, unknown>;
-  ip: string | null;
+  ipHmac: string | null;
   userAgent: string | null;
 };
 

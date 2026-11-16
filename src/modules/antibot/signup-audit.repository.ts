@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
-import { Op, QueryTypes, Transaction } from "sequelize";
+import { QueryTypes, Transaction } from "sequelize";
 import { SignupAuditModel } from "./signup-audit.model";
 import type { SignupChannel, SignupRejectReason, SignupRisk } from "./signup-protection.types";
 
@@ -66,14 +66,5 @@ export class SignupAuditRepository {
         replacements: { risk: query.risk ?? null, tenantScope: query.tenantScope, limit: query.limit },
       },
     );
-  }
-
-  /** Drops the IP evidence of rows older than `cutoff`; the verdict itself is kept. */
-  async clearIpHashesBefore(cutoff: Date): Promise<number> {
-    const [affected] = await this.audits.update(
-      { ipHmac: null },
-      { where: { createdAt: { [Op.lt]: cutoff }, ipHmac: { [Op.ne]: null } } },
-    );
-    return affected;
   }
 }

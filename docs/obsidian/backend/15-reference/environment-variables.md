@@ -84,6 +84,13 @@ tags: [backend, reference, config]
 
 `IP_HASH_SECRET` también firma `auth.user_devices.last_ip_hmac`; sin él no se guarda evidencia de IP del dispositivo.
 
+Desde la franja 4 (ADR-0014) `IP_HASH_SECRET` firma además `public.password_reset_tokens.ip_hmac`,
+`admin.audit_log.ip_hmac` y `training.routine_progress_download_audits.ip_hmac`: la API ya no guarda
+ninguna IP en claro. La migración `202611180201` convierte las IP existentes con el secreto presente
+al correrla (sin secreto, las anula). `yarn db:privacy:retention` (alias `db:signups:retention`,
+programarlo a diario) anula todo HMAC de más de 90 días. Cambiar el secreto rompe la correlación con
+los HMAC anteriores, que de todos modos caducan a los 90 días.
+
 ## Métricas / acceso
 
 | Variable | Propósito | Requerida |

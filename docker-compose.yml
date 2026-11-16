@@ -339,6 +339,30 @@ services:
           memory: 128m
     stop_grace_period: 45s
 
+  # Account rights (franja 4): builds full exports and erases the files of
+  # closed accounts, both through the outbox with retries and dead-letter.
+  worker-account-data:
+    <<: [*app-image, *app-security, *worker-runtime]
+    command: ["node", "dist/workers/account-data.worker.js"]
+    environment:
+      <<: *app-environment
+    # Deletes binaries of closed accounts: same media volume as the api.
+    volumes:
+      - media-data:/app/storage/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+          cpus: "0.5"
+        reservations:
+          memory: 128m
+    stop_grace_period: 45s
+
   worker-exercises-dataset:
     <<: [*app-image, *app-security, *worker-runtime]
     command: ["node", "dist/workers/exercises-dataset-refresh.worker.js"]

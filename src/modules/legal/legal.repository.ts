@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { LegalClientContext } from "./legal-client-context";
-import { LegalDocumentVersion } from "./legal-documents";
+import { LegalDocumentVersion, PublishedLegalDocument } from "./legal-documents";
 
 @Injectable()
 export class LegalRepository {
@@ -41,15 +41,17 @@ export class LegalRepository {
   /** Idempotent: an acceptance already on record is kept with its original timestamp. */
   async insertAcceptances(
     userId: string,
-    documents: readonly LegalDocumentVersion[],
+    documents: readonly PublishedLegalDocument[],
     context: LegalClientContext,
     transaction: Transaction,
   ): Promise<void> {
     if (documents.length === 0) return;
     await this.sequelize.query(
-      `INSERT INTO auth.terms_acceptances (user_id, document, version, channel, ip_hmac, user_agent)
-       SELECT :userId, entry.document, entry.version, :channel, :ipHmac, :userAgent
-         FROM unnest(ARRAY[:documents]::varchar[], ARRAY[:versions]::varchar[]) AS entry(document, version)
+      `INSERT INTO auth.terms_acceptances
+         (user_id, document, version, content_sha256, channel, ip_hmac, user_agent)
+       SELECT :userId, entry.document, entry.version, NULLIF(entry.content_sha256, ''), :channel, :ipHmac, :userAgent
+         FROM unnest(ARRAY[:documents]::varchar[], ARRAY[:versions]::varchar[], ARRAY[:hashes]::varchar[])
+              AS entry(document, version, content_sha256)
        ON CONFLICT (user_id, document, version) DO NOTHING`,
       {
         type: QueryTypes.INSERT,
@@ -61,6 +63,8 @@ export class LegalRepository {
           userAgent: context.userAgent,
           documents: documents.map((entry) => entry.document),
           versions: documents.map((entry) => entry.version),
+          // Empty string stands for "no hash": Sequelize cannot bind null inside an array literal.
+          hashes: documents.map((entry) => entry.contentSha256 ?? ""),
         },
       },
     );

@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
-import { QueryTypes } from "sequelize";
+import { QueryTypes, Transaction } from "sequelize";
 import { ProfileSocialSettingsModel } from "./profile-social-settings.model";
 import { PublicMapCell } from "./social-map.policy";
 import { SocialMapLocationModel } from "./social-map-location.model";
@@ -70,7 +70,18 @@ export class SocialMapRepository {
     }));
   }
 
-  async savePrivateLocation(userId: string, location: { latitude: number; longitude: number }, cellId: string): Promise<void> {
+  runInTransaction<T>(work: (transaction: Transaction) => Promise<T>): Promise<T> {
+    const sequelize = this.locations.sequelize;
+    if (!sequelize) throw new Error("Social map database connection is unavailable.");
+    return sequelize.transaction(work);
+  }
+
+  async savePrivateLocation(
+    userId: string,
+    location: { latitude: number; longitude: number },
+    cellId: string,
+    transaction?: Transaction,
+  ): Promise<void> {
     const sequelize = this.locations.sequelize;
     if (!sequelize) throw new Error("Social map database connection is unavailable.");
     await sequelize.query(
@@ -78,7 +89,7 @@ export class SocialMapRepository {
        VALUES (:userId, :latitude, :longitude, :cellId, NOW())
        ON CONFLICT (user_id) DO UPDATE SET latitude = EXCLUDED.latitude,
          longitude = EXCLUDED.longitude, cell_id = EXCLUDED.cell_id, updated_at = NOW()`,
-      { replacements: { userId, ...location, cellId }, type: QueryTypes.INSERT },
+      { replacements: { userId, ...location, cellId }, type: QueryTypes.INSERT, transaction },
     );
   }
 

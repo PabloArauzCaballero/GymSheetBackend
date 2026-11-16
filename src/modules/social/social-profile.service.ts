@@ -1,4 +1,5 @@
 import { ConflictException, Injectable } from "@nestjs/common";
+import { ConsentsService } from "../consents/consents.service";
 import { INTEREST_CATALOG, type InterestCatalogEntry } from "./social-profile.catalog";
 import {
   mapOwnSocialProfile,
@@ -48,6 +49,7 @@ export class SocialProfileService {
   constructor(
     private readonly repository: SocialProfileRepository,
     private readonly socialRepository: SocialRepository,
+    private readonly consents: ConsentsService,
   ) {}
 
   interestCatalog(): readonly InterestCatalogEntry[] {
@@ -62,7 +64,12 @@ export class SocialProfileService {
     userId: string,
     input: UpdateSocialProfileInput,
   ): Promise<OwnSocialProfileResponse> {
-    const saved = await this.repository.save(userId, input);
+    // Orientation is sensitive: storing one needs the open ORIENTATION consent,
+    // checked under a share lock so a concurrent revocation erases this write.
+    const saved = await this.repository.runInTransaction(async (transaction) => {
+      if (input.orientation !== null) await this.consents.assertGranted(userId, "ORIENTATION", transaction);
+      return this.repository.save(userId, input, transaction);
+    });
     if (!saved) {
       throw new ConflictException(
         "Tu perfil cambió en otro dispositivo. Recarga e intenta otra vez.",

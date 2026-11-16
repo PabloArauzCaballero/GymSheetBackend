@@ -47,6 +47,7 @@ async function pinRow(pin: string, overrides: Partial<EmailPinRow> = {}): Promis
     expiresAt: new Date(Date.now() + 60_000),
     consumedAt: null,
     attempts: 0,
+    targetEmail: null,
     ...overrides,
   };
 }
@@ -57,7 +58,8 @@ describe('EmailVerificationService.issuePin', () => {
     await service.issuePin(userId, transaction as never);
 
     expect(users.lockUserForUpdate).toHaveBeenCalledWith(userId, transaction);
-    expect(pins.supersedePending).toHaveBeenCalledWith(userId, transaction);
+    expect(pins.supersedePending).toHaveBeenCalledWith(userId, transaction, 'VERIFY_EMAIL');
+    expect(pins.insert.mock.calls[0][4]).toEqual({ purpose: 'VERIFY_EMAIL', targetEmail: null });
     const [, storedHash, expiresAt] = pins.insert.mock.calls[0] as [string, string, Date];
     const message = (notifications.enqueueDirectMessage.mock.calls[0] as [{ body: string; channel: string }, unknown]);
     const pin = /(\d{6})/u.exec(message[0].body)?.[1] ?? '';
@@ -145,5 +147,33 @@ describe('EmailVerificationService.confirm', () => {
     const { service, pins } = build({ verified: true });
     await expect(service.confirm(userId, '000000')).resolves.toEqual({ verified: true });
     expect(pins.findLatestForUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('EmailVerificationService purpose-scoped PINs', () => {
+  it('scopes cooldown, retirement and storage to the purpose and mails the override address', async () => {
+    const { service, pins, notifications } = build({});
+    await service.issuePurposePin(
+      userId,
+      'CHANGE_EMAIL',
+      { subject: 'Cambio', lines: (pin) => [`PIN ${pin}`], recipientEmail: 'new@example.test', targetEmail: 'new@example.test' },
+      transaction as never,
+    );
+    expect(pins.sendWindow.mock.calls[0][3]).toBe('CHANGE_EMAIL');
+    expect(pins.supersedePending).toHaveBeenCalledWith(userId, transaction, 'CHANGE_EMAIL');
+    expect(pins.insert.mock.calls[0][4]).toEqual({ purpose: 'CHANGE_EMAIL', targetEmail: 'new@example.test' });
+    const [message] = notifications.enqueueDirectMessage.mock.calls[0] as [{ metadata: unknown; deduplicationKey: string }];
+    expect(message.metadata).toEqual({ recipientEmail: 'new@example.test' });
+    expect(message.deduplicationKey.startsWith('email-change-')).toBe(true);
+  });
+
+  it('returns the target email of a verified PIN without touching the verification flag', async () => {
+    const { service, pins, users } = build({ latestPin: await pinRow('654321', { targetEmail: 'new@example.test' }) });
+    await expect(service.verifyPurposePin(userId, 'CHANGE_EMAIL', '654321', transaction as never)).resolves.toEqual({
+      kind: 'VERIFIED',
+      targetEmail: 'new@example.test',
+    });
+    expect(pins.findLatestForUpdate).toHaveBeenCalledWith(userId, transaction, 'CHANGE_EMAIL');
+    expect(users.markEmailVerified).not.toHaveBeenCalled();
   });
 });
