@@ -17,6 +17,7 @@ function build(options: { latest?: Date | null; row?: object | null; archive?: s
     create: jest.fn().mockResolvedValue(pending),
     findOwn: jest.fn().mockResolvedValue(options.row === undefined ? pending : options.row),
     findById: jest.fn().mockResolvedValue(options.row === undefined ? pending : options.row),
+    findLatestOwn: jest.fn().mockResolvedValue(options.row === undefined ? pending : options.row),
     readArchive: jest.fn().mockResolvedValue(options.archive ?? null),
     readSection: jest.fn().mockResolvedValue(Array.from({ length: options.sectionRows ?? 1 }, (_, index) => ({ index }))),
     markReady: jest.fn().mockResolvedValue(undefined),
@@ -47,6 +48,13 @@ describe('AccountExportService', () => {
     await expect(build({ row: null }).service.status(userId, exportId)).rejects.toBeInstanceOf(NotFoundException);
     await expect(build({ row: null }).service.download(userId, exportId)).rejects.toBeInstanceOf(NotFoundException);
     await expect(build().service.download(userId, exportId)).rejects.toMatchObject({ code: 'ACCOUNT_EXPORT_NOT_READY' });
+  });
+
+  it('returns the latest request of the caller so a reload can resume it, or null when there is none', async () => {
+    const { service, repository } = build();
+    await expect(service.latest(userId)).resolves.toEqual({ export: expect.objectContaining({ id: exportId, status: 'PENDING' }) });
+    expect(repository.findLatestOwn).toHaveBeenCalledWith(userId);
+    await expect(build({ row: null }).service.latest(userId)).resolves.toEqual({ export: null });
   });
 
   it('builds one section per data-map table and flags a capped table as truncated', async () => {

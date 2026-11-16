@@ -76,6 +76,12 @@ export class AccountExportService {
     return toStatus(row);
   }
 
+  /** The latest request, so a client that lost its id (reload, other device) resumes it; null when none. */
+  async latest(userId: string): Promise<{ export: AccountExportStatusResponse | null }> {
+    const row = await this.repository.findLatestOwn(userId);
+    return { export: row ? toStatus(row) : null };
+  }
+
   /** The stored JSON, for its owner only, while it has not expired. */
   async download(userId: string, exportId: string): Promise<string> {
     const row = await this.repository.findOwn(exportId, userId);

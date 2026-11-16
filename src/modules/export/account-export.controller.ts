@@ -18,6 +18,12 @@ export class AccountExportController {
     return this.exports.request(user.id);
   }
 
+  /** Declared before `:id` so "latest" is never read as an export id. */
+  @Get("latest")
+  latest(@CurrentUser() user: AuthenticatedUser) {
+    return this.exports.latest(user.id);
+  }
+
   @Get(":id")
   status(@CurrentUser() user: AuthenticatedUser, @Param("id", UuidParamPipe) exportId: string) {
     return this.exports.status(user.id, exportId);

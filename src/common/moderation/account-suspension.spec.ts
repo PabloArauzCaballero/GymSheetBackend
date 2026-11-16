@@ -24,4 +24,17 @@ describe('account suspension messages', () => {
     );
     expect(suspendedSessionError(until).getStatus()).toBe(401);
   });
+
+  it('carries the stable ACCOUNT_SUSPENDED code, with the end date only when there is one', () => {
+    const until = new Date('2027-01-31T12:00:00.000Z');
+    expect(suspendedAccountError(until).getResponse()).toMatchObject({
+      code: 'ACCOUNT_SUSPENDED',
+      details: { pendingReview: false, until: until.toISOString() },
+    });
+    expect(suspendedSessionError(PENDING_REVIEW_SUSPENSION_UNTIL).getResponse()).toMatchObject({
+      code: 'ACCOUNT_SUSPENDED',
+      details: { pendingReview: true },
+    });
+    expect(JSON.stringify(suspendedSessionError(PENDING_REVIEW_SUSPENSION_UNTIL).getResponse())).not.toContain('9999');
+  });
 });

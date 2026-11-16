@@ -103,6 +103,7 @@ describe('Alta → cierre de sesión → acceso con la misma cuenta (e2e)', () =
 
     const response = await login(storedEmail, password).expect(403);
     expect(JSON.stringify(response.body)).toMatch(/suspendida/u);
+    expect(JSON.stringify(response.body)).toContain('"code":"ACCOUNT_SUSPENDED"');
 
     // Con la contraseña mal sigue siendo el 401 genérico: la suspensión no se
     // revela a quien no ha demostrado ser el dueño.

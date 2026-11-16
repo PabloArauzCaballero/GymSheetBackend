@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PENDING_REVIEW_SUSPENSION_UNTIL } from '../../common/moderation/account-suspension';
 import { JwtService } from '@nestjs/jwt';
 import { Sequelize } from 'sequelize-typescript';
@@ -150,7 +150,7 @@ describe('IdentitySignInService', () => {
     const { service } = build({
       byEmail: { ...account, suspendedUntil: new Date(Date.now() + 86_400_000) },
     });
-    await expect(service.signIn('GOOGLE', 'token', undefined, device)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.signIn('GOOGLE', 'token', undefined, device)).rejects.toMatchObject({ code: 'ACCOUNT_SUSPENDED', status: 403 });
   });
 
   it('says a pending-review suspension lasts while the report is reviewed, not until 9999', async () => {
@@ -193,7 +193,7 @@ describe('IdentitySignInService', () => {
   it('inherits the sanction of a closed account with that email and opens no session while suspended', async () => {
     const { service, signupTokens, sanctions, refreshTokens } = build({ inherited: new Date(Date.now() + 86_400_000) });
     const signupToken = signupTokens.issue({ provider: 'GOOGLE', subject: 'sub-1', email: 'ana@gmail.com' });
-    await expect(service.completeSignup('GOOGLE', completion(signupToken), meta)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.completeSignup('GOOGLE', completion(signupToken), meta)).rejects.toMatchObject({ code: 'ACCOUNT_SUSPENDED', status: 403 });
     expect(sanctions.inheritAtSignup).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-new' }), transaction);
     expect(refreshTokens.create).not.toHaveBeenCalled();
   });
