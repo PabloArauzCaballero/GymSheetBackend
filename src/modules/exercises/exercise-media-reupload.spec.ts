@@ -1,3 +1,4 @@
+import { ForbiddenException } from "@nestjs/common";
 import {
   ExerciseMediaStatus,
   ExerciseType,
@@ -23,12 +24,13 @@ const oldUrl = `${base}/ejercicios/${exerciseId}/${"a".repeat(64)}.mp4`;
 const newChecksum = "b".repeat(64);
 const newUrl = `${base}/ejercicios/${exerciseId}/${newChecksum}.mp4`;
 
+// The global catalog is REPP's (ADR-0019): its media is managed by the platform admin.
 const admin: AuthenticatedUser = {
   id: "admin-id",
   email: "admin@gymsheet.local",
-  role: UserRole.ADMIN,
+  role: UserRole.SYSTEM_ADMIN,
   tenantId: "tenant",
-  tenantScope: "tenant",
+  tenantScope: null,
   impersonating: false,
 };
 
@@ -111,4 +113,22 @@ describe("ExerciseMediaService.uploadMedia al volver a subir una pieza", () => {
 
     expect(storage.upload).toHaveBeenCalledWith(expect.anything(), { category: "ejercicios", exerciseId });
   });
+
+  it.each([UserRole.ADMIN, UserRole.FRONT_DESK, UserRole.COACH])(
+    "rechaza a un %s heredado del gimnasio sin tocar el almacenamiento",
+    async (role) => {
+      const { service, storage, existing } = buildService();
+
+      await expect(
+        service.uploadMedia(
+          { ...admin, role, tenantScope: "tenant" },
+          exerciseId,
+          { originalname: "hombre.mp4", mimetype: "video/mp4", size: 10, buffer: Buffer.from("nuevo") },
+          uploadExerciseMediaSchema.parse({ altText: "Demostración", variant: "HOMBRE" }),
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(storage.upload).not.toHaveBeenCalled();
+      expect(existing.update).not.toHaveBeenCalled();
+    },
+  );
 });

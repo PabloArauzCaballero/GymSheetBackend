@@ -291,7 +291,7 @@ paths:
     post:
       tags: [Administration]
       summary: Crear equipamiento
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -314,7 +314,7 @@ paths:
     patch:
       tags: [Administration]
       summary: Actualizar equipamiento
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -334,7 +334,7 @@ paths:
     delete:
       tags: [Administration]
       summary: Inhabilitar equipamiento
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       responses:
         "200":
           description: Equipamiento inhabilitado
@@ -446,7 +446,7 @@ paths:
     post:
       tags: [Administration]
       summary: Crear ejercicio global
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -468,7 +468,7 @@ paths:
     patch:
       tags: [Administration]
       summary: Actualizar ejercicio global
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -488,7 +488,7 @@ paths:
     delete:
       tags: [Administration]
       summary: Inhabilitar ejercicio global
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       responses:
         "200":
           description: Ejercicio global inhabilitado
@@ -518,7 +518,7 @@ paths:
     post:
       tags: [Exercise media]
       summary: Registrar multimedia
-      description: Requiere propiedad del ejercicio personal o rol ADMIN para un ejercicio global.
+      description: Requiere propiedad del ejercicio personal o rol SYSTEM_ADMIN para un ejercicio global.
       requestBody:
         required: true
         content:
@@ -819,8 +819,8 @@ paths:
     post:
       tags: [Administration]
       summary: Importar el dataset externo de ejercicios
-      description: Deshabilitado por defecto. Requiere rol ADMIN y configuración explícita del conector.
-      x-required-role: ADMIN
+      description: Deshabilitado por defecto. Requiere rol SYSTEM_ADMIN y configuración explícita del conector.
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -842,7 +842,7 @@ paths:
       tags: [Administration]
       summary: Consultar el estado de la caché externa de ejercicios
       description: Lee el checkpoint PostgreSQL sin contactar el origen externo.
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       responses:
         "200":
           description: Último refresco exitoso y próxima ejecución diaria
@@ -1147,7 +1147,7 @@ paths:
     get:
       tags: [Access control]
       summary: Listar dispositivos de acceso
-      x-required-role: "ADMIN, FRONT_DESK"
+      x-required-role: SYSTEM_ADMIN
       responses:
         "200":
           description: Dispositivos registrados
@@ -1159,7 +1159,7 @@ paths:
     post:
       tags: [Access control]
       summary: Registrar un dispositivo de acceso
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -1184,7 +1184,7 @@ paths:
     patch:
       tags: [Access control]
       summary: Cambiar el estado de un dispositivo de acceso
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -1210,7 +1210,7 @@ paths:
     get:
       tags: [Access control]
       summary: Consultar un evento de dispositivo de acceso
-      x-required-role: "ADMIN, FRONT_DESK"
+      x-required-role: SYSTEM_ADMIN
       responses:
         "200":
           description: Evento de acceso encontrado
@@ -1224,7 +1224,7 @@ paths:
     get:
       tags: [Access control]
       summary: Listar el historial global de decisiones de acceso
-      x-required-role: "ADMIN, FRONT_DESK"
+      x-required-role: SYSTEM_ADMIN
       parameters:
         - $ref: "#/components/parameters/PageParam"
         - $ref: "#/components/parameters/PageSize25Param"
@@ -1258,7 +1258,7 @@ paths:
     post:
       tags: [Access control]
       summary: Emitir una credencial PIN para un usuario
-      x-required-role: "ADMIN, FRONT_DESK"
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -1278,7 +1278,7 @@ paths:
     post:
       tags: [Access control]
       summary: Registrar una referencia de credencial biométrica externa
-      x-required-role: "ADMIN, FRONT_DESK"
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -1304,7 +1304,7 @@ paths:
     get:
       tags: [Access control]
       summary: Listar las credenciales de acceso de un usuario
-      x-required-role: "ADMIN, FRONT_DESK"
+      x-required-role: SYSTEM_ADMIN
       responses:
         "200":
           description: Credenciales del usuario indicado
@@ -1322,7 +1322,7 @@ paths:
     patch:
       tags: [Access control]
       summary: Revocar una credencial de acceso
-      x-required-role: "ADMIN, FRONT_DESK"
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -1343,7 +1343,7 @@ paths:
     post:
       tags: [Access control]
       summary: Encolar un evento de acceso simulado (solo desarrollo)
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -1369,7 +1369,7 @@ paths:
     get:
       tags: [Facilities]
       summary: Listar sedes paginadas
-      x-required-role: ADMIN, FRONT_DESK
+      x-required-role: SYSTEM_ADMIN
       parameters:
         - $ref: "#/components/parameters/PageParam"
         - $ref: "#/components/parameters/PageSize25Param"
@@ -1386,7 +1386,7 @@ paths:
     post:
       tags: [Facilities]
       summary: Crear una sede
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -1413,7 +1413,7 @@ paths:
     patch:
       tags: [Facilities]
       summary: Actualizar una sede
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -1435,7 +1435,7 @@ paths:
     get:
       tags: [Facilities]
       summary: Listar salas paginadas
-      x-required-role: ADMIN, FRONT_DESK
+      x-required-role: SYSTEM_ADMIN
       parameters:
         - name: branchId
           in: query
@@ -1457,7 +1457,7 @@ paths:
     post:
       tags: [Facilities]
       summary: Crear una sala
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -1489,7 +1489,7 @@ paths:
     patch:
       tags: [Facilities]
       summary: Actualizar una sala
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -1511,7 +1511,7 @@ paths:
     get:
       tags: [Facilities]
       summary: Listar puntos de acceso
-      x-required-role: ADMIN, FRONT_DESK
+      x-required-role: SYSTEM_ADMIN
       parameters:
         - name: branchId
           in: query
@@ -1530,7 +1530,7 @@ paths:
     post:
       tags: [Facilities]
       summary: Crear un punto de acceso
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -1557,7 +1557,7 @@ paths:
     post:
       tags: [Facilities]
       summary: Asignar un equipo a una sala
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -1584,7 +1584,7 @@ paths:
     get:
       tags: [Facilities]
       summary: Listar mantenimientos paginados
-      x-required-role: ADMIN, FRONT_DESK
+      x-required-role: SYSTEM_ADMIN
       parameters:
         - $ref: "#/components/parameters/PageParam"
         - $ref: "#/components/parameters/PageSize25Param"
@@ -1610,7 +1610,7 @@ paths:
     post:
       tags: [Facilities]
       summary: Programar un mantenimiento
-      x-required-role: ADMIN, FRONT_DESK
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -1641,7 +1641,7 @@ paths:
     patch:
       tags: [Facilities]
       summary: Iniciar un mantenimiento programado
-      x-required-role: ADMIN, FRONT_DESK
+      x-required-role: SYSTEM_ADMIN
       responses:
         "200":
           description: Mantenimiento iniciado
@@ -1662,7 +1662,7 @@ paths:
     patch:
       tags: [Facilities]
       summary: Completar un mantenimiento en progreso
-      x-required-role: ADMIN, FRONT_DESK
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -1736,20 +1736,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/RoutineAssignmentListEnvelope"
         "401": { $ref: "#/components/responses/Problem401" }
-  /routines/assignments/coach:
-    get:
-      tags: [Training]
-      summary: Listar las asignaciones emitidas por el coach autenticado
-      x-required-role: "COACH, ADMIN"
-      responses:
-        "200":
-          description: Asignaciones emitidas por el coach
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RoutineAssignmentListEnvelope"
-        "401": { $ref: "#/components/responses/Problem401" }
-        "403": { $ref: "#/components/responses/Problem403" }
   /routines/import:
     post:
       tags: [Training]
@@ -1885,34 +1871,6 @@ paths:
         "401": { $ref: "#/components/responses/Problem401" }
         "404": { $ref: "#/components/responses/Problem404" }
         "409": { $ref: "#/components/responses/Problem409" }
-  /routines/{id}/assign:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema: { type: string, format: uuid }
-    post:
-      tags: [Training]
-      summary: Asignar la rutina a un cliente
-      x-required-role: "COACH, ADMIN"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RoutineAssignRequest"
-      responses:
-        "201":
-          description: Asignación creada
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RoutineAssignmentEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "404": { $ref: "#/components/responses/Problem404" }
-        "409": { $ref: "#/components/responses/Problem409" }
   /routines/{id}/start:
     parameters:
       - name: id
@@ -2011,7 +1969,7 @@ paths:
     get:
       tags: [Membership]
       summary: Listar planes de membresía para administración
-      x-required-role: ADMIN, FRONT_DESK
+      x-required-role: SYSTEM_ADMIN
       responses:
         "200":
           description: Catálogo completo de planes
@@ -2025,7 +1983,7 @@ paths:
     post:
       tags: [Membership]
       summary: Crear un plan de membresía con sus alcances
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -2058,7 +2016,7 @@ paths:
     patch:
       tags: [Membership]
       summary: Actualizar atributos de un plan de membresía
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -2086,7 +2044,7 @@ paths:
     patch:
       tags: [Membership]
       summary: Reemplazar por completo los alcances de un plan
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -2115,7 +2073,7 @@ paths:
     post:
       tags: [Membership]
       summary: Registrar un cliente con credencial de acceso
-      x-required-role: ADMIN, FRONT_DESK
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -2137,7 +2095,7 @@ paths:
     get:
       tags: [Membership]
       summary: Listar clientes registrados de forma paginada
-      x-required-role: ADMIN, FRONT_DESK
+      x-required-role: SYSTEM_ADMIN
       parameters:
         - $ref: "#/components/parameters/PageParam"
         - $ref: "#/components/parameters/PageSize25Param"
@@ -2156,7 +2114,7 @@ paths:
     post:
       tags: [Membership]
       summary: Activar una membresía para un cliente
-      x-required-role: ADMIN, FRONT_DESK
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -2183,7 +2141,7 @@ paths:
     get:
       tags: [Membership]
       summary: Listar membresías con filtros de forma paginada
-      x-required-role: ADMIN, FRONT_DESK
+      x-required-role: SYSTEM_ADMIN
       parameters:
         - $ref: "#/components/parameters/PageParam"
         - $ref: "#/components/parameters/PageSize25Param"
@@ -2214,7 +2172,7 @@ paths:
     patch:
       tags: [Membership]
       summary: Cambiar el estado de una membresía
-      x-required-role: ADMIN, FRONT_DESK
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -2238,7 +2196,7 @@ paths:
     post:
       tags: [Membership]
       summary: Crear un perfil laboral para un usuario con rol de trabajo
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -2272,7 +2230,7 @@ paths:
     patch:
       tags: [Membership]
       summary: Cambiar el estado laboral de un perfil de personal
-      x-required-role: ADMIN
+      x-required-role: SYSTEM_ADMIN
       requestBody:
         required: true
         content:
@@ -3762,24 +3720,6 @@ components:
             - $ref: "#/components/schemas/RoutineGoal"
           nullable: true
         estado: { $ref: "#/components/schemas/RoutineStatus" }
-    RoutineAssignRequest:
-      type: object
-      required: [clienteUsuarioId]
-      additionalProperties: false
-      properties:
-        clienteUsuarioId: { type: string, format: uuid }
-        fechaProgramada:
-          type: string
-          format: date
-          nullable: true
-          pattern: '^\d{4}-\d{2}-\d{2}$'
-        diasSemana:
-          type: array
-          maxItems: 7
-          default: []
-          items: { type: integer, minimum: 0, maximum: 6 }
-          description: Días de la semana (0=domingo .. 6=sábado). Se deduplican y ordenan.
-        nota: { type: string, nullable: true, maxLength: 1000 }
     RoutineImportItem:
       type: object
       required: [nombre, ejercicios]
@@ -3904,12 +3844,6 @@ components:
                 pageSize: { type: integer, minimum: 1, maximum: 100 }
                 total: { type: integer, minimum: 0 }
                 totalPages: { type: integer, minimum: 0 }
-    RoutineAssignmentEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data: { $ref: "#/components/schemas/RoutineAssignmentResponse" }
     RoutineAssignmentListEnvelope:
       allOf:
         - $ref: "#/components/schemas/SuccessEnvelope"

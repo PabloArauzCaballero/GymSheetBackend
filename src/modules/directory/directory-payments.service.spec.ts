@@ -9,10 +9,11 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
   let mockSequelize: any;
   let mockMembershipService: any;
 
+  // The listing's owner: it manages the listing by owning it, not by any role.
   const mockAdminUser: AuthenticatedUser = {
     id: 'admin-user-1',
     email: 'admin@gym.com',
-    role: UserRole.ADMIN,
+    role: UserRole.CLIENT,
     tenantId: 'tenant-gym-1',
     tenantScope: 'tenant-gym-1',
     impersonating: false,
@@ -408,6 +409,47 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
       const confirmed = await service.confirmOrder(mockAdminUser, 'order-1');
 
       expect(confirmed.status).toBe('CONFIRMED');
+    });
+  });
+
+  describe('Franja 7a: el gimnasio ya no administra fichas ajenas (ADR-0019)', () => {
+    const order = {
+      id: 'order-1',
+      athleteUserId: 'athlete-user-1',
+      status: 'PENDING_VERIFICATION',
+      entity: { userId: 'owner-user-7', tenantId: 'tenant-gym-1' },
+      plan: { id: 'plan-1', name: 'Plan', slug: 'plan', durationDays: 30, benefits: [] },
+    };
+    const staffOf = (role: UserRole): AuthenticatedUser => ({
+      id: `staff-${role}`,
+      email: 'staff@gym.com',
+      role,
+      tenantId: 'tenant-gym-1',
+      tenantScope: 'tenant-gym-1',
+      impersonating: false,
+    });
+
+    it.each([UserRole.ADMIN, UserRole.FRONT_DESK, UserRole.COACH])(
+      'un %s heredado del gimnasio de la ficha, sin ser su dueño, recibe 404 en todo',
+      async (role) => {
+        const actor = staffOf(role);
+        mockRepo.findEntityById.mockResolvedValue({ id: 'entity-1', userId: 'owner-user-7', tenantId: 'tenant-gym-1' });
+        mockRepo.findOrderById.mockResolvedValue(order);
+
+        await expect(service.upsertPaymentConfig(actor, 'entity-1', {} as never)).rejects.toThrow(NotFoundException);
+        await expect(service.getOrderById(actor, 'order-1')).rejects.toThrow(NotFoundException);
+        await expect(service.confirmOrder(actor, 'order-1')).rejects.toThrow(NotFoundException);
+        await expect(service.rejectOrder(actor, 'order-1', { reason: 'Importe que no coincide.' })).rejects.toThrow(NotFoundException);
+        expect(mockRepo.upsertPaymentConfig).not.toHaveBeenCalled();
+        expect(mockRepo.updateOrder).not.toHaveBeenCalled();
+      },
+    );
+
+    it('el SYSTEM_ADMIN de REPP sí gestiona una ficha que no es suya', async () => {
+      const platform: AuthenticatedUser = { ...staffOf(UserRole.SYSTEM_ADMIN), tenantScope: null };
+      mockRepo.findOrderById.mockResolvedValue(order);
+
+      await expect(service.getOrderById(platform, 'order-1')).resolves.toBe(order);
     });
   });
 });

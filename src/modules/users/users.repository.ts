@@ -73,18 +73,6 @@ export class UsersRepository {
     return this.userModel.findOne({ where: { email: emailAddress.toLowerCase(), status: UserStatus.ACTIVE } });
   }
 
-  /**
-   * El `ADMIN` activo más antiguo de un tenant. No hay garantía de "exactamente
-   * uno por tenant" en este esquema (`tenantId` es solo branding, no una tabla
-   * de tenants) — el más antiguo es una elección determinista ante 0 o varios.
-   */
-  findAdminForTenant(tenantId: string): Promise<UserModel | null> {
-    return this.userModel.findOne({
-      where: { role: UserRole.ADMIN, tenantId, status: UserStatus.ACTIVE },
-      order: [["createdAt", "ASC"]],
-    });
-  }
-
   createClient(input: CreateClientUserInput, transaction?: Transaction): Promise<UserModel> {
     return this.userModel.create({
       email: input.email.toLowerCase(),

@@ -15,7 +15,12 @@ import { replyPreviewOf, type MessageExtras, type MessageReaction } from "./chat
 
 export const REPLY_UNAVAILABLE_MESSAGE = "El mensaje al que respondes ya no está disponible.";
 
-export type SystemConversationKind = "CORPORATE" | "TENANT_ADMIN";
+/**
+ * The only system chat left is REPP's support (`CORPORATE`). The gym admin one
+ * (`TENANT_ADMIN`) is neither created nor listed since franja 7a (ADR-0019);
+ * the value stays allowed by the column CHECK until franja 7d.
+ */
+export type SystemConversationKind = "CORPORATE";
 
 export type MessageCreateFields = {
   type: MessageType;
@@ -817,8 +822,8 @@ export class ChatRepository {
             ORDER BY item.created_at DESC, item.id DESC LIMIT 1
          ) last_msg ON true
         WHERE c.revoked_at IS NULL
+          AND c.system_kind IS DISTINCT FROM 'TENANT_ADMIN'
         ORDER BY (c.system_kind IS NULL) ASC,
-                 CASE c.system_kind WHEN 'CORPORATE' THEN 0 WHEN 'TENANT_ADMIN' THEN 1 ELSE 2 END,
                  COALESCE(last_msg.created_at, c.created_at) DESC`,
       { type: QueryTypes.SELECT, replacements: { userId } },
     );

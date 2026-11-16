@@ -124,9 +124,10 @@ export class AccountClosureService {
   }
 
   /**
-   * A gym admin closes a staff account of their own gym (the staff cannot:
-   * `ACCOUNT_CLOSURE_STAFF`). No password or PIN: the authority is the admin
-   * role, and the audit log records who did it. Same erasure transaction as
+   * REPP's `SYSTEM_ADMIN` closes a legacy gym staff account (the staff cannot:
+   * `ACCOUNT_CLOSURE_STAFF`; the gym has no staff powers since ADR-0019). No
+   * password or PIN: the authority is the platform role, and the audit log
+   * records who did it. Same erasure transaction as
    * any closure, with the strikes still counting carried as at a self-service
    * closure. Another gym's account, a member, a platform admin or an account
    * already closed reads as not found; the admin's own account and the gym's

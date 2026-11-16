@@ -13,8 +13,8 @@ import { RoutineAdminService } from './routine-admin.service';
 import { AdminRoutineListQuery, adminRoutineListQuerySchema } from './routine-v2.schemas';
 import { CreateRoutineInput, createRoutineSchema } from './training.schemas';
 
-/** Backoffice de rutinas. Las rutas de «oficial» exigen SYSTEM_ADMIN además del rol (OFFICIAL_FORBIDDEN). */
-@Roles(UserRole.ADMIN)
+/** REPP's routine back office (ADR-0019): writes are `SYSTEM_ADMIN` only; the listing is also open to moderators. */
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller('admin/routines')
 export class RoutineAdminController {
   constructor(private readonly admin: RoutineAdminService) {}

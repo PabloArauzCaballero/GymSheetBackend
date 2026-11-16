@@ -19,8 +19,9 @@ describe('Progression prizes (e2e)', () => {
 
   beforeAll(async () => {
     e2e = await bootE2eApp();
-    admin = await e2e.register('premios-admin');
-    await e2e.promote(admin.id, 'ADMIN');
+    // REPP operates the gym's prize catalog by impersonating it (ADR-0019).
+    const platform = await e2e.platformAdmin('premios-admin');
+    admin = { id: platform.id, token: await e2e.impersonate(platform.token) };
     const list = await e2e.as(admin.token).get('/exercises?pageSize=1&page=1').expect(200);
     exerciseId = list.body.data.items[0].id as string;
     await e2e.sql(
@@ -64,8 +65,13 @@ describe('Progression prizes (e2e)', () => {
       await api.post('/admin/progression/prizes').send({ targetKind: 'BADGE', targetCode: 'NO_EXISTE_NUNCA', title: 'Nada' }).expect(400);
       await api.post('/admin/progression/prizes').send({ targetKind: 'LEVEL', targetCode: 'NO_EXISTE_NUNCA', title: 'Nada' }).expect(400);
       await api.post('/admin/progression/prizes').send({ targetKind: 'BADGE', targetCode: 'RACHA_30', title: 'X', stock: -1 }).expect(400);
-      // Un gimnasio no escribe en el catálogo global.
-      await api.post('/admin/progression/prizes').send({ alcance: 'GLOBAL', targetKind: 'PERFECT_WEEK', title: 'Global' }).expect(403);
+      // Operar un gimnasio no escribe en el catálogo global: hay que salir de la suplantación.
+      await api.post('/admin/progression/prizes').send({ alcance: 'GLOBAL', targetKind: 'PERFECT_WEEK', title: 'Global' }).expect(400);
+      // Y el ADMIN heredado del gimnasio ni siquiera entra (franja 7a, ADR-0019).
+      const gymAdmin = await e2e.register('premios-admin-heredado');
+      await e2e.promote(gymAdmin.id, 'ADMIN');
+      await e2e.as(gymAdmin.token).post('/admin/progression/prizes').send({ alcance: 'GLOBAL', targetKind: 'PERFECT_WEEK', title: 'Global' }).expect(403);
+      await e2e.as(gymAdmin.token).post('/admin/progression/prizes').send({ targetKind: 'BADGE', targetCode: 'RACHA_30', title: 'Del gimnasio' }).expect(403);
     });
 
     it('is closed to members', async () => {
@@ -96,9 +102,9 @@ describe('Progression prizes (e2e)', () => {
 
     it('does not let another gym see or edit it (404)', async () => {
       const prize = await createPrize({ targetKind: 'BADGE', targetCode: 'RACHA_30', title: 'Batido' });
-      const stranger = await e2e.register('premios-admin-otro');
-      await e2e.promote(stranger.id, 'ADMIN');
-      await e2e.sql('UPDATE public.usuarios SET tenant_id = :tenant WHERE id = :id', { tenant: OTHER_GYM, id: stranger.id });
+      // REPP operating another gym does not reach this one's prizes.
+      const platform = await e2e.platformAdmin('premios-admin-otro');
+      const stranger = { token: await e2e.impersonate(platform.token, OTHER_GYM) };
       await e2e.as(stranger.token).patch(`/admin/progression/prizes/${prize.id}`).send({ title: 'Mío' }).expect(404);
       const list = (await e2e.as(stranger.token).get('/admin/progression/prizes').expect(200)).body.data;
       expect(list.some((row: { id: string }) => row.id === prize.id)).toBe(false);
@@ -169,9 +175,8 @@ describe('Progression prizes (e2e)', () => {
       const reward = (await finishFirstSession(member.token)).progression;
       const coupon = reward.prizesNow.find((p: { title: string }) => p.title === 'Pase para un amigo');
       expect(coupon).toBeDefined();
-      const stranger = await e2e.register('premios-recepcion-otra');
-      await e2e.promote(stranger.id, 'ADMIN');
-      await e2e.sql('UPDATE public.usuarios SET tenant_id = :tenant WHERE id = :id', { tenant: OTHER_GYM, id: stranger.id });
+      const platform = await e2e.platformAdmin('premios-recepcion-otra');
+      const stranger = { token: await e2e.impersonate(platform.token, OTHER_GYM) };
       await e2e.as(stranger.token).post('/admin/progression/prizes/redeem').send({ code: coupon.code }).expect(404);
       await e2e.sql('UPDATE progression.prizes SET active = false WHERE id = :id', { id: prize.id });
     });

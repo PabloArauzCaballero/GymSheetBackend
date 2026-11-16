@@ -25,7 +25,7 @@ export class EquipmentController {
   }
 }
 
-@Roles(UserRole.ADMIN)
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller('admin/equipment')
 export class AdminEquipmentController {
   constructor(private readonly equipmentService: EquipmentService) {}

@@ -215,15 +215,19 @@ describe('cross-gym connections (e2e)', () => {
       return member;
     };
 
+    // Two connected members of different gyms. Each gym is operated by REPP's
+    // platform admin impersonating it (franja 7a, ADR-0019): operating gym A
+    // must not reveal what gym B knows about its member.
     const adminA = await register('admin-a');
     const adminB = await register('admin-b');
+    const operator = await register('operator');
     await sequelize.query(
-      'UPDATE public.usuarios SET tenant_id = :tenantId, rol = \'ADMIN\' WHERE id = :userId',
+      'UPDATE public.usuarios SET tenant_id = :tenantId WHERE id = :userId',
       { replacements: { tenantId: temporaryTenantId, userId: adminB.userId } },
     );
     await sequelize.query(
-      "UPDATE public.usuarios SET rol = 'ADMIN' WHERE id = :userId",
-      { replacements: { userId: adminA.userId } },
+      "UPDATE public.usuarios SET rol = 'SYSTEM_ADMIN' WHERE id = :userId",
+      { replacements: { userId: operator.userId } },
     );
     const [connection] = await sequelize.query<{ id: string }>(
       `INSERT INTO social.connections (requester_id, addressee_id, status, responded_at)
@@ -239,7 +243,16 @@ describe('cross-gym connections (e2e)', () => {
         .expect(201);
       return response.body.data.accessToken as string;
     };
-    const [tokenA, tokenB] = await Promise.all([login(adminA), login(adminB)]);
+    const operatorToken = await login(operator);
+    const impersonate = async (tenantId: string) => {
+      const response = await request(httpServer)
+        .post(url('/auth/impersonate-tenant'))
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .send({ tenantId })
+        .expect(201);
+      return response.body.data.accessToken as string;
+    };
+    const [tokenA, tokenB] = await Promise.all([impersonate(env.DEFAULT_TENANT_ID), impersonate(temporaryTenantId)]);
 
     const credential = await request(httpServer)
       .post(url('/admin/access/credentials/pin'))

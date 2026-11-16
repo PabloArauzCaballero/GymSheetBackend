@@ -127,8 +127,7 @@ describe('User media release (e2e)', () => {
     });
 
     it('a catalog upload stays under the immutable ejercicios/ folder and its deletion only deactivates it', async () => {
-      const admin = await e2e.register('pex-catalog-admin');
-      await e2e.promote(admin.id, 'ADMIN');
+      const admin = await e2e.platformAdmin('pex-catalog-admin');
       const created = await e2e.as(admin.token).post('/admin/exercises/global')
         .send({ nombre: `Sentadilla catálogo ${randomUUID().slice(0, 8)}`, grupoMuscular: 'Piernas' }).expect(201);
       const exerciseId = created.body.data.id as string;

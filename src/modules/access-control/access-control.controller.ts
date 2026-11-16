@@ -28,7 +28,7 @@ export class AccessHistoryController {
   }
 }
 
-@Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller('admin/access')
 export class AdminAccessController {
   constructor(private readonly service: AccessControlService) {}
@@ -37,13 +37,11 @@ export class AdminAccessController {
   listDevices() { return this.service.listDevices(); }
 
   @Post('devices')
-  @Roles(UserRole.ADMIN)
   createDevice(@Body(new ZodValidationPipe(createDeviceSchema)) input: CreateDeviceInput) {
     return this.service.createDevice(input);
   }
 
   @Patch('devices/:id/status')
-  @Roles(UserRole.ADMIN)
   updateDeviceStatus(
     @Param('id', UuidParamPipe) id: string,
     @Body(new ZodValidationPipe(updateDeviceStatusSchema)) input: UpdateDeviceStatusInput,

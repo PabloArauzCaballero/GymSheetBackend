@@ -95,9 +95,7 @@ export class ChatService {
   }
 
   async listConversations(userId: string) {
-    const user = await this.usersRepository.findActiveById(userId);
-    const tenantId = user?.tenantId ?? env.DEFAULT_TENANT_ID;
-    await this.systemChat.ensureSystemConversations(userId, tenantId);
+    await this.systemChat.ensureSystemConversations(userId);
     const rows = await this.repository.listConversationsForUser(userId);
     return rows.map((row) => mapConversationSummary(row, this.presence.isOnline(row.other_user_id)));
   }

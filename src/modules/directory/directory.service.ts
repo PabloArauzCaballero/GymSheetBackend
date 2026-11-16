@@ -293,12 +293,12 @@ export class DirectoryService {
     const entity = await this.repository.findEntityById(review.entityId);
     if (!entity) throw new NotFoundException('Oferente no encontrado.');
 
-    // Verificar si el autor es el propietario o un administrador autorizado
+    // Only the listing's owner or REPP answers: a gym role is not the owner (ADR-0019).
     const isEntityOwner = entity.userId === authorId;
-    const isTenantAdmin = authorRole === UserRole.ADMIN || authorRole === UserRole.SYSTEM_ADMIN;
+    const isPlatformAdmin = authorRole === UserRole.SYSTEM_ADMIN;
 
-    if (!isEntityOwner && !isTenantAdmin) {
-      throw new ForbiddenException('Solo el propietario oficial o administrador puede responder a esta reseña.');
+    if (!isEntityOwner && !isPlatformAdmin) {
+      throw new ForbiddenException('Solo el propietario oficial o REPP puede responder a esta reseña.');
     }
 
     await this.repository.createOrUpdateReply(reviewId, authorId, body.reply_text);

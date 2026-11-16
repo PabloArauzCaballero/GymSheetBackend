@@ -62,9 +62,10 @@ export function sha256File(filePath: string): string {
 }
 
 /**
- * La cuenta con la que se registran las demostraciones del catálogo global:
- * el ADMIN de `SEED_ADMIN_EMAIL`. Solo un ADMIN puede gestionar ejercicios
- * globales, y el servicio de media lo comprueba con este actor.
+ * The account the global catalog demonstrations are registered with: the
+ * platform `SYSTEM_ADMIN` of `SEED_ADMIN_EMAIL`. Only REPP manages global
+ * exercises (ADR-0019), and the media service checks it with this actor,
+ * which acts on every gym (no impersonation, null scope).
  */
 export async function resolveAdministratorActor(
   usersRepository: UsersRepository,
@@ -78,10 +79,10 @@ export async function resolveAdministratorActor(
   }
   const administrator =
     await usersRepository.findActiveByEmail(administratorEmail);
-  if (!administrator || administrator.role !== UserRole.ADMIN) {
+  if (!administrator || administrator.role !== UserRole.SYSTEM_ADMIN) {
     throw new Error(
-      `No hay un administrador activo con el correo ${administratorEmail}; ` +
-        "el catálogo global solo lo puede gestionar un ADMIN.",
+      `No hay un administrador de plataforma activo con el correo ${administratorEmail}; ` +
+        "el catálogo global solo lo puede gestionar un SYSTEM_ADMIN.",
     );
   }
   return {
@@ -89,7 +90,7 @@ export async function resolveAdministratorActor(
     email: administrator.email,
     role: administrator.role,
     tenantId: administrator.tenantId ?? env.DEFAULT_TENANT_ID,
-    tenantScope: administrator.tenantId ?? env.DEFAULT_TENANT_ID,
+    tenantScope: null,
     impersonating: false,
   };
 }

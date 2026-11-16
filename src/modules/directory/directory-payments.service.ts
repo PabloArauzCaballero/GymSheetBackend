@@ -66,27 +66,21 @@ export class DirectoryPaymentsService {
   }
 
   /**
-   * Quién administra un ente del directorio: su dueño, un administrador de su
-   * gimnasio o un administrador del sistema. Un socio del mismo gimnasio NO.
+   * Who manages a directory listing: its owner or REPP's `SYSTEM_ADMIN`. The
+   * gym's staff no longer does (ADR-0019), whatever its legacy role.
    */
-  private canManageEntity(
-    actor: AuthenticatedUser,
-    entityUserId: string | null | undefined,
-    entityTenantId: string | null | undefined,
-  ): boolean {
+  private canManageEntity(actor: AuthenticatedUser, entityUserId: string | null | undefined): boolean {
     if (actor.role === UserRole.SYSTEM_ADMIN) return true;
-    if (entityUserId && entityUserId === actor.id) return true;
-    return Boolean(entityTenantId && actor.tenantId === entityTenantId && actor.role === UserRole.ADMIN);
+    return Boolean(entityUserId && entityUserId === actor.id);
   }
 
   /** Acceso ajeno → 404, no 403: no se confirma que el recurso existe. */
   private assertEntityOwnership(
     actor: AuthenticatedUser,
     entityUserId: string | null | undefined,
-    entityTenantId: string | null | undefined,
     notFoundMessage = 'Entidad del directorio no encontrada.',
   ) {
-    if (!this.canManageEntity(actor, entityUserId, entityTenantId)) {
+    if (!this.canManageEntity(actor, entityUserId)) {
       throw new NotFoundException(notFoundMessage);
     }
   }
@@ -128,7 +122,7 @@ export class DirectoryPaymentsService {
   ): Promise<EntityPaymentConfigModel> {
     const entity = await this.repository.findEntityById(entityId);
     if (!entity) throw new NotFoundException('Entidad del directorio no encontrada.');
-    this.assertEntityOwnership(actor, entity.userId, entity.tenantId);
+    this.assertEntityOwnership(actor, entity.userId);
 
     return this.repository.upsertPaymentConfig(entityId, input);
   }
@@ -178,7 +172,7 @@ export class DirectoryPaymentsService {
   ): Promise<EntityPlanModel> {
     const entity = await this.repository.findEntityById(entityId);
     if (!entity) throw new NotFoundException('Entidad del directorio no encontrada.');
-    this.assertEntityOwnership(actor, entity.userId, entity.tenantId);
+    this.assertEntityOwnership(actor, entity.userId);
 
     const slug = input.slug ? this.slugify(input.slug) : this.slugify(input.name);
     const existingSlug = await this.repository.findPlanBySlug(entityId, slug);
@@ -232,7 +226,7 @@ export class DirectoryPaymentsService {
   ): Promise<EntityPlanModel> {
     const plan = await this.repository.findPlanById(planId);
     if (!plan) throw new NotFoundException('Plan o producto no encontrado.');
-    this.assertEntityOwnership(actor, plan.entity?.userId ?? null, plan.entity?.tenantId ?? null);
+    this.assertEntityOwnership(actor, plan.entity?.userId ?? null);
 
     return this.repository.updatePlan(plan, input);
   }
@@ -248,7 +242,7 @@ export class DirectoryPaymentsService {
   ): Promise<{ plan: EntityPlanModel; newPriceHistory: PlanPriceHistoryModel }> {
     const plan = await this.repository.findPlanById(planId);
     if (!plan) throw new NotFoundException('Plan o producto no encontrado.');
-    this.assertEntityOwnership(actor, plan.entity?.userId ?? null, plan.entity?.tenantId ?? null);
+    this.assertEntityOwnership(actor, plan.entity?.userId ?? null);
 
     const newPriceStr = input.newPrice.toFixed(2);
     if (plan.currentPrice === newPriceStr) {
@@ -300,7 +294,7 @@ export class DirectoryPaymentsService {
   async getPriceHistory(actor: AuthenticatedUser, planId: string): Promise<PlanPriceHistoryModel[]> {
     const plan = await this.repository.findPlanById(planId);
     if (!plan) throw new NotFoundException('Plan o producto no encontrado.');
-    this.assertEntityOwnership(actor, plan.entity?.userId, plan.entity?.tenantId, 'Plan o producto no encontrado.');
+    this.assertEntityOwnership(actor, plan.entity?.userId, 'Plan o producto no encontrado.');
     return this.repository.listPriceHistory(planId);
   }
 
@@ -423,7 +417,7 @@ export class DirectoryPaymentsService {
     // Solo el atleta dueño o quien administra el ente. Antes bastaba con ser
     // del mismo gimnasio: cualquier socio podía leer el comprobante de otro.
     const isAthlete = order.athleteUserId === actor.id;
-    const isEntityStaff = this.canManageEntity(actor, order.entity?.userId, order.entity?.tenantId);
+    const isEntityStaff = this.canManageEntity(actor, order.entity?.userId);
     if (!isAthlete && !isEntityStaff) {
       throw new NotFoundException('Orden de pago no encontrada.');
     }
@@ -446,7 +440,7 @@ export class DirectoryPaymentsService {
   ): Promise<{ items: PaymentOrderModel[]; total: number }> {
     const entity = await this.repository.findEntityById(entityId);
     if (!entity) throw new NotFoundException('Entidad del directorio no encontrada.');
-    this.assertEntityOwnership(actor, entity.userId, entity.tenantId);
+    this.assertEntityOwnership(actor, entity.userId);
 
     const { rows, count } = await this.repository.listOrdersForEntity(entityId, query);
     return { items: rows, total: count };
@@ -455,7 +449,7 @@ export class DirectoryPaymentsService {
   async confirmOrder(actor: AuthenticatedUser, orderId: string): Promise<PaymentOrderModel> {
     const order = await this.repository.findOrderById(orderId);
     if (!order) throw new NotFoundException('Orden de pago no encontrada.');
-    this.assertEntityOwnership(actor, order.entity?.userId, order.entity?.tenantId, 'Orden de pago no encontrada.');
+    this.assertEntityOwnership(actor, order.entity?.userId, 'Orden de pago no encontrada.');
 
     /*
      * Todo en una sola transacción: la orden se bloquea (dos confirmaciones a la
@@ -563,7 +557,7 @@ export class DirectoryPaymentsService {
   ): Promise<PaymentOrderModel> {
     const order = await this.repository.findOrderById(orderId);
     if (!order) throw new NotFoundException('Orden de pago no encontrada.');
-    this.assertEntityOwnership(actor, order.entity?.userId, order.entity?.tenantId, 'Orden de pago no encontrada.');
+    this.assertEntityOwnership(actor, order.entity?.userId, 'Orden de pago no encontrada.');
 
     const updatedOrder = await this.sequelize.transaction(async (transaction) => {
       const locked = await this.repository.lockOrder(order.id, transaction);

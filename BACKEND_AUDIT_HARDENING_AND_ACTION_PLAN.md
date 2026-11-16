@@ -914,7 +914,7 @@ Aflorados por F-001 y resueltos sin cambio de comportamiento:
 | B1 · la persona sancionada no leía el motivo | `ACCOUNT_SUSPENDED` lleva `details.reason { code, label, text }` (login, alta y cada petición); la expulsión responde `403 ACCOUNT_BANNED` con el motivo sólo tras la contraseña o Google/Apple (`SanctionStatusService`, marcador: falta `EXPULSION` + `INACTIVO` sin `closed_at`); suspensión, expulsión y el flujo de menor se envían además por correo (`NoticeEmailService`, trabajo autocontenido en `notifications.delivery`; el del cierre de un menor sobrevive al cierre) | `test/sanction-notices.e2e-spec.ts`, `test/minor-reports-closure.e2e-spec.ts` |
 | B6 · la copia de datos lista no se avisaba | `READY` y `FAILED` avisan una vez por exportación, en la app (con `downloadPath`) y por correo, en la transacción del cambio de estado | `test/account-export-email.e2e-spec.ts` |
 | I2 · borrar contenido denunciado destruía la evidencia | foto, historia y comentario con denuncia abierta se ocultan para todos y se conservan (migración `202611190101`, `author_deleted_at`); la retención de contenido denunciado (180 días) o la purga de historias los borran después; misma regla SQL de «denuncia abierta» (`hasOpenReportSql`) | `test/reported-content-lifecycle.e2e-spec.ts` |
-| I9 · el personal no tenía vía de cierre | `POST /admin/users/:id/close` (ADMIN del mismo gimnasio, auditado; 404 ajeno, 403 propio o último ADMIN); el cierre conserva rutinas asignadas a socios y sus chats con el gimnasio | `test/staff-closure.e2e-spec.ts` |
+| I9 · el personal no tenía vía de cierre | `POST /admin/users/:id/close` (ADMIN del mismo gimnasio; desde la franja 7a, `SYSTEM_ADMIN`, ADR-0019, auditado; 404 ajeno, 403 propio o último ADMIN); el cierre conserva rutinas asignadas a socios y sus chats con el gimnasio | `test/staff-closure.e2e-spec.ts` |
 | I1 · retención de una cuenta expulsada | sin purga ni plazo en código: documentado en ADR-0014 §6 (R-007) | — |
 
 ### Revisión legal 3 (franja 4): quién modera, versiones y cola muerta
@@ -926,6 +926,17 @@ Aflorados por F-001 y resueltos sin cambio de comportamiento:
 | N1 · la selfie de verificación la revisaba el gimnasio | `GET/POST /admin/verifications*` pasan a `PLATFORM_MODERATION_ROLES` con `platformScopeOf` (cola de todos los gimnasios con `tenantId`/`tenantName`; `ADMIN`/`FRONT_DESK` reciben `403` con o sin `moderation:*`); la decisión se audita `verification/decide` con `metadata { tenantId, decision, reason }` y `tenant_scope` nulo para un `MODERATOR`; los avisos nombran al equipo de REPP | `test/photo-verification.e2e-spec.ts`, `verification.controller.spec.ts`, `verification-review.service.spec.ts`, `platform-moderation.spec.ts` |
 | I-5 · una selfie en revisión no tenía plazo | `VERIFICATION_REVIEW_DEADLINE_DAYS = 30`: la retención diaria pasa a `EXPIRED` lo que espera revisión más de 30 días desde `submitted_at`, avisa a la persona en la misma transacción y borra la selfie por `media.release` (ADR-0014 §2) | `test/photo-verification.e2e-spec.ts`, `test/privacy-retention.e2e-spec.ts`, `verification-revocation-retention.spec.ts` |
 | I-2 · dead-letter de `media.release` invisible | gauge `gym_sheet_outbox_dead_letter_jobs{queue="media.release"}` siempre presente en `/health/metrics`; alerta y responsable en el runbook de ADR-0017 (paso 6, condición de despliegue) | `test/user-media-release.e2e-spec.ts`, `outbox-metrics.service.spec.ts` |
+
+### Franja 7a: REPP opera la plataforma; el gimnasio deja de tener personal (ADR-0019)
+
+| Cambio | Corrección | Prueba |
+|---|---|---|
+| El personal del gimnasio operaba `admin/*` | Todo `admin/*` declara `@Roles(SYSTEM_ADMIN)` (o los roles de moderación); `ADMIN`/`FRONT_DESK`/`COACH` heredados reciben `403` con cualquier concesión de permisos. `admin/directory` queda en dueño de la ficha o `SYSTEM_ADMIN` (`404` al resto) | `src/common/guards/roles.guard.admin-routes.spec.ts`, `test/platform-operation.e2e-spec.ts` |
+| Asignación de rutinas por coach | `POST /routines/:id/assign` y `GET /routines/assignments/coach` eliminadas (`404`); las asignaciones previas siguen en `assignments/me`. La política de rutinas pierde la rama «ADMIN de su gimnasio» | `routine-access.policy.spec.ts`, `test/platform-operation.e2e-spec.ts` |
+| Dominio con poder de `ADMIN` | medios de ejercicio global, cobros y respuestas del directorio y el worker `exercise-media-command` exigen `SYSTEM_ADMIN` o propiedad | `exercise-media-reupload.spec.ts`, `directory-payments.service.spec.ts` |
+| Chat fijo `TENANT_ADMIN` | ni se crea ni se lista; los existentes se revocan con la migración reversible `202611200301-revoke-tenant-admin-chats` (libro `chat.tenant_admin_chat_revocations`); queda `CORPORATE` | `system-chat.service.spec.ts`, `chat.service.spec.ts`, `test/platform-operation.e2e-spec.ts` |
+| Siembras | `SEED_ADMIN_*` crea el `SYSTEM_ADMIN`; ninguna siembra crea `ADMIN` ni `COACH` | `seed.spec.ts` |
+
 
 ---
 

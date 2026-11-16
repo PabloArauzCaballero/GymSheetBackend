@@ -11,7 +11,6 @@ import { SystemChatService } from "./system-chat.service";
 
 const userA = "00000000-0000-4000-8000-00000000000a";
 const corporateUserId = "00000000-0000-4000-8000-0000000000c0";
-const adminUserId = "00000000-0000-4000-8000-0000000000ad";
 
 function createService(
   usersOverrides: Partial<UsersRepository> = {},
@@ -19,7 +18,6 @@ function createService(
 ) {
   const usersRepository = {
     findActiveByEmail: jest.fn().mockResolvedValue(null),
-    findAdminForTenant: jest.fn().mockResolvedValue(null),
     ...usersOverrides,
   } as unknown as UsersRepository;
   const chatRepository = {
@@ -35,11 +33,11 @@ describe("SystemChatService.ensureSystemConversations", () => {
     delete env.SEED_SYSTEM_CORPORATE_EMAIL;
   });
 
-  it("creates nothing when no corporate account is seeded and no tenant admin exists", async () => {
+  it("creates nothing when no corporate account is seeded", async () => {
     const chatRepository = { createSystemConversation: jest.fn() } as unknown as ChatRepository;
     const service = createService({}, chatRepository);
 
-    await service.ensureSystemConversations(userA, "default");
+    await service.ensureSystemConversations(userA);
 
     expect(chatRepository.createSystemConversation).not.toHaveBeenCalled();
   });
@@ -55,24 +53,28 @@ describe("SystemChatService.ensureSystemConversations", () => {
       chatRepository,
     );
 
-    await service.ensureSystemConversations(userA, "default");
+    await service.ensureSystemConversations(userA);
 
     expect(chatRepository.createSystemConversation).toHaveBeenCalledWith(userA, corporateUserId, "CORPORATE");
   });
 
-  it("creates the tenant-admin conversation when an active admin is resolved for the tenant", async () => {
+  it("never creates a gym admin (TENANT_ADMIN) conversation, even with an active legacy ADMIN in the gym", async () => {
+    // Franja 7a (ADR-0019): the gym has no staff, so only REPP's support chat remains.
+    env.SEED_SYSTEM_CORPORATE_EMAIL = "corporativo@gymsheet.local";
     const chatRepository = {
       findDirectConversation: jest.fn().mockResolvedValue(null),
-      createSystemConversation: jest.fn().mockResolvedValue("conv-admin"),
+      createSystemConversation: jest.fn().mockResolvedValue("conv-corporate"),
     } as unknown as ChatRepository;
-    const service = createService(
-      { findAdminForTenant: jest.fn().mockResolvedValue({ id: adminUserId }) },
-      chatRepository,
-    );
+    const usersRepository = {
+      findActiveByEmail: jest.fn().mockResolvedValue({ id: corporateUserId }),
+      findAdminForTenant: jest.fn().mockResolvedValue({ id: "00000000-0000-4000-8000-0000000000ad" }),
+    } as unknown as UsersRepository;
+    const service = new SystemChatService(usersRepository, chatRepository);
 
-    await service.ensureSystemConversations(userA, "topfitness");
+    await service.ensureSystemConversations(userA);
 
-    expect(chatRepository.createSystemConversation).toHaveBeenCalledWith(userA, adminUserId, "TENANT_ADMIN");
+    expect(chatRepository.createSystemConversation).toHaveBeenCalledTimes(1);
+    expect(chatRepository.createSystemConversation).toHaveBeenCalledWith(userA, corporateUserId, "CORPORATE");
   });
 
   it("does not create a duplicate when the direct conversation already exists", async () => {
@@ -86,7 +88,7 @@ describe("SystemChatService.ensureSystemConversations", () => {
       chatRepository,
     );
 
-    await service.ensureSystemConversations(userA, "default");
+    await service.ensureSystemConversations(userA);
 
     expect(chatRepository.createSystemConversation).not.toHaveBeenCalled();
   });
@@ -99,7 +101,7 @@ describe("SystemChatService.ensureSystemConversations", () => {
       chatRepository,
     );
 
-    await service.ensureSystemConversations(userA, "default");
+    await service.ensureSystemConversations(userA);
 
     expect(chatRepository.createSystemConversation).not.toHaveBeenCalled();
   });

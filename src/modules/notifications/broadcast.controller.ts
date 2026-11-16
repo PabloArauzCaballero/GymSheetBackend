@@ -7,8 +7,8 @@ import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { BroadcastService } from "./broadcast.service";
 import { BroadcastInput, broadcastSchema } from "./broadcast.schemas";
 
-/** Publicidad in-app: el administrador lanza una campaña a un segmento. */
-@Roles(UserRole.ADMIN)
+/** In-app broadcast: REPP's `SYSTEM_ADMIN` sends a campaign to a segment (ADR-0019). */
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller("admin/notifications")
 export class AdminBroadcastController {
   constructor(private readonly broadcastService: BroadcastService) {}

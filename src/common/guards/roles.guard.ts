@@ -29,17 +29,14 @@ export class RolesGuard implements CanActivate {
   }
 
   /**
-   * `SYSTEM_ADMIN` es un `ADMIN` que además cruza gimnasios, así que satisface
-   * cualquier ruta abierta a `ADMIN`.
+   * Legacy shortcut: `SYSTEM_ADMIN` satisfies a route open to `ADMIN`. Since
+   * franja 7a (ADR-0019) no route declares `ADMIN` any more —every `admin/*`
+   * route names `SYSTEM_ADMIN` (or the moderation roles) explicitly, which
+   * `roles.guard.admin-routes.spec.ts` enforces— and the shortcut goes away
+   * with the staff roles in franja 7d.
    *
-   * Se resuelve aquí y no añadiéndolo a los `@Roles()` de los once módulos
-   * administrativos: enumerarlo en cada decorador significa que la próxima ruta
-   * que alguien escriba se olvidará de incluirlo, y el fallo —un super-admin
-   * que no puede entrar donde debería— aparecería en producción y no aquí.
-   *
-   * Deliberadamente NO satisface roles que no sean `ADMIN`: un `SYSTEM_ADMIN`
-   * no es un `COACH` ni un `CLIENTE`, y las rutas de esos roles asumen datos
-   * propios (rutinas asignadas, progresión) que él no tiene.
+   * It deliberately does NOT satisfy other roles: a `SYSTEM_ADMIN` is not a
+   * `COACH` nor a `CLIENTE`, and those routes assume data of their own.
    */
   private satisfies(role: UserRole, requiredRoles: UserRole[]): boolean {
     if (requiredRoles.includes(role)) {

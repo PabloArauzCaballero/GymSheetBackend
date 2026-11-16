@@ -22,8 +22,16 @@ export type E2eApp = {
    * require a verified email (the PIN flow has its own e2e spec).
    */
   register: (label: string, options?: { verifyEmail?: boolean }) => Promise<{ token: string; id: string }>;
-  /** Cambia el rol en la base (la sesión se revalida contra la base en cada petición). */
+  /**
+   * Cambia el rol en la base (la sesión se revalida contra la base en cada petición).
+   * `ADMIN`/`COACH`/`FRONT_DESK` are legacy gym staff with no powers since
+   * franja 7a (ADR-0019): promote to them only to prove they are refused.
+   */
   promote: (userId: string, role: 'ADMIN' | 'SYSTEM_ADMIN' | 'MODERATOR' | 'COACH' | 'FRONT_DESK') => Promise<void>;
+  /** Registers an account and makes it REPP's platform admin, the only operator of `admin/*`. */
+  platformAdmin: (label: string) => Promise<{ token: string; id: string }>;
+  /** A platform admin token scoped to one gym (`POST /auth/impersonate-tenant`), to operate that gym. */
+  impersonate: (platformAdminToken: string, tenantId?: string) => Promise<string>;
   /** SQL de apoyo para preparar o inspeccionar estado que la API no expone. */
   sql: (statement: string, replacements?: Record<string, unknown>) => Promise<void>;
   as: (token: string) => {
@@ -78,33 +86,49 @@ export async function bootE2eApp(
   const url = (path: string) => `/${env.API_PREFIX}${path}`;
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
+  const promote: E2eApp['promote'] = async (userId, role) => {
+    await app.get(Sequelize).query('UPDATE public.usuarios SET rol = :role WHERE id = :userId', {
+      replacements: { role, userId },
+    });
+  };
+  const register: E2eApp['register'] = async (label, options = {}) => {
+    // The real client path: fetch a form ticket first (SIGNUP_MIN_FILL_MS is 0 in e2e).
+    const ticketResponse = await request(http).get(url('/auth/register/ticket')).expect(200);
+    const response = await request(http)
+      .post(url('/auth/register'))
+      .send({
+        ticket: ticketResponse.body.data.ticket as string,
+        email: `${label}-${suffix}@example.test`,
+        password,
+        nombreCompleto: `E2E ${label}`,
+        ...E2E_SIGNUP_FIELDS,
+      })
+      .expect(201);
+    const token = response.body.data.accessToken as string;
+    const me = await request(http).get(url('/auth/me')).set('Authorization', `Bearer ${token}`);
+    const id = (me.body.data?.id ?? me.body.data?.usuario?.id) as string;
+    if (options.verifyEmail !== false) await markEmailVerified(app, id);
+    return { token, id };
+  };
+
   return {
     app,
     http,
     url,
-    register: async (label, options = {}) => {
-      // The real client path: fetch a form ticket first (SIGNUP_MIN_FILL_MS is 0 in e2e).
-      const ticketResponse = await request(http).get(url('/auth/register/ticket')).expect(200);
-      const response = await request(http)
-        .post(url('/auth/register'))
-        .send({
-          ticket: ticketResponse.body.data.ticket as string,
-          email: `${label}-${suffix}@example.test`,
-          password,
-          nombreCompleto: `E2E ${label}`,
-          ...E2E_SIGNUP_FIELDS,
-        })
-        .expect(201);
-      const token = response.body.data.accessToken as string;
-      const me = await request(http).get(url('/auth/me')).set('Authorization', `Bearer ${token}`);
-      const id = (me.body.data?.id ?? me.body.data?.usuario?.id) as string;
-      if (options.verifyEmail !== false) await markEmailVerified(app, id);
-      return { token, id };
+    register,
+    promote,
+    platformAdmin: async (label) => {
+      const account = await register(label);
+      await promote(account.id, 'SYSTEM_ADMIN');
+      return account;
     },
-    promote: async (userId, role) => {
-      await app.get(Sequelize).query('UPDATE public.usuarios SET rol = :role WHERE id = :userId', {
-        replacements: { role, userId },
-      });
+    impersonate: async (platformAdminToken, tenantId = env.DEFAULT_TENANT_ID) => {
+      const response = await request(http)
+        .post(url('/auth/impersonate-tenant'))
+        .set('Authorization', `Bearer ${platformAdminToken}`)
+        .send({ tenantId })
+        .expect(201);
+      return response.body.data.accessToken as string;
     },
     sql: async (statement, replacements = {}) => {
       await app.get(Sequelize).query(statement, { replacements });

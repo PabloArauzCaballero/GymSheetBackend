@@ -8,11 +8,12 @@ import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { AccountClosureService } from "./account-closure.service";
 
 /**
- * Closure of a staff account by its gym. The staff member cannot close it
- * (`ACCOUNT_CLOSURE_STAFF`): the gym answers for those accounts, so the gym's
- * admin does, with the same erasure as any closure. Audited (who closed whom).
+ * Closure of a legacy gym staff account. The staff member cannot close it
+ * (`ACCOUNT_CLOSURE_STAFF`) and the gym no longer has staff powers (ADR-0019),
+ * so REPP's `SYSTEM_ADMIN` does, with the same erasure as any closure. Audited
+ * (who closed whom). Kept until the staff roles are removed (franja 7d).
  */
-@Roles(UserRole.ADMIN)
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller("admin/users")
 export class AdminAccountClosureController {
   constructor(private readonly closure: AccountClosureService) {}

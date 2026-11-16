@@ -8,7 +8,7 @@ import {
 } from "./exercises-dataset.schemas";
 import { ExercisesDatasetService } from "./exercises-dataset.service";
 
-@Roles(UserRole.ADMIN)
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller("admin/exercises/import")
 export class ExercisesDatasetController {
   constructor(private readonly datasetService: ExercisesDatasetService) {}

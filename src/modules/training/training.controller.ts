@@ -10,8 +10,6 @@ import {
   Query,
 } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { UserRole } from '../../common/enums/domain.enums';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
@@ -35,7 +33,6 @@ import { RoutineStructureService } from './routine-structure.service';
 import { TrainingService } from './training.service';
 import {
   RoutineExerciseInput,
-  AssignRoutineInput,
   SelfScheduleRoutineInput,
   CreateRoutineInput,
   ImportRoutinesInput,
@@ -43,7 +40,6 @@ import {
   UpdateRoutineExerciseInput,
   UpdateRoutineInput,
   addRoutineExerciseSchema,
-  assignRoutineSchema,
   selfScheduleRoutineSchema,
   createRoutineSchema,
   importRoutinesSchema,
@@ -98,12 +94,6 @@ export class TrainingController {
   @Get('assignments/me')
   myAssignments(@CurrentUser() user: AuthenticatedUser) {
     return this.trainingService.listMyAssignments(user.id);
-  }
-
-  @Roles(UserRole.COACH, UserRole.ADMIN)
-  @Get('assignments/coach')
-  coachAssignments(@CurrentUser() user: AuthenticatedUser) {
-    return this.trainingService.listCoachAssignments(user.id);
   }
 
   @Post('import')
@@ -166,19 +156,10 @@ export class TrainingController {
     return this.trainingService.addExercise(user, routineId, input);
   }
 
-  @Roles(UserRole.COACH, UserRole.ADMIN)
-  @Post(':id/assign')
-  assign(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('id', UuidParamPipe) routineId: string,
-    @Body(new ZodValidationPipe(assignRoutineSchema)) input: AssignRoutineInput,
-  ) {
-    return this.trainingService.assignRoutine(user, routineId, input);
-  }
-
   /**
-   * Programación propia. Vive fuera del bloque COACH/ADMIN a propósito: la
-   * agenda que se toca es la de quien llama, no la de un tercero.
+   * Self-scheduling: the calendar touched is always the caller's own. Nobody
+   * assigns routines to someone else any more (ADR-0019); assignments made
+   * before stay visible to the member through `assignments/me`.
    */
   @Post(':id/schedule')
   selfSchedule(

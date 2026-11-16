@@ -148,12 +148,13 @@ describe('AccountClosureService.closeByModeration', () => {
 });
 
 describe('AccountClosureService.closeStaffByAdmin', () => {
+  // REPP's platform admin operating the gym through impersonation (ADR-0019, franja 7a).
   const admin = {
-    id: '00000000-0000-4000-8000-0000000000ad', email: 'admin@gym.test', role: UserRole.ADMIN,
-    tenantId: 'gym', tenantScope: 'gym', impersonating: false, emailVerified: true, deviceId: null,
+    id: '00000000-0000-4000-8000-0000000000ad', email: 'admin@repp.test', role: UserRole.SYSTEM_ADMIN,
+    tenantId: 'gym', tenantScope: 'gym', impersonating: true, emailVerified: true, deviceId: null,
   };
 
-  it('closes a staff account of the admin gym with the same erasure, no password, carrying its strikes', async () => {
+  it('closes a staff account of the impersonated gym with the same erasure, no password, carrying its strikes', async () => {
     const { service, repository, sanctions, users } = await build({ role: UserRole.COACH, tenantId: 'gym' });
     await expect(service.closeStaffByAdmin(admin, userId)).resolves.toEqual({ closed: true, closedAt });
     expect(users.lockUserForUpdate).toHaveBeenCalledWith(userId, transaction);

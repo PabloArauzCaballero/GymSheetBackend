@@ -15,6 +15,11 @@ export enum UserRole {
    * no gym role, needs no permission grant, and only SYSTEM_ADMIN assigns it.
    */
   MODERATOR = "MODERATOR",
+  /**
+   * Legacy gym staff roles (`ADMIN`, `COACH`, `FRONT_DESK`, and the external
+   * trainer): since franja 7a they grant no power at all (ADR-0019) and are
+   * removed with their staff tables in franja 7d.
+   */
   ADMIN = "ADMIN",
   CLIENT = "CLIENTE",
   EXTERNAL_TRAINER = "ENTRENADOR_EXTERNO",

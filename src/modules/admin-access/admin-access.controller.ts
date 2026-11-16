@@ -14,7 +14,7 @@ import { GrantPermissionInput, grantPermissionSchema } from './admin-access.sche
 // Deliberately not under `admin/access/*`: that prefix is already the physical
 // access-control module (devices/credentials). This is unrelated — granular
 // admin RBAC permissions — so it gets its own `admin/permissions` namespace.
-@Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller('admin/permissions')
 export class AdminAccessController {
   constructor(private readonly adminPermissionsService: AdminPermissionsService) {}

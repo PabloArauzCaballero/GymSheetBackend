@@ -67,13 +67,13 @@ export function resolveSeedUsers(
         seedEnvironment.SEED_ADMIN_PASSWORD,
         "SEED_ADMIN_PASSWORD",
       ),
-      role: UserRole.ADMIN,
+      // REPP operates the platform and the gym has no staff (ADR-0019): the
+      // base administrator is the platform's `SYSTEM_ADMIN`.
+      role: UserRole.SYSTEM_ADMIN,
       status: UserStatus.ACTIVE,
     });
-    // Administrador de PLATAFORMA, distinto del administrador de un gimnasio.
-    // Sólo se siembra si se pidió explícitamente: es la cuenta que puede ver y
-    // operar todos los gimnasios, y no debe existir por defecto en ninguna
-    // instalación que no la haya declarado.
+    // An optional, additional platform administrator, only when explicitly
+    // declared.
     if (
       seedEnvironment.SEED_SYSTEM_ADMIN_EMAIL &&
       seedEnvironment.SEED_SYSTEM_ADMIN_PASSWORD
@@ -110,10 +110,11 @@ export function resolveSeedUsers(
     );
     users.push(
       {
+        // A member like any other: there are no gym coaches any more (ADR-0019).
         email: "coach.mock@gymsheet.local",
         fullName: "Coach Mock",
         password,
-        role: UserRole.COACH,
+        role: UserRole.CLIENT,
         status: UserStatus.ACTIVE,
       },
       {

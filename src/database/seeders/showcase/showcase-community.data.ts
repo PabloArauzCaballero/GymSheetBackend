@@ -18,7 +18,6 @@ export type DemoUser = {
   key: string;
   email: string;
   fullName: string;
-  coach: boolean;
   gender: 'MALE' | 'FEMALE';
   weightKg: number;
   heightCm: number;
@@ -35,42 +34,42 @@ const GYM_ALL = ['Mancuernas', 'Barra y discos', 'Máquinas', 'Poleas', 'Banco']
 
 export const DEMO_USERS: readonly DemoUser[] = [
   user('valentina.rios', {
-    fullName: 'Valentina Ríos', coach: false, gender: 'FEMALE', weightKg: 68, heightCm: 163,
+    fullName: 'Valentina Ríos', gender: 'FEMALE', weightKg: 68, heightCm: 163,
     goal: FitnessGoal.LOSE_FAT, level: 'BEGINNER', frequency: 3, location: 'HOME',
     equipment: ['Mancuernas', 'Bandas', 'Peso corporal'], preferences: ['Entrenamiento funcional', 'Cardio'],
   }),
   user('mateo.fernandez', {
-    fullName: 'Mateo Fernández', coach: false, gender: 'MALE', weightKg: 78, heightCm: 178,
+    fullName: 'Mateo Fernández', gender: 'MALE', weightKg: 78, heightCm: 178,
     goal: FitnessGoal.GAIN_MUSCLE, level: 'INTERMEDIATE', frequency: 4, location: 'GYM',
     equipment: GYM_ALL, preferences: ['Hipertrofia'],
   }),
   user('camila.herrera', {
-    fullName: 'Camila Herrera', coach: false, gender: 'FEMALE', weightKg: 59, heightCm: 160,
+    fullName: 'Camila Herrera', gender: 'FEMALE', weightKg: 59, heightCm: 160,
     goal: FitnessGoal.IMPROVE_STRENGTH, level: 'BEGINNER', frequency: 3, location: 'GYM',
     equipment: GYM_ALL, preferences: ['Fuerza'],
   }),
   user('diego.morales', {
-    fullName: 'Diego Morales', coach: true, gender: 'MALE', weightKg: 84, heightCm: 181,
+    fullName: 'Diego Morales', gender: 'MALE', weightKg: 84, heightCm: 181,
     goal: FitnessGoal.GAIN_MUSCLE, level: 'ADVANCED', frequency: 5, location: 'GYM',
     equipment: GYM_ALL, preferences: ['Hipertrofia', 'Fuerza'],
   }),
   user('lucia.navarro', {
-    fullName: 'Lucía Navarro', coach: false, gender: 'FEMALE', weightKg: 55, heightCm: 167,
+    fullName: 'Lucía Navarro', gender: 'FEMALE', weightKg: 55, heightCm: 167,
     goal: FitnessGoal.IMPROVE_ENDURANCE, level: 'INTERMEDIATE', frequency: 3, location: 'MIXED',
     equipment: ['Mancuernas', 'Bandas', 'Peso corporal'], preferences: ['Cardio', 'Movilidad'],
   }),
   user('andres.castillo', {
-    fullName: 'Andrés Castillo', coach: false, gender: 'MALE', weightKg: 92, heightCm: 175,
+    fullName: 'Andrés Castillo', gender: 'MALE', weightKg: 92, heightCm: 175,
     goal: FitnessGoal.GENERAL_HEALTH, level: 'BEGINNER', frequency: 2, location: 'GYM',
     equipment: ['Máquinas', 'Poleas'], preferences: ['Movilidad'],
   }),
   user('sofia.paredes', {
-    fullName: 'Sofía Paredes', coach: false, gender: 'FEMALE', weightKg: 61, heightCm: 170,
+    fullName: 'Sofía Paredes', gender: 'FEMALE', weightKg: 61, heightCm: 170,
     goal: FitnessGoal.SPORT_PERFORMANCE, level: 'INTERMEDIATE', frequency: 2, location: 'GYM',
     equipment: GYM_ALL, preferences: ['Entrenamiento funcional', 'Fuerza'],
   }),
   user('javier.ortega', {
-    fullName: 'Javier Ortega', coach: false, gender: 'MALE', weightKg: 88, heightCm: 183,
+    fullName: 'Javier Ortega', gender: 'MALE', weightKg: 88, heightCm: 183,
     goal: FitnessGoal.IMPROVE_STRENGTH, level: 'ADVANCED', frequency: 5, location: 'GYM',
     equipment: GYM_ALL, preferences: ['Fuerza'],
   }),

@@ -46,9 +46,12 @@ The API does not return stack traces or raw infrastructure errors to clients. Un
 - `page` starts at 1.
 - `pageSize` is capped at 100.
 - Request bodies are capped by `REQUEST_BODY_LIMIT`.
-- Administrative routes require an active database user with role `ADMIN`, except the platform
-  surfaces: social moderation (`MODERATOR` or `SYSTEM_ADMIN`, see below) and `SYSTEM_ADMIN`-only
-  routes.
+- REPP operates the platform and the gym has no staff (ADR-0019, franja 7a): every `admin/*` route
+  requires an active `SYSTEM_ADMIN` (impersonating a gym with `POST /auth/impersonate-tenant` to act
+  on that gym), except social moderation, which also admits `MODERATOR` (see below), and
+  `admin/directory`, which the listing's owner or a `SYSTEM_ADMIN` manages (anyone else: `404`).
+  Legacy gym roles (`ADMIN`, `FRONT_DESK`, `COACH`, `ENTRENADOR_EXTERNO`) get `403` on every
+  `admin/*` route, whatever permission grants they hold.
 - Personal exercises, media, sessions, and sets enforce object ownership.
 - Legacy Spanish v1 fields remain at the HTTP boundary; internal identifiers are English.
 - Access tokens require the expected signature, expiration, issuer, audience, and algorithm.
@@ -142,7 +145,7 @@ Canonical internal units are kilograms for body weight, centimeters for height, 
 
 All of them are exempt from the legal-acceptance gate and the password/PIN routes use the auth rate limit. Wrong password: `400 CURRENT_PASSWORD_INVALID`; PIN errors reuse `EMAIL_PIN_INVALID|EXPIRED|EXHAUSTED|COOLDOWN` (the PIN table is `auth.email_verification_pins` with `purpose` `VERIFY_EMAIL|CHANGE_EMAIL|CLOSE_ACCOUNT`, one live code, cooldown and daily cap per purpose). Someone else's export answers `404`.
 
-**Closure** runs in one transaction driven by `src/modules/account/account-closure.catalog.ts` (the preview counts with the same predicates): sessions, devices, identities, PINs, notifications, health and training data, progression, Conocer, stories, reels, photos, comments, reviews and blocks are deleted; own chat messages are wiped like "delete for everyone" (the other person keeps theirs, the chat turns read-only), the system chats with REPP/the gym are deleted; consents are revoked; content under a moderation report, moderation records, the legal acceptances and the gym's tax records (memberships, payment orders with amounts and receipts, access log) are kept de-identified (notes and phone dropped, access credentials revoked). The account row is kept for FK integrity with email `cerrada-<id>@cuenta-cerrada.invalid`, name `Cuenta cerrada`, no birth date or sex, `estado = INACTIVO`, `closed_at` set and a random password hash: login answers the generic `401 Credenciales inválidas.` and the email can register again. Staff accounts answer `403 ACCOUNT_CLOSURE_STAFF`: their gym's admin closes them with `POST /admin/users/:id/close`. A staff closure keeps what members still use: routines it assigned to members (and the routines behind them, like the gym's official ones) stay, signed «Cuenta cerrada»; the members' chats with the gym it answered stay theirs (only the system chats where the closing account is the member side are deleted); its `membership.staff_profiles` row is marked `TERMINATED`. Files are erased after commit through the outbox queue `media.release` (one job per file, 8 attempts, dead-letter; drained by the API every minute), only when no other row references them; on MinIO every version is removed, and a rejected removal ends in dead-letter (ADR-0017). If the account has a running suspension or strikes still counting (365 days), they are kept under the keyed hash of the email in `moderation.closed_account_sanctions`; signing up again with that email (password or Google/Apple) inherits them, and a running suspension makes the signup answer `403` like the login (ADR-0015).
+**Closure** runs in one transaction driven by `src/modules/account/account-closure.catalog.ts` (the preview counts with the same predicates): sessions, devices, identities, PINs, notifications, health and training data, progression, Conocer, stories, reels, photos, comments, reviews and blocks are deleted; own chat messages are wiped like "delete for everyone" (the other person keeps theirs, the chat turns read-only), the system chats with REPP/the gym are deleted; consents are revoked; content under a moderation report, moderation records, the legal acceptances and the gym's tax records (memberships, payment orders with amounts and receipts, access log) are kept de-identified (notes and phone dropped, access credentials revoked). The account row is kept for FK integrity with email `cerrada-<id>@cuenta-cerrada.invalid`, name `Cuenta cerrada`, no birth date or sex, `estado = INACTIVO`, `closed_at` set and a random password hash: login answers the generic `401 Credenciales inválidas.` and the email can register again. Staff accounts answer `403 ACCOUNT_CLOSURE_STAFF`: REPP's `SYSTEM_ADMIN` closes them with `POST /admin/users/:id/close` (ADR-0019). A staff closure keeps what members still use: routines it assigned to members (and the routines behind them, like the gym's official ones) stay, signed «Cuenta cerrada»; the members' chats with the gym it answered stay theirs (only the system chats where the closing account is the member side are deleted); its `membership.staff_profiles` row is marked `TERMINATED`. Files are erased after commit through the outbox queue `media.release` (one job per file, 8 attempts, dead-letter; drained by the API every minute), only when no other row references them; on MinIO every version is removed, and a rejected removal ends in dead-letter (ADR-0017). If the account has a running suspension or strikes still counting (365 days), they are kept under the keyed hash of the email in `moderation.closed_account_sanctions`; signing up again with that email (password or Google/Apple) inherits them, and a running suspension makes the signup answer `403` like the login (ADR-0015).
 
 **Export** is built by the same worker (queue `account.export`): one section per data-map table (`src/modules/export/account-export.sections.ts`), own rows only, credential hashes omitted, chats limited to the caller's own messages and conversation ids, each table capped at the routine-progress export limit (20 000 rows, `truncated: true` beyond it). The archive lives in `auth.account_exports` and is purged when it expires. When it turns `READY` the owner gets, once per export, an in-app notice «Tu copia de datos está lista» (`metadata: { type: ACCOUNT_EXPORT_READY, exportId, downloadPath, expiresAt }`) and the same notice by email; a build that dead-letters turns `FAILED` and notifies «No pudimos preparar tu copia de datos» (`ACCOUNT_EXPORT_FAILED`) the same way.
 
@@ -153,9 +156,9 @@ All of them are exempt from the legal-acceptance gate and the password/PIN route
 | Method | Route                  | Access        | Purpose                                       |
 | ------ | ---------------------- | ------------- | --------------------------------------------- |
 | GET    | `/equipment`           | authenticated | List available equipment                      |
-| POST   | `/admin/equipment`     | ADMIN         | Create equipment                              |
-| PATCH  | `/admin/equipment/:id` | ADMIN         | Update equipment                              |
-| DELETE | `/admin/equipment/:id` | ADMIN         | Inactivate equipment without deleting history |
+| POST   | `/admin/equipment`     | SYSTEM_ADMIN  | Create equipment                              |
+| PATCH  | `/admin/equipment/:id` | SYSTEM_ADMIN  | Update equipment                              |
+| DELETE | `/admin/equipment/:id` | SYSTEM_ADMIN  | Inactivate equipment without deleting history |
 
 Exercise relationships accept only existing, linkable equipment identifiers. Input identifiers are deduplicated before persistence.
 
@@ -168,9 +171,9 @@ Exercise relationships accept only existing, linkable equipment identifiers. Inp
 | POST   | `/exercises/personal`         | authenticated  | Create a personal exercise                                       |
 | PATCH  | `/exercises/:id`              | owner          | Update a personal exercise                                       |
 | DELETE | `/exercises/:id`              | owner          | Inactivate a personal exercise and delete the files its owner uploaded to it |
-| POST   | `/admin/exercises/global`     | ADMIN          | Create a global exercise                                         |
-| PATCH  | `/admin/exercises/global/:id` | ADMIN          | Update a global exercise                                         |
-| DELETE | `/admin/exercises/global/:id` | ADMIN          | Inactivate a global exercise                                     |
+| POST   | `/admin/exercises/global`     | SYSTEM_ADMIN   | Create a global exercise                                         |
+| PATCH  | `/admin/exercises/global/:id` | SYSTEM_ADMIN   | Update a global exercise                                         |
+| DELETE | `/admin/exercises/global/:id` | SYSTEM_ADMIN   | Inactivate a global exercise                                     |
 
 ### `GET /exercises` filters
 
@@ -201,8 +204,8 @@ The response contains `items`, `page`, `pageSize`, `total`, and `totalPages` ins
 | Method | Route                          | Access                    | Purpose                                                  |
 | ------ | ------------------------------ | ------------------------- | -------------------------------------------------------- |
 | GET    | `/exercises/:exerciseId/media` | exercise visible          | List active media                                        |
-| POST   | `/exercises/:exerciseId/media` | owner or ADMIN for global | Register a media reference                               |
-| DELETE | `/exercise-media/:mediaId`     | owner or ADMIN for global | Inactivate media (delete it, file included, for an own upload to a personal exercise) and promote a replacement primary asset |
+| POST   | `/exercises/:exerciseId/media` | owner or SYSTEM_ADMIN for global | Register a media reference                               |
+| DELETE | `/exercise-media/:mediaId`     | owner or SYSTEM_ADMIN for global | Inactivate media (delete it, file included, for an own upload to a personal exercise) and promote a replacement primary asset |
 
 Controls:
 
@@ -264,8 +267,8 @@ Exports read history in pages to bound memory. Synchronous export rejects histor
 
 | Method | Route                                              | Access | Purpose                                                        |
 | ------ | -------------------------------------------------- | ------ | -------------------------------------------------------------- |
-| POST   | `/admin/exercises/import/exercises-dataset`        | ADMIN  | Validate and idempotently import the external exercise dataset |
-| GET    | `/admin/exercises/import/exercises-dataset/status` | ADMIN  | Inspect PostgreSQL cache freshness and the next daily refresh  |
+| POST   | `/admin/exercises/import/exercises-dataset`        | SYSTEM_ADMIN | Validate and idempotently import the external exercise dataset |
+| GET    | `/admin/exercises/import/exercises-dataset/status` | SYSTEM_ADMIN | Inspect PostgreSQL cache freshness and the next daily refresh  |
 
 The connector is disabled by default and applies:
 
@@ -311,49 +314,49 @@ Body weight uses `KG`/`LB` and height `CM`/`IN` at the boundary; `measuredOn` is
 
 > `GET /memberships/me` also exists (legacy plural path returning the current membership, `404` when none). It duplicates `/me/membership` and is pending unification; prefer `/me/membership`.
 
-### Membership administration (`ADMIN`, some `FRONT_DESK`)
+### Membership administration (`SYSTEM_ADMIN`)
 
 | Method | Route                                          | Access            |
 | ------ | ---------------------------------------------- | ----------------- |
-| GET/POST | `/admin/membership/plans`                    | GET ADMIN+FRONT_DESK / POST ADMIN |
-| PATCH  | `/admin/membership/plans/:id`                  | ADMIN             |
-| PATCH  | `/admin/membership/plans/:id/scopes`           | ADMIN             |
-| POST/GET | `/admin/membership/customers`                | ADMIN+FRONT_DESK  |
-| POST/GET | `/admin/membership/memberships`              | ADMIN+FRONT_DESK  |
-| PATCH  | `/admin/membership/memberships/:id/status`     | ADMIN+FRONT_DESK  |
-| POST   | `/admin/membership/staff`                      | ADMIN             |
-| PATCH  | `/admin/membership/staff/:userId/status`       | ADMIN             |
-| POST   | `/admin/membership/intents/:id/confirm`        | ADMIN             |
+| GET/POST | `/admin/membership/plans`                    | SYSTEM_ADMIN                      |
+| PATCH  | `/admin/membership/plans/:id`                  | SYSTEM_ADMIN      |
+| PATCH  | `/admin/membership/plans/:id/scopes`           | SYSTEM_ADMIN      |
+| POST/GET | `/admin/membership/customers`                | SYSTEM_ADMIN      |
+| POST/GET | `/admin/membership/memberships`              | SYSTEM_ADMIN      |
+| PATCH  | `/admin/membership/memberships/:id/status`     | SYSTEM_ADMIN      |
+| POST   | `/admin/membership/staff`                      | SYSTEM_ADMIN      |
+| PATCH  | `/admin/membership/staff/:userId/status`       | SYSTEM_ADMIN      |
+| POST   | `/admin/membership/intents/:id/confirm`        | SYSTEM_ADMIN      |
 
-## Physical access control (`ADMIN`, some `FRONT_DESK`)
+## Physical access control (`SYSTEM_ADMIN`)
 
 | Method | Route                                          | Access            |
 | ------ | ---------------------------------------------- | ----------------- |
 | GET    | `/access/me`                                   | authenticated     |
-| GET/POST | `/admin/access/devices`                      | GET ADMIN+FRONT_DESK / POST ADMIN |
-| PATCH  | `/admin/access/devices/:id/status`             | ADMIN             |
-| GET    | `/admin/access/events/:id`                     | ADMIN+FRONT_DESK  |
-| GET    | `/admin/access/history`                        | ADMIN+FRONT_DESK  |
+| GET/POST | `/admin/access/devices`                      | SYSTEM_ADMIN                      |
+| PATCH  | `/admin/access/devices/:id/status`             | SYSTEM_ADMIN      |
+| GET    | `/admin/access/events/:id`                     | SYSTEM_ADMIN      |
+| GET    | `/admin/access/history`                        | SYSTEM_ADMIN      |
 | GET    | `/access/credentials/me`                       | authenticated     |
-| POST   | `/admin/access/credentials/pin`                | ADMIN+FRONT_DESK  |
-| POST   | `/admin/access/credentials/external-reference` | ADMIN+FRONT_DESK  |
-| GET    | `/admin/access/credentials/user/:userId`       | ADMIN+FRONT_DESK  |
-| PATCH  | `/admin/access/credentials/:id/revoke`         | ADMIN+FRONT_DESK  |
-| POST   | `/admin/access/mock/events`                    | ADMIN             |
+| POST   | `/admin/access/credentials/pin`                | SYSTEM_ADMIN      |
+| POST   | `/admin/access/credentials/external-reference` | SYSTEM_ADMIN      |
+| GET    | `/admin/access/credentials/user/:userId`       | SYSTEM_ADMIN      |
+| PATCH  | `/admin/access/credentials/:id/revoke`         | SYSTEM_ADMIN      |
+| POST   | `/admin/access/mock/events`                    | SYSTEM_ADMIN      |
 
-## Facilities (`ADMIN`, some `FRONT_DESK`)
+## Facilities (`SYSTEM_ADMIN`)
 
 | Method | Route                                             | Access           |
 | ------ | ------------------------------------------------- | ---------------- |
-| GET/POST | `/admin/facilities/branches`                    | GET ADMIN+FRONT_DESK / POST ADMIN |
-| PATCH  | `/admin/facilities/branches/:id`                  | ADMIN            |
-| GET/POST | `/admin/facilities/rooms`                       | GET ADMIN+FRONT_DESK / POST ADMIN |
-| PATCH  | `/admin/facilities/rooms/:id`                     | ADMIN            |
-| GET/POST | `/admin/facilities/access-points`               | GET ADMIN+FRONT_DESK / POST ADMIN |
-| POST   | `/admin/facilities/equipment-assignments`         | ADMIN            |
-| GET/POST | `/admin/facilities/maintenance`                 | ADMIN+FRONT_DESK |
-| PATCH  | `/admin/facilities/maintenance/:id/start`         | ADMIN+FRONT_DESK |
-| PATCH  | `/admin/facilities/maintenance/:id/complete`      | ADMIN+FRONT_DESK |
+| GET/POST | `/admin/facilities/branches`                    | SYSTEM_ADMIN                      |
+| PATCH  | `/admin/facilities/branches/:id`                  | SYSTEM_ADMIN     |
+| GET/POST | `/admin/facilities/rooms`                       | SYSTEM_ADMIN                      |
+| PATCH  | `/admin/facilities/rooms/:id`                     | SYSTEM_ADMIN     |
+| GET/POST | `/admin/facilities/access-points`               | SYSTEM_ADMIN                      |
+| POST   | `/admin/facilities/equipment-assignments`         | SYSTEM_ADMIN     |
+| GET/POST | `/admin/facilities/maintenance`                 | SYSTEM_ADMIN     |
+| PATCH  | `/admin/facilities/maintenance/:id/start`         | SYSTEM_ADMIN     |
+| PATCH  | `/admin/facilities/maintenance/:id/complete`      | SYSTEM_ADMIN     |
 
 ## Notifications
 
@@ -370,8 +373,7 @@ Body weight uses `KG`/`LB` and height `CM`/`IN` at the boundary; `measuredOn` is
 | ------ | ------------------------------ | ------------- | ------------------------------------------ |
 | POST   | `/routines`                    | authenticated | Create a routine                           |
 | GET    | `/routines`                    | authenticated | List routines (`scope` = `mine`\|`templates`) |
-| GET    | `/routines/assignments/me`     | authenticated | Routines assigned to the caller            |
-| GET    | `/routines/assignments/coach`  | COACH/ADMIN   | Routines the coach has assigned            |
+| GET    | `/routines/assignments/me`     | authenticated | Routines assigned to the caller (assigning was removed in franja 7a; earlier assignments stay listed) |
 | POST   | `/routines/import`             | authenticated | Bulk import routines (1–200)               |
 | PATCH  | `/routines/exercises/:id`      | owner         | Update a routine exercise                  |
 | DELETE | `/routines/exercises/:id`      | owner         | Remove a routine exercise                  |
@@ -379,7 +381,6 @@ Body weight uses `KG`/`LB` and height `CM`/`IN` at the boundary; `measuredOn` is
 | PATCH  | `/routines/:id`                | owner         | Update a routine (incl. `estado`)          |
 | DELETE | `/routines/:id`                | owner         | Delete a routine                           |
 | POST   | `/routines/:id/exercises`      | owner         | Add an exercise to a routine               |
-| POST   | `/routines/:id/assign`         | COACH/ADMIN   | Assign a routine to a client               |
 | POST   | `/routines/:id/start`          | owner         | Start a workout session from a routine     |
 
 Physical access control, facilities and membership responses use the same `{ ok, data }` envelope and `application/problem+json` errors as the rest of the API. Full request/response schemas live in `openapi.yaml`.

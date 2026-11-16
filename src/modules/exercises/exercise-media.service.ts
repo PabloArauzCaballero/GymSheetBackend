@@ -479,8 +479,9 @@ export class ExerciseMediaService {
     authenticatedUser: AuthenticatedUser,
     exercise: ExerciseModel,
   ): void {
+    // The global catalog is REPP's (ADR-0019): no gym role manages its media.
     const canManageGlobal =
-      exercise.type === ExerciseType.GLOBAL && authenticatedUser.role === UserRole.ADMIN;
+      exercise.type === ExerciseType.GLOBAL && authenticatedUser.role === UserRole.SYSTEM_ADMIN;
     const canManagePersonal =
       exercise.type === ExerciseType.PERSONAL &&
       exercise.createdByUserId === authenticatedUser.id;
