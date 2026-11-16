@@ -2,6 +2,7 @@ import * as dotenv from "dotenv";
 import { z } from "zod";
 import { antibotEnvironmentShape, refineAntibotEnvironment } from "./antibot-env";
 import { identityEnvironmentShape, refineIdentityEnvironment } from "./identity-env";
+import { mediaEnvironmentShape, refineMediaEnvironment } from "./media-env";
 import { privacyEnvironmentShape, refinePrivacyEnvironment } from "./privacy-env";
 
 // dotenv v17 prints an unstructured banner to stdout on load, which corrupts
@@ -541,7 +542,8 @@ export const environmentSchema = z
     /**
      * Almacenamiento de media (arquitectura de puertos y adaptadores). `local`
      * persiste en disco vía el adaptador Multer; `minio` en un almacén
-     * S3-compatible auto-hospedado e INMUTABLE (ver ADR-0010);
+     * S3-compatible auto-hospedado: el catálogo es inmutable (ADR-0010) y el
+     * contenido de las personas se borra de verdad (ADR-0017);
      * `cloudinary`/`s3` requieren su adaptador implementado (hoy detienen el
      * arranque, sin fallback silencioso).
      */
@@ -641,11 +643,13 @@ export const environmentSchema = z
     ...antibotEnvironmentShape,
     ...identityEnvironmentShape,
     ...privacyEnvironmentShape,
+    ...mediaEnvironmentShape,
   })
   .superRefine((configuration, context) => {
     refineAntibotEnvironment(configuration, context);
     refineIdentityEnvironment(configuration, context);
     refinePrivacyEnvironment(configuration, context);
+    refineMediaEnvironment(configuration, context);
     if (configuration.DB_POOL_MIN > configuration.DB_POOL_MAX)
       context.addIssue({
         code: z.ZodIssueCode.custom,

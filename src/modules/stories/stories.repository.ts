@@ -300,7 +300,7 @@ export class StoriesRepository {
               WHERE st.user_id = a.user_id
                 AND st.expires_at > now()
                 -- Moderación: una story retirada deja de servirse al instante,
-                -- aunque su binario siga en el almacén (ADR-0010).
+                -- aunque su binario siga en el almacén como evidencia (ADR-0017).
                 AND st.hidden_at IS NULL
                 AND (
                   st.user_id = CAST(:viewerId AS uuid)

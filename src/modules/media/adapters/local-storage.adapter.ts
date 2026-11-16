@@ -36,7 +36,6 @@ export interface LocalStorageConfig {
  */
 export class LocalStorageAdapter implements MediaStorageProvider {
   readonly name = "local" as const;
-  readonly immutable = false;
   private readonly root: string;
   private readonly publicBaseUrl: string;
 
@@ -74,6 +73,11 @@ export class LocalStorageAdapter implements MediaStorageProvider {
       checksumSha256,
       reused,
     };
+  }
+
+  /** A local disk is development storage: every key inside the root is deletable. */
+  canRemove(): boolean {
+    return true;
   }
 
   async remove(key: string): Promise<void> {

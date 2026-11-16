@@ -111,7 +111,7 @@ describe("reels publication and owner feed (e2e)", () => {
   const downloadedMedia = Buffer.from("private reel bytes");
   const storage: MediaStorageProvider = {
     name: "local",
-    immutable: false,
+    canRemove: () => true,
     upload: jest.fn(async (input, target) => {
       if (target.category !== "reels")
         throw new Error("Unexpected storage target");

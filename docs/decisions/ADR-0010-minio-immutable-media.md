@@ -1,6 +1,9 @@
 # ADR-0010 — MinIO como almacén de media inmutable, ordenado por usuario
 
-Estado: **aceptado**
+Estado: **aceptado; reemplazado en parte** por
+[ADR-0017](./ADR-0017-borrado-real-del-contenido-de-las-personas.md) (2026-11-16): el contenido de
+las personas (`users/…`) se borra de verdad; el catálogo (`catalog/`, `ejercicios/`) conserva lo
+que sigue. El texto de abajo se deja como se decidió.
 Fecha: 2026-09-13
 Cierra los inputs pendientes de [ADR-0007](./ADR-0007-pluggable-media-storage.md)
 ("proveedor elegido (Cloudinary vs S3-compatible)").

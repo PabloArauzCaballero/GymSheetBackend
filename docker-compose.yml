@@ -50,6 +50,8 @@ x-app-environment: &app-environment
   # Media storage (ports & adapters). `local` writes to the media-data volume the
   # api service mounts at /app/storage/media and serves under the public base URL.
   # Switch to cloudinary/s3 by implementing the adapter and setting the provider.
+  # `local` always deletes people's content for real (ADR-0017); the MinIO-only
+  # MEDIA_USER_CONTENT_DELETABLE does not apply here.
   MEDIA_STORAGE_PROVIDER: ${MEDIA_STORAGE_PROVIDER:-local}
   MEDIA_STORAGE_LOCAL_ROOT: ${MEDIA_STORAGE_LOCAL_ROOT:-/app/storage/media}
   MEDIA_STORAGE_PUBLIC_BASE_URL: ${MEDIA_STORAGE_PUBLIC_BASE_URL:-http://localhost:3001/media}

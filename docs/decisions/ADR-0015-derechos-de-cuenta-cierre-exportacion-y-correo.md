@@ -29,8 +29,10 @@ evasión: quien acumulaba sanciones cerraba la cuenta y se registraba con el mis
   claves por trabajo: un archivo que fallaba reintentaba los otros 99 y un dead-letter dejaba lotes
   enteros sin borrar. `media.release` guarda el proveedor de cada clave (no borra en otro almacén),
   valida el sobre con Zod, reintenta 8 veces con backoff y termina en dead-letter.
-- El borrado pasa por `MediaRetentionService`: sólo si ninguna otra fila referencia el archivo, y con
-  almacenamiento inmutable (ADR-0010) el binario se conserva y queda en el log.
+- El borrado pasa por `MediaRetentionService`: sólo si ninguna otra fila referencia el archivo. Con
+  MinIO se borran todas las versiones del archivo
+  ([ADR-0017](ADR-0017-borrado-real-del-contenido-de-las-personas.md)); sólo con
+  `MEDIA_USER_CONTENT_DELETABLE=false` el binario se conserva y queda en el log.
 
 ### 3. Exportación y cambio de correo
 

@@ -3,7 +3,7 @@ title: "Referencia — Variables de entorno"
 type: reference
 status: verified
 criticality: high
-last_reviewed: "2026-08-06"
+last_reviewed: "2026-11-16"
 source_revision: "27f3fd2"
 source_files: [".env.example"]
 tags: [backend, reference, config]
@@ -117,6 +117,15 @@ porque ese despliegue arranca con `NODE_ENV=development` y la validación de pro
 | `WORKER_POLL_INTERVAL_MS` `WORKER_BATCH_SIZE` `WORKER_CONCURRENCY` `WORKER_LOCK_TIMEOUT_MS` `WORKER_MAX_ATTEMPTS` | Loop de workers |
 | `OUTBOX_RETENTION_DAYS` `OUTBOX_PRUNE_BATCH_SIZE` | Retención de outbox |
 | `REMINDER_SCAN_INTERVAL_MS` | Escaneo de recordatorios |
+
+## Almacenamiento de media
+
+| Variable | Propósito | Por defecto | Requerida |
+|---|---|---|---:|
+| `MEDIA_STORAGE_PROVIDER` | `local` (disco) o `minio` (ADR-0010, ADR-0017) | `local` | No |
+| `MEDIA_STORAGE_LOCAL_ROOT` `MEDIA_STORAGE_PUBLIC_BASE_URL` | Raíz en disco y URL pública del media | `storage/media`, `http://localhost:3000/media` | No |
+| `MINIO_ENDPOINT` `MINIO_ACCESS_KEY` `MINIO_SECRET_KEY` `MINIO_BUCKET` | Conexión a MinIO (host interno, no la URL pública) | vacío, `gymsheet-media` | Si `minio` (**secreto** la clave) |
+| `MEDIA_USER_CONTENT_DELETABLE` | `true`: el usuario MinIO de la API puede borrar todas las versiones bajo `users/*` (política en ADR-0017). `false`: el contenido de las personas se conserva y ningún texto puede prometer su borrado. Sólo `true`/`false`; el disco local siempre borra | vacío = `true` | **Sí en producción con `minio`** |
 
 ## Notificaciones (gateway externo)
 

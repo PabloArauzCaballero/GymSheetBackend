@@ -95,9 +95,12 @@ con `null`.
 - Borrar un mensaje «para todos» encola, en la misma transacción, un trabajo `media.release` en el
   outbox (8 intentos con backoff, luego dead-letter). `MediaReleaseService` lo drena desde la API
   cada minuto y borra el binario a través de `MediaRetentionService` (respeta el recuento de
-  referencias). Con almacenamiento inmutable (ADR-0010) el binario **se conserva** y queda en el log:
-  los textos no pueden prometer el borrado del archivo en esa configuración. El cierre de cuenta usa
-  la misma cola, un trabajo por archivo (ADR-0015).
+  referencias). Con MinIO el archivo y **todas sus versiones** se borran
+  ([ADR-0017](ADR-0017-borrado-real-del-contenido-de-las-personas.md)); un borrado rechazado deja
+  el trabajo en dead-letter. Los textos pueden prometer el borrado del archivo salvo con
+  `MEDIA_USER_CONTENT_DELETABLE=false`, en que el binario se conserva y queda en el log. (Hasta
+  ADR-0017 regía ADR-0010: con MinIO el binario se conservaba siempre.) El cierre de cuenta usa la
+  misma cola, un trabajo por archivo (ADR-0015).
 
 ### 6. Cuenta expulsada: qué se conserva hoy (estado del código, 2026-11-19)
 

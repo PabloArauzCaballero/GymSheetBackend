@@ -95,21 +95,40 @@ export class MediaRetentionService {
       return { fileRemoved: false };
     }
 
-    // Almacén inmutable (ADR-0010): la fila ya cayó —la story caduca, la foto
-    // sale de la galería— pero el binario se conserva por requisito de
-    // producto. Se informa aquí en vez de dejar que el no-op del adaptador
-    // haga pasar por borrado algo que no lo fue.
-    if (this.storage.immutable) {
+    // A key the storage keeps (the catalog of ADR-0010, or a person's content
+    // on a MinIO that does not declare deletion, ADR-0017): the row is gone —
+    // the story expires, the photo leaves the gallery— but the binary stays.
+    // Reported here instead of letting the adapter's no-op pass as a deletion.
+    if (!this.storage.canRemove(storageKey)) {
       this.logger.log({
         event: "media.retention.file_kept",
         storageKey,
-        reason: "immutable_storage",
+        reason: "storage_keeps_key",
       });
       return { fileRemoved: false };
     }
 
-    await this.storage.remove(storageKey);
+    // A rejected removal propagates: the outbox job retries and dead-letters,
+    // and a synchronous caller sees the failure instead of a false success.
+    try {
+      await this.storage.remove(storageKey);
+    } catch (error: unknown) {
+      this.logger.error({
+        event: "media.retention.remove_failed",
+        storageKey,
+        errorName: error instanceof Error ? error.name : "UnknownError",
+        errorCode: storageErrorCode(error),
+      });
+      throw error;
+    }
     this.logger.log({ event: "media.retention.file_removed", storageKey });
     return { fileRemoved: true };
   }
+}
+
+/** The S3 error code (e.g. `AccessDenied`) that tells operations what to fix. */
+function storageErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
 }

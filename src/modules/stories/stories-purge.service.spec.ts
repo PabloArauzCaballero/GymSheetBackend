@@ -60,7 +60,7 @@ function createRetention(options: {
         Promise.resolve(referenced.has(key)),
       ),
     } as unknown as MediaReferencesRepository,
-    { name: "local", remove } as unknown as MediaStorageProvider,
+    { name: "local", remove, canRemove: () => true } as unknown as MediaStorageProvider,
   );
   return { retention, remove };
 }

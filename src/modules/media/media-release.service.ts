@@ -37,8 +37,10 @@ export type MediaReleaseRequest = {
  * per file: a failed removal is retried alone with the outbox backoff and
  * ends in dead-letter without holding back the others. The removal itself
  * goes through `MediaRetentionService`, which still refuses to delete a
- * binary another row references (content-addressed keys) and keeps it on
- * immutable storage (ADR-0010).
+ * binary another row references (content-addressed keys) and keeps a key
+ * the storage does not delete (catalog, ADR-0010). A removal the storage
+ * rejects fails the job, so it is retried and ends visible in dead-letter
+ * rather than completed over a surviving file (ADR-0017).
  *
  * Drained from the API process on an `unref` timer, like the disappearing
  * chat purge; several instances are safe because claiming uses SKIP LOCKED.

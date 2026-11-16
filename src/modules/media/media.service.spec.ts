@@ -58,7 +58,7 @@ describe("MediaService", () => {
   beforeEach(() => {
     storage = {
       name: "local",
-      immutable: false,
+      canRemove: jest.fn().mockReturnValue(true),
       upload: jest.fn().mockResolvedValue(fakeStored()),
       download: jest.fn(),
       remove: jest.fn(),

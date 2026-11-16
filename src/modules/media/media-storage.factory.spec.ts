@@ -21,10 +21,10 @@ describe("createMediaStorageProvider", () => {
     const provider = createMediaStorageProvider({ ...base, provider: "local" });
     expect(provider).toBeInstanceOf(LocalStorageAdapter);
     expect(provider.name).toBe("local");
-    expect(provider.immutable).toBe(false);
+    expect(provider.canRemove("catalog/abc.jpg")).toBe(true);
   });
 
-  it("returns the minio adapter, declared immutable, when configured", () => {
+  it("returns the minio adapter, deleting people's content and keeping the catalog, when configured", () => {
     const provider = createMediaStorageProvider({
       ...base,
       provider: "minio",
@@ -32,7 +32,17 @@ describe("createMediaStorageProvider", () => {
     });
     expect(provider).toBeInstanceOf(MinioStorageAdapter);
     expect(provider.name).toBe("minio");
-    expect(provider.immutable).toBe(true);
+    expect(provider.canRemove("users/u1/stories/abc.jpg")).toBe(true);
+    expect(provider.canRemove("catalog/abc.jpg")).toBe(false);
+  });
+
+  it("keeps people's content on a minio deployment that declares it not deletable", () => {
+    const provider = createMediaStorageProvider({
+      ...base,
+      provider: "minio",
+      minio: { ...minioCredentials, userContentDeletable: false },
+    });
+    expect(provider.canRemove("users/u1/stories/abc.jpg")).toBe(false);
   });
 
   /**
