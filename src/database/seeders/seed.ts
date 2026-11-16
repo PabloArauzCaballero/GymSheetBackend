@@ -27,6 +27,8 @@ interface SeedUser {
   password: string;
   role: UserRole;
   status: UserStatus;
+  /** Scenario accounts finished signup, email included; the verification flow is tested with fresh signups. */
+  emailVerified?: true;
 }
 
 interface SeedEnvironment {
@@ -108,7 +110,7 @@ export function resolveSeedUsers(
       seedEnvironment.SEED_MOCK_PASSWORD,
       "SEED_MOCK_PASSWORD",
     );
-    users.push(
+    const scenarioUsers: SeedUser[] = [
       {
         // A member like any other: there are no gym coaches any more (ADR-0019).
         email: "coach.mock@gymsheet.local",
@@ -145,7 +147,8 @@ export function resolveSeedUsers(
         role: UserRole.CLIENT,
         status: UserStatus.ACTIVE,
       })),
-    );
+    ];
+    users.push(...scenarioUsers.map((user) => ({ ...user, emailVerified: true as const })));
   }
   return users;
 }
@@ -180,7 +183,8 @@ async function upsertUserAccount(
       existing.role === seedUser.role &&
       existing.status === seedUser.status &&
       existing.birthDate !== null &&
-      existing.gender !== null;
+      existing.gender !== null &&
+      (!seedUser.emailVerified || existing.emailVerifiedAt !== null);
     if (unchanged) return "unchanged";
     const passwordHash = passwordMatches
       ? existing.passwordHash
@@ -193,6 +197,7 @@ async function upsertUserAccount(
         status: seedUser.status,
         birthDate: existing.birthDate ?? SEED_USER_DEMOGRAPHICS.birthDate,
         gender: existing.gender ?? SEED_USER_DEMOGRAPHICS.gender,
+        ...(seedUser.emailVerified ? { emailVerifiedAt: existing.emailVerifiedAt ?? new Date() } : {}),
       },
       { transaction },
     );
@@ -209,6 +214,7 @@ async function upsertUserAccount(
     status: seedUser.status,
     birthDate: SEED_USER_DEMOGRAPHICS.birthDate,
     gender: SEED_USER_DEMOGRAPHICS.gender,
+    ...(seedUser.emailVerified ? { emailVerifiedAt: new Date() } : {}),
   };
   await UserModel.create(
     { email: seedUser.email, ...managedValues },
