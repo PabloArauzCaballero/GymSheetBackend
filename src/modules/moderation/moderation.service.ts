@@ -14,6 +14,7 @@ import {
 } from "../../common/enums/domain.enums";
 import { DISCOVERY_PASS_ORIGIN } from "../social/discovery-pass.model";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
+import { platformScopeOf } from "../../common/tenancy/tenant-scope";
 import { ConnectionModel } from "../social/connection.model";
 import { DiscoveryPassModel } from "../social/discovery-pass.model";
 import { SocialRecommendationOutboxService } from "../social/social-recommendation-outbox.service";
@@ -56,6 +57,8 @@ const CROSS_TENANT_TARGETS: ReadonlySet<ModerationTargetKindValue> = new Set([
 export interface CasePreview {
   targetKind: ModerationTargetKindValue;
   targetId: string;
+  /** Gym of the reported content: the platform queue mixes every gym. */
+  tenantId: string;
   reportedUser: { id: string; name: string; suspendedUntil: string | null };
   reports: {
     id: string;
@@ -284,7 +287,7 @@ export class ModerationService {
 
   listQueue(actor: AuthenticatedUser, page: number, pageSize: number) {
     return this.repository.findQueue({
-      tenantScope: actor.tenantScope,
+      tenantScope: platformScopeOf(actor),
       limit: pageSize,
       offset: (page - 1) * pageSize,
     });
@@ -306,7 +309,7 @@ export class ModerationService {
     const reports = await this.repository.findReportsForTarget(
       targetKind,
       targetId,
-      actor.tenantScope,
+      platformScopeOf(actor),
     );
     if (reports.length === 0) {
       throw new NotFoundException("No encontramos ese caso.");
@@ -324,6 +327,7 @@ export class ModerationService {
     return {
       targetKind,
       targetId,
+      tenantId: reports[0].tenantId,
       reportedUser: {
         id: reportedUserId,
         name: person.name,
@@ -390,7 +394,7 @@ export class ModerationService {
       targetKind,
       targetId,
       actor.id,
-      actor.tenantScope,
+      platformScopeOf(actor),
     );
     if (affected === 0) {
       throw new ConflictException(
@@ -409,7 +413,7 @@ export class ModerationService {
       targetKind,
       targetId,
       actor.id,
-      actor.tenantScope,
+      platformScopeOf(actor),
     );
     if (affected === 0) {
       throw new ConflictException("Este caso no estaba asignado a ti.");
@@ -437,7 +441,7 @@ export class ModerationService {
     const openReports = await this.repository.findOpenReportsForTarget(
       targetKind,
       targetId,
-      actor.tenantScope,
+      platformScopeOf(actor),
     );
     if (openReports.length === 0) {
       throw new NotFoundException("Este caso ya no está abierto.");
@@ -542,7 +546,7 @@ export class ModerationService {
           note: input.note,
           moderatorUserId: actor.id,
           discarded: !input.sanction && !input.hideContent && !input.confirmMinor,
-          tenantScope: actor.tenantScope,
+          tenantScope: platformScopeOf(actor),
         },
         transaction,
       );
@@ -557,6 +561,9 @@ export class ModerationService {
 
     return {
       resolved: true,
+      /** Gym of the reported content: the platform queue mixes every gym. */
+      tenantId,
+      resolution: this.resolutionFor(input, sanction),
       reportsClosed: openReports.length,
       sanction: sanction
         ? {
@@ -610,8 +617,8 @@ export class ModerationService {
         channel: NotificationChannel.IN_APP,
         subject: "Revisamos tu reporte",
         body: input.hideContent
-          ? "Gracias por avisar. Revisamos el contenido que reportaste y lo retiramos."
-          : "Gracias por avisar. Revisamos el contenido que reportaste.",
+          ? "Gracias por avisar. El equipo de moderación de REPP revisó el contenido que reportaste y lo retiró."
+          : "Gracias por avisar. El equipo de moderación de REPP revisó el contenido que reportaste.",
         deduplicationKey: `moderation.report-reviewed:${report.id}`,
       }),
     );
@@ -655,7 +662,8 @@ export class ModerationService {
       ModerationTargetKind.USER,
       userId,
     );
-    if (!owner || (actor.tenantScope && owner.tenantId !== actor.tenantScope)) {
+    const scope = platformScopeOf(actor);
+    if (!owner || (scope && owner.tenantId !== scope)) {
       throw new NotFoundException("Usuario no encontrado.");
     }
     const [strikes, activeStrikes] = await Promise.all([

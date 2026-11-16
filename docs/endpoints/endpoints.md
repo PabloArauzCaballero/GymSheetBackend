@@ -46,7 +46,9 @@ The API does not return stack traces or raw infrastructure errors to clients. Un
 - `page` starts at 1.
 - `pageSize` is capped at 100.
 - Request bodies are capped by `REQUEST_BODY_LIMIT`.
-- Administrative routes require an active database user with role `ADMIN`.
+- Administrative routes require an active database user with role `ADMIN`, except the platform
+  surfaces: social moderation (`MODERATOR` or `SYSTEM_ADMIN`, see below) and `SYSTEM_ADMIN`-only
+  routes.
 - Personal exercises, media, sessions, and sets enforce object ownership.
 - Legacy Spanish v1 fields remain at the HTTP boundary; internal identifiers are English.
 - Access tokens require the expected signature, expiration, issuer, audience, and algorithm.
@@ -62,7 +64,7 @@ The API does not return stack traces or raw infrastructure errors to clients. Un
 | GET    | `/gateway/health` | Compatibility gateway health response                        |
 | GET    | `/gateway/routes` | Public capability summary without privileged route details   |
 
-Liveness remains independent of PostgreSQL to avoid restart loops during temporary database outages. Readiness returns `503` when the application should not receive traffic. Production ingress should restrict `/health/metrics` to the monitoring network even though the NestJS route is public for scraper compatibility.
+Liveness remains independent of PostgreSQL to avoid restart loops during temporary database outages. Readiness returns `503` when the application should not receive traffic. Production ingress should restrict `/health/metrics` to the monitoring network even though the NestJS route is public for scraper compatibility. Besides `gym_sheet_outbox_jobs{queue,status}`, the gauge `gym_sheet_outbox_dead_letter_jobs{queue="media.release"}` is always rendered (0 included): alert on `> 0` (ADR-0017 runbook).
 
 ## Authentication
 
@@ -105,7 +107,7 @@ A global guard answers `428 LEGAL_ACCEPTANCE_REQUIRED` to authenticated requests
 | GET    | `/me/consents`        | authenticated | `{ consents: [{ kind, granted, version, currentVersion, upToDate, grantedAt, revokedAt }] }`, one entry per kind |
 | PUT    | `/me/consents/:kind`  | authenticated | Body `{ granted: true, version }` or `{ granted: false }`; answers the updated entry |
 
-`kind` is `HEALTH`, `ORIENTATION`, `VERIFICATION_SELFIE` or `PRECISE_LOCATION`. Granting needs the current version from `GET /legal/current` (`409 CONSENT_VERSION_OUTDATED` otherwise) and is idempotent; `X-Client-Platform` is stored as the channel. **Revoking erases the datum**: `HEALTH` the onboarding physical considerations, `ORIENTATION` the social-profile orientation and its visibility, `PRECISE_LOCATION` the stored map location (and turns the map off); `VERIFICATION_SELFIE` is only recorded until the selfie check exists. Saving an orientation (`PUT /me/social-profile`) or a map location (`PATCH /me/social-map/location`) without the open consent answers `400 CONSENT_REQUIRED` with `details.kind`. A consent given to an older text stays valid and reports `upToDate: false`.
+`kind` is `HEALTH`, `ORIENTATION`, `VERIFICATION_SELFIE` or `PRECISE_LOCATION`. Granting needs the current version from `GET /legal/current` (`409 CONSENT_VERSION_OUTDATED` otherwise) and is idempotent; `X-Client-Platform` is stored as the channel. **Revoking erases the datum**: `HEALTH` the onboarding physical considerations, `ORIENTATION` the social-profile orientation and its visibility, `PRECISE_LOCATION` the stored map location (and turns the map off); `VERIFICATION_SELFIE` is only recorded until the selfie check exists. Saving an orientation (`PUT /me/social-profile`) or a map location (`PATCH /me/social-map/location`) without the open consent answers `400 CONSENT_REQUIRED` with `details.kind`. A consent given to an older text stays valid and reports `upToDate: false`. Current version of the four kinds: `2026-12-02` (the four checkbox texts changed; every grant recorded with `2026-12-01` now reports `upToDate: false` and the client asks again).
 
 Turning the map off in `PATCH /me/social-discovery-settings` (or turning the social profile off) deletes the stored precise location. Deleting a chat message for everyone also deletes its encrypted file through the outbox queue `media.release` (on MinIO every version of the object is removed; kept only with `MEDIA_USER_CONTENT_DELETABLE=false`, ADR-0017).
 
@@ -136,7 +138,7 @@ Canonical internal units are kilograms for body weight, centimeters for height, 
 | GET    | `/me/export/latest`                | authenticated | `{ export: <status> \| null }`: the caller's most recent request, so a client that lost the id resumes it |
 | GET    | `/me/export/:id`                   | owner         | `{ id, status: PENDING\|READY\|FAILED, requestedAt, completedAt, expiresAt, sizeBytes, downloadPath }` |
 | GET    | `/me/export/:id/download`          | owner         | `application/json` attachment while `READY` and not expired (7 days); `409 ACCOUNT_EXPORT_NOT_READY` before |
-| POST   | `/admin/users/:id/close`           | `ADMIN` (`SYSTEM_ADMIN` too) | Closes a **staff** account of the caller's gym (`ADMIN`, `COACH`, `FRONT_DESK`, `ENTRENADOR_EXTERNO`) with the same erasure, no password or PIN; `200 { closed: true, closedAt }`, audited in `admin.audit_log` (`domain: account`, `action: close`). Another gym's account, a platform admin or an already closed one: `404`; a member: `400 STAFF_CLOSURE_NOT_STAFF`; the caller's own account: `403 STAFF_CLOSURE_SELF`; the gym's last active admin: `403 STAFF_CLOSURE_LAST_ADMIN` |
+| POST   | `/admin/users/:id/close`           | `ADMIN` (`SYSTEM_ADMIN` too) | Closes a **staff** account of the caller's gym (`ADMIN`, `COACH`, `FRONT_DESK`, `ENTRENADOR_EXTERNO`) with the same erasure, no password or PIN; `200 { closed: true, closedAt }`, audited in `admin.audit_log` (`domain: account`, `action: close`). Another gym's account, a platform account (`SYSTEM_ADMIN`, `MODERATOR`) or an already closed one: `404`; a member: `400 STAFF_CLOSURE_NOT_STAFF`; the caller's own account: `403 STAFF_CLOSURE_SELF`; the gym's last active admin: `403 STAFF_CLOSURE_LAST_ADMIN` |
 
 All of them are exempt from the legal-acceptance gate and the password/PIN routes use the auth rate limit. Wrong password: `400 CURRENT_PASSWORD_INVALID`; PIN errors reuse `EMAIL_PIN_INVALID|EXPIRED|EXHAUSTED|COOLDOWN` (the PIN table is `auth.email_verification_pins` with `purpose` `VERIFY_EMAIL|CHANGE_EMAIL|CLOSE_ACCOUNT`, one live code, cooldown and daily cap per purpose). Someone else's export answers `404`.
 
@@ -381,6 +383,33 @@ Body weight uses `KG`/`LB` and height `CM`/`IN` at the boundary; `measuredOn` is
 | POST   | `/routines/:id/start`          | owner         | Start a workout session from a routine     |
 
 Physical access control, facilities and membership responses use the same `{ ok, data }` envelope and `application/problem+json` errors as the rest of the API. Full request/response schemas live in `openapi.yaml`.
+
+## Social moderation (central REPP team, ADR-0018)
+
+Social moderation is done by the central REPP team, never by gym staff. Role `MODERATOR` is
+platform-level: it works the queue of **every gym**; `SYSTEM_ADMIN` also enters (every gym, or only
+the impersonated one). Gym roles (`ADMIN`, `FRONT_DESK`, `COACH`, …) get **`403`** on every route
+below, whatever grants they hold: the `moderation:read` / `moderation:act` permissions no longer
+exist (retired by migration `202611200101-platform-moderators`). No permission grant is needed by a
+moderator.
+
+| Method | Route | Access | Purpose |
+| ------ | ----- | ------ | ------- |
+| POST   | `/me/reports` | authenticated | Report content (unchanged) |
+| GET    | `/admin/moderation/queue?page&pageSize≤50` | MODERATOR, SYSTEM_ADMIN | Open cases of every gym; each row (snake_case) carries `tenant_id` and `tenant_name` |
+| GET    | `/admin/moderation/cases/:targetKind/:targetId` | MODERATOR, SYSTEM_ADMIN | Case file, now with `tenantId` |
+| POST   | `/admin/moderation/cases/:targetKind/:targetId/claim` | MODERATOR, SYSTEM_ADMIN | Claim (`409` if someone else holds it); audited `moderation/claim` |
+| POST   | `/admin/moderation/cases/:targetKind/:targetId/release` | MODERATOR, SYSTEM_ADMIN | Release own claim; audited `moderation/release` |
+| POST   | `/admin/moderation/cases/:targetKind/:targetId/resolve` | MODERATOR, SYSTEM_ADMIN | Verdict (hide/restore content, sanction, confirm/dismiss minor). Response adds `tenantId` and `resolution`. Audited `moderation/resolve` with `metadata { caseKind, tenantId, resolution, sanction, contentHidden, minorConfirmed, reportsClosed }` |
+| GET    | `/admin/moderation/users/:userId/history` | MODERATOR, SYSTEM_ADMIN | Strike history |
+| GET    | `/admin/signups` | MODERATOR, SYSTEM_ADMIN | Signup verdicts (a moderator sees every gym and the rejections) |
+| GET    | `/admin/routines` | MODERATOR, SYSTEM_ADMIN | REPP routine console (official, hidden, open reports) |
+| GET    | `/admin/platform/moderators` | SYSTEM_ADMIN | List the team `[{ id, email, nombreCompleto, estado }]` |
+| PUT    | `/admin/platform/moderators/:userId` | SYSTEM_ADMIN | Make an active member account (`CLIENTE`) a `MODERATOR`; idempotent `200`. Unknown/closed: `404`; staff or `SYSTEM_ADMIN`: `409 MODERATOR_NOT_ASSIGNABLE`. Audited `moderation/moderator-assign` |
+| DELETE | `/admin/platform/moderators/:userId` | SYSTEM_ADMIN | Back to `CLIENTE`, its claimed cases return to the queue; `204`, `404` if not a moderator. Audited `moderation/moderator-revoke` |
+
+Audit rows of a `MODERATOR` are platform rows (`tenant_scope` null). Every notice to the people
+involved names «el equipo de moderación de REPP», never the gym.
 
 ## Main status codes
 

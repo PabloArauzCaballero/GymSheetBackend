@@ -23,7 +23,7 @@ export type E2eApp = {
    */
   register: (label: string, options?: { verifyEmail?: boolean }) => Promise<{ token: string; id: string }>;
   /** Cambia el rol en la base (la sesión se revalida contra la base en cada petición). */
-  promote: (userId: string, role: 'ADMIN' | 'SYSTEM_ADMIN' | 'COACH') => Promise<void>;
+  promote: (userId: string, role: 'ADMIN' | 'SYSTEM_ADMIN' | 'MODERATOR' | 'COACH' | 'FRONT_DESK') => Promise<void>;
   /** SQL de apoyo para preparar o inspeccionar estado que la API no expone. */
   sql: (statement: string, replacements?: Record<string, unknown>) => Promise<void>;
   as: (token: string) => {

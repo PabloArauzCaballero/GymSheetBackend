@@ -182,22 +182,28 @@ describe('Signup anti-bot layer (e2e)', () => {
       await request(http).get(url('/admin/signups?risk=EXTREME')).set('Authorization', `Bearer ${platform.token}`).expect(400);
     });
 
-    it('requires moderation:read for a gym admin and then shows only its gym accepted signups', async () => {
+    it('refuses gym staff even with a legacy moderation:read grant, and shows a platform moderator every verdict (ADR-0018)', async () => {
       const gymAdmin = await signupAs('gymadmin', 'ADMIN');
-      const asGymAdmin = () => request(http).get(url('/admin/signups?limit=100')).set('Authorization', `Bearer ${gymAdmin.token}`);
-      await asGymAdmin().expect(403);
-
+      const frontDesk = await signupAs('frontdesk', 'FRONT_DESK');
+      // The grant the gym-level moderation used to need: it no longer opens anything.
       await sequelize.query(
         `INSERT INTO admin.permissions (key, label, description, domain) VALUES ('moderation:read', 'Moderation read', 'e2e', 'moderation')
          ON CONFLICT (key) DO NOTHING`,
       );
       await sequelize.query(
-        `INSERT INTO admin.user_permissions (id, user_id, permission_key) VALUES (gen_random_uuid(), :userId, 'moderation:read')`,
-        { replacements: { userId: gymAdmin.userId } },
+        `INSERT INTO admin.user_permissions (id, user_id, permission_key)
+         VALUES (gen_random_uuid(), :adminId, 'moderation:read'), (gen_random_uuid(), :deskId, 'moderation:read')`,
+        { replacements: { adminId: gymAdmin.userId, deskId: frontDesk.userId } },
       );
-      const rows = (await asGymAdmin().expect(200)).body.data as Record<string, unknown>[];
-      expect(rows.length).toBeGreaterThan(0);
-      expect(rows.every((row) => row.accepted === true && typeof row.userId === 'string')).toBe(true);
+      for (const staff of [gymAdmin, frontDesk]) {
+        await request(http).get(url('/admin/signups?limit=100')).set('Authorization', `Bearer ${staff.token}`).expect(403);
+      }
+
+      const moderator = await signupAs('moderator', 'MODERATOR');
+      const rows = (await request(http).get(url('/admin/signups?limit=100'))
+        .set('Authorization', `Bearer ${moderator.token}`).expect(200)).body.data as Record<string, unknown>[];
+      expect(rows.some((row) => row.accepted === true)).toBe(true);
+      expect(rows.some((row) => row.rejectReason === 'TURNSTILE_FAILED')).toBe(true);
     });
   });
 

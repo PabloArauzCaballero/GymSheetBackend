@@ -9,6 +9,12 @@ export enum UserRole {
    * capacidad que sí necesita.
    */
   SYSTEM_ADMIN = "SYSTEM_ADMIN",
+  /**
+   * Platform moderator: a member of the central REPP team that moderates the
+   * social content of EVERY gym (ADR-0018). It is not gym staff: it satisfies
+   * no gym role, needs no permission grant, and only SYSTEM_ADMIN assigns it.
+   */
+  MODERATOR = "MODERATOR",
   ADMIN = "ADMIN",
   CLIENT = "CLIENTE",
   EXTERNAL_TRAINER = "ENTRENADOR_EXTERNO",

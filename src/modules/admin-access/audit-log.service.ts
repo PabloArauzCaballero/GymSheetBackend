@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { hashClientIp } from '../../common/privacy/client-ip-hash';
+import { platformScopeOf } from '../../common/tenancy/tenant-scope';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { AdminAuditLogModel } from './audit-log.model';
 import {
@@ -84,8 +85,9 @@ export class AuditLogService {
       actorRole: actor.role,
       // Se guarda el alcance sobre el que se actuó, no el gimnasio del actor:
       // durante una suplantación son cosas distintas y la pregunta que importa
-      // es sobre qué gimnasio cayó la acción.
-      tenantScope: actor.tenantScope,
+      // es sobre qué gimnasio cayó la acción. A platform moderator acts on
+      // every gym, so its rows are platform rows (ADR-0018).
+      tenantScope: platformScopeOf(actor),
       domain: action.domain,
       action: action.action,
       targetKind: action.targetKind,

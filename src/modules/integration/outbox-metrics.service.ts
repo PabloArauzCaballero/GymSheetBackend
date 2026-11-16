@@ -1,5 +1,13 @@
 import { Injectable } from '@nestjs/common';
+import { QueueItemStatus } from '../../common/enums/domain.enums';
 import { OutboxRepository } from './outbox.repository';
+
+/**
+ * Queues whose dead letters are always rendered, zero included, so an alert on
+ * them needs no `absent()` trick: a dead-lettered `media.release` job is a
+ * file of a person that was not erased (ADR-0017, runbook).
+ */
+const WATCHED_DEAD_LETTER_QUEUES = ['media.release'] as const;
 
 /**
  * Renders a Prometheus block describing outbox queue health: how many jobs sit
@@ -29,6 +37,17 @@ export class OutboxMetricsService {
     )) {
       const labels = `queue="${this.escapeLabel(row.queueName)}",status="${this.escapeLabel(row.status)}"`;
       lines.push(`gym_sheet_outbox_jobs{${labels}} ${row.count}`);
+    }
+
+    lines.push(
+      '# HELP gym_sheet_outbox_dead_letter_jobs Dead-lettered outbox jobs of the queues that need a person (always rendered, 0 included).',
+      '# TYPE gym_sheet_outbox_dead_letter_jobs gauge',
+    );
+    for (const queueName of WATCHED_DEAD_LETTER_QUEUES) {
+      const deadLetters = snapshot.depth.find(
+        (row) => row.queueName === queueName && row.status === QueueItemStatus.DEAD_LETTER,
+      );
+      lines.push(`gym_sheet_outbox_dead_letter_jobs{queue="${queueName}"} ${deadLetters?.count ?? 0}`);
     }
 
     lines.push(

@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { SequelizeModule } from "@nestjs/sequelize";
+import { AdminAccessModule } from "../admin-access/admin-access.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { ConnectionModel } from "../social/connection.model";
 import { DiscoveryPassModel } from "../social/discovery-pass.model";
@@ -19,6 +20,8 @@ import { ModerationAutoHideService } from "./moderation-auto-hide.service";
 import { ModerationEvidenceService } from "./moderation-evidence.service";
 import { ModerationMinorService } from "./moderation-minor.service";
 import { ModerationSafeguardsRepository } from "./moderation-safeguards.repository";
+import { PlatformModeratorsController } from "./platform-moderators.controller";
+import { PlatformModeratorsService } from "./platform-moderators.service";
 
 @Module({
   imports: [
@@ -32,11 +35,13 @@ import { ModerationSafeguardsRepository } from "./moderation-safeguards.reposito
     ]),
     NotificationsModule,
     IntegrationModule,
+    // The verdict writes its own audit row (ADR-0018).
+    AdminAccessModule,
     ReelsModule,
     SocialModule,
     MediaModule,
   ],
-  controllers: [ReportsController, ModerationAdminController],
+  controllers: [ReportsController, ModerationAdminController, PlatformModeratorsController],
   providers: [
     ModerationRepository,
     ModerationService,
@@ -44,6 +49,7 @@ import { ModerationSafeguardsRepository } from "./moderation-safeguards.reposito
     ModerationMinorService,
     ModerationEvidenceService,
     ModerationAutoHideService,
+    PlatformModeratorsService,
   ],
   exports: [ModerationService, ModerationEvidenceService],
 })

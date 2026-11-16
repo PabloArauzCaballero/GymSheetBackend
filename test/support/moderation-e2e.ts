@@ -6,10 +6,10 @@ import type { E2eApp } from './e2e-app';
 
 export type Member = { token: string; id: string };
 
-/** Registers a member and a SYSTEM_ADMIN moderator (cross-tenant queue). */
+/** Registers a member of the central REPP moderation team (cross-gym queue, ADR-0018). */
 export async function registerModerator(e2e: E2eApp, label: string): Promise<Member> {
   const moderator = await e2e.register(label);
-  await e2e.promote(moderator.id, 'SYSTEM_ADMIN');
+  await e2e.promote(moderator.id, 'MODERATOR');
   return moderator;
 }
 

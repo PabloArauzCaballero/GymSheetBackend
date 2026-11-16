@@ -2,6 +2,12 @@
 
 Estado: aceptado · Fecha: 2026-11-18 · Amplía [ADR-0013](ADR-0013-antibot-alta-de-cuentas.md)
 
+> **Quién modera (2026-11-16):** las denuncias, la evidencia de mensajes, las sanciones, los menores
+> y el ocultado de contenido los decide el equipo central de REPP (`UserRole.MODERATOR` y
+> `SYSTEM_ADMIN`), no el personal del gimnasio: ver
+> [ADR-0018](ADR-0018-moderacion-central-de-repp.md). Donde este ADR dice «moderación», es ese
+> equipo.
+
 ## Contexto
 
 Los textos legales para Bolivia sólo pueden prometer lo que el código hace. El mapa de datos de la
@@ -76,6 +82,11 @@ persona y tipo (índice único parcial). Las versiones vigentes viven en
 - Un consentimiento dado a una versión anterior sigue vigente y se informa con `upToDate: false`
   para que el cliente vuelva a preguntar. La migración crea filas `LEGACY` para lo que ya existía
   (salud aceptada, orientación guardada, mapa encendido).
+- **2026-11-16 (tercera revisión legal, N2):** los cuatro textos de las casillas cambiaron, así que
+  los cuatro tipos pasan de `2026-12-01` a `2026-12-02`. Toda fila con `2026-12-01` corresponde al
+  texto anterior (el de la rama f2): sigue vigente, se informa con `upToDate: false` y el cliente
+  vuelve a preguntar; aceptar `2026-12-01` responde `409 CONSENT_VERSION_OUTDATED`. Si
+  `2026-12-01` llegó a correr fuera de desarrollo, esas filas son la constancia del texto viejo.
 - Las sentencias de borrado viven en `consents.repository.ts` y tocan tablas de onboarding y social
   a propósito: revocación y borrado son atómicos, y los módulos dueños dependen de `consents`, no al
   revés.

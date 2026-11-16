@@ -215,6 +215,16 @@ En producción el media lo sirve `datacenter-minio`. Con el alias `mc` de root d
 `minio-init` de `docker-compose.coolify.yml` (perfil `media`) aplica la misma política al
 desplegar el MinIO propio del stack.
 
+6. **Vigilancia de la cola muerta (condición de despliegue).** `GET /health/metrics` publica siempre
+   `gym_sheet_outbox_dead_letter_jobs{queue="media.release"}` (gauge leído en vivo de
+   `integration.outbox_jobs`, `0` incluido, así que la alerta no necesita `absent()`). Cada trabajo
+   muerto es un archivo de una persona que no se borró. La alerta es
+   `gym_sheet_outbox_dead_letter_jobs{queue="media.release"} > 0` durante 15 minutos, con un
+   responsable de operaciones nombrado; quien la atiende busca la causa en `media.release.failed`
+   del log, la corrige y reencola con el `UPDATE` del paso 5. Mientras esa alerta no esté
+   configurada en el monitoreo de producción, ningún texto puede decir que «nuestro equipo lo
+   completa» (tercera revisión legal, I-2).
+
 ## Consecuencias
 
 - (+) El derecho de supresión se cumple en el almacén: borrar un mensaje, una foto o una cuenta

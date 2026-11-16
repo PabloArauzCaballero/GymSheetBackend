@@ -237,7 +237,7 @@ describe('Moderation safeguards (e2e)', () => {
     expect((queue.body.data as { target_id: string; auto_hidden: boolean }[]).find((row) => row.target_id === routineId))
       .toMatchObject({ auto_hidden: true });
     const hidden = (await inbox(e2e, author.token)).find((item) => item.tipo === 'CONTENT_HIDDEN');
-    expect(hidden?.mensaje).toContain('mientras una persona del equipo de moderación lo revisa');
+    expect(hidden?.mensaje).toContain('mientras el equipo de moderación de REPP lo revisa');
     expect(hidden?.mensaje).toContain('Motivo: Spam');
 
     await resolveCase(e2e, moderator, { kind: 'ROUTINE', id: routineId }, { hideContent: false });

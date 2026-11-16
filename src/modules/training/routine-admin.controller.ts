@@ -4,6 +4,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/domain.enums';
+import { PLATFORM_MODERATION_ROLES, platformScopeOf } from '../../common/tenancy/tenant-scope';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
@@ -18,13 +19,18 @@ import { CreateRoutineInput, createRoutineSchema } from './training.schemas';
 export class RoutineAdminController {
   constructor(private readonly admin: RoutineAdminService) {}
 
+  /**
+   * The REPP console of routines: official ones, hidden ones and their open
+   * reports. It is platform curation and moderation, not a gym operation
+   * (ADR-0018), so only the platform moderation roles enter.
+   */
   @Get()
-  @RequirePermission(AdminPermissionKey.MODERATION_READ)
+  @Roles(...PLATFORM_MODERATION_ROLES)
   list(
     @CurrentUser() actor: AuthenticatedUser,
     @Query(new ZodValidationPipe(adminRoutineListQuerySchema)) query: AdminRoutineListQuery,
   ) {
-    return this.admin.list(query, actor.tenantScope);
+    return this.admin.list(query, platformScopeOf(actor));
   }
 
   @Post()
