@@ -46,6 +46,15 @@ describe("social discovery preferences API (PostgreSQL integration)", () => {
     const initial = await request(httpServer).get(url("/me/discovery/preferences")).set(auth).expect(200);
     expect(initial.body.data).toEqual({ configured: false, version: 0 });
 
+    // Contract shipped clients rely on: without preferences the deck answers 400 with the stable
+    // code DISCOVERY_PREFERENCES_REQUIRED (status and body unchanged; new clients avoid the call).
+    const blocked = await request(httpServer).get(url("/me/discovery/deck?limit=10")).set(auth).expect(400);
+    expect(blocked.body).toMatchObject({
+      status: 400,
+      code: "DISCOVERY_PREFERENCES_REQUIRED",
+      error: { code: "DISCOVERY_PREFERENCES_REQUIRED" },
+    });
+
     const first = {
       genders: ["FEMALE"], intents: ["TRAINING"], minAge: 22, maxAge: 40,
       radiusKm: 20, flexibleAge: false, flexibleDistance: false, expectedVersion: 0,
