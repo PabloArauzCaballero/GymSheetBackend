@@ -25,6 +25,13 @@ describe("ownMediaKey", () => {
     expect(ownMediaKey(`${base}/users/${me}/publicaciones/b.jpg?x=1`, me, "publicaciones", base)).toBeNull();
     expect(ownMediaKey(`${base}/users/${me}/publicaciones/`, me, "publicaciones", base)).toBeNull();
   });
+
+  it("refuses URLs a parser would normalize: whitespace, control characters, backslashes", () => {
+    expect(ownMediaKey(`${base}/users/${me}/publicaciones/.\t./b.jpg`, me, "publicaciones", base)).toBeNull();
+    expect(ownMediaKey(`${base}/users/${me}/publicaciones/b.jpg\n`, me, "publicaciones", base)).toBeNull();
+    expect(ownMediaKey(` ${base}/users/${me}/publicaciones/b.jpg`, me, "publicaciones", base)).toBeNull();
+    expect(ownMediaKey(`${base}/users/${me}/publicaciones\\..\\..\\${victim}\\b.jpg`, me, "publicaciones", base)).toBeNull();
+  });
 });
 
 describe("isSafeStorageKey", () => {
@@ -34,5 +41,7 @@ describe("isSafeStorageKey", () => {
     expect(isSafeStorageKey("/etc/passwd")).toBe(false);
     expect(isSafeStorageKey(`users/${me}/%2e%2e/a.jpg`)).toBe(false);
     expect(isSafeStorageKey("")).toBe(false);
+    expect(isSafeStorageKey(`users/${me}/a\u0000.jpg`)).toBe(false);
+    expect(isSafeStorageKey(`users/${me}/a b.jpg`)).toBe(false);
   });
 });

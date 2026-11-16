@@ -70,8 +70,12 @@ export class MediaReleaseService implements OnModuleInit, OnModuleDestroy {
 
   async requestRelease(request: MediaReleaseRequest, transaction: Transaction): Promise<void> {
     // Defense in depth: never queue the deletion of a key that is not a plain path.
+    // Defense in depth, fail-safe: an unsafe key is skipped and logged, never
+    // thrown — a throw would abort the caller's whole batch (retention run,
+    // moderation-ordered closure) over one bad row.
     if (!isSafeStorageKey(request.storageKey)) {
-      throw new Error(`Refusing to release an unsafe storage key for ${request.aggregateType}.`);
+      this.logger.warn({ event: "media.release.unsafe_key_skipped", aggregateType: request.aggregateType });
+      return;
     }
     await this.outbox.enqueue(
       {

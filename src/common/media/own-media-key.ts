@@ -7,9 +7,22 @@
  * the media base origin and path, and every key segment must be a plain name.
  */
 
-/** A storage key made only of plain segments: no empty, `.`, `..` or percent-encoded parts. */
+/** Whitespace or control characters: parsers strip or normalize them differently. */
+const UNSAFE_CHARACTERS = {
+  test(value: string): boolean {
+    for (const character of value) {
+      const code = character.codePointAt(0) ?? 0;
+      if (code <= 0x1f || code === 0x7f || /\s/u.test(character)) return true;
+    }
+    return false;
+  },
+};
+
+/** A storage key made only of plain segments: no empty, `.`, `..`, percent-encoded or control-character parts. */
 export function isSafeStorageKey(key: string): boolean {
-  if (!key || key.startsWith("/") || key.includes("\\") || key.includes("%")) return false;
+  if (!key || key.startsWith("/") || key.includes("\\") || key.includes("%") || UNSAFE_CHARACTERS.test(key)) {
+    return false;
+  }
   return key.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
 }
 
@@ -23,7 +36,9 @@ export function ownMediaKey(
   folder: string,
   publicBaseUrl: string,
 ): string | null {
-  if (!url || !userId) return null;
+  // Rejected before parsing: the URL parser drops tabs/newlines and trims spaces,
+  // so the string it validates would not be the string that was stored.
+  if (!url || !userId || UNSAFE_CHARACTERS.test(url)) return null;
   let parsed: URL;
   let base: URL;
   try {
@@ -36,7 +51,8 @@ export function ownMediaKey(
   const basePath = base.pathname.replace(/\/+$/u, "");
   // The raw path, before the URL parser collapses `..`: compare what was sent.
   const rawPath = url.slice(parsed.origin.length).split(/[?#]/u)[0] ?? "";
-  if (!rawPath.startsWith(`${basePath}/`)) return null;
+  // Nothing the parser normalized may slip through: the parsed path must be the raw one.
+  if (parsed.pathname !== rawPath || !rawPath.startsWith(`${basePath}/`)) return null;
   const key = rawPath.slice(basePath.length + 1);
   if (!isSafeStorageKey(key)) return null;
   const [root, owner, ownFolder, ...rest] = key.split("/");

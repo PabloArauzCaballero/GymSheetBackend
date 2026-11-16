@@ -26,6 +26,17 @@ function setup(jobs: OutboxJobModel[], removal: jest.Mock = jest.fn().mockResolv
 }
 
 describe("MediaReleaseService", () => {
+  it("skips an unsafe key without throwing, so one bad row never aborts a batch", async () => {
+    const { service, outbox } = setup([]);
+    await expect(
+      service.requestRelease(
+        { aggregateType: "community.comment", aggregateId: "c1", storageKey: "users/u1/../u2/x.jpg" },
+        {} as never,
+      ),
+    ).resolves.toBeUndefined();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
   it("enqueues an idempotent release job inside the caller transaction", async () => {
     const { service, outbox } = setup([]);
     const transaction = {} as never;
