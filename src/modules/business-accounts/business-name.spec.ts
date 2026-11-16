@@ -1,6 +1,7 @@
 import { BusinessAccountsRepository } from './business-accounts.repository';
 import { businessProfilePatchSchema } from './business-accounts.schemas';
-import { assertBusinessNameAllowed, businessNameSkeleton, rejectBusinessName } from './business-name';
+import { assertBusinessNameAllowed, rejectBusinessName } from './business-name';
+import { businessNameSkeleton } from './handle-rules';
 
 describe('business name rules (ADR-0020)', () => {
   it('folds case, accents, separators and look-alikes like a handle', () => {
@@ -23,8 +24,52 @@ describe('business name rules (ADR-0020)', () => {
   });
 
   it('accepts an ordinary commercial name with accents, digits and signs', () => {
-    expect(rejectBusinessName('Gimnasio Ñandú 24/7')).toBeNull();
+    expect(rejectBusinessName('Gimnasio Ñandú 24 h')).toBeNull();
+    expect(rejectBusinessName('Gimnasio 24/7')).toBeNull();
+    // The slash is a separator: it cannot make a look-alike pass as a new name.
+    expect(businessNameSkeleton('Top/Fitness')).toBe(businessNameSkeleton('TopFitness'));
     expect(rejectBusinessName('Top Fit Center')).toBeNull();
+  });
+
+  // Allowlist: before, anything that was not a letter was deleted from the skeleton, so
+  // `T٥p Fit` (Arabic-Indic five) folded to `tpflt` and dodged `Top Fit`.
+  it.each([
+    ['Top Fіt', 'Cyrillic і'],
+    ['Тop Fit', 'Cyrillic Т'],
+    ['Τop Fit', 'Greek Τ'],
+    ['Top Fιt', 'Greek ι'],
+    ['T٥p Fit', 'Arabic-Indic digit'],
+    ['T٠p Fit', 'Arabic-Indic zero'],
+    ['Top ★ Fit', 'symbol'],
+    ['Top Fit 💪', 'emoji'],
+    ['Top\u200bFit', 'zero-width space'],
+    ['Top Fi\u0338t', 'combining overlay'],
+    ['Søren Gym', 'letter that is not a-z with accents'],
+    ['- . -', 'no letter or digit'],
+  ])('refuses %j (%s) with BUSINESS_NAME_INVALID', (name) => {
+    expect(rejectBusinessName(name)).toBe('INVALID');
+  });
+
+  it.each([
+    ['Top Fit', 'TOP FIT'],
+    ['Top Fit', 'Tóp Fít'],
+    ['Top Fit', 'T0p F1t'],
+    ['Top Fit', "Top-'Fit'"],
+    ['Top Fit', 'Top·Fit'],
+    ['Mundo Fuerte', 'Rnundo Fuerte'],
+    ['Mundo Fuerte', 'RNUNDO-FUERTE'],
+    ['Wild Box', 'Vvild Box'],
+    ['Peña Sur', 'Pena Sur'],
+    ['Gym Vida 5', 'Gym Vida S'],
+    ['Club 3', 'Club E'],
+  ])('%j and %j share the skeleton', (original, lookAlike) => {
+    expect(rejectBusinessName(lookAlike.normalize('NFKC'))).not.toBe('INVALID');
+    expect(businessNameSkeleton(lookAlike)).toBe(businessNameSkeleton(original));
+  });
+
+  it('keeps different names apart', () => {
+    expect(businessNameSkeleton('Mundo Fuerte')).not.toBe(businessNameSkeleton('Nundo Fuerte'));
+    expect(businessNameSkeleton('Gym 24')).not.toBe(businessNameSkeleton('Gym 42'));
   });
 
   it('folds full-width and compatibility forms before any check', () => {
@@ -55,7 +100,8 @@ describe('business name rules (ADR-0020)', () => {
         code: 'BUSINESS_NAME_TOO_SIMILAR',
         status: 422,
       });
-      expect(similar.findNameHolder).toHaveBeenCalledWith('T0p Fit', 'GYM', 'entity-1', undefined);
+      // The stored-skeleton lookup receives the application fold, never the raw name.
+      expect(similar.findNameHolder).toHaveBeenCalledWith('topflt', 'GYM', 'entity-1', undefined);
     });
 
     it('lets a free name through', async () => {

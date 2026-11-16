@@ -5,7 +5,8 @@ import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { env } from '../src/config/env';
 import { businessAccountsMigration } from '../src/database/migrations/202611200401-business-accounts';
-import { handleSkeleton } from '../src/modules/business-accounts/handle-rules';
+import { storedNameSkeletonMigration } from '../src/database/migrations/202611200403-stored-name-skeleton';
+import { businessNameSkeleton, handleSkeleton } from '../src/modules/business-accounts/handle-rules';
 import { E2eApp, bootE2eApp, markEmailVerified } from './support/e2e-app';
 
 type Acceptance = { document: string; version: string; contentSha256: string | null };
@@ -367,6 +368,63 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
     await e2e.as(person.token).post('/me/connections').send({ addresseeId: owner.id }).expect(404);
     const board = await e2e.as(person.token).get('/me/progression/leaderboard').expect(200);
     expect((board.body.data as { userId: string }[]).map((row) => row.userId)).not.toContain(owner.id);
+  });
+
+  it('a look-alike of a public name of the same type is refused: allowlisted characters, one stored fold', async () => {
+    const tag = suffix.slice(-6);
+    const known = await business('mundo-known');
+    const patchName = (token: string, name: string) => e2e.as(token).patch('/business/me/profile').send({ name });
+    await patchName(known.token, `Mundo Fuerte ${tag}`).expect(200);
+    await publish(known.entityId, gymCategoryId);
+    const [stored] = await select<{ name_skeleton: string }>('SELECT name_skeleton FROM directory.entities WHERE id = :id', { id: known.entityId });
+    expect(stored.name_skeleton).toBe(businessNameSkeleton(`Mundo Fuerte ${tag}`));
+
+    const second = await business('mundo-second');
+    // `rn` reads as `m`: before, the two skeletons differed and the copy was accepted.
+    const pair = await patchName(second.token, `Rnundo Fuerte ${tag}`);
+    expect([pair.status, pair.body.code]).toEqual([422, 'BUSINESS_NAME_TOO_SIMILAR']);
+    // An Arabic-Indic five looks like `o`: before, it was deleted from the skeleton and the name passed.
+    const digit = await patchName(second.token, `Mund٥ Fuerte ${tag}`);
+    expect([digit.status, digit.body.code]).toEqual([422, 'BUSINESS_NAME_INVALID']);
+    const atSignup = await signup('mundo-signup', { businessName: `RNUNDO-FUERTE ${tag}` });
+    expect([atSignup.status, atSignup.body.code]).toEqual([422, 'BUSINESS_NAME_TOO_SIMILAR']);
+    const invalidAtSignup = await signup('mundo-invalid', { businessName: `Mundo Fuеrte ${tag}` }); // Cyrillic "е"
+    expect([invalidAtSignup.status, invalidAtSignup.body.code]).toEqual([422, 'BUSINESS_NAME_INVALID']);
+    await patchName(second.token, `Mundo Débil ${tag}`).expect(200);
+  });
+
+  it('migration 202611200403 goes down and up again and backfills the stored skeletons', async () => {
+    const owner = await business('skeleton-migration');
+    // Letters only (no `i`, no digits), so the previous fold leaves the handle as it is.
+    const handle = `rnzz${suffix.slice(-8).replace(/\d/gu, (digit) => 'abcdefghjk'[Number(digit)])}`;
+    await e2e.as(owner.token).put('/business/me/handle').send({ handle }).expect(200);
+    const queryInterface = sequelize.getQueryInterface();
+    const transaction = await sequelize.transaction();
+    const read = async () => {
+      const [row] = await sequelize.query<{ column: string | null; fn: string | null; skeleton: string }>(
+        `SELECT (SELECT column_name::text FROM information_schema.columns
+                  WHERE table_schema = 'directory' AND table_name = 'entities' AND column_name = 'name_skeleton') AS column,
+                to_regprocedure('directory.business_name_skeleton(text)')::text AS fn,
+                (SELECT skeleton FROM directory.handles WHERE handle = :handle) AS skeleton`,
+        { type: QueryTypes.SELECT, replacements: { handle }, transaction },
+      );
+      return row;
+    };
+    try {
+      expect(await read()).toEqual({ column: 'name_skeleton', fn: null, skeleton: handleSkeleton(handle) });
+      await storedNameSkeletonMigration.down(queryInterface, transaction);
+      // The previous fold had no letter pairs: `rn` stays as it is.
+      expect(await read()).toEqual({ column: null, fn: 'directory.business_name_skeleton(text)', skeleton: handle });
+      await storedNameSkeletonMigration.up(queryInterface, transaction);
+      expect(await read()).toEqual({ column: 'name_skeleton', fn: null, skeleton: handleSkeleton(handle) });
+      const [entity] = await sequelize.query<{ name: string; name_skeleton: string }>(
+        'SELECT name, name_skeleton FROM directory.entities WHERE id = :id',
+        { type: QueryTypes.SELECT, replacements: { id: owner.entityId }, transaction },
+      );
+      expect(entity.name_skeleton).toBe(businessNameSkeleton(entity.name));
+    } finally {
+      await transaction.rollback();
+    }
   });
 
   it('migration 202611200401 goes down and up again (inside a transaction that is rolled back)', async () => {

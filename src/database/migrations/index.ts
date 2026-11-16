@@ -138,6 +138,7 @@ import { photoVerificationSelfieKeyIndexMigration } from "./202611200201-photo-v
 import { revokeTenantAdminChatsMigration } from "./202611200301-revoke-tenant-admin-chats";
 import { businessAccountsMigration } from "./202611200401-business-accounts";
 import { businessNameSkeletonMigration } from "./202611200402-business-name-skeleton";
+import { storedNameSkeletonMigration } from "./202611200403-stored-name-skeleton";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
 export const databaseMigrations: DatabaseMigration[] = [
@@ -282,4 +283,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   revokeTenantAdminChatsMigration,
   businessAccountsMigration,
   businessNameSkeletonMigration,
+  storedNameSkeletonMigration,
 ];

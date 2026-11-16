@@ -38,6 +38,13 @@ const PROTECTED_SUBSTRINGS: readonly string[] = ['repp'];
 
 /** Look-alike characters folded together so `t0p.fitness` and `top_fitness` collide. */
 const CONFUSABLES: Readonly<Record<string, string>> = { '0': 'o', '1': 'l', i: 'l', '5': 's', '3': 'e' };
+/** Letter pairs that read as one letter: `rn` as `m`, `vv` as `w`. Folded after the single characters. */
+const CONFUSABLE_PAIRS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/rn/gu, 'm'],
+  [/vv/gu, 'w'],
+];
+/** Spaces and the signs a business name may carry: they separate words and fold away. */
+const NAME_SEPARATORS = /[\s&'’.,\-·/]/gu;
 
 export type HandleRejection = 'INVALID' | 'RESERVED';
 
@@ -51,9 +58,26 @@ export function normalizeHandle(input: string): string | null {
   return /^[\x00-\x7f]*$/u.test(normalized) ? normalized : null;
 }
 
-/** Anti-impersonation key: separators dropped, confusables folded. */
+/**
+ * Anti-impersonation key: separators dropped, confusables folded. Handles
+ * (`directory.handles.skeleton`) and business names
+ * (`directory.entities.name_skeleton`) store it, so changing the fold needs a
+ * migration that recomputes both columns (see 202611200403).
+ */
 export function handleSkeleton(handle: string): string {
-  return [...handle.replace(/[._]/gu, '')].map((character) => CONFUSABLES[character] ?? character).join('');
+  const folded = [...handle.replace(/[._]/gu, '')].map((character) => CONFUSABLES[character] ?? character).join('');
+  return CONFUSABLE_PAIRS.reduce((text, [pair, letter]) => text.replace(pair, letter), folded);
+}
+
+/**
+ * Skeleton of a commercial name: NFKC, accents dropped, lower case, spaces and
+ * signs removed, then the handle fold. Characters outside the business-name
+ * allowlist are kept as they are (never deleted), so a legacy name can only
+ * collide with what it really spells.
+ */
+export function businessNameSkeleton(name: string): string {
+  const unaccented = name.normalize('NFKC').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  return handleSkeleton(unaccented.replace(NAME_SEPARATORS, ''));
 }
 
 const RESERVED_SKELETONS = new Set(RESERVED_HANDLE_WORDS.map(handleSkeleton));

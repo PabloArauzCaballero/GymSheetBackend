@@ -47,7 +47,7 @@ describe('BusinessAccountsService.updateProfile', () => {
   it('DRAFT: a new name passes the name checks, is saved and renames the account', async () => {
     const { service, repository, users } = setup('DRAFT');
     await service.updateProfile(actor, { name: 'Fuerza Norte', primaryCategoryId: 'cat-2' });
-    expect(repository.findNameHolder).toHaveBeenCalledWith('Fuerza Norte', 'GYM', 'entity-1', {});
+    expect(repository.findNameHolder).toHaveBeenCalledWith('fuerzanorte', 'GYM', 'entity-1', {});
     expect(repository.updateEntity).toHaveBeenCalledWith(expect.anything(), { name: 'Fuerza Norte', primaryCategoryId: 'cat-2' }, {});
     expect(users.updateFullName).toHaveBeenCalledWith('user-1', 'Fuerza Norte', {});
   });

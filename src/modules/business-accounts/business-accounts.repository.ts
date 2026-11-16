@@ -91,27 +91,26 @@ export class BusinessAccountsRepository {
 
   /**
    * Who blocks a commercial name: a REPP-protected brand (`RESERVED` handle) or
-   * a public listing of the same type with the same skeleton. Served by
+   * a public listing of the same type with the same stored skeleton. Both
+   * sides were folded by `businessNameSkeleton` in the application; served by
    * `ix_directory_entities_active_name_skeleton`.
    */
   async findNameHolder(
-    name: string,
+    skeleton: string,
     entityType: DirectoryEntityType,
     exceptEntityId: string | null,
     transaction?: Transaction,
   ): Promise<'RESERVED' | 'TOO_SIMILAR' | null> {
     const [row] = await this.sequelize.query<{ reason: 'RESERVED' | 'TOO_SIMILAR' | null }>(
       `SELECT CASE
-                WHEN EXISTS (SELECT 1 FROM directory.handles h
-                              WHERE h.status = 'RESERVED' AND h.skeleton = directory.business_name_skeleton(:name))
+                WHEN EXISTS (SELECT 1 FROM directory.handles h WHERE h.status = 'RESERVED' AND h.skeleton = :skeleton)
                   THEN 'RESERVED'
                 WHEN EXISTS (SELECT 1 FROM directory.entities e
-                              WHERE e.status = 'ACTIVE' AND e.entity_type = :entityType
-                                AND directory.business_name_skeleton(e.name) = directory.business_name_skeleton(:name)
+                              WHERE e.status = 'ACTIVE' AND e.entity_type = :entityType AND e.name_skeleton = :skeleton
                                 AND e.id IS DISTINCT FROM :exceptEntityId)
                   THEN 'TOO_SIMILAR'
               END AS reason`,
-      { replacements: { name, entityType, exceptEntityId }, type: QueryTypes.SELECT, transaction },
+      { replacements: { skeleton, entityType, exceptEntityId }, type: QueryTypes.SELECT, transaction },
     );
     return row?.reason ?? null;
   }

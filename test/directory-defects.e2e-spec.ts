@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
+import { businessNameSkeleton } from '../src/modules/business-accounts/handle-rules';
 import { E2eApp, bootE2eApp } from './support/e2e-app';
 
 /**
@@ -17,9 +18,9 @@ describe('directory defects (e2e, franja 8a)', () => {
   async function insertEntity(fields: { tenantId?: string | null; userId?: string | null; status?: string } = {}): Promise<string> {
     const id = randomUUID();
     await e2e.sql(
-      `INSERT INTO directory.entities (id, slug, entity_type, name, description, primary_category_id, tenant_id, user_id, status)
-       VALUES (:id, :slug, 'GYM', 'Gimnasio E2E', 'Ficha de prueba', :categoryId, :tenantId, :userId, :status)`,
-      { id, slug: `e2e-${id}`, categoryId, tenantId: fields.tenantId ?? null, userId: fields.userId ?? null, status: fields.status ?? 'ACTIVE' },
+      `INSERT INTO directory.entities (id, slug, entity_type, name, name_skeleton, description, primary_category_id, tenant_id, user_id, status)
+       VALUES (:id, :slug, 'GYM', 'Gimnasio E2E', :skeleton, 'Ficha de prueba', :categoryId, :tenantId, :userId, :status)`,
+      { id, slug: `e2e-${id}`, skeleton: businessNameSkeleton('Gimnasio E2E'), categoryId, tenantId: fields.tenantId ?? null, userId: fields.userId ?? null, status: fields.status ?? 'ACTIVE' },
     );
     created.push(id);
     return id;

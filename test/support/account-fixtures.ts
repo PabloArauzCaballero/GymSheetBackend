@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { QueryTypes } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { env } from '../../src/config/env';
+import { businessNameSkeleton } from '../../src/modules/business-accounts/handle-rules';
 
 /** Counts rows of `table t` matching `where` (uses `:userId`). */
 export async function countRows(sequelize: Sequelize, table: string, where: string, userId: string): Promise<number> {
@@ -103,8 +104,8 @@ export async function seedPersonalData(sequelize: Sequelize, userId: string, oth
        VALUES ('${ids.membership}', :userId, '${ids.plan}', CURRENT_DATE, CURRENT_DATE + 30, 'Paga en efectivo')`,
     `INSERT INTO membership.customer_profiles (id, user_id, customer_number, phone_number, notes)
        VALUES ('${randomUUID()}', :userId, 'C-${suffix}', '+59170000000', 'Prefiere mañanas')`,
-    `INSERT INTO directory.entities (id, slug, entity_type, name, description, primary_category_id)
-       VALUES ('${ids.entity}', 'f4-${suffix}', 'GYM', 'Gimnasio F4', 'Prueba', 'a1000000-0000-4000-8000-000000000001')`,
+    `INSERT INTO directory.entities (id, slug, entity_type, name, name_skeleton, description, primary_category_id)
+       VALUES ('${ids.entity}', 'f4-${suffix}', 'GYM', 'Gimnasio F4', '${businessNameSkeleton('Gimnasio F4')}', 'Prueba', 'a1000000-0000-4000-8000-000000000001')`,
     `INSERT INTO directory.entity_plans (id, entity_id, name, slug, description, current_price)
        VALUES ('${ids.entityPlan}', '${ids.entity}', 'Plan', 'plan-${suffix}', 'Plan', 150)`,
     `INSERT INTO directory.plan_price_history (id, plan_id, price, currency, changed_by_user_id, change_reason)

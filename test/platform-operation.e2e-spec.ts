@@ -3,6 +3,7 @@ import { QueryTypes, Transaction } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { env } from '../src/config/env';
 import { revokeTenantAdminChatsMigration } from '../src/database/migrations/202611200301-revoke-tenant-admin-chats';
+import { businessNameSkeleton } from '../src/modules/business-accounts/handle-rules';
 import { bootE2eApp, createPersonalExercise, E2eApp } from './support/e2e-app';
 import { LEGACY_STAFF_ROLES, legacyGymStaff } from './support/legacy-staff';
 
@@ -106,9 +107,9 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
       entityId = randomUUID();
       reviewId = randomUUID();
       await e2e.sql(
-        `INSERT INTO directory.entities (id, slug, entity_type, name, description, primary_category_id, tenant_id, user_id)
-         VALUES (:entityId, :slug, 'GYM', 'Ficha 7a', 'Ficha de prueba', 'a1000000-0000-4000-8000-000000000002', :gym, :ownerId)`,
-        { entityId, slug: `f7a-${entityId.slice(0, 8)}`, gym, ownerId: owner.id },
+        `INSERT INTO directory.entities (id, slug, entity_type, name, name_skeleton, description, primary_category_id, tenant_id, user_id)
+         VALUES (:entityId, :slug, 'GYM', 'Ficha 7a', :skeleton, 'Ficha de prueba', 'a1000000-0000-4000-8000-000000000002', :gym, :ownerId)`,
+        { entityId, slug: `f7a-${entityId.slice(0, 8)}`, skeleton: businessNameSkeleton('Ficha 7a'), gym, ownerId: owner.id },
       );
       await e2e.sql(
         `INSERT INTO directory.reviews (id, entity_id, user_id, rating, title, body)

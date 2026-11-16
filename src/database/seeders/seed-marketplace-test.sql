@@ -3,7 +3,7 @@ BEGIN;
 
 -- 1. Insertar Entidades en el Directorio
 INSERT INTO directory.entities (
-    id, slug, entity_type, name, headline, description, primary_category_id,
+    id, slug, entity_type, name, name_skeleton, headline, description, primary_category_id,
     tenant_id, user_id, logo_url, cover_url, is_online_only, city, country,
     rating_average, rating_count, rating_breakdown, is_verified, status
 ) VALUES (
@@ -11,6 +11,7 @@ INSERT INTO directory.entities (
     'topfitness',
     'GYM',
     'TopFitness Club & Spa',
+    'topfltnessclubspa', -- businessNameSkeleton(name): folded only in the application
     'Centro integral de entrenamiento de alto rendimiento y musculación',
     'TopFitness es el centro líder con equipamiento Hammer Strength y Eleiko, zona de peso libre olímpico, clases grupales y sauna.',
     'a1000000-0000-4000-8000-000000000002', -- gimnasios
@@ -31,6 +32,7 @@ INSERT INTO directory.entities (
     'nutrizone-store',
     'STORE',
     'NutriZone Suplementos',
+    'nutrlzonesuplementos',
     'Distribuidor oficial de las mejores marcas de nutrición deportiva',
     'Tienda especializada en proteínas aisladas, creatinas Creapure, aminoácidos y accesorios de levantamiento pesado.',
     'b1000000-0000-4000-8000-000000000001', -- tiendas.nutricion

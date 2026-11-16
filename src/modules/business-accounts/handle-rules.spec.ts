@@ -42,6 +42,18 @@ describe('handle rules (ADR-0020)', () => {
     expect(handleSkeleton('fuerza3')).toBe(handleSkeleton('fuerzae'));
   });
 
+  it.each([
+    ['mundofit', 'rnundofit'],
+    ['mundofit', 'rn.undo_fit'],
+    ['wildbox', 'vvildbox'],
+  ])('folds the letter pair of %s and %s into one letter', (original, lookAlike) => {
+    expect(handleSkeleton(lookAlike)).toBe(handleSkeleton(original));
+  });
+
+  it('refuses a reserved word spelled with a letter pair', () => {
+    expect(rejectHandle('rnoderacion')).toBe('RESERVED');
+  });
+
   it('refuses reserved words and their look-alikes', () => {
     expect(rejectHandle('admin')).toBe('RESERVED');
     expect(rejectHandle('adm1n')).toBe('RESERVED');

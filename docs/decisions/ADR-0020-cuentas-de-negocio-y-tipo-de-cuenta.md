@@ -71,7 +71,7 @@ una cuenta de otro tipo habría entrado a perfil, social y Conocer.
 9. **@handle** (`directory.handles`, `directory.handle_changes` append-only): 3–30 de `[a-z0-9._]`,
    empieza y termina en alfanumérico, sin separadores dobles, no solo dígitos (CHECK en base);
    entrada normalizada (trim, sin `@`, NFKC, minúsculas, solo ASCII). `skeleton` sin `.`/`_` y con
-   confundibles plegados (`0→o 1→l i→l 5→s 3→e`); índice único parcial por skeleton sobre
+   confundibles plegados (`0→o 1→l i→l 5→s 3→e`, y los pares `rn→m vv→w`); índice único parcial por skeleton sobre
    `PENDING|ACTIVE|RESERVED` y, para lo que no cabe en el índice (retirados bloqueados, reservas
    vencidas), `pg_advisory_xact_lock` por skeleton. Reservadas en código (comparadas por skeleton,
    y `repp` en cualquier posición) más filas `RESERVED` de REPP. Mientras la ficha es `DRAFT` el
@@ -85,12 +85,16 @@ una cuenta de otro tipo habría entrado a perfil, social y Conocer.
    días y 3 por año (`429 HANDLE_RENAME_LIMIT`); el viejo queda `RETIRED` con redirección 90 días y
    bloqueado 180.
 10. **El nombre comercial y la categoría son materiales.** El nombre (en el alta y en
-    `PATCH /business/me/profile`) pasa por NFKC y las mismas comprobaciones que un handle: solo letras
-    latinas (`422 BUSINESS_NAME_INVALID`: una `і` cirílica esquivaría el skeleton), palabras reservadas
+    `PATCH /business/me/profile`) pasa por NFKC y las mismas comprobaciones que un handle: lista de
+    caracteres permitidos — letras que sin tilde quedan en `a-z` (`ñ`, `á`, `ü`), dígitos ASCII, espacio
+    y `& ' ’ . , - ·`; cualquier otro (cirílico, griego, dígitos no ASCII, símbolos) responde
+    `422 BUSINESS_NAME_INVALID` en vez de borrarse del skeleton —, palabras reservadas
     y `repp` en cualquier posición, filas `RESERVED` de REPP (`422 BUSINESS_NAME_RESERVED`) y mismo
-    skeleton que una ficha `ACTIVE` del mismo tipo (`422 BUSINESS_NAME_TOO_SIMILAR`). El skeleton del
-    nombre es `directory.business_name_skeleton` (`repp_normalize`, sin espacios, confundibles
-    plegados) con índice parcial sobre las fichas `ACTIVE`. Mientras la ficha es `DRAFT` nombre y
+    skeleton que una ficha `ACTIVE` del mismo tipo (`422 BUSINESS_NAME_TOO_SIMILAR`). El skeleton se
+    pliega **solo en la aplicación** (`businessNameSkeleton`: sin tildes, sin espacios ni signos, y el
+    pliegue del handle `0→o 1→l i→l 5→s 3→e rn→m vv→w`) y se guarda en
+    `directory.entities.name_skeleton` (hook del modelo al crear y renombrar; migración 202611200403
+    con relleno e índice parcial sobre las fichas `ACTIVE`), así JS y SQL no pueden divergir. Mientras la ficha es `DRAFT` nombre y
     categoría cambian con esas comprobaciones; **pasado `DRAFT`, cambiar cualquiera de los dos responde
     `409 BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW`** y nada se publica (reenviar el valor actual no es
     un cambio). Lo que lo acepta es el versionado del KYC de la franja 8b (cambio material → versión
