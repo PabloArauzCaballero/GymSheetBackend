@@ -1,8 +1,8 @@
 import { Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { MediaReferencesRepository } from "../media/media-references.repository";
-import { MediaRetentionService } from "../media/media-retention.service";
-import { MediaStorageProvider } from "../media/media-storage.port";
+import { MediaReferenceReleaseService } from "../media/media-reference-release.service";
+import { MediaReleaseService } from "../media/media-release.service";
 import { StoriesPurgeService } from "./stories-purge.service";
 import { StoriesRepository } from "./stories.repository";
 
@@ -29,7 +29,7 @@ function createRepository(rows: StoryRow[]) {
           .filter((row) => row.expiresAt.getTime() <= at.getTime())
           .sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime())
           .slice(0, limit)
-          .map(({ id, storageKey }) => ({ id, storageKey })),
+          .map(({ id, storageKey }) => ({ id, storageProvider: "local", storageKey })),
       ),
     ),
     deleteById: jest.fn((id: string) => {
@@ -42,13 +42,13 @@ function createRepository(rows: StoryRow[]) {
   return { repository, remaining };
 }
 
-function createRetention(options: {
+function createRelease(options: {
   referencedKeys?: readonly string[];
-  remove?: jest.Mock;
+  requestRelease?: jest.Mock;
 }) {
-  const remove = options.remove ?? jest.fn().mockResolvedValue(undefined);
+  const requestRelease = options.requestRelease ?? jest.fn().mockResolvedValue(undefined);
   const referenced = new Set(options.referencedKeys ?? []);
-  const retention = new MediaRetentionService(
+  const release = new MediaReferenceReleaseService(
     {
       transaction: jest.fn(
         async (run: (t: Transaction) => Promise<unknown>) => run(transaction),
@@ -60,22 +60,26 @@ function createRetention(options: {
         Promise.resolve(referenced.has(key)),
       ),
     } as unknown as MediaReferencesRepository,
-    { name: "local", remove, canRemove: () => true } as unknown as MediaStorageProvider,
+    { requestRelease } as unknown as MediaReleaseService,
   );
-  return { retention, remove };
+  return { release, requestRelease };
 }
+
+/** Storage keys whose removal was queued on `media.release`. */
+const queuedKeys = (requestRelease: jest.Mock): string[] =>
+  requestRelease.mock.calls.map(([request]: [{ storageKey: string }]) => request.storageKey);
 
 function createService(
   rows: StoryRow[],
-  retentionOptions: Parameters<typeof createRetention>[0] = {},
+  releaseOptions: Parameters<typeof createRelease>[0] = {},
 ) {
   const { repository, remaining } = createRepository(rows);
-  const { retention, remove } = createRetention(retentionOptions);
+  const { release, requestRelease } = createRelease(releaseOptions);
   const service = new StoriesPurgeService(
     repository as unknown as StoriesRepository,
-    retention,
+    release,
   );
-  return { service, repository, remaining, remove };
+  return { service, repository, remaining, requestRelease };
 }
 
 const expiredStory: StoryRow = {
@@ -90,8 +94,8 @@ const activeStory: StoryRow = {
 };
 
 describe("StoriesPurgeService.purgeExpired", () => {
-  it("deletes only expired stories and leaves live ones untouched", async () => {
-    const { service, repository, remaining, remove } = createService([
+  it("deletes only expired stories and queues the release of their files in the same transaction", async () => {
+    const { service, repository, remaining, requestRelease } = createService([
       expiredStory,
       activeStory,
     ]);
@@ -101,7 +105,7 @@ describe("StoriesPurgeService.purgeExpired", () => {
     expect(result).toEqual({
       examined: 1,
       deleted: 1,
-      filesRemoved: 1,
+      releasesQueued: 1,
       failed: 0,
     });
     expect(repository.deleteById).toHaveBeenCalledTimes(1);
@@ -109,8 +113,11 @@ describe("StoriesPurgeService.purgeExpired", () => {
       "expired-1",
       transaction,
     );
-    expect(remove).toHaveBeenCalledWith("expired-1.jpg");
-    expect(remove).not.toHaveBeenCalledWith("active-1.jpg");
+    expect(requestRelease).toHaveBeenCalledWith(
+      { aggregateType: "story", aggregateId: "expired-1", provider: "local", storageKey: "expired-1.jpg" },
+      transaction,
+    );
+    expect(queuedKeys(requestRelease)).not.toContain("active-1.jpg");
     expect(remaining).toEqual([activeStory]);
   });
 
@@ -120,7 +127,7 @@ describe("StoriesPurgeService.purgeExpired", () => {
       storageKey: "shared.jpg",
       expiresAt: new Date("2026-09-06T12:00:00.000Z"),
     };
-    const { service, remaining, remove } = createService(
+    const { service, remaining, requestRelease } = createService(
       [shared, expiredStory, activeStory],
       { referencedKeys: ["shared.jpg"] },
     );
@@ -130,17 +137,16 @@ describe("StoriesPurgeService.purgeExpired", () => {
     expect(result).toEqual({
       examined: 2,
       deleted: 2,
-      filesRemoved: 1,
+      releasesQueued: 1,
       failed: 0,
     });
     // La fila caducada cae siempre; el fichero compartido sobrevive.
-    expect(remove).not.toHaveBeenCalledWith("shared.jpg");
-    expect(remove).toHaveBeenCalledWith("expired-1.jpg");
+    expect(queuedKeys(requestRelease)).toEqual(["expired-1.jpg"]);
     expect(remaining).toEqual([activeStory]);
   });
 
   it("is idempotent: a second pass finds nothing left to purge", async () => {
-    const { service, remove } = createService([expiredStory, activeStory]);
+    const { service, requestRelease } = createService([expiredStory, activeStory]);
 
     await service.purgeExpired(50, now);
     const second = await service.purgeExpired(50, now);
@@ -148,10 +154,10 @@ describe("StoriesPurgeService.purgeExpired", () => {
     expect(second).toEqual({
       examined: 0,
       deleted: 0,
-      filesRemoved: 0,
+      releasesQueued: 0,
       failed: 0,
     });
-    expect(remove).toHaveBeenCalledTimes(1);
+    expect(requestRelease).toHaveBeenCalledTimes(1);
   });
 
   it("honours the batch size", async () => {
@@ -168,24 +174,24 @@ describe("StoriesPurgeService.purgeExpired", () => {
     expect(result.deleted).toBe(2);
   });
 
-  it("counts a failing story and keeps purging the rest of the batch", async () => {
-    const remove = jest
+  it("counts a story whose transaction fails and keeps purging the rest of the batch", async () => {
+    const requestRelease = jest
       .fn()
-      .mockRejectedValueOnce(new Error("disk unavailable"))
+      .mockRejectedValueOnce(new Error("database unavailable"))
       .mockResolvedValue(undefined);
     const other: StoryRow = {
       id: "expired-3",
       storageKey: "expired-3.jpg",
       expiresAt: new Date("2026-09-07T18:00:00.000Z"),
     };
-    const { service } = createService([expiredStory, other], { remove });
+    const { service } = createService([expiredStory, other], { requestRelease });
 
     const result = await service.purgeExpired(50, now);
 
     expect(result).toEqual({
       examined: 2,
       deleted: 1,
-      filesRemoved: 1,
+      releasesQueued: 1,
       failed: 1,
     });
   });

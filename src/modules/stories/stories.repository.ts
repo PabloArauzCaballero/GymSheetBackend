@@ -46,6 +46,7 @@ export interface StoryViewerRow {
  */
 export interface ExpiredStoryReference {
   readonly id: string;
+  readonly storageProvider: string;
   readonly storageKey: string;
 }
 
@@ -160,7 +161,7 @@ export class StoriesRepository {
     limit: number,
   ): Promise<ExpiredStoryReference[]> {
     return this.sequelize.query<ExpiredStoryReference>(
-      `SELECT s.id, s.storage_key AS "storageKey"
+      `SELECT s.id, s.storage_provider AS "storageProvider", s.storage_key AS "storageKey"
          FROM profile.stories s
         WHERE s.expires_at <= :now
           AND NOT ${hasOpenReportSql("STORY", "s.id")}

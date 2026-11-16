@@ -19,6 +19,7 @@ import {
 } from './exercises.controller';
 import { ExercisesRepository } from './exercises.repository';
 import { ExercisesService } from './exercises.service';
+import { PersonalExerciseMediaRelease } from './personal-exercise-media-release';
 import { ExercisesDatasetClient } from './import/exercises-dataset.client';
 import { ExercisesDatasetController } from './import/exercises-dataset.controller';
 import { ExercisesDatasetRepository } from './import/exercises-dataset.repository';
@@ -45,7 +46,8 @@ import { ExerciseCommunityService } from './exercise-community.service';
   imports: [
     EquipmentModule,
     // Da acceso al proveedor de almacenamiento (MinIO/local) para subir
-    // demostraciones de ejercicio bajo `ejercicios/<id>/`.
+    // demostraciones de ejercicio bajo `ejercicios/<id>/` (or, for a personal
+    // exercise, under its owner's `users/<id>/ejercicios/<id>/`).
     MediaModule,
     SequelizeModule.forFeature([
       ExerciseModel,
@@ -80,6 +82,7 @@ import { ExerciseCommunityService } from './exercise-community.service';
     EquipmentInferenceService,
     ExerciseMediaRepository,
     ExerciseMediaService,
+    PersonalExerciseMediaRelease,
     ExercisesDatasetClient,
     ExercisesDatasetRepository,
     ExercisesDatasetService,

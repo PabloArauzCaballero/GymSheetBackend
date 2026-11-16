@@ -3,6 +3,7 @@
 export const MINIO_PUBLIC_OBJECT_PATTERNS: readonly string[] = [
   "users/*/perfiles/*",
   "users/*/publicaciones/*",
+  "users/*/ejercicios/*",
   "catalog/*",
   "ejercicios/*",
 ];

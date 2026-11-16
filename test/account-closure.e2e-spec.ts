@@ -15,7 +15,7 @@ const PASSWORD = 'e2e-strong-password';
  */
 const NOT_A_MEMBER_ROW = new Set([
   'facilities.equipment_assignments', 'facilities.maintenance_events', 'integration.legacy_import_batches',
-  'membership.staff_profiles', 'directory.plan_price_history', 'training.exercise_media',
+  'membership.staff_profiles', 'directory.plan_price_history',
   // Cascade from training.training_invites.
   'training.training_invite_commands', 'training.training_invite_revisions',
 ]);

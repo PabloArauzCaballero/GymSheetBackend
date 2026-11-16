@@ -77,15 +77,22 @@ describe('Reported content lifecycle (e2e)', () => {
       await fileReport(reporter.id, owner.id, 'STORY', reported.id);
       const purge = e2e.app.get(StoriesPurgeService, { strict: false });
 
+      const media = e2e.app.get(MediaReleaseService, { strict: false });
+
       await purge.purgeExpired(1000, now);
       expect(await rowCount('profile.stories', reported.id)).toBe(1);
-      expect(fileAt(reported.key)).toBe(true);
+      expect(await releaseJobs(reported.id)).toEqual([]);
       expect(await rowCount('profile.stories', plain.id)).toBe(0);
+      // The purge queues the file on media.release with the row deletion (ADR-0017 §4).
+      expect(await releaseJobs(plain.id)).toEqual([{ status: 'PENDING' }]);
+      await media.drainOnce(500);
+      expect(fileAt(reported.key)).toBe(true);
       expect(fileAt(plain.key)).toBe(false);
 
       await closeReports('STORY', reported.id, now);
       await purge.purgeExpired(1000, now);
       expect(await rowCount('profile.stories', reported.id)).toBe(0);
+      await media.drainOnce(500);
       expect(fileAt(reported.key)).toBe(false);
     });
   });
@@ -281,10 +288,13 @@ describe('Reported content lifecycle (e2e)', () => {
       const [row] = await selectRows<{ hidden: boolean; deleted: boolean }>(e2e,
         'SELECT hidden_at IS NOT NULL AS hidden, author_deleted_at IS NOT NULL AS deleted FROM profile.photos WHERE id = :id', { id: held });
       expect(row).toEqual({ hidden: true, deleted: true });
-      expect(fileAt(keys.held)).toBe(true);
       expect(await rowCount('profile.photos', plain)).toBe(0);
-      expect(fileAt(keys.plain)).toBe(false);
+      // The plain photo's file is queued on media.release with its row deletion (ADR-0017 §4).
+      expect(await releaseJobs(plain)).toEqual([{ status: 'PENDING' }]);
       expect(await releaseJobs(held)).toEqual([]);
+      await e2e.app.get(MediaReleaseService, { strict: false }).drainOnce(500);
+      expect(fileAt(keys.held)).toBe(true);
+      expect(fileAt(keys.plain)).toBe(false);
 
       // Closed but within the retention: still evidence.
       await closeReports('PROFILE_PHOTO', held, resolvedAt);
@@ -346,6 +356,7 @@ describe('Reported content lifecycle (e2e)', () => {
       await closeReports('STORY', id, new Date());
       await purge.purgeExpired(1000, afterExpiry);
       expect(await rowCount('profile.stories', id)).toBe(0);
+      await e2e.app.get(MediaReleaseService, { strict: false }).drainOnce(500);
       expect(fileAt(key)).toBe(false);
     });
 

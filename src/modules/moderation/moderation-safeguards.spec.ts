@@ -18,7 +18,7 @@ describe("ModerationMinorService", () => {
     const repository = {
       countCorroboratingMinorReporters: jest.fn().mockResolvedValue(reporters),
       suspendMemberUntil: jest.fn().mockResolvedValue(suspended),
-      liftProvisionalSuspension: jest.fn().mockResolvedValue(undefined),
+      liftProvisionalSuspension: jest.fn().mockResolvedValue(null),
     };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const notifications = { enqueueDirectMessage: jest.fn().mockResolvedValue(true) };
@@ -94,6 +94,46 @@ describe("ModerationMinorService", () => {
     expect(email).toMatchObject({ survivesClosure: true, deduplicationKey: "moderation.minor-confirmed:user-1" });
     expect(email.body).toContain("Menor de edad");
     expect(tx).toBe(transaction);
+  });
+
+  it("tells the person in the app and by email that the review ended and the account is active again", async () => {
+    const { service, repository, notifications, noticeEmails } = build(false);
+    repository.liftProvisionalSuspension.mockResolvedValue({ suspendedUntil: null });
+    const target = { kind: "USER" as const, id: "user-1" };
+
+    await service.liftIfCleared("user-1", target, transaction as never, { sanctionFollows: false });
+
+    expect(repository.liftProvisionalSuspension).toHaveBeenCalledWith("user-1", PENDING_REVIEW_SUSPENSION_UNTIL, target, transaction);
+    const [inApp, inAppTx] = notifications.enqueueDirectMessage.mock.calls[0] as [{ recipientUserId: string; subject: string; body: string }, unknown];
+    expect(inApp).toMatchObject({ recipientUserId: "user-1", subject: "Tu cuenta está activa otra vez" });
+    expect(inApp.body).toContain("activa otra vez");
+    expect(inAppTx).toBe(transaction);
+    const [email, emailTx] = noticeEmails.enqueue.mock.calls[0] as [{ recipientUserId: string; subject: string; body: string }, unknown];
+    expect(email).toMatchObject({ recipientUserId: "user-1", subject: "Tu cuenta está activa otra vez" });
+    expect(emailTx).toBe(transaction);
+    // The notice never names or hints at who reported.
+    expect(`${inApp.body} ${email.body}`).not.toMatch(/reporter|denunciante|persona que denunci/iu);
+  });
+
+  it("does not promise access when another sanction keeps the account suspended", async () => {
+    const running = build(false);
+    running.repository.liftProvisionalSuspension.mockResolvedValue({ suspendedUntil: new Date("2027-01-01T00:00:00.000Z") });
+    await running.service.liftIfCleared("user-1", { kind: "USER", id: "user-1" }, transaction as never, { sanctionFollows: false });
+    const [stillSuspended] = running.notifications.enqueueDirectMessage.mock.calls[0] as [{ body: string }];
+    expect(stillSuspended.body).toContain("sigue suspendida");
+
+    const sanctioned = build(false);
+    sanctioned.repository.liftProvisionalSuspension.mockResolvedValue({ suspendedUntil: null });
+    await sanctioned.service.liftIfCleared("user-1", { kind: "USER", id: "user-1" }, transaction as never, { sanctionFollows: true });
+    const [followed] = sanctioned.noticeEmails.enqueue.mock.calls[0] as [{ body: string }];
+    expect(followed.body).toContain("sigue suspendida");
+  });
+
+  it("sends nothing when the suspension stays (another minor report is still open)", async () => {
+    const { service, notifications, noticeEmails } = build(false);
+    await service.liftIfCleared("user-1", { kind: "USER", id: "user-1" }, transaction as never, { sanctionFollows: false });
+    expect(notifications.enqueueDirectMessage).not.toHaveBeenCalled();
+    expect(noticeEmails.enqueue).not.toHaveBeenCalled();
   });
 });
 

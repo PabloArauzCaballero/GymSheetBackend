@@ -81,6 +81,16 @@ export class ExerciseMediaRepository {
     );
   }
 
+  /** Every row of an exercise, active or not: what deleting a personal exercise must release. */
+  listAllByExercise(exerciseId: string): Promise<ExerciseMediaModel[]> {
+    return this.mediaModel.findAll({ where: { exerciseId } });
+  }
+
+  /** Hard delete: an INACTIVE row would keep its file referenced forever. */
+  async destroy(media: ExerciseMediaModel, transaction: Transaction): Promise<void> {
+    await media.destroy({ transaction });
+  }
+
   async markInactive(
     media: ExerciseMediaModel,
     transaction?: Transaction,

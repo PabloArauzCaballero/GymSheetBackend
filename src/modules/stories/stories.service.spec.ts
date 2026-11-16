@@ -4,7 +4,8 @@ import { Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { ConnectionStatus } from "../../common/enums/domain.enums";
 import { MediaReferencesRepository } from "../media/media-references.repository";
-import { MediaRetentionService } from "../media/media-retention.service";
+import { MediaReferenceReleaseService } from "../media/media-reference-release.service";
+import { MediaReleaseService } from "../media/media-release.service";
 import { MediaStorageProvider } from "../media/media-storage.port";
 import { StoriesRepository, StoryFeedRow } from "./stories.repository";
 import { StoriesService, storyMediaEtag } from "./stories.service";
@@ -16,11 +17,13 @@ const otherMatchId = "00000000-0000-4000-8000-00000000000c";
 const strangerId = "00000000-0000-4000-8000-00000000000d";
 const transaction = { id: "tx" } as unknown as Transaction;
 
+const requestRelease = jest.fn();
+
 function createService(
   repositoryOverrides: Partial<StoriesRepository>,
   mediaStorageOverrides: Partial<MediaStorageProvider> = {},
   // ¿Queda otra fila (otra story, una foto de perfil, un mensaje…) apuntando
-  // al mismo binario? Es lo que decide si el fichero se borra o se conserva.
+  // al mismo binario? Es lo que decide si el fichero se libera o se conserva.
   referencedElsewhere = false,
 ): StoriesService {
   const storage = {
@@ -38,7 +41,8 @@ function createService(
     ...mediaStorageOverrides,
   } as unknown as MediaStorageProvider;
 
-  const retention = new MediaRetentionService(
+  requestRelease.mockReset().mockResolvedValue(undefined);
+  const release = new MediaReferenceReleaseService(
     {
       transaction: jest.fn(
         async (run: (t: Transaction) => Promise<unknown>) => run(transaction),
@@ -48,7 +52,7 @@ function createService(
       lockStorageKey: jest.fn().mockResolvedValue(undefined),
       isReferenced: jest.fn().mockResolvedValue(referencedElsewhere),
     } as unknown as MediaReferencesRepository,
-    storage,
+    { requestRelease } as unknown as MediaReleaseService,
   );
 
   return new StoriesService(
@@ -58,7 +62,7 @@ function createService(
       ...repositoryOverrides,
     } as StoriesRepository,
     storage,
-    retention,
+    release,
   );
 }
 
@@ -336,12 +340,12 @@ describe("StoriesService.remove", () => {
     await expect(service.remove("story-1", userId)).rejects.toThrow(NotFoundException);
   });
 
-  it("removes the stored media and the story row when nothing else references the file", async () => {
+  it("deletes the story row and queues its file release when nothing else references the file", async () => {
     const destroy = jest.fn().mockResolvedValue(undefined);
     const remove = jest.fn().mockResolvedValue(undefined);
     const service = createService(
       {
-        findByIdForUser: jest.fn().mockResolvedValue({ storageKey: "stories/some-key.jpg", destroy }),
+        findByIdForUser: jest.fn().mockResolvedValue({ id: "story-1", storageProvider: "local", storageKey: "stories/some-key.jpg", destroy }),
         delete: jest.fn().mockImplementation((story: { destroy: () => Promise<void> }) => story.destroy()),
         holdIfReported: jest.fn().mockResolvedValue(false),
       },
@@ -349,8 +353,28 @@ describe("StoriesService.remove", () => {
     );
 
     await expect(service.remove("story-1", userId)).resolves.toEqual({ deleted: true });
-    expect(remove).toHaveBeenCalledWith("stories/some-key.jpg");
     expect(destroy).toHaveBeenCalled();
+    expect(requestRelease).toHaveBeenCalledWith(
+      { aggregateType: "story", aggregateId: "story-1", provider: "local", storageKey: "stories/some-key.jpg" },
+      transaction,
+    );
+    // The media.release worker removes the file; the request never does it inline.
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("answers success while the storage rejects removals: the outbox retries the file later", async () => {
+    const remove = jest.fn().mockRejectedValue(Object.assign(new Error("denied"), { code: "AccessDenied" }));
+    const service = createService(
+      {
+        findByIdForUser: jest.fn().mockResolvedValue({ id: "story-1", storageKey: "stories/some-key.jpg" }),
+        delete: jest.fn().mockResolvedValue(undefined),
+        holdIfReported: jest.fn().mockResolvedValue(false),
+      },
+      { remove },
+    );
+
+    await expect(service.remove("story-1", userId)).resolves.toEqual({ deleted: true });
+    expect(requestRelease).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the file when another row still references the same binary", async () => {
@@ -358,25 +382,23 @@ describe("StoriesService.remove", () => {
     // el mismo binario comparten fichero, y borrar la story ajena le rompía la
     // foto. La fila propia cae igual; el fichero no.
     const destroy = jest.fn().mockResolvedValue(undefined);
-    const remove = jest.fn().mockResolvedValue(undefined);
     const service = createService(
       {
-        findByIdForUser: jest.fn().mockResolvedValue({ storageKey: "stories/shared-key.jpg", destroy }),
+        findByIdForUser: jest.fn().mockResolvedValue({ id: "story-1", storageKey: "stories/shared-key.jpg", destroy }),
         delete: jest.fn().mockImplementation((story: { destroy: () => Promise<void> }) => story.destroy()),
         holdIfReported: jest.fn().mockResolvedValue(false),
       },
-      { remove },
+      {},
       true,
     );
 
     await expect(service.remove("story-1", userId)).resolves.toEqual({ deleted: true });
     expect(destroy).toHaveBeenCalled();
-    expect(remove).not.toHaveBeenCalled();
+    expect(requestRelease).not.toHaveBeenCalled();
   });
 
   it("holds a story under an open report instead of deleting it", async () => {
     const destroy = jest.fn().mockResolvedValue(undefined);
-    const remove = jest.fn().mockResolvedValue(undefined);
     const holdIfReported = jest.fn().mockResolvedValue(true);
     const service = createService(
       {
@@ -384,7 +406,7 @@ describe("StoriesService.remove", () => {
         delete: jest.fn().mockImplementation((story: { destroy: () => Promise<void> }) => story.destroy()),
         holdIfReported,
       },
-      { remove },
+      {},
       // The held row itself still references the key.
       true,
     );
@@ -392,7 +414,7 @@ describe("StoriesService.remove", () => {
     await expect(service.remove("story-1", userId)).resolves.toEqual({ deleted: true });
     expect(holdIfReported).toHaveBeenCalledWith("story-1", expect.anything());
     expect(destroy).not.toHaveBeenCalled();
-    expect(remove).not.toHaveBeenCalled();
+    expect(requestRelease).not.toHaveBeenCalled();
   });
 });
 

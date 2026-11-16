@@ -114,7 +114,9 @@ con `null`.
   el trabajo en dead-letter. Los textos pueden prometer el borrado del archivo salvo con
   `MEDIA_USER_CONTENT_DELETABLE=false`, en que el binario se conserva y queda en el log. (Hasta
   ADR-0017 regía ADR-0010: con MinIO el binario se conservaba siempre.) El cierre de cuenta usa la
-  misma cola, un trabajo por archivo (ADR-0015).
+  misma cola, un trabajo por archivo (ADR-0015). Desde ADR-0017 §4 también la usan los borrados
+  que antes borraban en línea (foto de perfil, historia, purga de historias, subidas a ejercicios
+  personales): ninguno llama al almacén dentro de la petición.
 
 ### 6. Cuenta expulsada: qué se conserva hoy (estado del código, 2026-11-19)
 
@@ -145,6 +147,16 @@ Se documenta para que los textos (I1 de la revisión legal 2) no prometan un pla
 
 Fijar un plazo de retención para estas cuentas exige una decisión de producto y una purga nueva;
 mientras no exista, los textos no deben afirmar uno.
+
+### 7. Fin de la revisión por menor: la persona recibe aviso
+
+Cuando moderación descarta la denuncia por menor y se levanta la suspensión provisional
+(`ModerationMinorService.liftIfCleared`), la persona recibe, en la misma transacción, un aviso en la
+app y un correo (`NOTICE_EMAIL`, el mismo mecanismo que la suspensión): «Tu cuenta está activa otra
+vez» (`MODERATION_MINOR_REVIEW_CLEARED`). Si otra sanción la mantiene suspendida, o la misma
+resolución aplica una, el aviso dice que la cuenta sigue suspendida y remite al aviso de esa
+sanción. No nombra a quien denunció. Si la suspensión no se levanta (queda otra denuncia por menor
+abierta), no se envía nada.
 
 ## Consecuencias y reversión
 

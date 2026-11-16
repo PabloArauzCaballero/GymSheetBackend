@@ -32,6 +32,8 @@ const admin: AuthenticatedUser = {
   impersonating: false,
 };
 
+const personalMedia = { releaseReplaced: jest.fn().mockResolvedValue(undefined) };
+
 function buildService() {
   const existing = {
     exerciseId,
@@ -72,8 +74,9 @@ function buildService() {
     mediaRepository as never,
     sequelize as never,
     storage as never,
+    personalMedia as never,
   );
-  return { service, existing };
+  return { service, existing, storage };
 }
 
 describe("ExerciseMediaService.uploadMedia al volver a subir una pieza", () => {
@@ -92,5 +95,20 @@ describe("ExerciseMediaService.uploadMedia al volver a subir una pieza", () => {
     expect(changes.url).toBe(newUrl);
     expect(changes.checksumSha256).toBe(newChecksum);
     expect(changes.status).toBe(ExerciseMediaStatus.ACTIVE);
+    // The replaced object is handed to the personal-media release, which keeps catalog keys.
+    expect(personalMedia.releaseReplaced).toHaveBeenCalledWith(oldUrl, expect.objectContaining({ url: newUrl }), expect.objectContaining({ id: exerciseId }));
+  });
+
+  it("guarda en el catálogo inmutable la subida de un ejercicio global", async () => {
+    const { service, storage } = buildService();
+
+    await service.uploadMedia(
+      admin,
+      exerciseId,
+      { originalname: "hombre.mp4", mimetype: "video/mp4", size: 10, buffer: Buffer.from("nuevo") },
+      uploadExerciseMediaSchema.parse({ altText: "Demostración", variant: "HOMBRE" }),
+    );
+
+    expect(storage.upload).toHaveBeenCalledWith(expect.anything(), { category: "ejercicios", exerciseId });
   });
 });

@@ -17,16 +17,26 @@ describe('ACCOUNT_CLOSURE_STEPS', () => {
     expect(ACCOUNT_CLOSURE_STEPS.some((step) => step.table === 'public.usuarios')).toBe(false);
   });
 
-  it('collects the files of photos, stories, reels, chat media, comment attachments and verification selfies', () => {
+  it('collects the files of photos, stories, reels, chat media, comment attachments, verification selfies and personal exercise uploads', () => {
     const withMedia = new Set(ACCOUNT_CLOSURE_STEPS.filter((step) => step.mediaKey).map((step) => step.table));
     expect([...withMedia].sort()).toEqual([
       'chat.messages', 'community.content_comments', 'profile.photos', 'profile.stories', 'social.photo_verifications', 'social.reels',
+      'training.exercise_media',
     ]);
   });
 
   it('deletes every verification attempt of the member and releases its selfie', () => {
     const steps = ACCOUNT_CLOSURE_STEPS.filter((step) => step.table === 'social.photo_verifications');
     expect(steps).toEqual([expect.objectContaining({ disposition: 'DELETED', where: 't.user_id = :userId', mediaKey: 't.selfie_storage_key' })]);
+  });
+
+  it('erases personal exercise uploads from the owner folder before the exercises themselves', () => {
+    const uploads = ACCOUNT_CLOSURE_STEPS.findIndex((step) => step.table === 'training.exercise_media');
+    const exercises = ACCOUNT_CLOSURE_STEPS.findIndex((step) => step.table === 'public.ejercicios');
+    expect(uploads).toBeGreaterThanOrEqual(0);
+    expect(uploads).toBeLessThan(exercises);
+    expect(ACCOUNT_CLOSURE_STEPS[uploads].where).toContain("'/ejercicios/%'");
+    expect(ACCOUNT_CLOSURE_STEPS[uploads].where).toContain("e.tipo_ejercicio = 'PERSONAL'");
   });
 
   it('keeps the moderation evidence of franja 4 (no FK, so the e2e FK scan cannot see it)', () => {

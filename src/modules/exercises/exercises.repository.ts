@@ -491,8 +491,8 @@ export class ExercisesRepository {
     return exercise;
   }
 
-  async markInactive(exercise: ExerciseModel): Promise<ExerciseModel> {
-    await exercise.update({ status: ExerciseStatus.INACTIVE });
+  async markInactive(exercise: ExerciseModel, transaction?: Transaction): Promise<ExerciseModel> {
+    await exercise.update({ status: ExerciseStatus.INACTIVE }, { transaction });
     return exercise;
   }
 

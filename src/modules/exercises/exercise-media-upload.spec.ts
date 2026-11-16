@@ -2,7 +2,7 @@ import {
   ExerciseMediaProvider,
   ExerciseMediaType,
 } from "../../common/enums/domain.enums";
-import { mediaTargetPrefix } from "../media/media-storage.port";
+import { isUserContentKey, mediaTargetPrefix } from "../media/media-storage.port";
 import {
   mediaProviderForStorage,
   mediaTypeForMime,
@@ -23,6 +23,14 @@ describe("mediaTargetPrefix para ejercicios", () => {
     expect(
       mediaTargetPrefix({ category: "ejercicios", exerciseId }),
     ).toBe(`ejercicios/${exerciseId}`);
+  });
+
+  it("guarda la subida de un ejercicio personal en la carpeta de su dueño, donde se puede borrar", () => {
+    const ownerUserId = "6a1c0f5e-3b7d-4c2a-9e1f-0b8d7c6a5e4f";
+    const prefix = mediaTargetPrefix({ category: "ejercicios", exerciseId, ownerUserId });
+    expect(prefix).toBe(`users/${ownerUserId}/ejercicios/${exerciseId}`);
+    expect(isUserContentKey(`${prefix}/archivo.mp4`)).toBe(true);
+    expect(isUserContentKey(`ejercicios/${exerciseId}/archivo.mp4`)).toBe(false);
   });
 
   it("no se mezcla con la mediateca administrada", () => {
