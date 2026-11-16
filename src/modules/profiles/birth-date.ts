@@ -1,4 +1,5 @@
-export const MIN_PROFILE_AGE = 12;
+/** The whole app is 18+ (product decision F1.11). */
+export const MIN_PROFILE_AGE = 18;
 export const MAX_PROFILE_AGE = 100;
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;

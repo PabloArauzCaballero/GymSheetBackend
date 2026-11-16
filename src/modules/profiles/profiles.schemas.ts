@@ -7,13 +7,14 @@ import {
   isCalendarDate,
 } from "./birth-date";
 
+const MIN_AGE_MESSAGE = `Debes tener al menos ${MIN_PROFILE_AGE} años.`;
+const MAX_AGE_MESSAGE = `La edad no puede superar los ${MAX_PROFILE_AGE} años.`;
+
 const birthDateSchema = z
   .string()
   .refine(isCalendarDate, "fechaNacimiento debe ser una fecha válida YYYY-MM-DD.")
-  .refine((value) => {
-    const age = ageFromBirthDate(value);
-    return age >= MIN_PROFILE_AGE && age <= MAX_PROFILE_AGE;
-  }, `La edad debe estar entre ${MIN_PROFILE_AGE} y ${MAX_PROFILE_AGE} años.`);
+  .refine((value) => ageFromBirthDate(value) >= MIN_PROFILE_AGE, MIN_AGE_MESSAGE)
+  .refine((value) => ageFromBirthDate(value) <= MAX_PROFILE_AGE, MAX_AGE_MESSAGE);
 
 /**
  * Preserves the v1 Spanish request contract while producing an English
@@ -26,7 +27,13 @@ const birthDateSchema = z
 export const upsertProfileSchema = z
   .object({
     fechaNacimiento: birthDateSchema.nullable().optional(),
-    edad: z.number().int().min(MIN_PROFILE_AGE).max(MAX_PROFILE_AGE).nullable().optional(),
+    edad: z
+      .number()
+      .int()
+      .min(MIN_PROFILE_AGE, MIN_AGE_MESSAGE)
+      .max(MAX_PROFILE_AGE, MAX_AGE_MESSAGE)
+      .nullable()
+      .optional(),
     pesoKg: z.number().min(1).max(400),
     estaturaCm: z.number().int().min(80).max(250),
     objetivo: z.nativeEnum(TrainingGoal),

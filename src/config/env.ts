@@ -57,6 +57,7 @@ export const environmentSchema = z
     API_PREFIX: z.string().trim().min(1).default("api/v1"),
     CORS_ORIGINS: commaSeparatedListSchema.default("http://localhost:5173"),
     TRUST_PROXY: environmentBooleanSchema.default(false),
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
     REQUEST_BODY_LIMIT: z
       .string()
       .regex(/^\d+(kb|mb)$/i)
