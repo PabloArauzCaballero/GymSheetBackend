@@ -50,6 +50,10 @@ export type JwtPayload = {
   role: UserRole;
   /** Device the session is bound to; lets "sign out everywhere else" keep this one. */
   did?: string;
+  /** Issued-at, seconds (set by the signer). */
+  iat?: number;
+  /** Issued-at in milliseconds, so a session cut can tell apart tokens minted in the same second. */
+  sat?: number;
   /**
    * Gimnasio suplantado. Presente SÓLO en los tokens que emite
    * `POST /auth/impersonate-tenant`, y honrado sólo si la cuenta sigue siendo

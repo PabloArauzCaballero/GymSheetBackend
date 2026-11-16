@@ -52,6 +52,7 @@ function build(options: { linkedUserId?: string | null; byEmail?: unknown; verif
     findByEmail: jest.fn().mockResolvedValue(options.byEmail ?? null),
     markEmailVerified: jest.fn().mockResolvedValue(undefined),
     updatePasswordHash: jest.fn().mockResolvedValue(undefined),
+    invalidateIssuedSessions: jest.fn().mockResolvedValue(undefined),
     createClient: jest.fn().mockResolvedValue({ ...account, id: 'user-new', emailVerifiedAt: new Date() }),
   };
   const legal = { assertCurrentTermsVersion: jest.fn(), recordSignupAcceptances: jest.fn().mockResolvedValue(undefined) };
@@ -121,6 +122,7 @@ describe('IdentitySignInService', () => {
     await service.signIn('GOOGLE', 'token', undefined, device);
     expect(users.updatePasswordHash).toHaveBeenCalledWith('user-1', expect.stringMatching(/^\$2[aby]\$/u), transaction);
     expect(devices.endAllSessions).toHaveBeenCalledWith('user-1', 'PASSWORD_RESET', transaction);
+    expect(users.invalidateIssuedSessions).toHaveBeenCalledWith('user-1', transaction);
     expect(identities.link).toHaveBeenCalled();
   });
 
@@ -129,6 +131,7 @@ describe('IdentitySignInService', () => {
     await service.signIn('GOOGLE', 'token', undefined, device);
     expect(users.updatePasswordHash).not.toHaveBeenCalled();
     expect(devices.endAllSessions).not.toHaveBeenCalled();
+    expect(users.invalidateIssuedSessions).not.toHaveBeenCalled();
   });
 
   it('refuses to link through an unverified Google email', async () => {

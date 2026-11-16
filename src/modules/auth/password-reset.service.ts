@@ -148,6 +148,8 @@ export class PasswordResetService {
         RefreshTokenRevokedReason.PASSWORD_RESET,
         transaction,
       );
+      // And the access tokens already in flight, not only the refresh tokens.
+      await this.users.invalidateIssuedSessions(user.id, transaction);
     });
 
     // Aviso posterior al cambio, no una cortesía: es lo único que le dice a la

@@ -39,6 +39,7 @@ function buildService(options: {
   const users = {
     findActiveByEmail: jest.fn().mockResolvedValue(options.user),
     updatePasswordHash: jest.fn().mockResolvedValue(undefined),
+    invalidateIssuedSessions: jest.fn().mockResolvedValue(undefined),
   };
   const notifications = { enqueueDirectMessage: jest.fn().mockResolvedValue(true) };
   const refreshTokens = { revokeAllForUser: jest.fn().mockResolvedValue([0]) };
@@ -129,6 +130,8 @@ describe('PasswordResetService', () => {
       await service.confirm('athlete@gymsheet.local', '123456', 'ClaveNueva2026!');
 
       expect(users.updatePasswordHash).toHaveBeenCalledTimes(1);
+      // The access tokens already issued end too, not only the refresh tokens.
+      expect(users.invalidateIssuedSessions).toHaveBeenCalledWith('user-1', expect.anything());
       const [, passwordHash] = users.updatePasswordHash.mock.calls[0] as [string, string];
       await expect(bcrypt.compare('ClaveNueva2026!', passwordHash)).resolves.toBe(true);
       expect(token.update).toHaveBeenCalledWith(

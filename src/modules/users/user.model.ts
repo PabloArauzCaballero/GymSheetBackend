@@ -109,6 +109,10 @@ export class UserModel extends Model {
   @Column({ type: DataType.STRING(6), allowNull: true, field: 'signup_risk' })
   declare signupRisk: 'LOW' | 'MEDIUM' | 'HIGH' | null;
 
+  /** Access tokens issued before this instant are no longer accepted. */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'sessions_valid_after' })
+  declare sessionsValidAfter: Date | null;
+
   @HasOne(() => AnthropometricProfileModel)
   declare anthropometricProfile?: AnthropometricProfileModel;
 

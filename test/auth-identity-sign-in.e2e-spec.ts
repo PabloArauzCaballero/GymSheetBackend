@@ -131,6 +131,9 @@ describe('Google / Apple sign-in (e2e)', () => {
       .post(e2e.url('/auth/refresh'))
       .send({ refreshToken: registered.body.data.refreshToken })
       .expect(401);
+    // The access token the pre-registrant already held stops working at once.
+    await e2e.as(registered.body.data.accessToken as string).get('/auth/me').expect(401);
+    await e2e.as(signedIn.body.data.accessToken as string).get('/auth/me').expect(200);
   });
 
   it('rejects forged, foreign, unverified and nonce-mismatched tokens', async () => {

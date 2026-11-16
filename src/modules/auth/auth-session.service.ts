@@ -62,6 +62,7 @@ export class AuthSessionService {
       sub: account.id,
       email: account.email,
       role: account.role,
+      sat: Date.now(),
       ...(deviceId ? { did: deviceId } : {}),
     };
     const accessToken = this.jwtService.sign(payload, {

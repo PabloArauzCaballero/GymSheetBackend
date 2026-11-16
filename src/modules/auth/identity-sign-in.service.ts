@@ -157,6 +157,7 @@ export class IdentitySignInService {
           const unusable = await bcrypt.hash(randomBytes(32).toString("hex"), env.BCRYPT_SALT_ROUNDS);
           await this.users.updatePasswordHash(user.id, unusable, transaction);
           await this.devices.endAllSessions(user.id, RefreshTokenRevokedReason.PASSWORD_RESET, transaction);
+          await this.users.invalidateIssuedSessions(user.id, transaction);
         }
         if (identityToLink) {
           await this.identities.link(identityToLink.provider, identityToLink.subject, user.id, identityToLink.email, transaction);
