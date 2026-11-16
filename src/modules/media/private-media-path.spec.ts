@@ -5,6 +5,7 @@ describe("isPrivateStoredMediaPath", () => {
     "/users/a/chats/c/photo.jpg",
     "/users/a/stories/photo.jpg",
     "/users/a/reels/clip.mp4",
+    "/users/a/verificaciones/selfie.jpg",
     "/stories/legacy-photo.jpg",
   ])("blocks private media path %s from static delivery", (path) => {
     expect(isPrivateStoredMediaPath(path)).toBe(true);

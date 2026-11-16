@@ -152,7 +152,15 @@ describe('AuthService me', () => {
       rol: 'CLIENTE',
       nombreCompleto: 'Registered User',
       emailVerified: false,
+      verified: false,
     });
+  });
+
+  it('expone si la persona pasó la verificación con selfie, leído de la cuenta', async () => {
+    const service = createService({
+      findActiveById: jest.fn().mockResolvedValue({ fullName: 'Registered User', verifiedAt: new Date() }),
+    });
+    await expect(service.me(principal)).resolves.toMatchObject({ verified: true });
   });
 
   it('expone si el correo está verificado, leído de la cuenta', async () => {

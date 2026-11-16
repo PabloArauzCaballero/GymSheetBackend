@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from "@nes
 import { env } from "../../config/env";
 import { MediaRetentionService } from "../media/media-retention.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
+import { VerificationRevocationService } from "../verification/verification-revocation.service";
 import { mapProfilePhotoToResponse, ProfilePhotoResponse } from "./profile-photo.mapper";
 import { ProfilePhotosRepository } from "./profile-photos.repository";
 
@@ -28,6 +29,7 @@ export class ProfilePhotosService {
     private readonly repository: ProfilePhotosRepository,
     @Inject(MEDIA_STORAGE_PROVIDER) private readonly storage: MediaStorageProvider,
     private readonly retention: MediaRetentionService,
+    private readonly verificationRevocation: VerificationRevocationService,
   ) {}
 
   async list(userId: string): Promise<ProfilePhotoResponse[]> {
@@ -83,9 +85,14 @@ export class ProfilePhotosService {
     // La clave de almacenamiento es el SHA-256 del contenido, así que dos
     // cuentas que subieron la misma imagen comparten fichero. Borrarlo sin
     // mirar el refcount dejaría a la otra cuenta con la foto rota.
+    // Same transaction: removing the last photo the moderator compared the
+    // verification selfie with clears `verified_at` atomically with the delete.
     await this.retention.deleteRowAndUnreferencedFile(
       photo.storageKey,
-      (transaction) => this.repository.delete(photo, transaction),
+      async (transaction) => {
+        await this.repository.delete(photo, transaction);
+        await this.verificationRevocation.revokeIfComparedPhotosGone(userId, transaction);
+      },
     );
     return { deleted: true };
   }

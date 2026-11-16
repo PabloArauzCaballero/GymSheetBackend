@@ -1,0 +1,156 @@
+import { ForbiddenException, HttpException, NotFoundException } from "@nestjs/common";
+import { Transaction } from "sequelize";
+import { Sequelize } from "sequelize-typescript";
+import { UserRole } from "../../common/enums/domain.enums";
+import { AuthenticatedUser } from "../../common/types/auth-context.types";
+import { env } from "../../config/env";
+import { ChatMediaCipher } from "../chat/chat-media-cipher";
+import { MediaStorageProvider } from "../media/media-storage.port";
+import { NotificationService } from "../notifications/notification.service";
+import { PhotoVerificationModel } from "./photo-verification.model";
+import { SelfieLinkSigner } from "./selfie-link.signer";
+import { VerificationRepository } from "./verification.repository";
+import { VerificationReviewService } from "./verification-review.service";
+
+const memberId = "00000000-0000-4000-8000-000000000001";
+const verificationId = "00000000-0000-4000-8000-0000000000aa";
+const now = new Date("2026-11-20T12:00:00.000Z");
+const tx = { id: "tx" } as unknown as Transaction;
+const moderator: AuthenticatedUser = {
+  id: "00000000-0000-4000-8000-0000000000ff",
+  email: "mod@example.test",
+  role: UserRole.ADMIN,
+  tenantId: "gym-a",
+  tenantScope: "gym-a",
+  impersonating: false,
+};
+
+const pending = (overrides: Partial<PhotoVerificationModel> = {}) =>
+  ({
+    id: verificationId,
+    userId: memberId,
+    gestureCode: "OPEN_PALM",
+    status: "PENDING_REVIEW",
+    submittedAt: now,
+    selfieStorageKey: "users/m/verificaciones/k.jpg",
+    selfieMimeType: "image/jpeg",
+    ...overrides,
+  }) as PhotoVerificationModel;
+
+function setup(overrides: Partial<Record<keyof VerificationRepository, jest.Mock>> = {}) {
+  const cipher = new ChatMediaCipher("s".repeat(64));
+  const repository = {
+    findByIdInScope: jest.fn().mockResolvedValue(pending()),
+    lockUser: jest.fn().mockResolvedValue({ verifiedAt: null }),
+    visiblePhotos: jest.fn().mockResolvedValue([
+      { userId: memberId, id: "p1", url: "users/m/perfiles/a.jpg" },
+      { userId: memberId, id: "p2", url: "users/m/perfiles/b.jpg" },
+    ]),
+    update: jest.fn().mockResolvedValue(undefined),
+    setUserVerifiedAt: jest.fn().mockResolvedValue(undefined),
+    listQueue: jest.fn().mockResolvedValue([{ verification: pending(), memberName: "Ana" }]),
+    ...overrides,
+  };
+  const notifications = { enqueueDirectMessage: jest.fn().mockResolvedValue(true) };
+  const storage = { download: jest.fn().mockResolvedValue(cipher.encrypt(Buffer.from("jpeg-bytes"))) };
+  const signer = new SelfieLinkSigner("k".repeat(64));
+  const sequelize = { transaction: jest.fn(async (run: (t: Transaction) => unknown) => run(tx)) };
+  const service = new VerificationReviewService(
+    sequelize as unknown as Sequelize,
+    repository as unknown as VerificationRepository,
+    notifications as unknown as NotificationService,
+    storage as unknown as MediaStorageProvider,
+    cipher,
+    signer,
+    () => now,
+  );
+  return { service, repository, notifications, storage, signer };
+}
+
+describe("VerificationReviewService.decide", () => {
+  it("approves in one transaction: status, reviewer, verified_at, compared photos and the member notice", async () => {
+    const { service, repository, notifications } = setup();
+    const result = await service.decide(moderator, verificationId, { decision: "APPROVE" });
+    expect(result).toMatchObject({ id: verificationId, status: "APPROVED" });
+    expect(repository.findByIdInScope).toHaveBeenCalledWith(verificationId, "gym-a", tx);
+    expect(repository.update).toHaveBeenCalledWith(
+      verificationId,
+      { status: "APPROVED", reviewerId: moderator.id, decisionReason: null, decidedAt: now, approvedPhotoIds: ["p1", "p2"] },
+      tx,
+    );
+    expect(repository.setUserVerifiedAt).toHaveBeenCalledWith(memberId, now, tx);
+    expect(notifications.enqueueDirectMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipientUserId: memberId,
+        channel: "IN_APP",
+        deduplicationKey: `verification.decided:${verificationId}`,
+        metadata: expect.objectContaining({ outcome: "APPROVED" }),
+      }),
+      tx,
+    );
+  });
+
+  it("rejects with the reason text in the notice and leaves verified_at alone", async () => {
+    const { service, repository, notifications } = setup();
+    await service.decide(moderator, verificationId, { decision: "REJECT", reason: "GESTURE_MISMATCH" });
+    expect(repository.update).toHaveBeenCalledWith(
+      verificationId,
+      { status: "REJECTED", reviewerId: moderator.id, decisionReason: "GESTURE_MISMATCH", decidedAt: now },
+      tx,
+    );
+    expect(repository.setUserVerifiedAt).not.toHaveBeenCalled();
+    const [notice] = notifications.enqueueDirectMessage.mock.calls[0];
+    expect(notice.body).toContain("El gesto de la selfie no coincide");
+  });
+
+  it("answers 404 for a verification outside the moderator's gym", async () => {
+    const { service, repository } = setup({ findByIdInScope: jest.fn().mockResolvedValue(null) });
+    await expect(service.decide(moderator, verificationId, { decision: "APPROVE" })).rejects.toThrow(NotFoundException);
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it("answers 409 when the attempt is not waiting for review", async () => {
+    const { service } = setup({ findByIdInScope: jest.fn().mockResolvedValue(pending({ status: "APPROVED" })) });
+    await expect(service.decide(moderator, verificationId, { decision: "REJECT", reason: "OTHER" }))
+      .rejects.toMatchObject({ status: 409 });
+  });
+
+  it("does not approve against an empty gallery", async () => {
+    const { service, repository } = setup({ visiblePhotos: jest.fn().mockResolvedValue([]) });
+    await expect(service.decide(moderator, verificationId, { decision: "APPROVE" })).rejects.toThrow(HttpException);
+    expect(repository.setUserVerifiedAt).not.toHaveBeenCalled();
+  });
+});
+
+describe("VerificationReviewService queue and selfie", () => {
+  it("lists with the gesture, the member photos and a signed link bound to the moderator", async () => {
+    const { service, repository, signer } = setup();
+    const [item] = await service.listQueue(moderator, { status: "PENDING_REVIEW", limit: 20 });
+    expect(repository.listQueue).toHaveBeenCalledWith("PENDING_REVIEW", 20, "gym-a");
+    expect(item).toMatchObject({
+      id: verificationId,
+      member: { id: memberId, name: "Ana" },
+      gesture: { code: "OPEN_PALM" },
+      profilePhotos: [{ id: "p1" }, { id: "p2" }],
+    });
+    const url = new URL(item.selfie!.url, "http://api.test");
+    expect(url.pathname).toBe(`/${env.API_PREFIX}/admin/verifications/${verificationId}/selfie`);
+    const expires = Number(url.searchParams.get("expires"));
+    expect(expires).toBe(now.getTime() + 5 * 60 * 1000);
+    expect(signer.isValid(verificationId, moderator.id, expires, url.searchParams.get("signature")!, now)).toBe(true);
+    expect(JSON.stringify(item)).not.toContain("verificaciones/k.jpg");
+  });
+
+  it("serves the decrypted selfie only with a valid link", async () => {
+    const { service, signer, storage } = setup();
+    const expires = now.getTime() + 60_000;
+    const media = await service.readSelfie(moderator, verificationId, {
+      expires,
+      signature: signer.sign(verificationId, moderator.id, new Date(expires)),
+    });
+    expect(media).toEqual({ buffer: Buffer.from("jpeg-bytes"), mimeType: "image/jpeg" });
+    await expect(service.readSelfie(moderator, verificationId, { expires, signature: "A".repeat(43) }))
+      .rejects.toThrow(ForbiddenException);
+    expect(storage.download).toHaveBeenCalledTimes(1);
+  });
+});

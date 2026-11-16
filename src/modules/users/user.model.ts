@@ -105,6 +105,10 @@ export class UserModel extends Model {
   @Column({ type: DataType.DATE, allowNull: true, field: 'last_active_at' })
   declare lastActiveAt: Date | null;
 
+  /** When moderation approved the gesture-selfie person verification. Null = not verified. */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'verified_at' })
+  declare verifiedAt: Date | null;
+
   /** When the person proved the mailbox (PIN or a provider). Null = unverified. */
   @Column({ type: DataType.DATE, allowNull: true, field: 'email_verified_at' })
   declare emailVerifiedAt: Date | null;

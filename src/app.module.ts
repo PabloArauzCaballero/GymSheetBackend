@@ -44,6 +44,7 @@ import { TrainingInvitationsModule } from './modules/training-invitations/traini
 import { ProgressionModule } from './modules/progression/progression.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { UsersModule } from './modules/users/users.module';
+import { VerificationModule } from './modules/verification/verification.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 import { DirectoryModule } from './modules/directory/directory.module';
 import { LegalAcceptanceGuard } from './modules/legal/legal-acceptance.guard';
@@ -133,6 +134,7 @@ import { LegalModule } from './modules/legal/legal.module';
     AdminAccessModule,
     TenantsModule,
     DirectoryModule,
+    VerificationModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

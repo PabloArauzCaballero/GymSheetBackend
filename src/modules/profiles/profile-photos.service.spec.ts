@@ -4,12 +4,14 @@ import { Sequelize } from "sequelize-typescript";
 import { MediaReferencesRepository } from "../media/media-references.repository";
 import { MediaRetentionService } from "../media/media-retention.service";
 import { MediaStorageProvider } from "../media/media-storage.port";
+import { VerificationRevocationService } from "../verification/verification-revocation.service";
 import { ProfilePhotosRepository } from "./profile-photos.repository";
 import { ProfilePhotosService, UploadedProfilePhoto } from "./profile-photos.service";
 
 const userId = "00000000-0000-4000-8000-000000000001";
 const otherUserId = "00000000-0000-4000-8000-000000000002";
 const transaction = { id: "tx" } as unknown as Transaction;
+const revokeIfComparedPhotosGone = jest.fn().mockResolvedValue(false);
 
 function createImageFile(overrides: Partial<UploadedProfilePhoto> = {}): UploadedProfilePhoto {
   return {
@@ -59,6 +61,7 @@ function createService(
     repositoryOverrides as ProfilePhotosRepository,
     storage,
     retention,
+    { revokeIfComparedPhotosGone } as unknown as VerificationRevocationService,
   );
 }
 
@@ -137,6 +140,11 @@ describe("ProfilePhotosService.remove", () => {
     await expect(service.remove(userId, "photo-1")).resolves.toEqual({ deleted: true });
     expect(storageRemove).toHaveBeenCalledWith("profile-photos/key.jpg");
     expect(repositoryDelete).toHaveBeenCalled();
+    // The verification rule runs inside the deletion transaction, after the row is gone.
+    expect(revokeIfComparedPhotosGone).toHaveBeenCalledWith(userId, transaction);
+    expect(repositoryDelete.mock.invocationCallOrder[0]).toBeLessThan(
+      revokeIfComparedPhotosGone.mock.invocationCallOrder.at(-1) ?? 0,
+    );
   });
 
   it("deletes the row but keeps a file another row still references", async () => {

@@ -25,6 +25,8 @@ export type MediaStorageProviderName =
  * `publicaciones` está declarado pero todavía no lo usa nadie: no existe el
  * módulo de publicaciones. Se reserva aquí para que, cuando exista, el layout
  * de claves no tenga que cambiar (y con él, las URLs ya persistidas).
+ * `verificaciones` holds person-verification selfies (biometric data): private,
+ * encrypted at rest and outside the anonymous MinIO read policy.
  * `reels` tiene una carpeta separada porque sus objetos no están en la política
  * de lectura anónima de MinIO; no se debe guardar contenido de este módulo bajo
  * `publicaciones`.
@@ -35,6 +37,7 @@ export type MediaCategory =
   | "reels"
   | "publicaciones"
   | "chats"
+  | "verificaciones"
   | "catalog"
   | "ejercicios";
 
@@ -49,7 +52,7 @@ export type MediaCategory =
  */
 export type MediaUploadTarget =
   | {
-      readonly category: "perfiles" | "stories" | "reels" | "publicaciones";
+      readonly category: "perfiles" | "stories" | "reels" | "publicaciones" | "verificaciones";
       readonly ownerUserId: string;
     }
   | {

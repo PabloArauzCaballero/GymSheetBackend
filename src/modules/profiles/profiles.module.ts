@@ -18,11 +18,13 @@ import { ProfilePhotosRepository } from "./profile-photos.repository";
 import { ProfilePhotosService } from "./profile-photos.service";
 import { TutorialProgressController } from "./tutorial-progress.controller";
 import { TutorialProgressService } from "./tutorial-progress.service";
+import { VerificationModule } from "../verification/verification.module";
 
 @Module({
   imports: [
     MediaModule,
     IntegrationModule,
+    VerificationModule,
     SequelizeModule.forFeature([
       AnthropometricProfileModel,
       OnboardingModel,

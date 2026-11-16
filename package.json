@@ -30,6 +30,8 @@
     "db:outbox:prune:prod": "node dist/workers/outbox-prune.command.js",
     "db:signups:retention": "ts-node src/workers/signup-retention.command.ts",
     "db:signups:retention:prod": "node dist/workers/signup-retention.command.js",
+    "db:verification:retention": "ts-node src/workers/verification-retention.command.ts",
+    "db:verification:retention:prod": "node dist/workers/verification-retention.command.js",
     "db:media:mirror": "ts-node src/workers/media-mirror.command.ts",
     "db:media:mirror:prod": "node dist/workers/media-mirror.command.js",
     "db:media:laminas-hd": "ts-node src/workers/exercise-images-hd.command.ts",

@@ -44,6 +44,7 @@ import { AnthropometricProfileModel } from "../../modules/profiles/anthropometri
 import { BodyMeasurementModel } from "../../modules/profiles/body-measurement.model";
 import { OnboardingModel } from "../../modules/profiles/onboarding.model";
 import { ProfilePhotoModel } from "../../modules/profiles/profile-photo.model";
+import { PhotoVerificationModel } from "../../modules/verification/photo-verification.model";
 import { ConnectionModel } from "../../modules/social/connection.model";
 import { DiscoveryPassModel } from "../../modules/social/discovery-pass.model";
 import { ProfileSocialSettingsModel } from "../../modules/social/profile-social-settings.model";
@@ -224,4 +225,5 @@ export const databaseModels = [
   PaymentOrderModel,
   SignupTicketModel,
   SignupAuditModel,
+  PhotoVerificationModel,
 ];

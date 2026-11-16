@@ -126,6 +126,7 @@ import { signupAntibotMigration } from "./202611170201-signup-antibot";
 import { sessionsValidAfterMigration } from "./202611170301-sessions-valid-after";
 import { notificationSecretMessagesMigration } from "./202611170401-notification-secret-messages";
 import { discoveryRankingMigration } from "./202611190101-discovery-ranking";
+import { photoVerificationsMigration } from "./202611200101-photo-verifications";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
 export const databaseMigrations: DatabaseMigration[] = [
@@ -258,4 +259,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   sessionsValidAfterMigration,
   notificationSecretMessagesMigration,
   discoveryRankingMigration,
+  photoVerificationsMigration,
 ];

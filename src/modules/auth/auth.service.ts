@@ -315,6 +315,7 @@ export class AuthService {
       rol: principal.role,
       nombreCompleto: account?.fullName ?? '',
       emailVerified: Boolean(account?.emailVerifiedAt),
+      verified: Boolean(account?.verifiedAt),
     };
   }
 }
