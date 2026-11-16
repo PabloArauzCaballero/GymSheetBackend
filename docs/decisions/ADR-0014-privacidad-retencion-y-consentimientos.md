@@ -2,6 +2,12 @@
 
 Estado: aceptado · Fecha: 2026-11-18 · Amplía [ADR-0013](ADR-0013-antibot-alta-de-cuentas.md)
 
+> **Quién modera (2026-11-16):** las denuncias, la evidencia de mensajes, las sanciones, los menores
+> y el ocultado de contenido los decide el equipo central de REPP (`UserRole.MODERATOR` y
+> `SYSTEM_ADMIN`), no el personal del gimnasio: ver
+> [ADR-0018](ADR-0018-moderacion-central-de-repp.md). Donde este ADR dice «moderación», es ese
+> equipo.
+
 ## Contexto
 
 Los textos legales para Bolivia sólo pueden prometer lo que el código hace. El mapa de datos de la
@@ -54,12 +60,34 @@ cierre de cuenta conservó por estar denunciado: se borra (o queda como «borrad
 personas le respondieron) cuando todas sus denuncias llevan cerradas más de
 `REPORT_EVIDENCE_RETENTION_DAYS` (180 días, el mismo plazo que la copia de evidencia del chat), y
 sus archivos salen por la cola `media.release`. También incluye la retención de selfies de
-verificación (franja 6): cierra los gestos sin respuesta a las 24 h y borra la clave de la selfie de
-inmediato si el intento quedó `EXPIRED`, o 30 días después de la decisión; cada lote borra las claves
+verificación (franja 6): cierra los gestos sin respuesta a las 24 h, cierra (`EXPIRED`) la selfie
+que espera revisión más de `VERIFICATION_REVIEW_DEADLINE_DAYS` días desde que se envió (ver abajo),
+y borra la clave de la selfie de inmediato si el intento quedó `EXPIRED`, o 30 días después de la
+decisión; cada lote borra las claves
 y encola los archivos en `media.release` en una transacción (reintentos, dead-letter, recuento de
 referencias —que ahora incluye `social.photo_verifications.selfie_storage_key`, con índice parcial
 de la migración `202611200201`— y almacenamiento inmutable). `yarn db:verification:retention` es un
 alias de `yarn db:privacy:retention`.
+
+**Plazo de revisión de la selfie (tercera revisión legal, I-5).** Hasta ahora un intento en
+`PENDING_REVIEW` sólo podía terminar en `APPROVED` o `REJECTED`: si el equipo de REPP no decidía, el
+dato biométrico se quedaba sin plazo. Se fija `VERIFICATION_REVIEW_DEADLINE_DAYS = 30`
+(`verification.policy.ts`). Pasado ese plazo desde `submitted_at`, la pasada diaria lo cierra como
+`EXPIRED` (la máquina de estados admite `PENDING_REVIEW → EXPIRED`, que ya usaba la revocación del
+consentimiento), en la misma transacción encola el aviso «Tu verificación venció sin revisión»
+(`metadata.outcome = REVIEW_EXPIRED`, deduplicado por intento) y, en el paso siguiente de la misma
+pasada, borra la clave y encola el archivo en `media.release`. La persona puede pedir un gesto nuevo:
+el intento vencido deja libre el índice de intento activo. Una decisión que llega tarde responde
+`409 VERIFICATION_CHALLENGE_EXPIRED`; las filas que una decisión tiene bloqueadas se saltan
+(`SKIP LOCKED`) y quedan para esa decisión.
+
+Por qué 30 días: (1) es el mismo plazo que ya guarda la selfie después de una decisión, de modo que
+ninguna selfie vive más de 60 días en ninguna rama y la regla se explica con un solo número; (2) la
+cola es central y se atiende en orden de llegada, así que 30 días es holgura de sobra para un equipo
+que revisa a diario, y un intento que no se atendió en ese tiempo es un fallo de operación, no un
+caso que gane algo por esperar; (3) mientras espera, la persona no puede volver a intentarlo, y
+pasado un mes la galería contra la que se compara probablemente ya cambió. Cambiar la cifra es
+cambiar la constante y el texto del consentimiento que la cite.
 
 ### 3. Registro de consentimientos (`auth.consents`)
 
@@ -90,6 +118,11 @@ persona y tipo (índice único parcial). Las versiones vigentes viven en
 - Un consentimiento dado a una versión anterior sigue vigente y se informa con `upToDate: false`
   para que el cliente vuelva a preguntar. La migración crea filas `LEGACY` para lo que ya existía
   (salud aceptada, orientación guardada, mapa encendido).
+- **2026-11-16 (tercera revisión legal, N2):** los cuatro textos de las casillas cambiaron, así que
+  los cuatro tipos pasan de `2026-12-01` a `2026-12-02`. Toda fila con `2026-12-01` corresponde al
+  texto anterior (el de la rama f2): sigue vigente, se informa con `upToDate: false` y el cliente
+  vuelve a preguntar; aceptar `2026-12-01` responde `409 CONSENT_VERSION_OUTDATED`. Si
+  `2026-12-01` llegó a correr fuera de desarrollo, esas filas son la constancia del texto viejo.
 - Las sentencias de borrado viven en `consents.repository.ts` y tocan tablas de onboarding y social
   a propósito: revocación y borrado son atómicos, y los módulos dueños dependen de `consents`, no al
   revés.

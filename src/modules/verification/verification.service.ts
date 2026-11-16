@@ -70,7 +70,7 @@ export class VerificationService {
           throw new DomainException(
             HttpStatus.CONFLICT,
             "VERIFICATION_IN_REVIEW",
-            "Tu selfie ya está en revisión. Te avisaremos cuando la revisemos.",
+            "El equipo de REPP ya está revisando tu selfie. Te avisaremos cuando decida.",
           );
         }
         const photos = await this.repository.visiblePhotos([userId], transaction);

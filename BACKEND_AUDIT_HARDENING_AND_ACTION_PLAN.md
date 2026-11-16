@@ -917,6 +917,16 @@ Aflorados por F-001 y resueltos sin cambio de comportamiento:
 | I9 · el personal no tenía vía de cierre | `POST /admin/users/:id/close` (ADMIN del mismo gimnasio, auditado; 404 ajeno, 403 propio o último ADMIN); el cierre conserva rutinas asignadas a socios y sus chats con el gimnasio | `test/staff-closure.e2e-spec.ts` |
 | I1 · retención de una cuenta expulsada | sin purga ni plazo en código: documentado en ADR-0014 §6 (R-007) | — |
 
+### Revisión legal 3 (franja 4): quién modera, versiones y cola muerta
+
+| Hallazgo | Corrección | Prueba |
+|---|---|---|
+| N1 · moderaba el personal del gimnasio | ADR-0018: rol de plataforma `MODERATOR` (más `SYSTEM_ADMIN`) para `admin/moderation/*`, `GET /admin/signups` y `GET /admin/routines`; `ADMIN`/`FRONT_DESK` reciben `403`; `moderation:*` retirados (migración `202611200101`, reversible); cola de todos los gimnasios con `tenant_id`/`tenant_name`; veredicto auditado con el id del moderador y el gimnasio; altas y bajas sólo por `SYSTEM_ADMIN` (`/admin/platform/moderators`); los avisos nombran al equipo de moderación de REPP | `test/platform-moderation.e2e-spec.ts`, `src/modules/moderation/platform-moderation.spec.ts`, `test/antibot-signup.e2e-spec.ts` |
+| N2 · `CONSENT_VERSIONS` sin subir | los cuatro tipos pasan a `2026-12-02`; lo aceptado con `2026-12-01` responde `upToDate: false` | `test/privacy-consents.e2e-spec.ts`, `consents.service.spec.ts` |
+| N1 · la selfie de verificación la revisaba el gimnasio | `GET/POST /admin/verifications*` pasan a `PLATFORM_MODERATION_ROLES` con `platformScopeOf` (cola de todos los gimnasios con `tenantId`/`tenantName`; `ADMIN`/`FRONT_DESK` reciben `403` con o sin `moderation:*`); la decisión se audita `verification/decide` con `metadata { tenantId, decision, reason }` y `tenant_scope` nulo para un `MODERATOR`; los avisos nombran al equipo de REPP | `test/photo-verification.e2e-spec.ts`, `verification.controller.spec.ts`, `verification-review.service.spec.ts`, `platform-moderation.spec.ts` |
+| I-5 · una selfie en revisión no tenía plazo | `VERIFICATION_REVIEW_DEADLINE_DAYS = 30`: la retención diaria pasa a `EXPIRED` lo que espera revisión más de 30 días desde `submitted_at`, avisa a la persona en la misma transacción y borra la selfie por `media.release` (ADR-0014 §2) | `test/photo-verification.e2e-spec.ts`, `test/privacy-retention.e2e-spec.ts`, `verification-revocation-retention.spec.ts` |
+| I-2 · dead-letter de `media.release` invisible | gauge `gym_sheet_outbox_dead_letter_jobs{queue="media.release"}` siempre presente en `/health/metrics`; alerta y responsable en el runbook de ADR-0017 (paso 6, condición de despliegue) | `test/user-media-release.e2e-spec.ts`, `outbox-metrics.service.spec.ts` |
+
 ---
 
 ## 5. Matriz de alcance funcional (dominio real: gimnasio)

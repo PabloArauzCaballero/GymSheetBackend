@@ -9,6 +9,7 @@ import { env } from '../src/config/env';
 import { LEGAL_DOCUMENTS, LEGAL_DOCUMENT_CONTENT_SHA256 } from '../src/modules/legal/legal-documents';
 import { MediaReferencesRepository } from '../src/modules/media/media-references.repository';
 import { MediaReleaseService } from '../src/modules/media/media-release.service';
+import { NotificationService } from '../src/modules/notifications/notification.service';
 import { TicketLedgerRepository } from '../src/modules/antibot/ticket-ledger.repository';
 import { ReportedContentRetentionService } from '../src/modules/account/reported-content-retention.service';
 import { PrivacyRetentionRepository } from '../src/modules/privacy/privacy-retention.repository';
@@ -97,8 +98,19 @@ describe('Privacy retention and minimisation (e2e)', () => {
       });
     }
 
-    // Verification selfies are a step of the same pass: one decided 61 days before `now`, one abandoned challenge.
-    const [decidedId, abandonedId] = [randomUUID(), randomUUID()];
+    // Verification selfies are a step of the same pass: one decided 61 days before `now`, one abandoned challenge,
+    // and (another member) one waiting for review 47 days, past the 30-day review deadline.
+    const [decidedId, abandonedId, overdueId] = [randomUUID(), randomUUID(), randomUUID()];
+    const reviewed = await e2e.register('privacy-retention-review');
+    const overdueKey = `users/${reviewed.id}/verificaciones/${randomUUID()}.jpg`;
+    mkdirSync(dirname(join(mediaRoot, overdueKey)), { recursive: true });
+    writeFileSync(join(mediaRoot, overdueKey), 'ciphertext');
+    await e2e.sql(
+      `INSERT INTO social.photo_verifications (id, user_id, gesture_code, challenge_issued_at, challenge_expires_at,
+              selfie_storage_key, selfie_mime_type, status, submitted_at, created_at)
+       VALUES (:overdueId, :userId, 'OPEN_PALM', '2026-09-15T00:00:00Z', '2026-09-15T00:10:00Z', :overdueKey, 'image/jpeg',
+               'PENDING_REVIEW', '2026-09-15T00:05:00Z', '2026-09-15T00:00:00Z')`,
+      { overdueId, userId: reviewed.id, overdueKey });
     const selfieKey = `users/${id}/verificaciones/${randomUUID()}.jpg`;
     mkdirSync(dirname(join(mediaRoot, selfieKey)), { recursive: true });
     writeFileSync(join(mediaRoot, selfieKey), 'ciphertext');
@@ -121,12 +133,24 @@ describe('Privacy retention and minimisation (e2e)', () => {
         e2e.app.get(MediaReferencesRepository, { strict: false }),
         mediaRelease,
       ),
-      new VerificationRetentionService(e2e.app.get(VerificationRepository, { strict: false }), mediaRelease),
+      new VerificationRetentionService(
+        e2e.app.get(VerificationRepository, { strict: false }),
+        mediaRelease,
+        e2e.app.get(NotificationService, { strict: false }),
+      ),
     );
     const result = await retention.purge(now);
     expect(result.ipHashesCleared).toBeGreaterThanOrEqual(6);
     expect(result.verification.expiredChallenges).toBeGreaterThanOrEqual(1);
-    expect(result.verification.selfiesErased).toBeGreaterThanOrEqual(1);
+    expect(result.verification.selfiesErased).toBeGreaterThanOrEqual(2);
+    expect(result.verification.expiredReviews).toBeGreaterThanOrEqual(1);
+    const overdue = await selectRows<{ status: string; key: string | null }>(e2e,
+      'SELECT status, selfie_storage_key AS key FROM social.photo_verifications WHERE id = :overdueId', { overdueId });
+    expect(overdue).toEqual([{ status: 'EXPIRED', key: null }]);
+    const reviewNotice = await selectRows<{ subject: string }>(e2e,
+      'SELECT subject FROM notifications.messages WHERE recipient_user_id = :userId AND deduplication_key = :key',
+      { userId: reviewed.id, key: `verification.review-expired:${overdueId}` });
+    expect(reviewNotice).toEqual([{ subject: 'Tu verificación venció sin revisión' }]);
     const verifications = await selectRows<{ id: string; status: string; key: string | null }>(e2e,
       `SELECT id, status, selfie_storage_key AS key FROM social.photo_verifications WHERE user_id = :id ORDER BY created_at`, { id });
     expect(verifications).toEqual([
@@ -136,6 +160,7 @@ describe('Privacy retention and minimisation (e2e)', () => {
     expect(existsSync(join(mediaRoot, selfieKey))).toBe(true);
     await mediaRelease.drainOnce();
     expect(existsSync(join(mediaRoot, selfieKey))).toBe(false);
+    expect(existsSync(join(mediaRoot, overdueKey))).toBe(false);
 
     const remaining = await selectRows<{ source: string; hash: string | null }>(e2e, `
       SELECT 'signup' AS source, ip_hmac AS hash FROM auth.signup_audit WHERE user_id = :id

@@ -59,9 +59,9 @@ para que un ataque no se convierta en tráfico pagado hacia Cloudflare o Google.
   (este, tras el commit), sin correo, IP ni tokens.
 - Contador `gym_sheet_signup_verdicts_total{outcome, reason, risk}` en `/health/metrics`, mediante
   un `CounterRegistry` global de etiquetas acotadas.
-- `GET /admin/signups?risk=&limit=` con `ADMIN` + `moderation:read` (igual que la cola de
-  moderación). Un `ADMIN` de gimnasio ve las altas aceptadas de su gimnasio; un `SYSTEM_ADMIN` sin
-  suplantar ve todo, rechazos incluidos. Nunca se expone `ip_hmac`.
+- `GET /admin/signups?risk=&limit=` (hoy sólo `MODERATOR` y `SYSTEM_ADMIN`, ADR-0018; antes `ADMIN` + `moderation:read`, igual que la cola de
+  moderación). Un `MODERATOR` o un `SYSTEM_ADMIN` sin suplantar ve todo, rechazos incluidos; un
+  `SYSTEM_ADMIN` que suplanta ve las altas aceptadas de ese gimnasio. Nunca se expone `ip_hmac`.
 - `yarn db:signups:retention` (un solo disparo, como `db:outbox:prune`; programarlo a diario):
   borra tokens gastados de más de 1 día y anula `ip_hmac` de auditorías de más de 90 días.
   Desde la franja 4 es un alias de `yarn db:privacy:retention`, que además anula el HMAC de IP en

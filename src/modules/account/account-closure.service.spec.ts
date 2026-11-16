@@ -163,10 +163,12 @@ describe('AccountClosureService.closeStaffByAdmin', () => {
     expect(repository.lockActiveAdmins).not.toHaveBeenCalled();
   });
 
-  it("answers 404 for another gym's account, a platform admin or a missing one", async () => {
+  it("answers 404 for another gym's account, a platform account or a missing one", async () => {
     for (const options of [
       { role: UserRole.COACH, tenantId: 'other-gym' },
       { role: UserRole.SYSTEM_ADMIN, tenantId: 'gym' },
+      // A REPP moderator is not gym staff, even when its own account sits in the gym.
+      { role: UserRole.MODERATOR, tenantId: 'gym' },
     ]) {
       const { service, repository } = await build(options);
       await expect(service.closeStaffByAdmin(admin, userId)).rejects.toMatchObject({ status: 404 });

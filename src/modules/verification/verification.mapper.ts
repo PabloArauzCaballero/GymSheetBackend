@@ -57,6 +57,9 @@ export type QueueItemResponse = {
   id: string;
   status: VerificationStatusValue;
   member: { id: string; name: string };
+  /** Gym of the member: the platform queue mixes every gym (ADR-0018). */
+  tenantId: string;
+  tenantName: string | null;
   gesture: VerificationGesture;
   submittedAt: string | null;
   selfie: { url: string; expiresAt: string } | null;
@@ -65,14 +68,16 @@ export type QueueItemResponse = {
 
 export function mapQueueItem(
   row: PhotoVerificationModel,
-  memberName: string,
+  member: { name: string; tenantId: string; tenantName: string | null },
   photos: readonly MemberPhoto[],
   selfie: QueueItemResponse["selfie"],
 ): QueueItemResponse {
   return {
     id: row.id,
     status: row.status,
-    member: { id: row.userId, name: memberName },
+    member: { id: row.userId, name: member.name },
+    tenantId: member.tenantId,
+    tenantName: member.tenantName,
     gesture: describeGesture(row.gestureCode),
     submittedAt: row.submittedAt?.toISOString() ?? null,
     selfie,

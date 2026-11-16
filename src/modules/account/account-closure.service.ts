@@ -155,7 +155,9 @@ export class AccountClosureService {
   }
 
   private assertStaffInScope(user: UserModel | null, actor: AuthenticatedUser): asserts user is UserModel {
-    if (!user || user.role === UserRole.SYSTEM_ADMIN || !isAccountInScope(user, actor.tenantScope)) throw accountNotFound();
+    // Platform accounts are not gym staff: a gym cannot close them (ADR-0018).
+    const platformAccount = user?.role === UserRole.SYSTEM_ADMIN || user?.role === UserRole.MODERATOR;
+    if (!user || platformAccount || !isAccountInScope(user, actor.tenantScope)) throw accountNotFound();
     if (user.role === UserRole.CLIENT) {
       throw new DomainException(
         HttpStatus.BAD_REQUEST,

@@ -11,10 +11,12 @@ export type ConsentKind = (typeof CONSENT_KINDS)[number];
  * `upToDate: false` so the client can ask again. Read at call time.
  */
 export const CONSENT_VERSIONS: Record<ConsentKind, string> = {
-  HEALTH: "2026-12-01",
-  ORIENTATION: "2026-12-01",
-  VERIFICATION_SELFIE: "2026-12-01",
-  PRECISE_LOCATION: "2026-12-01",
+  // 2026-12-02: the four checkbox texts were rewritten (third legal review, N2).
+  // Grants recorded with 2026-12-01 accepted the previous texts.
+  HEALTH: "2026-12-02",
+  ORIENTATION: "2026-12-02",
+  VERIFICATION_SELFIE: "2026-12-02",
+  PRECISE_LOCATION: "2026-12-02",
 };
 
 export function currentConsentVersions(): { kind: ConsentKind; version: string }[] {

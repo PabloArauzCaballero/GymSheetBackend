@@ -38,7 +38,7 @@ export class VerificationRevocationService {
         recipientUserId: userId,
         channel: NotificationChannel.IN_APP,
         subject: "Tu perfil dejó de estar verificado",
-        body: "Cambiaste todas las fotos con las que verificamos tu identidad. Vuelve a verificarte con una selfie nueva.",
+        body: "Cambiaste todas las fotos con las que el equipo de REPP verificó tu identidad. Vuelve a verificarte con una selfie nueva.",
         deduplicationKey: `verification.revoked:${approval.id}`,
         metadata: { kind: "PHOTO_VERIFICATION", verificationId: approval.id, outcome: "REVOKED" },
       },

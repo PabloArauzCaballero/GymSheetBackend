@@ -54,7 +54,8 @@ export type DomainErrorCode =
   | 'ACCOUNT_BANNED'
   | 'STAFF_CLOSURE_SELF'
   | 'STAFF_CLOSURE_NOT_STAFF'
-  | 'STAFF_CLOSURE_LAST_ADMIN';
+  | 'STAFF_CLOSURE_LAST_ADMIN'
+  | 'MODERATOR_NOT_ASSIGNABLE';
 
 /**
  * Error de dominio con `code` estable y `details` opcional (por ejemplo

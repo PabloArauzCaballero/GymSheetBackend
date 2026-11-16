@@ -5,6 +5,7 @@ import { Sequelize } from 'sequelize-typescript';
 import { env } from '../src/config/env';
 import { MediaReleaseService } from '../src/modules/media/media-release.service';
 import { bootE2eApp, type E2eApp } from './support/e2e-app';
+import { registerModerator } from './support/moderation-e2e';
 import { grantConsent } from './support/privacy-e2e';
 
 /**
@@ -34,20 +35,6 @@ describe('Photo verification consent (e2e)', () => {
       );
     }
     if (consent) await grantConsent(e2e, account.token, 'VERIFICATION_SELFIE');
-    return account;
-  }
-
-  async function moderator(): Promise<Account> {
-    const account = await e2e.register('vc-mod');
-    await e2e.promote(account.id, 'ADMIN');
-    await e2e.sql('UPDATE public.usuarios SET tenant_id = :tenant WHERE id = :id', { tenant, id: account.id });
-    for (const key of ['moderation:read', 'moderation:act']) {
-      await e2e.sql(
-        `INSERT INTO admin.permissions (key, label, description, domain) VALUES (:key, :key, 'e2e', 'moderation')
-         ON CONFLICT (key) DO NOTHING`, { key });
-      await e2e.sql('INSERT INTO admin.user_permissions (id, user_id, permission_key) VALUES (gen_random_uuid(), :id, :key)',
-        { id: account.id, key });
-    }
     return account;
   }
 
@@ -98,7 +85,8 @@ describe('Photo verification consent (e2e)', () => {
   it('revoking erases every stored selfie through media.release, cancels pending attempts and keeps the decision', async () => {
     const eva = await member('vc-eva');
     const fio = await member('vc-fio');
-    const mod = await moderator();
+    // The central REPP team reviews (ADR-0018).
+    const mod = await registerModerator(e2e, 'vc-mod');
     const approvedId = await challenge(eva);
     await upload(eva, approvedId).expect(201);
     const queue = (await e2e.as(mod.token).get('/admin/verifications?status=PENDING_REVIEW&limit=50').expect(200)).body.data;

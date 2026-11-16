@@ -1,3 +1,4 @@
+import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -277,6 +278,35 @@ describe('User media release (e2e)', () => {
       await media.drainOnce(500);
       expect(await releaseJobs(photoId)).toEqual([{ status: 'COMPLETED', attempt_count: 2 }]);
       expect(fileAt(key)).toBe(false);
+    });
+
+    it('a media.release job that dead-letters shows up on /health/metrics without anyone looking (I-2)', async () => {
+      const deadLetters = async () => {
+        const call = request(e2e.http).get(e2e.url('/health/metrics'));
+        if (env.METRICS_SCRAPE_TOKEN) call.set('Authorization', `Bearer ${env.METRICS_SCRAPE_TOKEN}`);
+        const text = (await call.expect(200)).text;
+        const match = /^gym_sheet_outbox_dead_letter_jobs\{queue="media\.release"\} (\d+)$/mu.exec(text);
+        expect(match).not.toBeNull();
+        return Number(match?.[1]);
+      };
+      const before = await deadLetters();
+      const owner = await e2e.register('photo-dead-letter-owner');
+      const uploaded = await e2e.as(owner.token).post('/me/photos')
+        .attach('file', tinyPng(randomUUID()), { filename: 'avatar.png', contentType: 'image/png' }).expect(201);
+      const photoId = uploaded.body.data.id as string;
+      const outage = jest.spyOn(storage, 'remove')
+        .mockRejectedValue(Object.assign(new Error('Access Denied.'), { code: 'AccessDenied' }));
+      try {
+        await e2e.as(owner.token).del(`/me/photos/${photoId}`).expect(200);
+        // One attempt left: the next failure is the last one.
+        await e2e.sql(`UPDATE integration.outbox_jobs SET max_attempts = 1 WHERE queue_name = 'media.release' AND aggregate_id = :photoId`,
+          { photoId });
+        await media.drainOnce(500);
+      } finally {
+        outage.mockRestore();
+      }
+      expect(await releaseJobs(photoId)).toEqual([{ status: 'DEAD_LETTER', attempt_count: 1 }]);
+      expect(await deadLetters()).toBe(before + 1);
     });
 
     it('deleting a story queues its file and the worker removes it', async () => {

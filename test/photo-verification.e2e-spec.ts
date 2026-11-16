@@ -7,14 +7,17 @@ import { env } from '../src/config/env';
 import { MediaReleaseService } from '../src/modules/media/media-release.service';
 import { VerificationRepository } from '../src/modules/verification/verification.repository';
 import { VerificationRetentionService } from '../src/modules/verification/verification-retention.service';
+import { NotificationService } from '../src/modules/notifications/notification.service';
 import { bootE2eApp, type E2eApp } from './support/e2e-app';
-import { grantConsent } from './support/privacy-e2e';
+import { registerModerator } from './support/moderation-e2e';
+import { grantConsent, selectRowsEventually } from './support/privacy-e2e';
 
 /**
  * Person verification (franja 6) against PostgreSQL: gesture challenge →
- * private selfie → moderation queue → decision → verified_at, its effect on the
- * Conocer deck, the photo replacement rule, the VERIFICATION_SELFIE consent
- * (required; revoking it erases the selfies), limits and authorization.
+ * private selfie → review queue of the central REPP team (ADR-0018) → decision
+ * → verified_at, its effect on the Conocer deck, the photo replacement rule,
+ * the VERIFICATION_SELFIE consent (required; revoking it erases the selfies),
+ * the review deadline, limits and authorization.
  */
 describe('Photo verification (e2e)', () => {
   jest.setTimeout(90000);
@@ -57,9 +60,10 @@ describe('Photo verification (e2e)', () => {
     return account;
   }
 
-  async function moderator(label: string, tenantId: string, keys: string[]): Promise<Account> {
+  /** Gym staff of `tenantId`, optionally with the retired `moderation:*` grants (which open nothing now). */
+  async function gymStaff(label: string, role: 'ADMIN' | 'FRONT_DESK', tenantId: string, keys: string[] = []): Promise<Account> {
     const account = await e2e.register(label);
-    await e2e.promote(account.id, 'ADMIN');
+    await e2e.promote(account.id, role);
     await e2e.sql('UPDATE public.usuarios SET tenant_id = :tenantId WHERE id = :id', { tenantId, id: account.id });
     for (const key of keys) {
       await e2e.sql(
@@ -71,6 +75,7 @@ describe('Photo verification (e2e)', () => {
     }
     return account;
   }
+  const legacyGrants = ['moderation:read', 'moderation:act'];
 
   async function one<T extends object>(statement: string, replacements: Record<string, unknown>): Promise<T> {
     const [row] = await sequelize.query<T>(statement, { type: QueryTypes.SELECT, replacements });
@@ -89,7 +94,11 @@ describe('Photo verification (e2e)', () => {
     e2e = await bootE2eApp();
     sequelize = e2e.app.get(Sequelize);
     mediaRelease = e2e.app.get(MediaReleaseService, { strict: false });
-    retention = new VerificationRetentionService(e2e.app.get(VerificationRepository, { strict: false }), mediaRelease);
+    retention = new VerificationRetentionService(
+      e2e.app.get(VerificationRepository, { strict: false }),
+      mediaRelease,
+      e2e.app.get(NotificationService, { strict: false }),
+    );
     for (const id of [tenant, otherTenant]) await e2e.sql('INSERT INTO tenants (id, nombre) VALUES (:id, :id)', { id });
     await e2e.sql(
       `INSERT INTO facilities.branches (id, code, name, time_zone, latitude, longitude, tenant_id)
@@ -106,8 +115,10 @@ describe('Photo verification (e2e)', () => {
     const viewer = await member('v-viewer', 'MALE');
     const ana = await member('v-ana', 'FEMALE');
     const bea = await member('v-bea', 'FEMALE');
-    const mod = await moderator('v-mod', tenant, ['moderation:read', 'moderation:act']);
-    const outsider = await moderator('v-out', otherTenant, ['moderation:read', 'moderation:act']);
+    // The REPP moderator belongs to the default gym and reviews the members of every gym.
+    const mod = await registerModerator(e2e, 'v-mod');
+    const otherModerator = await registerModerator(e2e, 'v-mod-other');
+    const gymAdmin = await gymStaff('v-gym-admin', 'ADMIN', tenant, legacyGrants);
     const anaApi = e2e.as(ana.token);
 
     expect((await anaApi.get('/me/verification').expect(200)).body.data).toMatchObject({ status: 'NONE', verifiedAt: null });
@@ -125,18 +136,21 @@ describe('Photo verification (e2e)', () => {
 
     const queue = (await e2e.as(mod.token).get('/admin/verifications?status=PENDING_REVIEW&limit=50').expect(200)).body.data;
     const item = queue.find((entry: { id: string }) => entry.id === challenge.id);
-    expect(item).toMatchObject({ member: { id: ana.id }, gesture: challenge.gesture, profilePhotos: [{}, {}] });
+    expect(item).toMatchObject({
+      member: { id: ana.id }, tenantId: tenant, tenantName: tenant, gesture: challenge.gesture, profilePhotos: [{}, {}],
+    });
     expect(JSON.stringify(item)).not.toContain(stored.key);
     const selfiePath = String(item.selfie.url).replace(`/${env.API_PREFIX}`, '');
     const selfie = await e2e.as(mod.token).get(selfiePath).expect(200);
     expect(selfie.headers['content-type']).toContain('image/jpeg');
     expect(Buffer.from(selfie.body as Buffer).equals(JPEG)).toBe(true);
-    await e2e.as(outsider.token).get(selfiePath).expect(403);
+    // The signed link is bound to the moderator it was issued to.
+    await e2e.as(otherModerator.token).get(selfiePath).expect(403);
     await e2e.as(mod.token).get(selfiePath.replace(/signature=[^&]+/, `signature=${'A'.repeat(43)}`)).expect(403);
-
-    const outsiderQueue = (await e2e.as(outsider.token).get('/admin/verifications').expect(200)).body.data;
-    expect(outsiderQueue.map((entry: { id: string }) => entry.id)).not.toContain(challenge.id);
-    await e2e.as(outsider.token).post(`/admin/verifications/${challenge.id}/decide`).send({ decision: 'APPROVE', comparedPhotoIds: [randomUUID()] }).expect(404);
+    // The gym of the member never sees the selfie, legacy grants or not (BFLA).
+    await e2e.as(gymAdmin.token).get('/admin/verifications').expect(403);
+    await e2e.as(gymAdmin.token).get(selfiePath).expect(403);
+    await e2e.as(gymAdmin.token).post(`/admin/verifications/${challenge.id}/decide`).send({ decision: 'APPROVE', comparedPhotoIds: [randomUUID()] }).expect(403);
 
     const before = (await e2e.as(viewer.token).get('/me/discovery/deck?limit=10').expect(200)).body.data;
     expect(before.find((card: { userId: string }) => card.userId === ana.id)?.reasons ?? []).not.toContain('VERIFIED');
@@ -152,15 +166,25 @@ describe('Photo verification (e2e)', () => {
     expect(stale.body.code).toBe('VERIFICATION_PHOTOS_CHANGED');
     await e2e.as(mod.token).post(`/admin/verifications/${challenge.id}/decide`).send({ decision: 'APPROVE', comparedPhotoIds }).expect(200);
     await e2e.as(mod.token).post(`/admin/verifications/${challenge.id}/decide`).send({ decision: 'APPROVE', comparedPhotoIds }).expect(409);
+    // One audit row per decision, a platform row (no gym scope) naming the moderator and the member's gym.
+    const audit = await selectRowsEventually<{ actor_user_id: string; actor_role: string; tenant_scope: string | null; metadata: object }>(e2e,
+      `SELECT actor_user_id, actor_role, tenant_scope, metadata FROM admin.audit_log
+        WHERE domain = 'verification' AND action = 'decide' AND target_id = :id`, { id: challenge.id });
+    expect(audit).toEqual([{
+      actor_user_id: mod.id, actor_role: 'MODERATOR', tenant_scope: null,
+      metadata: { tenantId: tenant, decision: 'APPROVED', reason: null },
+    }]);
     const state = (await anaApi.get('/me/verification').expect(200)).body.data;
     expect(state).toMatchObject({ status: 'APPROVED', verifiedAt: expect.any(String), lastDecision: { decision: 'APPROVED' } });
     expect((await anaApi.get('/users/me').expect(200)).body.data.verified).toBe(true);
     expect((await anaApi.get('/auth/me').expect(200)).body.data.verified).toBe(true);
     expect((await e2e.as(bea.token).get('/users/me').expect(200)).body.data.verified).toBe(false);
-    const notice = await one<{ subject: string }>(
-      `SELECT subject FROM notifications.messages WHERE recipient_user_id = :id AND deduplication_key = :key`,
+    const notice = await one<{ subject: string; body: string }>(
+      `SELECT subject, body FROM notifications.messages WHERE recipient_user_id = :id AND deduplication_key = :key`,
       { id: ana.id, key: `verification.decided:${challenge.id}` });
     expect(notice.subject).toBe('Tu perfil está verificado');
+    expect(notice.body).toContain('El equipo de REPP');
+    expect(notice.body).not.toMatch(/gimnasio/iu);
     await anaApi.post('/me/verification/challenge').expect(409);
 
     const deck = (await e2e.as(viewer.token).get('/me/discovery/deck?limit=10').expect(200)).body.data;
@@ -194,7 +218,7 @@ describe('Photo verification (e2e)', () => {
 
   it('rejects with a closed-list reason and lets the member retry with a new gesture', async () => {
     const cata = await member('v-cata', 'FEMALE');
-    const mod = await moderator('v-mod2', tenant, ['moderation:read', 'moderation:act']);
+    const mod = await registerModerator(e2e, 'v-mod2');
     const id = await submitted(cata);
     const decide = (body: object) => e2e.as(mod.token).post(`/admin/verifications/${id}/decide`).send(body);
     await decide({ decision: 'REJECT' }).expect(400);
@@ -205,12 +229,61 @@ describe('Photo verification (e2e)', () => {
     const notice = await one<{ body: string }>(
       `SELECT body FROM notifications.messages WHERE deduplication_key = :key`, { key: `verification.decided:${id}` });
     expect(notice.body).toContain('El gesto de la selfie no coincide');
+    expect(notice.body).toContain('El equipo de REPP');
+    const [audit] = await selectRowsEventually<{ metadata: object }>(e2e,
+      `SELECT metadata FROM admin.audit_log WHERE domain = 'verification' AND action = 'decide' AND target_id = :id`, { id });
+    expect(audit.metadata).toEqual({ tenantId: tenant, decision: 'REJECTED', reason: 'GESTURE_MISMATCH' });
     const first = await one<{ code: string }>('SELECT gesture_code AS code FROM social.photo_verifications WHERE id = :id', { id });
     const retry = (await e2e.as(cata.token).post('/me/verification/challenge').expect(201)).body.data;
     expect(retry.gesture.code).not.toBe(first.code);
     await e2e.sql(`UPDATE social.photo_verifications SET decided_at = now() - interval '31 days' WHERE id = :id`, { id });
     await retention.purge(new Date());
     await mediaRelease.drainOnce();
+  });
+
+  it('expires a review the REPP team left undecided for 30 days, erases the selfie and lets the member retry', async () => {
+    const mod = await registerModerator(e2e, 'v-mod-deadline');
+    const eli = await member('v-eli', 'FEMALE');
+    const fay = await member('v-fay', 'FEMALE');
+    // Eli belongs to another gym: the REPP queue carries both gyms.
+    await e2e.sql('UPDATE public.usuarios SET tenant_id = :otherTenant WHERE id = :id', { otherTenant, id: eli.id });
+    const [overdueId, recentId] = [await submitted(eli), await submitted(fay)];
+    const queue = (await e2e.as(mod.token).get('/admin/verifications?status=PENDING_REVIEW&limit=50').expect(200)).body.data as
+      { id: string; tenantId: string }[];
+    expect(queue.find((entry) => entry.id === overdueId)?.tenantId).toBe(otherTenant);
+    expect(queue.find((entry) => entry.id === recentId)?.tenantId).toBe(tenant);
+    const { key } = await one<{ key: string }>('SELECT selfie_storage_key AS key FROM social.photo_verifications WHERE id = :id', { id: overdueId });
+    await e2e.sql(`UPDATE social.photo_verifications SET submitted_at = now() - interval '31 days' WHERE id = :id`, { id: overdueId });
+    await e2e.sql(`UPDATE social.photo_verifications SET submitted_at = now() - interval '29 days' WHERE id = :id`, { id: recentId });
+
+    const result = await retention.purge(new Date());
+    expect(result.expiredReviews).toBeGreaterThanOrEqual(1);
+    const attempt = (id: string) => one<{ status: string; key: string | null; deleted: Date | null }>(
+      'SELECT status, selfie_storage_key AS key, selfie_deleted_at AS deleted FROM social.photo_verifications WHERE id = :id', { id });
+    expect(await attempt(overdueId)).toEqual({ status: 'EXPIRED', key: null, deleted: expect.any(Date) });
+    expect(await attempt(recentId)).toMatchObject({ status: 'PENDING_REVIEW', key: expect.any(String) });
+    // The file leaves through the shared media.release queue.
+    await mediaRelease.drainOnce();
+    expect(existsSync(join(env.MEDIA_STORAGE_LOCAL_ROOT, key))).toBe(false);
+
+    const notice = await one<{ subject: string; body: string; metadata: object }>(
+      `SELECT subject, body, metadata FROM notifications.messages WHERE recipient_user_id = :id AND deduplication_key = :key`,
+      { id: eli.id, key: `verification.review-expired:${overdueId}` });
+    expect(notice.metadata).toMatchObject({ kind: 'PHOTO_VERIFICATION', verificationId: overdueId, outcome: 'REVIEW_EXPIRED' });
+    expect(notice.body).toContain('El equipo de REPP');
+    expect(notice.body).not.toMatch(/gimnasio/iu);
+    // A second pass neither expires nor notifies again.
+    await retention.purge(new Date());
+    const notices = await sequelize.query('SELECT 1 FROM notifications.messages WHERE deduplication_key = :key',
+      { type: QueryTypes.SELECT, replacements: { key: `verification.review-expired:${overdueId}` } });
+    expect(notices).toHaveLength(1);
+
+    const after = (await e2e.as(mod.token).get('/admin/verifications?status=PENDING_REVIEW&limit=50').expect(200)).body.data as { id: string }[];
+    expect(after.map((entry) => entry.id)).not.toContain(overdueId);
+    const late = await e2e.as(mod.token).post(`/admin/verifications/${overdueId}/decide`).send({ decision: 'REJECT', reason: 'OTHER' }).expect(409);
+    expect(late.body.code).toBe('VERIFICATION_CHALLENGE_EXPIRED');
+    expect((await e2e.as(eli.token).get('/me/verification').expect(200)).body.data).toMatchObject({ status: 'EXPIRED', canRetryAt: null });
+    await e2e.as(eli.token).post('/me/verification/challenge').expect(201);
   });
 
   it('expires the challenge after 10 minutes and caps attempts at three per 24 h', async () => {
@@ -235,7 +308,7 @@ describe('Photo verification (e2e)', () => {
     expect((await api.get('/me/verification').expect(200)).body.data.canRetryAt).toEqual(expect.any(String));
   });
 
-  it('enforces photos, email, member-only and moderation permissions', async () => {
+  it('enforces photos, email, member-only and the platform review roles', async () => {
     const lone = await member('v-lone', 'FEMALE', 1);
     const missing = await e2e.as(lone.token).post('/me/verification/challenge').expect(400);
     expect(missing.body.code).toBe('VERIFICATION_PHOTOS_REQUIRED');
@@ -244,22 +317,27 @@ describe('Photo verification (e2e)', () => {
     const blocked = await e2e.as(unverified.token).post('/me/verification/challenge').expect(403);
     expect(blocked.body.code).toBe('EMAIL_VERIFICATION_REQUIRED');
 
-    const staff = await moderator('v-staff', tenant, []);
+    const staff = await gymStaff('v-staff', 'ADMIN', tenant);
     await e2e.as(staff.token).post('/me/verification/challenge').expect(403);
     await e2e.as(staff.token).get('/me/verification').expect(403);
     await e2e.as(staff.token).get('/admin/verifications').expect(403);
     await e2e.as(staff.token).post(`/admin/verifications/${randomUUID()}/decide`).send({ decision: 'APPROVE' }).expect(403);
 
-    const reader = await moderator('v-reader', tenant, ['moderation:read']);
-    await e2e.as(reader.token).get('/admin/verifications').expect(200);
-    await e2e.as(reader.token).post(`/admin/verifications/${randomUUID()}/decide`).send({ decision: 'APPROVE' }).expect(403);
+    // The grants that used to open the queue to gym staff open nothing now (ADR-0018).
+    for (const role of ['ADMIN', 'FRONT_DESK'] as const) {
+      const legacy = await gymStaff(`v-legacy-${role.toLowerCase()}`, role, tenant, legacyGrants);
+      await e2e.as(legacy.token).get('/admin/verifications').expect(403);
+      await e2e.as(legacy.token).get(`/admin/verifications/${randomUUID()}/selfie?expires=1&signature=${'A'.repeat(43)}`).expect(403);
+      await e2e.as(legacy.token).post(`/admin/verifications/${randomUUID()}/decide`).send({ decision: 'REJECT', reason: 'OTHER' }).expect(403);
+    }
 
     await e2e.as(lone.token).get('/admin/verifications').expect(403);
     await e2e.as(lone.token).post(`/admin/verifications/${randomUUID()}/decide`).send({ decision: 'APPROVE' }).expect(403);
     await e2e.as(lone.token).post('/me/verification/not-a-uuid/selfie').expect(400);
     await e2e.as(lone.token).post(`/me/verification/${randomUUID()}/selfie`).expect(404);
 
-    const mod = await moderator('v-mod3', tenant, ['moderation:read', 'moderation:act']);
+    const mod = await registerModerator(e2e, 'v-mod3');
+    await e2e.as(mod.token).get('/me/verification').expect(403);
     await e2e.as(mod.token).post(`/admin/verifications/${randomUUID()}/decide`).send({ decision: 'APPROVE', comparedPhotoIds: [randomUUID()] }).expect(404);
     await e2e.as('invalid-token').get('/me/verification').expect(401);
   });

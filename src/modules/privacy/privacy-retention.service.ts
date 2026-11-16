@@ -17,7 +17,7 @@ export type PrivacyRetentionResult = {
   closedAccountSanctionsDeleted: number;
   /** Content kept at closure because it was reported, erased per target kind (reports closed 180+ days ago). */
   reportedContentErased: Record<string, number>;
-  /** Abandoned selfie challenges closed and selfie files queued for deletion (franja 6). */
+  /** Abandoned selfie challenges and overdue reviews closed, selfie files queued for deletion (franja 6). */
   verification: VerificationRetentionResult;
 };
 

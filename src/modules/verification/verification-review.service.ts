@@ -3,6 +3,7 @@ import { Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { NotificationChannel } from "../../common/enums/domain.enums";
 import { DomainException } from "../../common/errors/domain.exception";
+import { platformScopeOf } from "../../common/tenancy/tenant-scope";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { env } from "../../config/env";
 import { ChatMediaCipher } from "../chat/chat-media-cipher";
@@ -16,7 +17,20 @@ import { assertTransition, VERIFICATION_CLOCK, VERIFICATION_RULES, VerificationC
 import { VerificationRepository } from "./verification.repository";
 import { DecideVerificationInput, SelfieLinkQuery, VerificationQueueQuery } from "./verification.schemas";
 
-/** Moderation side: queue, selfie link, manual decision. */
+/** The decision, plus the facts its audit row needs (gym of the member). */
+export type VerificationDecision = {
+  submission: SubmissionResponse;
+  tenantId: string;
+  decision: "APPROVED" | "REJECTED";
+  reason: keyof typeof VERIFICATION_REJECTION_REASONS | null;
+};
+
+/**
+ * Review side, run by the central REPP team (ADR-0018): queue, selfie link,
+ * manual decision. Every lookup goes through `platformScopeOf`, so a
+ * MODERATOR reviews every gym and a SYSTEM_ADMIN impersonating a gym only
+ * that gym.
+ */
 @Injectable()
 export class VerificationReviewService {
   private readonly logger = new Logger(VerificationReviewService.name);
@@ -33,13 +47,13 @@ export class VerificationReviewService {
 
   /** Oldest first, with the requested gesture, a signed selfie link and the member's photos. */
   async listQueue(actor: AuthenticatedUser, query: VerificationQueueQuery): Promise<QueueItemResponse[]> {
-    const rows = await this.repository.listQueue(query.status, query.limit, actor.tenantScope);
+    const rows = await this.repository.listQueue(query.status, query.limit, platformScopeOf(actor));
     const photos = await this.repository.visiblePhotos([...new Set(rows.map((row) => row.verification.userId))]);
     const expiresAt = new Date(this.clock().getTime() + VERIFICATION_RULES.selfieLinkTtlMs);
-    return rows.map(({ verification, memberName }) =>
+    return rows.map(({ verification, memberName, tenantId, tenantName }) =>
       mapQueueItem(
         verification,
-        memberName,
+        { name: memberName, tenantId, tenantName },
         photos.filter((photo) => photo.userId === verification.userId),
         verification.selfieStorageKey ? this.selfieLink(verification.id, actor.id, expiresAt) : null,
       ),
@@ -55,17 +69,18 @@ export class VerificationReviewService {
     if (!this.signer.isValid(verificationId, actor.id, link.expires, link.signature, this.clock())) {
       throw new ForbiddenException("El enlace de la selfie caducó o no es válido.");
     }
-    const row = await this.repository.findByIdInScope(verificationId, actor.tenantScope);
+    const row = (await this.repository.findByIdInScope(verificationId, platformScopeOf(actor)))?.verification;
     if (!row?.selfieStorageKey || !row.selfieMimeType) throw new NotFoundException("Selfie no encontrada.");
     const encrypted = await this.storage.download(row.selfieStorageKey);
     this.logger.log({ event: "verification.selfie_viewed", verificationId, reviewerId: actor.id });
     return { buffer: this.cipher.decrypt(encrypted), mimeType: row.selfieMimeType };
   }
 
-  async decide(actor: AuthenticatedUser, verificationId: string, input: DecideVerificationInput): Promise<SubmissionResponse> {
+  async decide(actor: AuthenticatedUser, verificationId: string, input: DecideVerificationInput): Promise<VerificationDecision> {
     const decided = await this.sequelize.transaction(async (transaction) => {
-      const row = await this.repository.findByIdInScope(verificationId, actor.tenantScope, transaction);
-      if (!row) throw new NotFoundException("Verificación no encontrada.");
+      const scoped = await this.repository.findByIdInScope(verificationId, platformScopeOf(actor), transaction);
+      if (!scoped) throw new NotFoundException("Verificación no encontrada.");
+      const row = scoped.verification;
       const target = input.decision === "APPROVE" ? VerificationStatus.APPROVED : VerificationStatus.REJECTED;
       assertTransition(row.status, target);
       await this.repository.lockUser(row.userId, transaction);
@@ -88,13 +103,17 @@ export class VerificationReviewService {
       );
       if (target === VerificationStatus.APPROVED) await this.repository.setUserVerifiedAt(row.userId, now, transaction);
       await this.notifyMember(row, target === VerificationStatus.APPROVED, reason, transaction);
-      return Object.assign(row, { status: target, decidedAt: now });
+      return { row: Object.assign(row, { status: target, decidedAt: now }), tenantId: scoped.tenantId, target, reason };
     });
-    this.logger.log({ event: "verification.decided", verificationId, status: decided.status, reviewerId: actor.id });
-    return mapSubmission(decided);
+    this.logger.log({ event: "verification.decided", verificationId, status: decided.target, reviewerId: actor.id });
+    return {
+      submission: mapSubmission(decided.row),
+      tenantId: decided.tenantId,
+      decision: decided.target === VerificationStatus.APPROVED ? "APPROVED" : "REJECTED",
+      reason: decided.reason,
+    };
   }
 
-  /** Photos the moderator compared against; without any there is nothing to bind the approval to. */
   /** The approval vouches for the photos the moderator saw, and only if they are still the gallery. */
   private async comparedPhotoIds(userId: string, reviewed: readonly string[], transaction: Transaction): Promise<string[]> {
     const photos = await this.repository.visiblePhotos([userId], transaction);
@@ -128,9 +147,10 @@ export class VerificationReviewService {
         recipientUserId: row.userId,
         channel: NotificationChannel.IN_APP,
         subject: approved ? "Tu perfil está verificado" : "No pudimos verificar tu perfil",
+        // The REPP team decides, never the gym (ADR-0018).
         body: approved
-          ? "Revisamos tu selfie y confirmamos que eres tú. Tu perfil ya muestra la verificación."
-          : `${reason ? VERIFICATION_REJECTION_REASONS[reason] : ""} Puedes intentarlo de nuevo con un gesto nuevo.`.trim(),
+          ? "El equipo de REPP revisó tu selfie y confirmó que eres tú. Tu perfil ya muestra la verificación."
+          : `El equipo de REPP revisó tu selfie. ${VERIFICATION_REJECTION_REASONS[reason ?? "OTHER"]} Puedes intentarlo de nuevo con un gesto nuevo.`,
         deduplicationKey: `verification.decided:${row.id}`,
         metadata: { kind: "PHOTO_VERIFICATION", verificationId: row.id, outcome: approved ? "APPROVED" : "REJECTED", reason },
       },

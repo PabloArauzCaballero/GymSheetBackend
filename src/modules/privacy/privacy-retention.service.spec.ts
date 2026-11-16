@@ -13,7 +13,7 @@ describe("PrivacyRetentionService", () => {
       clearIpHashesBefore: jest.fn().mockResolvedValue(cleared),
     };
     const reportedContent = { purge: jest.fn().mockResolvedValue({ REEL: 1, COMMENT: 2 }) };
-    const verification = { purge: jest.fn().mockResolvedValue({ expiredChallenges: 3, selfiesErased: 5 }) };
+    const verification = { purge: jest.fn().mockResolvedValue({ expiredChallenges: 3, expiredReviews: 1, selfiesErased: 5 }) };
     const service = new PrivacyRetentionService(
       ledger as unknown as TicketLedgerRepository,
       repository as unknown as PrivacyRetentionRepository,
@@ -27,7 +27,7 @@ describe("PrivacyRetentionService", () => {
       ipHashesCleared: 21,
       closedAccountSanctionsDeleted: 2,
       reportedContentErased: { REEL: 1, COMMENT: 2 },
-      verification: { expiredChallenges: 3, selfiesErased: 5 },
+      verification: { expiredChallenges: 3, expiredReviews: 1, selfiesErased: 5 },
     });
     expect(ledger.deleteUsedBefore).toHaveBeenCalledWith(new Date("2026-11-15T00:00:00.000Z"));
     expect(repository.clearIpHashesBefore).toHaveBeenCalledWith(new Date("2026-08-18T00:00:00.000Z"));

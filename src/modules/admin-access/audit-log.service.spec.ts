@@ -65,6 +65,19 @@ describe('AuditLogService', () => {
       );
     });
 
+    it('records a platform moderator as a platform action, not on its own gym (ADR-0018)', async () => {
+      const { service, repository } = build();
+
+      await service.record(
+        { ...gymAdmin, id: 'mod-1', role: UserRole.MODERATOR },
+        { domain: 'moderation', action: 'resolve', targetKind: 'case', targetId: 'c-1', ip: null, userAgent: null },
+      );
+
+      expect(repository.record).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantScope: null, actorUserId: 'mod-1', actorRole: UserRole.MODERATOR }),
+      );
+    });
+
     it('stores the keyed hash of the actor IP instead of the raw address', async () => {
       const secret = 'audit-ip-hash-secret-0123456789abcdef';
       const { service, repository } = build();

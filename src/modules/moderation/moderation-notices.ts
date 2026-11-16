@@ -12,7 +12,8 @@ import {
 /**
  * What the affected person reads. Every notice names the reason (category plus
  * a short plain-language text): the legal texts promise "we tell you why", and a
- * sanction without a reason reads like an app failure.
+ * sanction without a reason reads like an app failure. Every decision notice
+ * names who decided: the REPP moderation team, never the gym (ADR-0018).
  */
 export type ModerationNotice = { subject: string; body: string; metadata: Record<string, unknown> };
 
@@ -54,21 +55,21 @@ export function sanctionNotice(
   if (sanction.kind === StrikeKind.ADVERTENCIA) {
     return {
       subject: "Aviso sobre tu contenido",
-      body: `Recibiste un aviso por incumplir las normas de la comunidad. ${why} Es un aviso: si vuelve a ocurrir, tu cuenta puede quedar suspendida.`,
+      body: `El equipo de moderación de REPP te envió un aviso por incumplir las normas de la comunidad. ${why} Es un aviso: si vuelve a ocurrir, tu cuenta puede quedar suspendida.`,
       metadata,
     };
   }
   if (sanction.kind === StrikeKind.EXPULSION) {
     return {
       subject: "Tu cuenta ha sido cerrada",
-      body: `Cerramos tu cuenta por incumplimientos repetidos de las normas de la comunidad. ${why}`,
+      body: `El equipo de moderación de REPP cerró tu cuenta por incumplimientos repetidos de las normas de la comunidad. ${why}`,
       metadata,
     };
   }
   const days = sanction.days ?? 0;
   return {
     subject: "Tu cuenta ha sido suspendida",
-    body: `Suspendimos tu cuenta ${days === 1 ? "un día" : `${days} días`} por incumplir las normas de la comunidad. ${why} Podrás volver a entrar cuando termine.`,
+    body: `El equipo de moderación de REPP suspendió tu cuenta ${days === 1 ? "un día" : `${days} días`} por incumplir las normas de la comunidad. ${why} Podrás volver a entrar cuando termine.`,
     metadata,
   };
 }
@@ -82,8 +83,8 @@ export function contentHiddenNotice(
   return {
     subject: "Ocultamos contenido tuyo",
     body: pendingReview
-      ? `Varias personas denunciaron contenido tuyo y lo ocultamos mientras una persona del equipo de moderación lo revisa. ${reasonSentence(reason)} Si no incumple las normas, vuelve a estar visible.`
-      : `Revisamos contenido tuyo y lo retiramos por incumplir las normas de la comunidad. ${reasonSentence(reason)}`,
+      ? `Varias personas denunciaron contenido tuyo y lo ocultamos mientras el equipo de moderación de REPP lo revisa. ${reasonSentence(reason)} Si no incumple las normas, vuelve a estar visible.`
+      : `El equipo de moderación de REPP revisó contenido tuyo y lo retiró por incumplir las normas de la comunidad. ${reasonSentence(reason)}`,
     metadata: { type: "CONTENT_HIDDEN", reason, pendingReview, refs: { targetKind: target.kind, targetId: target.id } },
   };
 }
@@ -91,7 +92,7 @@ export function contentHiddenNotice(
 export function contentRestoredNotice(target: { kind: ModerationTargetKindValue; id: string }): ModerationNotice {
   return {
     subject: "Tu contenido vuelve a estar visible",
-    body: "Revisamos el contenido tuyo que estaba oculto y no incumple las normas de la comunidad. Ya está visible otra vez.",
+    body: "El equipo de moderación de REPP revisó el contenido tuyo que estaba oculto y no incumple las normas de la comunidad. Ya está visible otra vez.",
     metadata: { type: "CONTENT_RESTORED", refs: { targetKind: target.kind, targetId: target.id } },
   };
 }
@@ -99,7 +100,7 @@ export function contentRestoredNotice(target: { kind: ModerationTargetKindValue;
 export function minorSuspensionNotice(): ModerationNotice {
   return {
     subject: "Suspendimos tu cuenta mientras revisamos una denuncia",
-    body: `Recibimos una denuncia de que esta cuenta podría ser de una persona menor de 18 años, y REPP es solo para personas adultas. Suspendimos la cuenta mientras moderación lo revisa. ${reasonSentence("MENOR_DE_EDAD")}`,
+    body: `Recibimos una denuncia de que esta cuenta podría ser de una persona menor de 18 años, y REPP es solo para personas adultas. Suspendimos la cuenta mientras el equipo de moderación de REPP lo revisa. ${reasonSentence("MENOR_DE_EDAD")}`,
     metadata: { type: "MODERATION_SUSPENSION_PENDING_REVIEW", reason: "MENOR_DE_EDAD" },
   };
 }
@@ -107,7 +108,7 @@ export function minorSuspensionNotice(): ModerationNotice {
 export function minorClosureNotice(): ModerationNotice {
   return {
     subject: "Tu cuenta ha sido cerrada",
-    body: `Confirmamos que la cuenta es de una persona menor de 18 años. REPP es solo para personas adultas, así que cerramos la cuenta y borramos sus datos. ${reasonSentence("MENOR_DE_EDAD")}`,
+    body: `El equipo de moderación de REPP confirmó que la cuenta es de una persona menor de 18 años. REPP es solo para personas adultas, así que cerramos la cuenta y borramos sus datos. ${reasonSentence("MENOR_DE_EDAD")}`,
     metadata: { type: "MODERATION_MINOR_CLOSURE", reason: "MENOR_DE_EDAD" },
   };
 }
@@ -123,8 +124,8 @@ export function minorReviewClearedNotice(stillSuspended: boolean): ModerationNot
   return {
     subject: stillSuspended ? "Terminamos de revisar la denuncia sobre tu edad" : "Tu cuenta está activa otra vez",
     body: stillSuspended
-      ? "Revisamos la denuncia de que esta cuenta podría ser de una persona menor de 18 años y no lo confirmamos, así que levantamos esa suspensión. Tu cuenta sigue suspendida por otra sanción: te contamos el motivo y hasta cuándo en su propio aviso."
-      : "Revisamos la denuncia de que esta cuenta podría ser de una persona menor de 18 años y no lo confirmamos. Levantamos la suspensión: tu cuenta está activa otra vez y ya puedes entrar.",
+      ? "El equipo de moderación de REPP revisó la denuncia de que esta cuenta podría ser de una persona menor de 18 años y no lo confirmó, así que levantamos esa suspensión. Tu cuenta sigue suspendida por otra sanción: te contamos el motivo y hasta cuándo en su propio aviso."
+      : "El equipo de moderación de REPP revisó la denuncia de que esta cuenta podría ser de una persona menor de 18 años y no lo confirmó. Levantamos la suspensión: tu cuenta está activa otra vez y ya puedes entrar.",
     metadata: { type: "MODERATION_MINOR_REVIEW_CLEARED", reason: "MENOR_DE_EDAD", stillSuspended },
   };
 }

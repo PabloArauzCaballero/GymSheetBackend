@@ -9,6 +9,14 @@ const DAY_MS = 24 * 60 * MINUTE_MS;
 export const VERIFICATION_CLOCK = Symbol("VERIFICATION_CLOCK");
 export type VerificationClock = () => Date;
 
+/**
+ * Longest a submitted selfie waits for the REPP team (legal review I-5): an
+ * undecided attempt expires after this and its selfie is erased by the daily
+ * privacy retention. Same 30 days as the post-decision retention, so no
+ * selfie outlives 60 days in any branch. ADR-0014 justifies the figure.
+ */
+export const VERIFICATION_REVIEW_DEADLINE_DAYS = 30;
+
 /** Product rules of the person verification, in one place. */
 export const VERIFICATION_RULES = {
   /** How long the member has to take the selfie after receiving the gesture. */
@@ -20,6 +28,8 @@ export const VERIFICATION_RULES = {
   minProfilePhotos: 2,
   /** Selfie kept after the decision (appeals/audit), then erased. */
   decidedSelfieRetentionMs: 30 * DAY_MS,
+  /** A submitted selfie nobody decided expires after this (see VERIFICATION_REVIEW_DEADLINE_DAYS). */
+  reviewDeadlineMs: VERIFICATION_REVIEW_DEADLINE_DAYS * DAY_MS,
   /** A challenge nobody answered is closed after this. */
   abandonedChallengeMs: DAY_MS,
   /** Lifetime of the moderator's signed selfie link. */
@@ -28,7 +38,8 @@ export const VERIFICATION_RULES = {
 
 const TRANSITIONS: Readonly<Record<VerificationStatusValue, readonly VerificationStatusValue[]>> = {
   PENDING_UPLOAD: [VerificationStatus.PENDING_REVIEW, VerificationStatus.EXPIRED],
-  PENDING_REVIEW: [VerificationStatus.APPROVED, VerificationStatus.REJECTED],
+  // EXPIRED: the review deadline passed or the consent was revoked before a decision.
+  PENDING_REVIEW: [VerificationStatus.APPROVED, VerificationStatus.REJECTED, VerificationStatus.EXPIRED],
   APPROVED: [],
   REJECTED: [],
   EXPIRED: [],
@@ -89,9 +100,10 @@ export function rateLimited(retryAt: Date, now: Date): DomainException {
 }
 
 /** Cut-offs of the retention pass for a given instant. */
-export function retentionCutoffs(now: Date): { decidedBefore: Date; issuedBefore: Date } {
+export function retentionCutoffs(now: Date): { decidedBefore: Date; issuedBefore: Date; submittedBefore: Date } {
   return {
     decidedBefore: new Date(now.getTime() - VERIFICATION_RULES.decidedSelfieRetentionMs),
     issuedBefore: new Date(now.getTime() - VERIFICATION_RULES.abandonedChallengeMs),
+    submittedBefore: new Date(now.getTime() - VERIFICATION_RULES.reviewDeadlineMs),
   };
 }

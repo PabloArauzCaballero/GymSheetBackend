@@ -42,6 +42,18 @@ describe("ConsentsService", () => {
     expect(consents[1]).toMatchObject({ granted: true, version: "LEGACY", upToDate: false });
   });
 
+  it("asks again whoever accepted the previous texts (2026-12-01, third legal review N2)", async () => {
+    const kinds = ["HEALTH", "ORIENTATION", "VERIFICATION_SELFIE", "PRECISE_LOCATION"] as const;
+    const { service } = setup(null, kinds.map((kind) => row({ kind, version: "2026-12-01" })));
+    const { consents } = await service.list(userId);
+    for (const consent of consents) {
+      expect(consent).toMatchObject({ granted: true, version: "2026-12-01", upToDate: false });
+      expect(consent.currentVersion).not.toBe("2026-12-01");
+    }
+    await expect(setup().service.set(userId, "HEALTH", { granted: true, version: "2026-12-01" }, "IOS"))
+      .rejects.toMatchObject({ code: "CONSENT_VERSION_OUTDATED" });
+  });
+
   it("grants the current version once and is idempotent for the same version", async () => {
     const { service, repository } = setup();
     await service.set(userId, "ORIENTATION", { granted: true, version: CONSENT_VERSIONS.ORIENTATION }, "IOS");

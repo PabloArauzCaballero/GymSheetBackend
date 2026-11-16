@@ -133,6 +133,7 @@ import { authorDeletedEvidenceHoldMigration } from "./202611190101-author-delete
 import { discoveryRankingMigration } from "./202611190101-discovery-ranking";
 import { exerciseMediaEvidenceHoldMigration } from "./202611190201-exercise-media-evidence-hold";
 import { photoVerificationsMigration } from "./202611200101-photo-verifications";
+import { platformModeratorsMigration } from "./202611200101-platform-moderators";
 import { photoVerificationSelfieKeyIndexMigration } from "./202611200201-photo-verification-selfie-key-index";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
@@ -273,5 +274,6 @@ export const databaseMigrations: DatabaseMigration[] = [
   discoveryRankingMigration,
   exerciseMediaEvidenceHoldMigration,
   photoVerificationsMigration,
+  platformModeratorsMigration,
   photoVerificationSelfieKeyIndexMigration,
 ];

@@ -1,4 +1,10 @@
-/** Static, code-defined permission catalog. Not user-editable via API in this phase. */
+/**
+ * Static, code-defined permission catalog. Not user-editable via API in this phase.
+ *
+ * There is no `moderation:*` key: social moderation belongs to the central
+ * REPP team (`UserRole.MODERATOR`, ADR-0018), not to gym staff, and migration
+ * `202611200101-platform-moderators` retired the old grants.
+ */
 export const AdminPermissionKey = {
   CATALOG_READ: 'catalog:read',
   CATALOG_WRITE: 'catalog:write',
@@ -9,8 +15,6 @@ export const AdminPermissionKey = {
   DATA_LOADER_ADMIN: 'data-loader:admin',
   FILES_READ: 'files:read',
   FILES_DOWNLOAD: 'files:download',
-  MODERATION_READ: 'moderation:read',
-  MODERATION_ACT: 'moderation:act',
   SUPPORT_READ: 'support:read',
   SUPPORT_RESPOND: 'support:respond',
   USERS_READ: 'users:read',
@@ -30,7 +34,6 @@ export type AdminPermissionDomain =
   | 'qa'
   | 'data-loader'
   | 'files'
-  | 'moderation'
   | 'support'
   | 'users'
   | 'analytics'
@@ -126,19 +129,6 @@ export const ADMIN_PERMISSION_CATALOG: readonly AdminPermissionDefinition[] = [
     label: 'Descargar archivos',
     description: 'Descargar el binario original de un archivo almacenado.',
     domain: 'files',
-  },
-  {
-    key: AdminPermissionKey.MODERATION_READ,
-    label: 'Ver moderación',
-    description: 'Consultar la cola de reportes y el historial de sanciones.',
-    domain: 'moderation',
-  },
-  {
-    key: AdminPermissionKey.MODERATION_ACT,
-    label: 'Resolver moderación',
-    description:
-      'Resolver reportes: ocultar contenido, advertir y suspender cuentas.',
-    domain: 'moderation',
   },
   {
     key: AdminPermissionKey.SUPPORT_READ,

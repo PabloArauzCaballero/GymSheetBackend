@@ -16,14 +16,16 @@ const memberId = "00000000-0000-4000-8000-000000000001";
 const verificationId = "00000000-0000-4000-8000-0000000000aa";
 const now = new Date("2026-11-20T12:00:00.000Z");
 const tx = { id: "tx" } as unknown as Transaction;
+// A platform moderator is a member of gym-a but reviews every gym (ADR-0018).
 const moderator: AuthenticatedUser = {
   id: "00000000-0000-4000-8000-0000000000ff",
   email: "mod@example.test",
-  role: UserRole.ADMIN,
+  role: UserRole.MODERATOR,
   tenantId: "gym-a",
   tenantScope: "gym-a",
   impersonating: false,
 };
+const impersonatingAdmin: AuthenticatedUser = { ...moderator, role: UserRole.SYSTEM_ADMIN, tenantScope: "gym-b", impersonating: true };
 
 const pending = (overrides: Partial<PhotoVerificationModel> = {}) =>
   ({
@@ -40,7 +42,7 @@ const pending = (overrides: Partial<PhotoVerificationModel> = {}) =>
 function setup(overrides: Partial<Record<keyof VerificationRepository, jest.Mock>> = {}) {
   const cipher = new ChatMediaCipher("s".repeat(64));
   const repository = {
-    findByIdInScope: jest.fn().mockResolvedValue(pending()),
+    findByIdInScope: jest.fn().mockResolvedValue({ verification: pending(), tenantId: "gym-b" }),
     lockUser: jest.fn().mockResolvedValue({ verifiedAt: null }),
     visiblePhotos: jest.fn().mockResolvedValue([
       { userId: memberId, id: "p1", url: "users/m/perfiles/a.jpg" },
@@ -48,7 +50,7 @@ function setup(overrides: Partial<Record<keyof VerificationRepository, jest.Mock
     ]),
     update: jest.fn().mockResolvedValue(undefined),
     setUserVerifiedAt: jest.fn().mockResolvedValue(undefined),
-    listQueue: jest.fn().mockResolvedValue([{ verification: pending(), memberName: "Ana" }]),
+    listQueue: jest.fn().mockResolvedValue([{ verification: pending(), memberName: "Ana", tenantId: "gym-b", tenantName: "Gimnasio B" }]),
     ...overrides,
   };
   const notifications = { enqueueDirectMessage: jest.fn().mockResolvedValue(true) };
@@ -80,8 +82,9 @@ describe("VerificationReviewService.decide", () => {
   it("approves in one transaction: status, reviewer, verified_at, compared photos and the member notice", async () => {
     const { service, repository, notifications } = setup();
     const result = await service.decide(moderator, verificationId, { decision: "APPROVE", comparedPhotoIds: ["p1", "p2"] });
-    expect(result).toMatchObject({ id: verificationId, status: "APPROVED" });
-    expect(repository.findByIdInScope).toHaveBeenCalledWith(verificationId, "gym-a", tx);
+    expect(result).toMatchObject({ submission: { id: verificationId, status: "APPROVED" }, tenantId: "gym-b", decision: "APPROVED", reason: null });
+    // A moderator decides on any gym: the lookup carries no gym filter.
+    expect(repository.findByIdInScope).toHaveBeenCalledWith(verificationId, null, tx);
     expect(repository.update).toHaveBeenCalledWith(
       verificationId,
       { status: "APPROVED", reviewerId: moderator.id, decisionReason: null, decidedAt: now, approvedPhotoIds: ["p1", "p2"] },
@@ -101,7 +104,8 @@ describe("VerificationReviewService.decide", () => {
 
   it("rejects with the reason text in the notice and leaves verified_at alone", async () => {
     const { service, repository, notifications } = setup();
-    await service.decide(moderator, verificationId, { decision: "REJECT", reason: "GESTURE_MISMATCH" });
+    const result = await service.decide(moderator, verificationId, { decision: "REJECT", reason: "GESTURE_MISMATCH" });
+    expect(result).toMatchObject({ decision: "REJECTED", reason: "GESTURE_MISMATCH", tenantId: "gym-b" });
     expect(repository.update).toHaveBeenCalledWith(
       verificationId,
       { status: "REJECTED", reviewerId: moderator.id, decisionReason: "GESTURE_MISMATCH", decidedAt: now },
@@ -110,16 +114,34 @@ describe("VerificationReviewService.decide", () => {
     expect(repository.setUserVerifiedAt).not.toHaveBeenCalled();
     const [notice] = notifications.enqueueDirectMessage.mock.calls[0];
     expect(notice.body).toContain("El gesto de la selfie no coincide");
+    expect(notice.body).toContain("El equipo de REPP");
+    expect(notice.body).not.toMatch(/gimnasio/iu);
   });
 
-  it("answers 404 for a verification outside the moderator's gym", async () => {
+  it("tells the member that the REPP team approved, never the gym", async () => {
+    const { service, notifications } = setup();
+    await service.decide(moderator, verificationId, { decision: "APPROVE", comparedPhotoIds: ["p1", "p2"] });
+    const [notice] = notifications.enqueueDirectMessage.mock.calls[0];
+    expect(notice.body).toContain("El equipo de REPP");
+    expect(notice.body).not.toMatch(/gimnasio/iu);
+  });
+
+  it("keeps a SYSTEM_ADMIN impersonating a gym inside that gym", async () => {
+    const { service, repository } = setup({ findByIdInScope: jest.fn().mockResolvedValue(null) });
+    await expect(service.decide(impersonatingAdmin, verificationId, { decision: "REJECT", reason: "OTHER" })).rejects.toThrow(NotFoundException);
+    expect(repository.findByIdInScope).toHaveBeenCalledWith(verificationId, "gym-b", tx);
+  });
+
+  it("answers 404 for a verification outside the actor's scope", async () => {
     const { service, repository } = setup({ findByIdInScope: jest.fn().mockResolvedValue(null) });
     await expect(service.decide(moderator, verificationId, { decision: "APPROVE", comparedPhotoIds: ["p1", "p2"] })).rejects.toThrow(NotFoundException);
     expect(repository.update).not.toHaveBeenCalled();
   });
 
   it("answers 409 when the attempt is not waiting for review", async () => {
-    const { service } = setup({ findByIdInScope: jest.fn().mockResolvedValue(pending({ status: "APPROVED" })) });
+    const { service } = setup({
+      findByIdInScope: jest.fn().mockResolvedValue({ verification: pending({ status: "APPROVED" }), tenantId: "gym-b" }),
+    });
     await expect(service.decide(moderator, verificationId, { decision: "REJECT", reason: "OTHER" }))
       .rejects.toMatchObject({ status: 409 });
   });
@@ -135,10 +157,13 @@ describe("VerificationReviewService queue and selfie", () => {
   it("lists with the gesture, the member photos and a signed link bound to the moderator", async () => {
     const { service, repository, signer } = setup();
     const [item] = await service.listQueue(moderator, { status: "PENDING_REVIEW", limit: 20 });
-    expect(repository.listQueue).toHaveBeenCalledWith("PENDING_REVIEW", 20, "gym-a");
+    // Cross-gym queue for a moderator; each item names its gym.
+    expect(repository.listQueue).toHaveBeenCalledWith("PENDING_REVIEW", 20, null);
     expect(item).toMatchObject({
       id: verificationId,
       member: { id: memberId, name: "Ana" },
+      tenantId: "gym-b",
+      tenantName: "Gimnasio B",
       gesture: { code: "OPEN_PALM" },
       profilePhotos: [{ id: "p1" }, { id: "p2" }],
     });
@@ -161,5 +186,14 @@ describe("VerificationReviewService queue and selfie", () => {
     await expect(service.readSelfie(moderator, verificationId, { expires, signature: "A".repeat(43) }))
       .rejects.toThrow(ForbiddenException);
     expect(storage.download).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the selfie of any gym for a moderator and only the impersonated gym for a SYSTEM_ADMIN", async () => {
+    const { service, signer, repository } = setup();
+    const expires = now.getTime() + 60_000;
+    await service.readSelfie(moderator, verificationId, { expires, signature: signer.sign(verificationId, moderator.id, new Date(expires)) });
+    expect(repository.findByIdInScope).toHaveBeenLastCalledWith(verificationId, null);
+    await service.listQueue(impersonatingAdmin, { status: "PENDING_REVIEW", limit: 20 });
+    expect(repository.listQueue).toHaveBeenLastCalledWith("PENDING_REVIEW", 20, "gym-b");
   });
 });

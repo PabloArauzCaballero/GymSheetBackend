@@ -1,14 +1,14 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { Audited } from '../../common/decorators/audited.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { UserRole } from '../../common/enums/domain.enums';
+import { PLATFORM_MODERATION_ROLES } from '../../common/tenancy/tenant-scope';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
-import { AdminPermissionKey } from '../admin-access/admin-permission.catalog';
+import { AuditLogService } from '../admin-access/audit-log.service';
 import { ModerationService } from './moderation.service';
 import { ModerationTargetKindValue } from './moderation.policy';
 import { ModerationTargetKindPipe } from './target-kind.pipe';
@@ -46,21 +46,22 @@ export class ReportsController {
 }
 
 /**
- * La consola de moderación.
+ * The moderation console of the central REPP team (ADR-0018).
  *
- * `@Roles(ADMIN, FRONT_DESK)` es el piso y el permiso granular lo estrecha:
- * recepción puede moderar sólo si alguien se lo concedió explícitamente en
- * `/admin/permissions`. Es la decisión de producto tomada para este módulo —
- * quien atiende el mostrador suele ser quien primero se entera de un problema,
- * pero no todos los mostradores deben poder suspender cuentas.
+ * Only platform roles enter: `MODERATOR` (every gym) and `SYSTEM_ADMIN` (every
+ * gym, or the impersonated one). Gym staff (`ADMIN`, `FRONT_DESK`, `COACH`)
+ * gets 403 whatever permissions it was granted: moderating the social content
+ * is not a gym operation, and no grant can turn it into one.
  */
-@Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+@Roles(...PLATFORM_MODERATION_ROLES)
 @Controller('admin/moderation')
 export class ModerationAdminController {
-  constructor(private readonly moderation: ModerationService) {}
+  constructor(
+    private readonly moderation: ModerationService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   @Get('queue')
-  @RequirePermission(AdminPermissionKey.MODERATION_READ)
   queue(
     @CurrentUser() actor: AuthenticatedUser,
     @Query(new ZodValidationPipe(moderationQueueQuerySchema))
@@ -70,7 +71,6 @@ export class ModerationAdminController {
   }
 
   @Get('cases/:targetKind/:targetId')
-  @RequirePermission(AdminPermissionKey.MODERATION_READ)
   getCase(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('targetKind', ModerationTargetKindPipe) targetKind: ModerationTargetKindValue,
@@ -80,7 +80,6 @@ export class ModerationAdminController {
   }
 
   @Post('cases/:targetKind/:targetId/claim')
-  @RequirePermission(AdminPermissionKey.MODERATION_ACT)
   @Audited({
     domain: 'moderation',
     action: 'claim',
@@ -96,7 +95,6 @@ export class ModerationAdminController {
   }
 
   @Post('cases/:targetKind/:targetId/release')
-  @RequirePermission(AdminPermissionKey.MODERATION_ACT)
   @Audited({
     domain: 'moderation',
     action: 'release',
@@ -111,25 +109,42 @@ export class ModerationAdminController {
     return this.moderation.release(actor, targetKind, targetId);
   }
 
+  /**
+   * The verdict. Audited here and not with `@Audited()`: the row has to say
+   * which kind of content, which gym and what was decided, and only the
+   * verdict knows that. It is written after the decision committed, like the
+   * interceptor does, and a failed decision writes nothing.
+   */
   @Post('cases/:targetKind/:targetId/resolve')
-  @RequirePermission(AdminPermissionKey.MODERATION_ACT)
-  @Audited({
-    domain: 'moderation',
-    action: 'resolve',
-    targetKind: 'case',
-    targetParam: 'targetId',
-  })
-  resolve(
+  async resolve(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('targetKind', ModerationTargetKindPipe) targetKind: ModerationTargetKindValue,
     @Param('targetId', UuidParamPipe) targetId: string,
     @Body(new ZodValidationPipe(resolveCaseSchema)) input: ResolveCaseInput,
+    @Req() request: Request,
   ) {
-    return this.moderation.resolve(actor, targetKind, targetId, input);
+    const verdict = await this.moderation.resolve(actor, targetKind, targetId, input);
+    await this.auditLog.record(actor, {
+      domain: 'moderation',
+      action: 'resolve',
+      targetKind: 'case',
+      targetId,
+      metadata: {
+        caseKind: targetKind,
+        tenantId: verdict.tenantId,
+        resolution: verdict.resolution,
+        sanction: verdict.sanction?.kind ?? null,
+        contentHidden: verdict.contentHidden,
+        minorConfirmed: verdict.minorConfirmed,
+        reportsClosed: verdict.reportsClosed,
+      },
+      ip: request.ip ?? null,
+      userAgent: request.get('user-agent')?.slice(0, 500) ?? null,
+    });
+    return verdict;
   }
 
   @Get('users/:userId/history')
-  @RequirePermission(AdminPermissionKey.MODERATION_READ)
   history(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('userId', UuidParamPipe) userId: string,

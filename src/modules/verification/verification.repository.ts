@@ -2,6 +2,8 @@ import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
 import { Op, QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
+import { effectiveTenantOf } from "../../common/tenancy/tenant-scope";
+import { env } from "../../config/env";
 import { PhotoVerificationModel } from "./photo-verification.model";
 import {
   VerificationGestureCode,
@@ -10,7 +12,10 @@ import {
   VerificationStatusValue,
 } from "./verification.catalog";
 
-export type QueueRow = { verification: PhotoVerificationModel; memberName: string };
+/** The platform queue mixes every gym (ADR-0018): each row says which one. */
+export type QueueRow = { verification: PhotoVerificationModel; memberName: string; tenantId: string; tenantName: string | null };
+export type ScopedVerification = { verification: PhotoVerificationModel; tenantId: string };
+export type ExpiredReview = { id: string; userId: string };
 export type MemberPhoto = { userId: string; id: string; url: string };
 export type ClearedSelfie = { id: string; storageKey: string };
 
@@ -111,23 +116,28 @@ export class VerificationRepository {
     return this.rows.findOne({ where: { id, userId }, transaction, lock: transaction ? transaction.LOCK.UPDATE : undefined });
   }
 
-  /** Row visible to a moderator: any tenant for platform admins, else their gym only. */
+  /**
+   * Row visible to a moderator, with the member's gym: `null` scope (platform
+   * moderator, SYSTEM_ADMIN not impersonating) sees every gym, otherwise only
+   * the given one. Out of scope reads as missing (404).
+   */
   async findByIdInScope(
     id: string,
     tenantScope: string | null,
     transaction?: Transaction,
-  ): Promise<PhotoVerificationModel | null> {
-    const row = await this.rows.findOne({
+  ): Promise<ScopedVerification | null> {
+    const verification = await this.rows.findOne({
       where: { id },
       transaction,
       lock: transaction ? transaction.LOCK.UPDATE : undefined,
     });
-    if (!row || tenantScope === null) return row;
-    const [owner] = await this.sequelize.query<{ tenant_id: string }>(
+    if (!verification) return null;
+    const [owner] = await this.sequelize.query<{ tenant_id: string | null }>(
       `SELECT tenant_id FROM public.usuarios WHERE id = :userId`,
-      { type: QueryTypes.SELECT, replacements: { userId: row.userId }, transaction },
+      { type: QueryTypes.SELECT, replacements: { userId: verification.userId }, transaction },
     );
-    return owner?.tenant_id === tenantScope ? row : null;
+    const tenantId = effectiveTenantOf({ tenantId: owner?.tenant_id ?? null });
+    return tenantScope === null || tenantId === tenantScope ? { verification, tenantId } : null;
   }
 
   create(
@@ -166,21 +176,25 @@ export class VerificationRepository {
   }
 
   async listQueue(status: VerificationStatusValue, limit: number, tenantScope: string | null): Promise<QueueRow[]> {
-    const ids = await this.sequelize.query<{ id: string; member_name: string }>(
-      `SELECT v.id, u.nombre_completo AS member_name
+    const ids = await this.sequelize.query<{ id: string; member_name: string; tenant_id: string; tenant_name: string | null }>(
+      `SELECT v.id, u.nombre_completo AS member_name, owner.tenant_id, tn.nombre AS tenant_name
          FROM social.photo_verifications v
          JOIN public.usuarios u ON u.id = v.user_id
-        WHERE v.status = :status AND (CAST(:tenantScope AS varchar) IS NULL OR u.tenant_id = :tenantScope)
+         CROSS JOIN LATERAL (SELECT COALESCE(u.tenant_id, :defaultTenant) AS tenant_id) owner
+         LEFT JOIN public.tenants tn ON tn.id = owner.tenant_id
+        WHERE v.status = :status AND (CAST(:tenantScope AS varchar) IS NULL OR owner.tenant_id = :tenantScope)
         ORDER BY COALESCE(v.submitted_at, v.created_at), v.id
         LIMIT :limit`,
-      { type: QueryTypes.SELECT, replacements: { status, limit, tenantScope } },
+      { type: QueryTypes.SELECT, replacements: { status, limit, tenantScope, defaultTenant: env.DEFAULT_TENANT_ID } },
     );
     if (ids.length === 0) return [];
     const models = await this.rows.findAll({ where: { id: ids.map((row) => row.id) } });
     const byId = new Map(models.map((model) => [model.id, model]));
     return ids.flatMap((row) => {
       const verification = byId.get(row.id);
-      return verification ? [{ verification, memberName: row.member_name }] : [];
+      return verification
+        ? [{ verification, memberName: row.member_name, tenantId: row.tenant_id, tenantName: row.tenant_name }]
+        : [];
     });
   }
 
@@ -191,6 +205,27 @@ export class VerificationRepository {
       { where: { status: VerificationStatus.PENDING_UPLOAD, challengeIssuedAt: { [Op.lte]: issuedBefore } } },
     );
     return count;
+  }
+
+  /**
+   * Up to `limit` submitted selfies nobody decided before `submittedBefore`
+   * become EXPIRED (review deadline, legal review I-5); their keys are then
+   * cleared by `clearDueSelfies` like any EXPIRED attempt. SKIP LOCKED leaves
+   * a row a decision is holding to that decision.
+   */
+  expireStaleReviews(submittedBefore: Date, limit: number, transaction: Transaction): Promise<ExpiredReview[]> {
+    return this.sequelize.query<ExpiredReview>(
+      `WITH due AS (
+         SELECT id FROM social.photo_verifications
+          WHERE status = 'PENDING_REVIEW' AND submitted_at <= :submittedBefore
+          ORDER BY submitted_at, id
+          LIMIT :limit
+          FOR UPDATE SKIP LOCKED)
+       UPDATE social.photo_verifications v SET status = 'EXPIRED'
+         FROM due WHERE v.id = due.id
+       RETURNING v.id, v.user_id AS "userId"`,
+      { type: QueryTypes.SELECT, replacements: { submittedBefore, limit }, transaction },
+    );
   }
 
   /**

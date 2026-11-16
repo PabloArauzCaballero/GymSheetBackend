@@ -18,6 +18,8 @@ export interface ModerationCaseRow {
   reported_user_id: string;
   reported_user_name: string;
   tenant_id: string;
+  /** Name of that gym: the platform queue mixes every gym (ADR-0018). */
+  tenant_name: string | null;
   report_count: number;
   reporter_count: number;
   reasons: ModerationReasonValue[];
@@ -111,6 +113,7 @@ export class ModerationRepository {
               r.reported_user_id,
               u.nombre_completo                                   AS reported_user_name,
               min(r.tenant_id)                                    AS tenant_id,
+              min(tn.nombre)                                      AS tenant_name,
               count(*)::int                                       AS report_count,
               count(DISTINCT r.reporter_user_id)::int             AS reporter_count,
               array_agg(DISTINCT r.reason)                        AS reasons,
@@ -150,6 +153,7 @@ export class ModerationRepository {
          FROM moderation.reports r
          JOIN public.usuarios u ON u.id = r.reported_user_id
          LEFT JOIN public.usuarios claimer ON claimer.id = r.claimed_by_user_id
+         LEFT JOIN public.tenants tn ON tn.id = r.tenant_id
          LEFT JOIN profile.stories st
            ON r.target_kind = 'STORY' AND st.id = r.target_id
          LEFT JOIN profile.photos ph

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { SequelizeModule } from "@nestjs/sequelize";
 import { env } from "../../config/env";
+import { AdminAccessModule } from "../admin-access/admin-access.module";
 import { ChatMediaCipher } from "../chat/chat-media-cipher";
 import { ConsentsModule } from "../consents/consents.module";
 import { MediaModule } from "../media/media.module";
@@ -20,7 +21,8 @@ import { VerificationService } from "./verification.service";
  * revocation rule so the profile photo gallery can apply it on deletion.
  */
 @Module({
-  imports: [SequelizeModule.forFeature([PhotoVerificationModel]), ConsentsModule, MediaModule, NotificationsModule],
+  // AdminAccessModule: the decision writes its own audit row (ADR-0018).
+  imports: [SequelizeModule.forFeature([PhotoVerificationModel]), AdminAccessModule, ConsentsModule, MediaModule, NotificationsModule],
   controllers: [VerificationController, VerificationAdminController],
   providers: [
     VerificationRepository,

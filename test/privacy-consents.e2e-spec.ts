@@ -153,4 +153,33 @@ describe('Consent ledger (e2e)', () => {
     await enableMap(token, 1, false).expect(200);
     expect(await selectRows(e2e, 'SELECT 1 FROM social.map_locations WHERE user_id = :id', { id })).toEqual([]);
   });
+  it('asks again everyone who accepted the previous texts (2026-12-01): upToDate false until re-granted', async () => {
+    expect(Object.values(CONSENT_VERSIONS).every((version) => version !== '2026-12-01')).toBe(true);
+    const { token, id } = await e2e.register('consent-version-bump');
+    // Every kind accepted with the previous texts, as the rows recorded before this change.
+    await e2e.sql(
+      `INSERT INTO auth.consents (user_id, kind, version, channel)
+       SELECT :id, kind, '2026-12-01', 'IOS'
+         FROM unnest(ARRAY['HEALTH', 'ORIENTATION', 'VERIFICATION_SELFIE', 'PRECISE_LOCATION']) AS kind`,
+      { id },
+    );
+    const before = await e2e.as(token).get('/me/consents').expect(200);
+    expect(before.body.data.consents).toHaveLength(4);
+    for (const consent of before.body.data.consents as { kind: keyof typeof CONSENT_VERSIONS }[]) {
+      expect(consent).toMatchObject({
+        granted: true, version: '2026-12-01', currentVersion: CONSENT_VERSIONS[consent.kind], upToDate: false,
+      });
+    }
+    // The old text can no longer be accepted; the new one replaces the open grant.
+    const stale = await e2e.as(token).put('/me/consents/HEALTH').send({ granted: true, version: '2026-12-01' }).expect(409);
+    expect(stale.body.code).toBe('CONSENT_VERSION_OUTDATED');
+    await grantConsent(e2e, token, 'HEALTH');
+    const after = await e2e.as(token).get('/me/consents').expect(200);
+    expect(after.body.data.consents.find((consent: { kind: string }) => consent.kind === 'HEALTH'))
+      .toMatchObject({ granted: true, version: CONSENT_VERSIONS.HEALTH, upToDate: true });
+    expect(await consentRows(id, 'HEALTH')).toEqual([
+      { version: '2026-12-01', channel: 'IOS', revoked: true },
+      { version: CONSENT_VERSIONS.HEALTH, channel: 'UNKNOWN', revoked: false },
+    ]);
+  });
 });

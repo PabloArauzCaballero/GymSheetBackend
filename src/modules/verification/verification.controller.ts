@@ -1,16 +1,16 @@
-import { Body, Controller, Get, Header, HttpCode, Param, Post, Query, StreamableFile, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Get, Header, HttpCode, Param, Post, Query, Req, StreamableFile, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { Audited } from "../../common/decorators/audited.decorator";
+import type { Request } from "express";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
-import { RequirePermission } from "../../common/decorators/require-permission.decorator";
 import { RequiresVerifiedEmail } from "../../common/decorators/requires-verified-email.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { UserRole } from "../../common/enums/domain.enums";
 import { UuidParamPipe } from "../../common/pipes/uuid-param.pipe";
+import { PLATFORM_MODERATION_ROLES } from "../../common/tenancy/tenant-scope";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { env } from "../../config/env";
-import { AdminPermissionKey } from "../admin-access/admin-permission.catalog";
+import { AuditLogService } from "../admin-access/audit-log.service";
 import { UploadedSelfie } from "./selfie-image";
 import { VerificationReviewService } from "./verification-review.service";
 import {
@@ -51,14 +51,20 @@ export class VerificationController {
   }
 }
 
-/** Manual review queue. Same floor as the moderation console; the permission narrows it. */
-@Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+/**
+ * Manual review queue of the central REPP team (ADR-0018): `MODERATOR` (every
+ * gym) and `SYSTEM_ADMIN` (every gym, or the impersonated one). Gym staff gets
+ * 403 whatever it was granted: a selfie is biometric data the gym never sees.
+ */
+@Roles(...PLATFORM_MODERATION_ROLES)
 @Controller("admin/verifications")
 export class VerificationAdminController {
-  constructor(private readonly review: VerificationReviewService) {}
+  constructor(
+    private readonly review: VerificationReviewService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   @Get()
-  @RequirePermission(AdminPermissionKey.MODERATION_READ)
   queue(
     @CurrentUser() actor: AuthenticatedUser,
     @Query(new ZodValidationPipe(verificationQueueQuerySchema)) query: VerificationQueueQuery,
@@ -67,7 +73,6 @@ export class VerificationAdminController {
   }
 
   @Get(":id/selfie")
-  @RequirePermission(AdminPermissionKey.MODERATION_READ)
   @Header("Cache-Control", "private, no-store")
   @Header("X-Content-Type-Options", "nosniff")
   async selfie(
@@ -79,15 +84,29 @@ export class VerificationAdminController {
     return new StreamableFile(media.buffer, { type: media.mimeType, disposition: "inline" });
   }
 
+  /**
+   * The decision. Audited here and not with `@Audited()`: the row has to say
+   * which gym and what was decided, and only the decision knows that. Written
+   * after the commit; a failed decision writes nothing.
+   */
   @Post(":id/decide")
   @HttpCode(200)
-  @RequirePermission(AdminPermissionKey.MODERATION_ACT)
-  @Audited({ domain: "moderation", action: "verification_decided", targetKind: "photo_verification", targetParam: "id" })
-  decide(
+  async decide(
     @CurrentUser() actor: AuthenticatedUser,
     @Param("id", UuidParamPipe) verificationId: string,
     @Body(new ZodValidationPipe(decideVerificationSchema)) input: DecideVerificationInput,
+    @Req() request: Request,
   ) {
-    return this.review.decide(actor, verificationId, input);
+    const decided = await this.review.decide(actor, verificationId, input);
+    await this.auditLog.record(actor, {
+      domain: "verification",
+      action: "decide",
+      targetKind: "photo_verification",
+      targetId: verificationId,
+      metadata: { tenantId: decided.tenantId, decision: decided.decision, reason: decided.reason },
+      ip: request.ip ?? null,
+      userAgent: request.get("user-agent")?.slice(0, 500) ?? null,
+    });
+    return decided.submission;
   }
 }

@@ -247,6 +247,8 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
   keep("integration.domain_events", "Registro técnico de eventos", "t.actor_user_id = :userId",
     "Registro interno de operaciones; no se muestra a nadie."),
   del("admin.user_permissions", "Permisos de personal", OWN),
+  // Copies of the gym-level moderation grants retired by ADR-0018, kept only for rollback.
+  del("admin.retired_permission_grants", "Permisos de personal retirados", OWN),
   keep("admin.audit_log", "Bitácora de administración", "t.actor_user_id = :userId",
     "Registro de seguridad de acciones de personal."),
 ];

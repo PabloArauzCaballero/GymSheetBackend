@@ -7,6 +7,7 @@ import {
   nextAttemptAt,
   rateLimited,
   retentionCutoffs,
+  VERIFICATION_REVIEW_DEADLINE_DAYS,
 } from "./verification.policy";
 import { decideVerificationSchema, verificationQueueQuerySchema } from "./verification.schemas";
 
@@ -62,6 +63,7 @@ describe("state machine", () => {
     ["PENDING_UPLOAD", "EXPIRED", true],
     ["PENDING_REVIEW", "APPROVED", true],
     ["PENDING_REVIEW", "REJECTED", true],
+    ["PENDING_REVIEW", "EXPIRED", true],
     ["PENDING_UPLOAD", "APPROVED", false],
     ["APPROVED", "REJECTED", false],
     ["REJECTED", "PENDING_REVIEW", false],
@@ -93,10 +95,12 @@ describe("state machine", () => {
 });
 
 describe("retention cut-offs", () => {
-  it("keeps decided selfies 30 days and closes challenges after 24 h", () => {
+  it("keeps decided selfies 30 days, closes challenges after 24 h and undecided reviews after 30 days", () => {
+    expect(VERIFICATION_REVIEW_DEADLINE_DAYS).toBe(30);
     expect(retentionCutoffs(now)).toEqual({
       decidedBefore: new Date("2026-10-21T12:00:00.000Z"),
       issuedBefore: new Date("2026-11-19T12:00:00.000Z"),
+      submittedBefore: new Date("2026-10-21T12:00:00.000Z"),
     });
   });
 });
