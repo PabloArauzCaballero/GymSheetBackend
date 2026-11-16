@@ -109,6 +109,26 @@ Los avisos a las personas (aviso, suspensión, expulsión, contenido oculto o re
 «Revisamos tu reporte» nombran al «equipo de moderación de REPP» y nunca al gimnasio. Los avisos de la
 verificación (aprobada, rechazada, vencida sin revisión, revocada) nombran al «equipo de REPP».
 
+### 8. Nadie decide sobre su propia cuenta ni un moderador sobre la plataforma
+
+Una revisión de seguridad del primer corte encontró que el veredicto no miraba **a quién** se
+denunciaba: un `MODERATOR` podía tomar y resolver un caso sobre sí mismo (descartarlo), sobre otro
+moderador o sobre un `SYSTEM_ADMIN` (aviso, suspensión, expulsión o confirmar menor, que borra la
+cuenta). Se cierra en `ModerationService` con la regla pura `caseRefusalFor`
+(`moderation.policy.ts`):
+
+- caso sobre la propia cuenta, cualquiera sea el rol: `403 MODERATION_SELF_CASE`;
+- caso sobre una cuenta `MODERATOR` o `SYSTEM_ADMIN` abierto por un `MODERATOR`:
+  `403 MODERATION_PEER_CASE`; lo decide un `SYSTEM_ADMIN` que no sea la cuenta denunciada.
+
+Se comprueba en el expediente (nombra a quien denunció), al tomar y en el veredicto; en el
+veredicto, dentro de la transacción y con la fila de la cuenta bloqueada (`FOR SHARE`), antes de
+aplicar nada, para que asignar o retirar el rol no se cuele entre la comprobación y la sanción.
+Soltar un caso sigue abierto: sólo devuelve a la cola un caso propio. La cola no muestra a nadie sus
+propios casos, y los casos sobre cuentas de plataforma sólo se listan a `SYSTEM_ADMIN`. Cada
+negativa deja un aviso estructurado `moderation.case_refused` (sin fila de auditoría: no se decidió
+nada).
+
 ### 7. Fuera de alcance
 
 - **Apelaciones**: no existen; no se diseñan aquí.

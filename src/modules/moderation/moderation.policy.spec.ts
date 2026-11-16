@@ -1,5 +1,7 @@
+import { UserRole } from '../../common/enums/domain.enums';
 import {
   AUTO_HIDE_DISTINCT_REPORTERS,
+  caseRefusalFor,
   isHideableTarget,
   ModerationReason,
   ModerationResolution,
@@ -118,6 +120,29 @@ describe('Política de moderación', () => {
     it('exige varias personas distintas, no varias quejas', () => {
       // Si bastara con una, alguien insistente tumbaría contenido ajeno solo.
       expect(AUTO_HIDE_DISTINCT_REPORTERS).toBeGreaterThan(1);
+    });
+  });
+
+  describe('who may decide on a case (ADR-0018 §8)', () => {
+    const moderator = { id: 'mod-1', role: UserRole.MODERATOR };
+    const systemAdmin = { id: 'sys-1', role: UserRole.SYSTEM_ADMIN };
+
+    it('refuses every case about the actor itself', () => {
+      expect(caseRefusalFor(moderator, { id: 'mod-1', role: UserRole.MODERATOR })).toBe('MODERATION_SELF_CASE');
+      expect(caseRefusalFor(systemAdmin, { id: 'sys-1', role: UserRole.SYSTEM_ADMIN })).toBe('MODERATION_SELF_CASE');
+    });
+
+    it('leaves cases about platform accounts to a SYSTEM_ADMIN', () => {
+      expect(caseRefusalFor(moderator, { id: 'mod-2', role: UserRole.MODERATOR })).toBe('MODERATION_PEER_CASE');
+      expect(caseRefusalFor(moderator, { id: 'sys-1', role: UserRole.SYSTEM_ADMIN })).toBe('MODERATION_PEER_CASE');
+      expect(caseRefusalFor(systemAdmin, { id: 'mod-2', role: UserRole.MODERATOR })).toBeNull();
+      expect(caseRefusalFor(systemAdmin, { id: 'sys-2', role: UserRole.SYSTEM_ADMIN })).toBeNull();
+    });
+
+    it('lets a moderator decide on members, staff and erased accounts', () => {
+      for (const role of [UserRole.CLIENT, UserRole.ADMIN, UserRole.FRONT_DESK, null]) {
+        expect(caseRefusalFor(moderator, { id: 'someone', role })).toBeNull();
+      }
     });
   });
 });

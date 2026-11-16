@@ -1,3 +1,4 @@
+import { PLATFORM_ACCOUNT_ROLES } from "../moderation/moderation.policy";
 import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
 import { Op, QueryTypes, Transaction } from "sequelize";
@@ -32,12 +33,21 @@ export class VerificationRepository {
   }
 
   /** Locks the account row: serializes challenges and decisions per member. */
-  async lockUser(userId: string, transaction: Transaction): Promise<{ verifiedAt: Date | null } | null> {
-    const [row] = await this.sequelize.query<{ verified_at: Date | null }>(
-      `SELECT verified_at FROM public.usuarios WHERE id = :userId FOR UPDATE`,
+  async lockUser(userId: string, transaction: Transaction): Promise<{ verifiedAt: Date | null; role: string } | null> {
+    const [row] = await this.sequelize.query<{ verified_at: Date | null; rol: string }>(
+      `SELECT verified_at, rol FROM public.usuarios WHERE id = :userId FOR UPDATE`,
       { type: QueryTypes.SELECT, replacements: { userId }, transaction },
     );
-    return row ? { verifiedAt: row.verified_at } : null;
+    return row ? { verifiedAt: row.verified_at, role: row.rol } : null;
+  }
+
+  /** Role of an account, for the review rule (no lock: reading a selfie changes nothing). */
+  async accountRole(userId: string): Promise<string | null> {
+    const [row] = await this.sequelize.query<{ rol: string }>(
+      `SELECT rol FROM public.usuarios WHERE id = :userId`,
+      { type: QueryTypes.SELECT, replacements: { userId } },
+    );
+    return row?.rol ?? null;
   }
 
   async userVerifiedAt(userId: string): Promise<Date | null> {
@@ -175,7 +185,16 @@ export class VerificationRepository {
     await this.rows.update(changes, { where: { id }, transaction });
   }
 
-  async listQueue(status: VerificationStatusValue, limit: number, tenantScope: string | null): Promise<QueueRow[]> {
+  /**
+   * `reviewer` never sees its own attempt; attempts of platform accounts
+   * (MODERATOR, SYSTEM_ADMIN) are listed only to a SYSTEM_ADMIN (ADR-0018 §8).
+   */
+  async listQueue(
+    status: VerificationStatusValue,
+    limit: number,
+    tenantScope: string | null,
+    reviewer: { id: string; seesPlatformAccounts: boolean },
+  ): Promise<QueueRow[]> {
     const ids = await this.sequelize.query<{ id: string; member_name: string; tenant_id: string; tenant_name: string | null }>(
       `SELECT v.id, u.nombre_completo AS member_name, owner.tenant_id, tn.nombre AS tenant_name
          FROM social.photo_verifications v
@@ -183,9 +202,22 @@ export class VerificationRepository {
          CROSS JOIN LATERAL (SELECT COALESCE(u.tenant_id, :defaultTenant) AS tenant_id) owner
          LEFT JOIN public.tenants tn ON tn.id = owner.tenant_id
         WHERE v.status = :status AND (CAST(:tenantScope AS varchar) IS NULL OR owner.tenant_id = :tenantScope)
+          AND v.user_id <> :reviewerId
+          AND (:seesPlatformAccounts OR u.rol NOT IN (:platformRoles))
         ORDER BY COALESCE(v.submitted_at, v.created_at), v.id
         LIMIT :limit`,
-      { type: QueryTypes.SELECT, replacements: { status, limit, tenantScope, defaultTenant: env.DEFAULT_TENANT_ID } },
+      {
+        type: QueryTypes.SELECT,
+        replacements: {
+          status,
+          limit,
+          tenantScope,
+          defaultTenant: env.DEFAULT_TENANT_ID,
+          reviewerId: reviewer.id,
+          seesPlatformAccounts: reviewer.seesPlatformAccounts,
+          platformRoles: [...PLATFORM_ACCOUNT_ROLES],
+        },
+      },
     );
     if (ids.length === 0) return [];
     const models = await this.rows.findAll({ where: { id: ids.map((row) => row.id) } });

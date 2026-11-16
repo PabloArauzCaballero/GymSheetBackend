@@ -37,6 +37,50 @@ describe('Platform moderation (e2e)', () => {
     return author;
   };
 
+  type QueueItem = { target_id: string; reported_user_id: string; tenant_id: string; tenant_name: string | null };
+  /** The whole queue the member sees: the suites share one database, so walk it instead of assuming page 1. */
+  const queueOf = async (member: Member) => {
+    const items: QueueItem[] = [];
+    for (let page = 1; page <= 40; page += 1) {
+      const queue = await e2e.as(member.token).get(`/admin/moderation/queue?pageSize=50&page=${page}`).expect(200);
+      items.push(...(queue.body.data as QueueItem[]));
+      if ((queue.body.data as unknown[]).length < 50) break;
+    }
+    return items;
+  };
+  /** Someone reports the account itself, for being a minor: the case that can erase it. */
+  const reportAccount = async (label: string, target: Member) => {
+    const reporter = await e2e.register(label);
+    await e2e.as(reporter.token).post('/me/reports').send({ targetKind: 'USER', targetId: target.id, reason: 'MENOR_DE_EDAD' }).expect(201);
+  };
+  /** Five strikes still counting: the next sanction of the account is the expulsion. */
+  const nextSanctionExpels = (userId: string) => e2e.sql(
+    `INSERT INTO moderation.user_strikes (id, user_id, tenant_id, kind, reason, expires_at)
+     SELECT gen_random_uuid(), :userId, 'default', 'ADVERTENCIA', 'SPAM', now() + interval '300 days' FROM generate_series(1, 5)`,
+    { userId });
+  /** Nothing was decided on the account: the case is open, the account active, no strike, no minor closure. */
+  const expectUntouched = async (userId: string, strikesBefore: number) => {
+    const [account] = await selectRows<{ estado: string; suspended: boolean; strikes: number; closures: number }>(e2e,
+      `SELECT u.estado, (u.suspended_until > now()) IS TRUE AS suspended,
+              (SELECT count(*)::int FROM moderation.user_strikes s WHERE s.user_id = u.id) AS strikes,
+              (SELECT count(*)::int FROM integration.outbox_jobs o
+                WHERE o.queue_name = 'account.minor-closure' AND o.aggregate_id = u.id) AS closures
+         FROM public.usuarios u WHERE u.id = :userId`, { userId });
+    expect(account).toEqual({ estado: 'ACTIVO', suspended: false, strikes: strikesBefore, closures: 0 });
+    const reports = await selectRows<{ status: string }>(e2e,
+      `SELECT DISTINCT status FROM moderation.reports WHERE target_kind = 'USER' AND target_id = :userId`, { userId });
+    expect(reports).toEqual([{ status: 'PENDIENTE' }]);
+  };
+  const refusedWith = async (member: Member, targetId: string, code: string) => {
+    const base = `/admin/moderation/cases/USER/${targetId}`;
+    const api = e2e.as(member.token);
+    expect((await api.get(base).expect(403)).body.code).toBe(code);
+    expect((await api.post(`${base}/claim`).expect(403)).body.code).toBe(code);
+    for (const decision of [{ sanction: true, hideContent: false }, { sanction: false, hideContent: false, confirmMinor: true }]) {
+      expect((await api.post(`${base}/resolve`).send(decision).expect(403)).body.code).toBe(code);
+    }
+  };
+
   beforeAll(async () => {
     e2e = await bootE2eApp();
     gymB = `platform-mod-${randomUUID().slice(0, 8)}`;
@@ -87,14 +131,8 @@ describe('Platform moderation (e2e)', () => {
     await e2e.as(reporterDefault.token).post('/me/reports')
       .send({ targetKind: 'USER', targetId: authorDefault.id, reason: 'SPAM' }).expect(201);
 
-    // The suites share one database: walk the queue instead of assuming page 1.
     // The queue rows are snake_case, as the console has always read them.
-    const items: { target_id: string; tenant_id: string; tenant_name: string | null }[] = [];
-    for (let page = 1; page <= 40; page += 1) {
-      const queue = await e2e.as(moderator.token).get(`/admin/moderation/queue?pageSize=50&page=${page}`).expect(200);
-      items.push(...(queue.body.data as typeof items));
-      if ((queue.body.data as unknown[]).length < 50) break;
-    }
+    const items = await queueOf(moderator);
     expect(items.find((item) => item.target_id === authorB.id)).toMatchObject({ tenant_id: gymB, tenant_name: 'Gimnasio B' });
     expect(items.find((item) => item.target_id === authorDefault.id)).toMatchObject({ tenant_id: 'default' });
 
@@ -160,5 +198,46 @@ describe('Platform moderation (e2e)', () => {
     expect(reports).toEqual([{ status: 'PENDIENTE', claimed: null }]);
     const [row] = await audit('moderator-revoke', moderator.id);
     expect(row).toMatchObject({ actor_user_id: platformAdmin.id });
+  });
+
+  it('nobody acts on a case about their own account, and it is not in their queue', async () => {
+    const moderator = await registerModerator(e2e, 'platform-mod-self');
+    const admin = await e2e.register('platform-mod-self-sys');
+    await e2e.promote(admin.id, 'SYSTEM_ADMIN');
+    for (const member of [moderator, admin]) {
+      await reportAccount(`platform-mod-self-reporter-${member.id.slice(0, 6)}`, member);
+      await nextSanctionExpels(member.id);
+      expect((await queueOf(member)).map((item) => item.reported_user_id)).not.toContain(member.id);
+      await refusedWith(member, member.id, 'MODERATION_SELF_CASE');
+      await expectUntouched(member.id, 5);
+    }
+  });
+
+  it('a moderator cannot act on, nor see, a case about another moderator or a SYSTEM_ADMIN; a SYSTEM_ADMIN decides it', async () => {
+    const moderator = await registerModerator(e2e, 'platform-mod-peer-actor');
+    const peer = await registerModerator(e2e, 'platform-mod-peer-target');
+    const admin = await e2e.register('platform-mod-peer-sys');
+    await e2e.promote(admin.id, 'SYSTEM_ADMIN');
+    for (const target of [peer, admin]) {
+      await reportAccount(`platform-mod-peer-reporter-${target.id.slice(0, 6)}`, target);
+      await nextSanctionExpels(target.id);
+    }
+
+    const seen = (await queueOf(moderator)).map((item) => item.reported_user_id);
+    expect(seen).not.toContain(peer.id);
+    expect(seen).not.toContain(admin.id);
+    for (const target of [peer, admin]) {
+      await refusedWith(moderator, target.id, 'MODERATION_PEER_CASE');
+      await expectUntouched(target.id, 5);
+    }
+
+    // The platform administrator sees the peer case and decides it.
+    expect((await queueOf(platformAdmin)).map((item) => item.reported_user_id)).toContain(peer.id);
+    const base = `/admin/moderation/cases/USER/${peer.id}`;
+    await e2e.as(platformAdmin.token).post(`${base}/claim`).expect(201);
+    const verdict = await e2e.as(platformAdmin.token).post(`${base}/resolve`).send({ sanction: true, hideContent: false }).expect(201);
+    expect(verdict.body.data).toMatchObject({ resolution: 'USUARIO_EXPULSADO', sanction: { kind: 'EXPULSION' } });
+    const [account] = await selectRows<{ estado: string }>(e2e, 'SELECT estado FROM public.usuarios WHERE id = :id', { id: peer.id });
+    expect(account).toEqual({ estado: 'INACTIVO' });
   });
 });

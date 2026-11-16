@@ -55,7 +55,9 @@ export type DomainErrorCode =
   | 'STAFF_CLOSURE_SELF'
   | 'STAFF_CLOSURE_NOT_STAFF'
   | 'STAFF_CLOSURE_LAST_ADMIN'
-  | 'MODERATOR_NOT_ASSIGNABLE';
+  | 'MODERATOR_NOT_ASSIGNABLE'
+  | 'MODERATION_SELF_CASE'
+  | 'MODERATION_PEER_CASE';
 
 /**
  * Error de dominio con `code` estable y `details` opcional (por ejemplo

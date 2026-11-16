@@ -1,13 +1,14 @@
 import { ForbiddenException, HttpStatus, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
-import { NotificationChannel } from "../../common/enums/domain.enums";
+import { NotificationChannel, UserRole } from "../../common/enums/domain.enums";
 import { DomainException } from "../../common/errors/domain.exception";
 import { platformScopeOf } from "../../common/tenancy/tenant-scope";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { env } from "../../config/env";
 import { ChatMediaCipher } from "../chat/chat-media-cipher";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "../media/media-storage.port";
+import { caseRefusalFor, CaseRefusalCode } from "../moderation/moderation.policy";
 import { NotificationService } from "../notifications/notification.service";
 import { PhotoVerificationModel } from "./photo-verification.model";
 import { SelfieLinkSigner } from "./selfie-link.signer";
@@ -16,6 +17,11 @@ import { mapQueueItem, QueueItemResponse, SubmissionResponse, mapSubmission } fr
 import { assertTransition, VERIFICATION_CLOCK, VERIFICATION_RULES, VerificationClock } from "./verification.policy";
 import { VerificationRepository } from "./verification.repository";
 import { DecideVerificationInput, SelfieLinkQuery, VerificationQueueQuery } from "./verification.schemas";
+
+const REVIEW_REFUSAL_MESSAGES: Record<CaseRefusalCode, string> = {
+  MODERATION_SELF_CASE: "No puedes revisar tu propia verificación.",
+  MODERATION_PEER_CASE: "La verificación de una cuenta de la plataforma la revisa un administrador de sistema.",
+};
 
 /** The decision, plus the facts its audit row needs (gym of the member). */
 export type VerificationDecision = {
@@ -47,7 +53,10 @@ export class VerificationReviewService {
 
   /** Oldest first, with the requested gesture, a signed selfie link and the member's photos. */
   async listQueue(actor: AuthenticatedUser, query: VerificationQueueQuery): Promise<QueueItemResponse[]> {
-    const rows = await this.repository.listQueue(query.status, query.limit, platformScopeOf(actor));
+    const rows = await this.repository.listQueue(query.status, query.limit, platformScopeOf(actor), {
+      id: actor.id,
+      seesPlatformAccounts: actor.role === UserRole.SYSTEM_ADMIN,
+    });
     const photos = await this.repository.visiblePhotos([...new Set(rows.map((row) => row.verification.userId))]);
     const expiresAt = new Date(this.clock().getTime() + VERIFICATION_RULES.selfieLinkTtlMs);
     return rows.map(({ verification, memberName, tenantId, tenantName }) =>
@@ -71,9 +80,21 @@ export class VerificationReviewService {
     }
     const row = (await this.repository.findByIdInScope(verificationId, platformScopeOf(actor)))?.verification;
     if (!row?.selfieStorageKey || !row.selfieMimeType) throw new NotFoundException("Selfie no encontrada.");
+    this.assertMayReview(actor, row.userId, await this.repository.accountRole(row.userId));
     const encrypted = await this.storage.download(row.selfieStorageKey);
     this.logger.log({ event: "verification.selfie_viewed", verificationId, reviewerId: actor.id });
     return { buffer: this.cipher.decrypt(encrypted), mimeType: row.selfieMimeType };
+  }
+
+  /**
+   * Same rule as the moderation cases (ADR-0018 §8): nobody reviews their own
+   * selfie, and a MODERATOR never reviews another platform account's.
+   */
+  private assertMayReview(actor: AuthenticatedUser, memberId: string, memberRole: string | null): void {
+    const refusal = caseRefusalFor(actor, { id: memberId, role: memberRole });
+    if (!refusal) return;
+    this.logger.warn({ event: "verification.review_refused", code: refusal, reviewerId: actor.id });
+    throw new DomainException(HttpStatus.FORBIDDEN, refusal, REVIEW_REFUSAL_MESSAGES[refusal]);
   }
 
   async decide(actor: AuthenticatedUser, verificationId: string, input: DecideVerificationInput): Promise<VerificationDecision> {
@@ -83,7 +104,8 @@ export class VerificationReviewService {
       const row = scoped.verification;
       const target = input.decision === "APPROVE" ? VerificationStatus.APPROVED : VerificationStatus.REJECTED;
       assertTransition(row.status, target);
-      await this.repository.lockUser(row.userId, transaction);
+      const member = await this.repository.lockUser(row.userId, transaction);
+      this.assertMayReview(actor, row.userId, member?.role ?? null);
       const now = this.clock();
       const reason = target === VerificationStatus.REJECTED ? (input.reason ?? "OTHER") : null;
       const approvedPhotoIds =

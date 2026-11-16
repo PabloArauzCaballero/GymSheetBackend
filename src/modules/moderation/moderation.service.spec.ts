@@ -1,4 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { DomainException } from '../../common/errors/domain.exception';
 import { UserRole } from '../../common/enums/domain.enums';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { ModerationService } from './moderation.service';
@@ -57,6 +58,7 @@ describe('ModerationService', () => {
       release: jest.fn().mockResolvedValue(1),
       listStrikes: jest.fn().mockResolvedValue([]),
       findQueue: jest.fn().mockResolvedValue([]),
+      findAccountRole: jest.fn().mockResolvedValue(UserRole.CLIENT),
       ...overrides,
     };
     const notifications = {
@@ -504,6 +506,95 @@ describe('ModerationService', () => {
       await expect(
         service.claim(moderator, ModerationTargetKind.STORY, 'story-1'),
       ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('who may decide on a case (ADR-0018 §8)', () => {
+    const platform = (id: string, role: UserRole): AuthenticatedUser => ({
+      id, email: `${id}@repp.test`, role, tenantId: 'topfitness', tenantScope: role === UserRole.SYSTEM_ADMIN ? null : 'topfitness', impersonating: false,
+    });
+    const centralModerator = platform('mod-central', UserRole.MODERATOR);
+    const systemAdmin = platform('sys-admin', UserRole.SYSTEM_ADMIN);
+    const caseAbout = (reportedUserId: string, role: UserRole, reason: string = ModerationReason.ACOSO) => build({
+      findOpenReportsForTarget: jest.fn().mockResolvedValue([
+        { id: 'report-1', reporterUserId: 'reporter-1', reportedUserId, tenantId: 'topfitness', reason },
+      ]),
+      findReportsForTarget: jest.fn().mockResolvedValue([
+        { id: 'report-1', reporterUserId: 'reporter-1', reportedUserId, tenantId: 'topfitness', reason, details: null, createdAt: new Date(), status: 'PENDIENTE' },
+      ]),
+      findAccountRole: jest.fn().mockResolvedValue(role),
+      countActiveStrikes: jest.fn().mockResolvedValue(9),
+    });
+    const everything = { hideContent: true, sanction: true, confirmMinor: true, note: null };
+    const expectRefusal = async (promise: Promise<unknown>, code: string) => {
+      const error: unknown = await promise.catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(DomainException);
+      expect((error as DomainException).getStatus()).toBe(403);
+      expect((error as DomainException).code).toBe(code);
+    };
+    const expectNothingApplied = (built: ReturnType<typeof build>) => {
+      expect(built.repository.createStrike).not.toHaveBeenCalled();
+      expect(built.repository.setSuspension).not.toHaveBeenCalled();
+      expect(built.repository.setContentHidden).not.toHaveBeenCalled();
+      expect(built.repository.resolveTarget).not.toHaveBeenCalled();
+      expect(built.minors.confirm).not.toHaveBeenCalled();
+      expect(built.minors.liftIfCleared).not.toHaveBeenCalled();
+      expect(built.sequelize.query).not.toHaveBeenCalled();
+      expect(built.notifications.enqueueDirectMessage).not.toHaveBeenCalled();
+    };
+
+    it('nobody claims, reads or resolves a case about their own account', async () => {
+      for (const actor of [centralModerator, systemAdmin]) {
+        const built = caseAbout(actor.id, actor.role, ModerationReason.MENOR_DE_EDAD);
+        await expectRefusal(built.service.claim(actor, ModerationTargetKind.USER, actor.id), 'MODERATION_SELF_CASE');
+        await expectRefusal(built.service.getCase(actor, ModerationTargetKind.USER, actor.id), 'MODERATION_SELF_CASE');
+        await expectRefusal(built.service.resolve(actor, ModerationTargetKind.USER, actor.id, everything), 'MODERATION_SELF_CASE');
+        expect(built.repository.claim).not.toHaveBeenCalled();
+        expectNothingApplied(built);
+      }
+    });
+
+    it.each([UserRole.MODERATOR, UserRole.SYSTEM_ADMIN])(
+      'a MODERATOR cannot claim, read or resolve a case about a %s account: no strike, expulsion, minor closure or hide',
+      async (role) => {
+        const built = caseAbout('peer-1', role, ModerationReason.MENOR_DE_EDAD);
+        await expectRefusal(built.service.claim(centralModerator, ModerationTargetKind.STORY, 'story-1'), 'MODERATION_PEER_CASE');
+        await expectRefusal(built.service.getCase(centralModerator, ModerationTargetKind.STORY, 'story-1'), 'MODERATION_PEER_CASE');
+        await expectRefusal(built.service.resolve(centralModerator, ModerationTargetKind.STORY, 'story-1', everything), 'MODERATION_PEER_CASE');
+        await expectRefusal(
+          built.service.resolve(centralModerator, ModerationTargetKind.STORY, 'story-1', { ...everything, confirmMinor: false }),
+          'MODERATION_PEER_CASE',
+        );
+        expect(built.repository.claim).not.toHaveBeenCalled();
+        expectNothingApplied(built);
+      },
+    );
+
+    it('a SYSTEM_ADMIN decides on a case about a moderator, with the role checked under the verdict lock', async () => {
+      const built = caseAbout('peer-1', UserRole.MODERATOR);
+      await built.service.claim(systemAdmin, ModerationTargetKind.USER, 'peer-1');
+      const verdict = await built.service.resolve(systemAdmin, ModerationTargetKind.USER, 'peer-1', { ...everything, confirmMinor: false });
+      expect(verdict.sanction).toMatchObject({ kind: StrikeKind.EXPULSION });
+      expect(built.repository.findAccountRole).toHaveBeenLastCalledWith('peer-1', expect.anything());
+    });
+
+    it('a MODERATOR still decides on a member case', async () => {
+      const built = caseAbout('author-1', UserRole.CLIENT);
+      await expect(built.service.claim(centralModerator, ModerationTargetKind.USER, 'author-1')).resolves.toMatchObject({ claimed: true });
+      await expect(built.service.resolve(centralModerator, ModerationTargetKind.USER, 'author-1', { ...everything, confirmMinor: false }))
+        .resolves.toMatchObject({ resolved: true });
+    });
+
+    it('the queue never lists the viewer\'s own cases, and only a SYSTEM_ADMIN sees platform accounts', async () => {
+      const built = build();
+      await built.service.listQueue(centralModerator, 1, 20);
+      expect(built.repository.findQueue).toHaveBeenLastCalledWith(
+        expect.objectContaining({ viewerUserId: 'mod-central', includePlatformAccounts: false }),
+      );
+      await built.service.listQueue(systemAdmin, 1, 20);
+      expect(built.repository.findQueue).toHaveBeenLastCalledWith(
+        expect.objectContaining({ viewerUserId: 'sys-admin', includePlatformAccounts: true }),
+      );
     });
   });
 });

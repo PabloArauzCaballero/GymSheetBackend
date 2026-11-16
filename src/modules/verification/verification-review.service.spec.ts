@@ -43,7 +43,8 @@ function setup(overrides: Partial<Record<keyof VerificationRepository, jest.Mock
   const cipher = new ChatMediaCipher("s".repeat(64));
   const repository = {
     findByIdInScope: jest.fn().mockResolvedValue({ verification: pending(), tenantId: "gym-b" }),
-    lockUser: jest.fn().mockResolvedValue({ verifiedAt: null }),
+    lockUser: jest.fn().mockResolvedValue({ verifiedAt: null, role: UserRole.CLIENT }),
+    accountRole: jest.fn().mockResolvedValue(UserRole.CLIENT),
     visiblePhotos: jest.fn().mockResolvedValue([
       { userId: memberId, id: "p1", url: "users/m/perfiles/a.jpg" },
       { userId: memberId, id: "p2", url: "users/m/perfiles/b.jpg" },
@@ -158,7 +159,7 @@ describe("VerificationReviewService queue and selfie", () => {
     const { service, repository, signer } = setup();
     const [item] = await service.listQueue(moderator, { status: "PENDING_REVIEW", limit: 20 });
     // Cross-gym queue for a moderator; each item names its gym.
-    expect(repository.listQueue).toHaveBeenCalledWith("PENDING_REVIEW", 20, null);
+    expect(repository.listQueue).toHaveBeenCalledWith("PENDING_REVIEW", 20, null, { id: moderator.id, seesPlatformAccounts: false });
     expect(item).toMatchObject({
       id: verificationId,
       member: { id: memberId, name: "Ana" },
@@ -194,6 +195,43 @@ describe("VerificationReviewService queue and selfie", () => {
     await service.readSelfie(moderator, verificationId, { expires, signature: signer.sign(verificationId, moderator.id, new Date(expires)) });
     expect(repository.findByIdInScope).toHaveBeenLastCalledWith(verificationId, null);
     await service.listQueue(impersonatingAdmin, { status: "PENDING_REVIEW", limit: 20 });
-    expect(repository.listQueue).toHaveBeenLastCalledWith("PENDING_REVIEW", 20, "gym-b");
+    expect(repository.listQueue).toHaveBeenLastCalledWith("PENDING_REVIEW", 20, "gym-b", { id: impersonatingAdmin.id, seesPlatformAccounts: true });
+  });
+});
+
+describe("VerificationReviewService: nobody reviews their own or a platform account's selfie (ADR-0018 §8)", () => {
+  const code = (error: unknown) => (error as { response?: { code?: string } }).response?.code;
+
+  it("refuses a moderator deciding its own verification, before writing anything", async () => {
+    const { service, repository } = setup({
+      findByIdInScope: jest.fn().mockResolvedValue({ verification: pending({ userId: moderator.id }), tenantId: "gym-a" }),
+      lockUser: jest.fn().mockResolvedValue({ verifiedAt: null, role: UserRole.MODERATOR }),
+    });
+    const error = await service.decide(moderator, verificationId, { decision: "APPROVE", comparedPhotoIds: ["p1", "p2"] }).catch((caught: unknown) => caught);
+    expect(code(error)).toBe("MODERATION_SELF_CASE");
+    expect((error as HttpException).getStatus()).toBe(403);
+    expect(repository.update).not.toHaveBeenCalled();
+    expect(repository.setUserVerifiedAt).not.toHaveBeenCalled();
+  });
+
+  it("refuses a moderator deciding another moderator's verification; a SYSTEM_ADMIN may", async () => {
+    const peer = { verifiedAt: null, role: UserRole.MODERATOR };
+    const refused = setup({ lockUser: jest.fn().mockResolvedValue(peer) });
+    const error = await refused.service.decide(moderator, verificationId, { decision: "REJECT", reason: "OTHER" }).catch((caught: unknown) => caught);
+    expect(code(error)).toBe("MODERATION_PEER_CASE");
+    expect(refused.repository.update).not.toHaveBeenCalled();
+
+    const allowed = setup({ lockUser: jest.fn().mockResolvedValue(peer) });
+    await expect(allowed.service.decide(impersonatingAdmin, verificationId, { decision: "REJECT", reason: "OTHER" })).resolves.toMatchObject({ decision: "REJECTED" });
+  });
+
+  it("does not open the selfie of a platform account for a moderator", async () => {
+    const { service, signer, storage } = setup({ accountRole: jest.fn().mockResolvedValue(UserRole.SYSTEM_ADMIN) });
+    const expires = now.getTime() + 60_000;
+    const error = await service
+      .readSelfie(moderator, verificationId, { expires, signature: signer.sign(verificationId, moderator.id, new Date(expires)) })
+      .catch((caught: unknown) => caught);
+    expect(code(error)).toBe("MODERATION_PEER_CASE");
+    expect(storage.download).not.toHaveBeenCalled();
   });
 });

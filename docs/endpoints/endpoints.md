@@ -411,11 +411,21 @@ moderator.
 Audit rows of a `MODERATOR` are platform rows (`tenant_scope` null). Every notice to the people
 involved names «el equipo de moderación de REPP», never the gym.
 
+**Who decides a case (ADR-0018 §8).** The case file, claim and verdict answer `403
+MODERATION_SELF_CASE` when the reported account is the caller's own (any role), and `403
+MODERATION_PEER_CASE` when a `MODERATOR` opens a case about a `MODERATOR` or `SYSTEM_ADMIN` account:
+those cases belong to a `SYSTEM_ADMIN` who is not the reported account. The queue never lists the
+caller's own cases, and lists cases about platform accounts to `SYSTEM_ADMIN` only. Release stays
+open (it only hands an own claim back). Refusals log `moderation.case_refused`.
+
 ### Person verification review (selfie, central REPP team)
 
 The selfie review follows the same rule: a selfie is biometric data and the gym never sees it.
 `MODERATOR` reviews every gym, `SYSTEM_ADMIN` every gym or only the impersonated one; `ADMIN`,
 `FRONT_DESK` and every other gym role get **`403`**, retired `moderation:*` grants or not.
+The case rule of ADR-0018 §8 applies too: nobody reviews their own selfie (`403
+MODERATION_SELF_CASE`), a `MODERATOR` never opens or decides a `MODERATOR`/`SYSTEM_ADMIN` attempt
+(`403 MODERATION_PEER_CASE`), and the queue hides both from whoever may not decide them.
 
 | Method | Route | Access | Purpose |
 | ------ | ----- | ------ | ------- |

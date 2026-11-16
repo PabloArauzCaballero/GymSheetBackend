@@ -1,19 +1,22 @@
 import {
   ConflictException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
   Optional,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
-import { Op, QueryTypes } from "sequelize";
+import { Op, QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import {
   ConnectionStatus,
   NotificationChannel,
+  UserRole,
 } from "../../common/enums/domain.enums";
 import { DISCOVERY_PASS_ORIGIN } from "../social/discovery-pass.model";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
+import { DomainException } from "../../common/errors/domain.exception";
 import { platformScopeOf } from "../../common/tenancy/tenant-scope";
 import { ConnectionModel } from "../social/connection.model";
 import { DiscoveryPassModel } from "../social/discovery-pass.model";
@@ -27,6 +30,8 @@ import { ModerationMinorService } from "./moderation-minor.service";
 import { emailModerationNotice, ModerationNotice, sanctionNotice } from "./moderation-notices";
 import { ChatMessageEvidence } from "./moderation-safeguards.repository";
 import {
+  caseRefusalFor,
+  CaseRefusalCode,
   isHideableTarget,
   ModerationReason,
   ModerationReasonValue,
@@ -48,6 +53,11 @@ import { ChatEventsService } from "../chat/chat-events.service";
  * Contenido que se ve entre gimnasios (reels y playlists públicas): quien lo ve
  * puede denunciarlo aunque el autor sea de otro gimnasio.
  */
+const CASE_REFUSAL_MESSAGES: Record<CaseRefusalCode, string> = {
+  MODERATION_SELF_CASE: "No puedes revisar un caso sobre tu propia cuenta.",
+  MODERATION_PEER_CASE: "Un caso sobre una cuenta del equipo de REPP solo lo revisa la administración de la plataforma.",
+};
+
 const CROSS_TENANT_TARGETS: ReadonlySet<ModerationTargetKindValue> = new Set([
   ModerationTargetKind.REEL,
   ModerationTargetKind.MUSIC_PLAYLIST,
@@ -288,6 +298,8 @@ export class ModerationService {
   listQueue(actor: AuthenticatedUser, page: number, pageSize: number) {
     return this.repository.findQueue({
       tenantScope: platformScopeOf(actor),
+      viewerUserId: actor.id,
+      includePlatformAccounts: actor.role === UserRole.SYSTEM_ADMIN,
       limit: pageSize,
       offset: (page - 1) * pageSize,
     });
@@ -316,6 +328,8 @@ export class ModerationService {
     }
 
     const reportedUserId = reports[0].reportedUserId;
+    // The dossier names the reporters: it is refused where the verdict is.
+    await this.assertMayDecide(actor, reportedUserId);
     const [activeStrikes, person, contentHidden, evidence] = await Promise.all([
       this.repository.countActiveStrikes(reportedUserId, new Date()),
       this.loadReportedPerson(reportedUserId),
@@ -390,6 +404,8 @@ export class ModerationService {
     targetKind: ModerationTargetKindValue,
     targetId: string,
   ) {
+    const [open] = await this.repository.findOpenReportsForTarget(targetKind, targetId, platformScopeOf(actor));
+    if (open) await this.assertMayDecide(actor, open.reportedUserId);
     const affected = await this.repository.claim(
       targetKind,
       targetId,
@@ -460,6 +476,9 @@ export class ModerationService {
     let authorNotice: ModerationNotice | null = null;
 
     await this.sequelize.transaction(async (transaction) => {
+      // Checked under a share lock on the reported account, before anything is
+      // applied: no strike, expulsion, minor closure or hide on a refused case.
+      await this.assertMayDecide(actor, reportedUserId, transaction);
       // A confirmed minor is not punished: the account is closed because the
       // service is for adults. Dismissing a minor report ends its suspension.
       if (input.confirmMinor) {
@@ -574,6 +593,26 @@ export class ModerationService {
       contentHidden: isHideableTarget(targetKind) ? input.hideContent : false,
       minorConfirmed: input.confirmMinor,
     };
+  }
+
+  /**
+   * ADR-0018 §8: nobody decides on a case about their own account, and only a
+   * SYSTEM_ADMIN decides on a case about a platform account. Releasing a claim
+   * stays open: it only hands the case back to the queue.
+   */
+  private async assertMayDecide(
+    actor: AuthenticatedUser,
+    reportedUserId: string,
+    transaction?: Transaction,
+  ): Promise<void> {
+    const role = await this.repository.findAccountRole(reportedUserId, transaction);
+    const refusal = caseRefusalFor(actor, { id: reportedUserId, role });
+    if (!refusal) return;
+    this.logger.warn(
+      { event: "moderation.case_refused", code: refusal, actorUserId: actor.id, actorRole: actor.role, reportedUserId },
+      ModerationService.name,
+    );
+    throw new DomainException(HttpStatus.FORBIDDEN, refusal, CASE_REFUSAL_MESSAGES[refusal]);
   }
 
   private resolutionFor(

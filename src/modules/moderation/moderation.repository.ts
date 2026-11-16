@@ -9,6 +9,7 @@ import {
   ModerationReasonValue,
   ModerationStatus,
   ModerationTargetKindValue,
+  PLATFORM_ACCOUNT_ROLES,
 } from "./moderation.policy";
 
 /** Una tarjeta de la cola: un contenido con todas sus quejas juntas. */
@@ -104,6 +105,10 @@ export class ModerationRepository {
    */
   findQueue(input: {
     tenantScope: string | null;
+    /** Cases about the viewer's own account are never listed to it. */
+    viewerUserId: string;
+    /** Only a SYSTEM_ADMIN sees cases about platform accounts (ADR-0018 §8). */
+    includePlatformAccounts: boolean;
     limit: number;
     offset: number;
   }): Promise<ModerationCaseRow[]> {
@@ -172,14 +177,29 @@ export class ModerationRepository {
            ON ah.target_kind = r.target_kind AND ah.target_id = r.target_id AND ah.reviewed_at IS NULL
         WHERE r.status IN ('PENDIENTE', 'EN_REVISION')
           AND (:tenantScope IS NULL OR r.tenant_id = :tenantScope)
+          AND r.reported_user_id <> :viewerUserId
+          AND (:includePlatformAccounts OR u.rol NOT IN (:platformRoles))
         GROUP BY r.target_kind, r.target_id, r.reported_user_id, u.nombre_completo
         ORDER BY severity DESC, first_reported_at ASC
         LIMIT :limit OFFSET :offset`,
       {
         type: QueryTypes.SELECT,
-        replacements: input,
+        replacements: { ...input, platformRoles: PLATFORM_ACCOUNT_ROLES },
       },
     );
+  }
+
+  /**
+   * Role of a reported account, null if it no longer exists. Inside a
+   * transaction the row is share-locked, so a role change (assigning or
+   * revoking a moderator) cannot slip between this check and the verdict.
+   */
+  async findAccountRole(userId: string, transaction?: Transaction): Promise<string | null> {
+    const [row] = await this.sequelize.query<{ role: string }>(
+      `SELECT rol AS role FROM public.usuarios WHERE id = :userId${transaction ? " FOR SHARE" : ""}`,
+      { type: QueryTypes.SELECT, replacements: { userId }, transaction },
+    );
+    return row?.role ?? null;
   }
 
   /** Las quejas concretas de un caso, con el nombre de quien las puso. */

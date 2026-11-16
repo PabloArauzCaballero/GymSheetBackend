@@ -6,6 +6,8 @@
  * moderación discute la escalera, no el SQL.
  */
 
+import { UserRole } from "../../common/enums/domain.enums";
+
 /** Qué se puede reportar. */
 export const ModerationTargetKind = {
   STORY: "STORY",
@@ -224,4 +226,28 @@ export function isHideableTarget(kind: ModerationTargetKindValue): boolean {
     kind === ModerationTargetKind.REEL ||
     kind === ModerationTargetKind.MUSIC_PLAYLIST
   );
+}
+
+/** Accounts of the platform itself (ADR-0018): the REPP moderation team and the platform admin. */
+export const PLATFORM_ACCOUNT_ROLES: readonly string[] = [UserRole.MODERATOR, UserRole.SYSTEM_ADMIN];
+
+export type CaseRefusalCode = "MODERATION_SELF_CASE" | "MODERATION_PEER_CASE";
+
+/**
+ * Who may decide on a case about an account (ADR-0018 §8). Nobody decides on
+ * a case about their own account, and a case about a platform account
+ * (MODERATOR or SYSTEM_ADMIN) is decided only by a SYSTEM_ADMIN: otherwise a
+ * moderator could clear itself, or strike, expel or erase a peer or the
+ * administrator that oversees it. `reportedRole` is null for an account that
+ * no longer exists, which is never a platform account.
+ */
+export function caseRefusalFor(
+  actor: { id: string; role: UserRole },
+  reported: { id: string; role: string | null },
+): CaseRefusalCode | null {
+  if (reported.id === actor.id) return "MODERATION_SELF_CASE";
+  if (reported.role !== null && PLATFORM_ACCOUNT_ROLES.includes(reported.role) && actor.role !== UserRole.SYSTEM_ADMIN) {
+    return "MODERATION_PEER_CASE";
+  }
+  return null;
 }
