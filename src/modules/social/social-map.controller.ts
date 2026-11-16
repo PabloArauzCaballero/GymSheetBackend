@@ -4,7 +4,9 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { SocialMapBoundsInput, UpdateSocialMapLocationInput, socialMapBoundsSchema, socialMapCellIdSchema, socialMapCityQuerySchema, socialMapNearbyQuerySchema, SocialMapNearbyQueryInput, updateSocialMapLocationSchema } from "./social-map.schemas";
 import { SocialMapService } from "./social-map.service";
+import { RequiresVerifiedEmail } from "../../common/decorators/requires-verified-email.decorator";
 
+@RequiresVerifiedEmail()
 @Controller("me/social-map")
 export class SocialMapController {
   constructor(private readonly service: SocialMapService) {}

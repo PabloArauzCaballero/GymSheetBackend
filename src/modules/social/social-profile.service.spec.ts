@@ -85,7 +85,7 @@ describe("SocialProfileService", () => {
 
   it("lists every missing requirement for a brand-new account", async () => {
     const { service } = createService({});
-    await expect(service.discoveryReadiness(userId)).resolves.toEqual({
+    await expect(service.discoveryReadiness(userId, true)).resolves.toEqual({
       ready: false,
       missing: ["PROFILE_ENABLED", "PREFERENCES", "PHOTOS"],
     });
@@ -93,12 +93,12 @@ describe("SocialProfileService", () => {
 
   it("requires at least two visible photos", async () => {
     const one = createService({ preferencesConfigured: true, profileEnabled: true, photos: 1 });
-    await expect(one.service.discoveryReadiness(userId)).resolves.toEqual({
+    await expect(one.service.discoveryReadiness(userId, true)).resolves.toEqual({
       ready: false,
       missing: ["PHOTOS"],
     });
     const two = createService({ preferencesConfigured: true, profileEnabled: true, photos: 2 });
-    await expect(two.service.discoveryReadiness(userId)).resolves.toEqual({
+    await expect(two.service.discoveryReadiness(userId, true)).resolves.toEqual({
       ready: true,
       missing: [],
     });
@@ -106,9 +106,22 @@ describe("SocialProfileService", () => {
 
   it("reports only the preferences when that is all that is missing", async () => {
     const { service } = createService({ profileEnabled: true, photos: 3 });
-    await expect(service.discoveryReadiness(userId)).resolves.toEqual({
+    await expect(service.discoveryReadiness(userId, true)).resolves.toEqual({
       ready: false,
       missing: ["PREFERENCES"],
+    });
+  });
+
+  it("puts the email verification first while the mailbox is unproven", async () => {
+    const { service } = createService({ preferencesConfigured: true, profileEnabled: true, photos: 2 });
+    await expect(service.discoveryReadiness(userId, false)).resolves.toEqual({
+      ready: false,
+      missing: ["EMAIL_VERIFICATION"],
+    });
+    const fresh = createService({});
+    await expect(fresh.service.discoveryReadiness(userId, false)).resolves.toEqual({
+      ready: false,
+      missing: ["EMAIL_VERIFICATION", "PROFILE_ENABLED", "PREFERENCES", "PHOTOS"],
     });
   });
 

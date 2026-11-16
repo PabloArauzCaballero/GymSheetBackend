@@ -194,6 +194,9 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   ): Promise<{ ok: boolean; error?: string; messageId?: string; clientRequestId?: string | null; message?: MessageResponse }> {
     const userId = await authenticatedUserId(client);
     if (!userId) return { ok: false, error: "unauthenticated" };
+    // Same rule as the REST send route (@RequiresVerifiedEmail): chat is social.
+    const sender = await this.usersRepository.findActiveById(userId);
+    if (!sender?.emailVerifiedAt) return { ok: false, error: "email_verification_required" };
     const conversationId = payload?.conversationId;
     const parsed = sendMessageSchema.safeParse({
       body: payload?.body,

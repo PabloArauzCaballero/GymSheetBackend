@@ -71,8 +71,9 @@ describe("ChatGateway message:send", () => {
     const clientRequestId = "00000000-0000-4000-8000-0000000000aa";
     const stored = { id: "00000000-0000-4000-8000-000000000010", conversationId, clientRequestId, body: "hola", type: "text" };
     const chatService = { sendMessage: jest.fn().mockResolvedValue(stored) };
+    const users = { findActiveById: jest.fn().mockResolvedValue({ id: "user-1", emailVerifiedAt: new Date() }) };
     const chatGateway = new ChatGateway(
-      {} as never, {} as never, {} as never, chatService as never, {} as never, {} as never,
+      {} as never, users as never, {} as never, chatService as never, {} as never, {} as never,
     );
     const client = { data: { userId: "user-1", authenticated: Promise.resolve() } } as unknown as Socket;
 
@@ -83,5 +84,19 @@ describe("ChatGateway message:send", () => {
       message: stored,
     });
     expect(chatService.sendMessage).toHaveBeenCalledWith(conversationId, "user-1", "hola", clientRequestId, undefined);
+  });
+
+  it("refuses to send for an account whose email is not verified", async () => {
+    const chatService = { sendMessage: jest.fn() };
+    const users = { findActiveById: jest.fn().mockResolvedValue({ id: "user-1", emailVerifiedAt: null }) };
+    const chatGateway = new ChatGateway(
+      {} as never, users as never, {} as never, chatService as never, {} as never, {} as never,
+    );
+    const client = { data: { userId: "user-1", authenticated: Promise.resolve() } } as unknown as Socket;
+
+    await expect(
+      chatGateway.handleMessage(client, { conversationId: "00000000-0000-4000-8000-000000000001", body: "hola" }),
+    ).resolves.toEqual({ ok: false, error: "email_verification_required" });
+    expect(chatService.sendMessage).not.toHaveBeenCalled();
   });
 });

@@ -9,7 +9,6 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { SocketTicketService } from '../../common/realtime/socket-ticket.service';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
-import { legalClientContext } from '../legal/legal-client-context';
 import { AuthService } from './auth.service';
 import {
   ImpersonateTenantInput,
@@ -25,7 +24,9 @@ import {
   refreshTokenSchema,
   registerSchema,
 } from './auth.schemas';
+import { clientDeviceContext } from './client-device-context';
 import { PasswordResetService } from './password-reset.service';
+import { signupRequestMeta } from './signup-context';
 
 const authThrottleOptions = {
   default: {
@@ -49,21 +50,24 @@ export class AuthController {
     @Body(new ZodValidationPipe(registerSchema)) input: RegisterInput,
     @Req() request: Request,
   ) {
-    return this.authService.register(input, legalClientContext(request));
+    return this.authService.register(input, signupRequestMeta(request));
   }
 
   @Public()
   @Throttle(authThrottleOptions)
   @Post('login')
-  login(@Body(new ZodValidationPipe(loginSchema)) input: LoginInput) {
-    return this.authService.login(input);
+  login(@Body(new ZodValidationPipe(loginSchema)) input: LoginInput, @Req() request: Request) {
+    return this.authService.login(input, clientDeviceContext(request));
   }
 
   @Public()
   @Throttle(authThrottleOptions)
   @Post('refresh')
-  refresh(@Body(new ZodValidationPipe(refreshTokenSchema)) input: RefreshTokenInput) {
-    return this.authService.refresh(input.refreshToken);
+  refresh(
+    @Body(new ZodValidationPipe(refreshTokenSchema)) input: RefreshTokenInput,
+    @Req() request: Request,
+  ) {
+    return this.authService.refresh(input.refreshToken, clientDeviceContext(request));
   }
 
   // Public because a refresh token, not the (possibly already expired) access

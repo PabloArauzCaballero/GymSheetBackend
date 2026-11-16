@@ -10,7 +10,7 @@ import { HttpExceptionFilter } from '../../src/common/filters/http-exception.fil
 import { ResponseInterceptor } from '../../src/common/interceptors/response.interceptor';
 import { requestIdMiddleware } from '../../src/common/middleware/request-id.middleware';
 import { env } from '../../src/config/env';
-import { E2E_SIGNUP_FIELDS } from '../support/e2e-app';
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from '../support/e2e-app';
 
 describe('cross-gym connections (e2e)', () => {
   let application: INestApplication;
@@ -125,6 +125,7 @@ describe('cross-gym connections (e2e)', () => {
           ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       return {
         accessToken: response.body.data.accessToken as string,
         userId: response.body.data.user.id as string,
@@ -203,6 +204,7 @@ describe('cross-gym connections (e2e)', () => {
         .post(url('/auth/register'))
         .send({ email, password, nombreCompleto: `Connections ${label} ${suffix}`, ...E2E_SIGNUP_FIELDS })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const member = {
         accessToken: response.body.data.accessToken as string,
         userId: response.body.data.user.id as string,
@@ -344,6 +346,7 @@ describe('cross-gym connections (e2e)', () => {
           ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const member = {
         accessToken: response.body.data.accessToken as string,
         userId: response.body.data.user.id as string,
@@ -403,6 +406,7 @@ describe('cross-gym connections (e2e)', () => {
           ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const member = {
         accessToken: response.body.data.accessToken as string,
         userId: response.body.data.user.id as string,
@@ -452,6 +456,7 @@ describe('cross-gym connections (e2e)', () => {
           ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const member = {
         accessToken: response.body.data.accessToken as string,
         userId: response.body.data.user.id as string,

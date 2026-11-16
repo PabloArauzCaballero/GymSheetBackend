@@ -1,5 +1,7 @@
 import * as dotenv from "dotenv";
 import { z } from "zod";
+import { antibotEnvironmentShape, refineAntibotEnvironment } from "./antibot-env";
+import { identityEnvironmentShape, refineIdentityEnvironment } from "./identity-env";
 
 // dotenv v17 prints an unstructured banner to stdout on load, which corrupts
 // the structured JSON log stream this service emits. Values are never logged.
@@ -640,8 +642,12 @@ export const environmentSchema = z
       (value) => (value === "" ? undefined : value),
       z.string().trim().min(1).optional(),
     ),
+    ...antibotEnvironmentShape,
+    ...identityEnvironmentShape,
   })
   .superRefine((configuration, context) => {
+    refineAntibotEnvironment(configuration, context);
+    refineIdentityEnvironment(configuration, context);
     if (configuration.DB_POOL_MIN > configuration.DB_POOL_MAX)
       context.addIssue({
         code: z.ZodIssueCode.custom,

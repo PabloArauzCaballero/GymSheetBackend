@@ -14,6 +14,7 @@ import { BusinessDateService } from '../../../common/time/business-date.service'
 import { AuthenticatedUser } from '../../../common/types/auth-context.types';
 import { env } from '../../../config/env';
 import { AuthService } from '../../../modules/auth/auth.service';
+import { SEED_SIGNUP_META } from './seed-signup-meta';
 import { registerSchema } from '../../../modules/auth/auth.schemas';
 import { LEGAL_DOCUMENTS } from '../../../modules/legal/legal-documents';
 import { SEED_USER_DEMOGRAPHICS } from '../seed-user-legal';
@@ -245,12 +246,14 @@ export class RoutinesShowcaseSeeder {
           fechaNacimiento: SEED_USER_DEMOGRAPHICS.birthDate,
           termsVersion: LEGAL_DOCUMENTS.TERMS,
         }),
-        { channel: 'UNKNOWN', ipHmac: null, userAgent: null },
+        SEED_SIGNUP_META,
       );
       user = await UserModel.findOne({ where: { email }, rejectOnEmpty: true });
       this.count('usuarios_creados');
     }
     if (user.status !== UserStatus.ACTIVE) await user.update({ status: UserStatus.ACTIVE });
+    // Showcase accounts demo the social features, which need a verified email.
+    if (!user.emailVerifiedAt) await user.update({ emailVerifiedAt: new Date() });
     return user;
   }
 

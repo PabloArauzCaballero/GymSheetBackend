@@ -17,7 +17,7 @@ import { NotificationDeliveryService } from "../../src/modules/notifications/not
 import { NotificationService } from "../../src/modules/notifications/notification.service";
 import { NotificationDeliveryRunner } from "../../src/workers/notification-delivery.runner";
 import { PushDispatcherService } from "../../src/modules/notifications/delivery/push-dispatcher.service";
-import { E2E_SIGNUP_FIELDS } from "../support/e2e-app";
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from "../support/e2e-app";
 
 describe("H11 moderation notices (PostgreSQL e2e)", () => {
   let moduleRef: TestingModule | undefined;
@@ -128,6 +128,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application!, registered.body.data.user.id as string);
       return {
         userId: registered.body.data.user.id as string,
         accessToken: registered.body.data.accessToken as string,
@@ -253,6 +254,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application!, registered.body.data.user.id as string);
       return {
         userId: registered.body.data.user.id as string,
         accessToken: registered.body.data.accessToken as string,
@@ -350,6 +352,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application!, registered.body.data.user.id as string);
       return {
         userId: registered.body.data.user.id as string,
         accessToken: registered.body.data.accessToken as string,
@@ -480,6 +483,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application!, registered.body.data.user.id as string);
       return {
         userId: registered.body.data.user.id as string,
         accessToken: registered.body.data.accessToken as string,
@@ -662,6 +666,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application!, registered.body.data.user.id as string);
       return {
         userId: registered.body.data.user.id as string,
         accessToken: registered.body.data.accessToken as string,
@@ -789,6 +794,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application!, registered.body.data.user.id as string);
       return {
         userId: registered.body.data.user.id as string,
         accessToken: registered.body.data.accessToken as string,
@@ -872,6 +878,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application!, registered.body.data.user.id as string);
       return {
         userId: registered.body.data.user.id as string,
         accessToken: registered.body.data.accessToken as string,

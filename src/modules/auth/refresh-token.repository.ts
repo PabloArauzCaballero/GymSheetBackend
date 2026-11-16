@@ -9,6 +9,7 @@ export type CreateRefreshTokenInput = {
   familyId: string;
   tokenHash: string;
   expiresAt: Date;
+  deviceId?: string | null;
 };
 
 @Injectable()

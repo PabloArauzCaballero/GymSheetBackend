@@ -34,6 +34,11 @@ export type AuthenticatedUser = {
   tenantScope: string | null;
   /** `true` cuando un `SYSTEM_ADMIN` mira un gimnasio concreto vía suplantación. */
   impersonating: boolean;
+  /**
+   * Whether the account proved its mailbox. Read from the database on every
+   * request; absent (e.g. in hand-built principals) counts as not verified.
+   */
+  emailVerified?: boolean;
 };
 
 /** Custom access-token claims controlled by this API. */

@@ -109,6 +109,8 @@ import { PlanPriceHistoryModel } from "../../modules/directory/models/plan-price
 import { PaymentOrderModel } from "../../modules/directory/models/payment-order.model";
 import { WorkoutSkippedSetModel } from "../../modules/workouts/workout-skipped-set.model";
 import { WorkoutExerciseSwapModel } from "../../modules/workouts/workout-exercise-swap.model";
+import { SignupAuditModel } from "../../modules/antibot/signup-audit.model";
+import { SignupTicketModel } from "../../modules/antibot/signup-ticket.model";
 
 export const databaseModels = [
   UserModel,
@@ -220,4 +222,6 @@ export const databaseModels = [
   EntityPlanModel,
   PlanPriceHistoryModel,
   PaymentOrderModel,
+  SignupTicketModel,
+  SignupAuditModel,
 ];

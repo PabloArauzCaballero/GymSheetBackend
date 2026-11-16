@@ -101,6 +101,14 @@ export class UserModel extends Model {
   @Column({ type: DataType.DATE, allowNull: true, field: 'last_seen_at' })
   declare lastSeenAt: Date | null;
 
+  /** When the person proved the mailbox (PIN or a provider). Null = unverified. */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'email_verified_at' })
+  declare emailVerifiedAt: Date | null;
+
+  /** Anti-automation verdict at signup; null for accounts created before it existed. */
+  @Column({ type: DataType.STRING(6), allowNull: true, field: 'signup_risk' })
+  declare signupRisk: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+
   @HasOne(() => AnthropometricProfileModel)
   declare anthropometricProfile?: AnthropometricProfileModel;
 

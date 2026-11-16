@@ -33,6 +33,6 @@ export class SocialProfileController {
 
   @Get("me/discovery/readiness")
   discoveryReadiness(@CurrentUser() user: AuthenticatedUser) {
-    return this.service.discoveryReadiness(user.id);
+    return this.service.discoveryReadiness(user.id, user.emailVerified === true);
   }
 }

@@ -10,7 +10,7 @@ import { ResponseInterceptor } from '../src/common/interceptors/response.interce
 import { requestIdMiddleware } from '../src/common/middleware/request-id.middleware';
 import { env } from '../src/config/env';
 import { ChatDisappearingPurgeService } from '../src/modules/chat/chat-disappearing-purge.service';
-import { E2E_SIGNUP_FIELDS } from './support/e2e-app';
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from './support/e2e-app';
 
 type Account = { accessToken: string; userId: string };
 
@@ -62,6 +62,7 @@ describe('Chat: edit, place labels and disappearing messages (e2e)', () => {
         ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
+    await markEmailVerified(application, response.body.data.user.id as string);
     return { accessToken: response.body.data.accessToken, userId: response.body.data.user.id };
   }
 

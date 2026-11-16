@@ -67,6 +67,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       // cualquier otro principal queda atado a un gimnasio concreto.
       tenantScope: isSystemAdmin && !impersonating ? null : effectiveTenantId,
       impersonating,
+      emailVerified: Boolean(activeUser.emailVerifiedAt),
     };
   }
 }

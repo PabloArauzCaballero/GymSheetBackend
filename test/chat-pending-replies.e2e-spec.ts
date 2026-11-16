@@ -7,7 +7,7 @@ import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter
 import { ResponseInterceptor } from '../src/common/interceptors/response.interceptor';
 import { requestIdMiddleware } from '../src/common/middleware/request-id.middleware';
 import { env } from '../src/config/env';
-import { E2E_SIGNUP_FIELDS } from './support/e2e-app';
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from './support/e2e-app';
 
 /**
  * `GET /me/conversations/pending-replies`: lo que lee el widget «Matches» de la
@@ -51,6 +51,7 @@ describe('Pending replies to matches (e2e)', () => {
         ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
+    await markEmailVerified(application, response.body.data.user.id as string);
     return { accessToken: response.body.data.accessToken as string, userId: response.body.data.user.id as string };
   }
 

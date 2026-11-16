@@ -14,7 +14,11 @@ export const MIN_DISCOVERY_PHOTOS = 2;
  * Items that keep a member out of discovery. Clients must ignore codes they do
  * not know yet, so new requirements (e.g. EMAIL_VERIFICATION) can be added.
  */
-export type DiscoveryReadinessItem = "PREFERENCES" | "PHOTOS" | "PROFILE_ENABLED";
+export type DiscoveryReadinessItem =
+  | "EMAIL_VERIFICATION"
+  | "PREFERENCES"
+  | "PHOTOS"
+  | "PROFILE_ENABLED";
 
 export type DiscoveryReadinessResponse = {
   ready: boolean;
@@ -22,6 +26,7 @@ export type DiscoveryReadinessResponse = {
 };
 
 type ReadinessFacts = {
+  emailVerified: boolean;
   preferencesConfigured: boolean;
   visiblePhotos: number;
   profileEnabled: boolean;
@@ -32,6 +37,7 @@ const READINESS_CHECKS: ReadonlyArray<{
   item: DiscoveryReadinessItem;
   satisfied: (facts: ReadinessFacts) => boolean;
 }> = [
+  { item: "EMAIL_VERIFICATION", satisfied: (facts) => facts.emailVerified },
   { item: "PROFILE_ENABLED", satisfied: (facts) => facts.profileEnabled },
   { item: "PREFERENCES", satisfied: (facts) => facts.preferencesConfigured },
   { item: "PHOTOS", satisfied: (facts) => facts.visiblePhotos >= MIN_DISCOVERY_PHOTOS },
@@ -65,13 +71,17 @@ export class SocialProfileService {
     return mapOwnSocialProfile(saved);
   }
 
-  async discoveryReadiness(userId: string): Promise<DiscoveryReadinessResponse> {
+  async discoveryReadiness(
+    userId: string,
+    emailVerified: boolean,
+  ): Promise<DiscoveryReadinessResponse> {
     const [preferences, settings, visiblePhotos] = await Promise.all([
       this.socialRepository.discoveryPreferences(userId),
       this.socialRepository.discoverySettings(userId),
       this.repository.countVisiblePhotos(userId),
     ]);
     const facts: ReadinessFacts = {
+      emailVerified,
       preferencesConfigured: preferences.configured,
       visiblePhotos,
       profileEnabled: settings.profileEnabled,

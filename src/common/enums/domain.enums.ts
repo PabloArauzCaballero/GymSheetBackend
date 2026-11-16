@@ -317,6 +317,8 @@ export enum RefreshTokenRevokedReason {
   REUSE_DETECTED = "REUSE_DETECTED",
   /** The account's password was reset, which ends every existing session. */
   PASSWORD_RESET = "PASSWORD_RESET",
+  /** The owner removed the device from their account. */
+  DEVICE_REVOKED = "DEVICE_REVOKED",
 }
 
 /**

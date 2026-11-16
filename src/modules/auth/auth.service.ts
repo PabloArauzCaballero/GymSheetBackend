@@ -1,27 +1,34 @@
 import {
   ConflictException,
   ForbiddenException,
+  HttpStatus,
   Injectable,
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { randomUUID } from 'crypto';
 import { Sequelize } from 'sequelize-typescript';
-import { Transaction, UniqueConstraintError } from 'sequelize';
+import { UniqueConstraintError } from 'sequelize';
 import { RefreshTokenRevokedReason, UserRole } from '../../common/enums/domain.enums';
-import { parseDurationToMs } from '../../common/time/duration.util';
+import { DomainException } from '../../common/errors/domain.exception';
 import { AuthenticatedUser, JwtPayload } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
+import { SignupProtectionService } from '../antibot/signup-protection.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { UsersRepository } from '../users/users.repository';
-import { LegalClientContext } from '../legal/legal-client-context';
 import { LEGAL_DOCUMENTS } from '../legal/legal-documents';
 import { LegalService } from '../legal/legal.service';
+import { AuthResponse, AuthSessionService } from './auth-session.service';
 import { ImpersonateTenantInput, LoginInput, RegisterInput } from './auth.schemas';
+import { ClientDeviceContext } from './client-device-context';
+import { EmailVerificationService } from './email-verification.service';
 import { RefreshTokenRepository } from './refresh-token.repository';
-import { hashOpaqueToken, issueOpaqueToken } from './token-hash.util';
+import { SignupRequestMeta, toSignupContext } from './signup-context';
+import { hashOpaqueToken } from './token-hash.util';
+import { UserDeviceService } from './user-device.service';
+
+export type { AuthResponse } from './auth-session.service';
 
 /**
  * Decoy hash compared against when no account matches the submitted email.
@@ -32,20 +39,6 @@ const UNKNOWN_ACCOUNT_PASSWORD_HASH = bcrypt.hashSync(
   'unknown-account-placeholder',
   env.BCRYPT_SALT_ROUNDS,
 );
-
-export type AuthResponse = {
-  accessToken: string;
-  refreshToken: string;
-  tokenType: 'Bearer';
-  user: {
-    id: string;
-    email: string;
-    nombreCompleto: string;
-    rol: UserRole;
-    /** Gimnasio de la cuenta; el cliente móvil pinta su marca a partir de esto. */
-    tenantId: string | null;
-  };
-};
 
 @Injectable()
 export class AuthService {
@@ -58,9 +51,13 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly sequelize: Sequelize,
     private readonly legalService: LegalService,
+    private readonly sessions: AuthSessionService,
+    private readonly devices: UserDeviceService,
+    private readonly emailVerification: EmailVerificationService,
+    private readonly signupProtection: SignupProtectionService,
   ) {}
 
-  async register(input: RegisterInput, clientContext: LegalClientContext): Promise<AuthResponse> {
+  async register(input: RegisterInput, meta: SignupRequestMeta): Promise<AuthResponse> {
     // First: a client showing outdated legal text must not create an account
     // whose acceptance record would point at a version the person never read.
     this.legalService.assertCurrentTermsVersion(input.termsVersion);
@@ -75,6 +72,25 @@ export class AuthService {
       await this.tenantsService.assertActiveTenant(requestedTenantId);
     }
 
+    // Before the email lookup: a refused signup must not learn whether the
+    // address exists. The reason is logged, never shown to the client.
+    const verdict = meta.internal
+      ? this.signupProtection.vouchedVerdict('INTERNAL_SEED', meta.legal.channel)
+      : await this.signupProtection.evaluate(toSignupContext(input, meta));
+    if (!verdict.allowed) {
+      this.logger.warn({
+        event: 'auth.signup_rejected',
+        reason: verdict.reason,
+        risk: verdict.risk,
+        channel: meta.legal.channel,
+      });
+      throw new DomainException(
+        HttpStatus.BAD_REQUEST,
+        'SIGNUP_REJECTED',
+        'No pudimos crear tu cuenta. Inténtalo de nuevo.',
+      );
+    }
+
     const existingUser = await this.usersRepository.findByEmail(input.email);
 
     if (existingUser) {
@@ -84,9 +100,10 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(input.password, env.BCRYPT_SALT_ROUNDS);
 
     try {
-      // Account and legal acceptance rows commit together: an account must
-      // never exist without the evidence of what it accepted.
-      const createdUser = await this.sequelize.transaction(async (transaction) => {
+      // Account, legal acceptances, signup audit, device, first email PIN and
+      // session commit together: an account must never exist without the
+      // evidence of what it accepted, nor half-created without its PIN.
+      return await this.sequelize.transaction(async (transaction) => {
         const user = await this.usersRepository.createClient({
           email: input.email,
           passwordHash,
@@ -100,21 +117,14 @@ export class AuthService {
           // Legacy columns kept for compatibility; the audit trail is auth.terms_acceptances.
           acceptedTermsAt: new Date(),
           termsVersion: LEGAL_DOCUMENTS.TERMS,
+          signupRisk: verdict.risk,
         }, transaction);
-        await this.legalService.recordSignupAcceptances(user.id, clientContext, transaction);
-        return user;
+        await this.legalService.recordSignupAcceptances(user.id, meta.legal, transaction);
+        await this.signupProtection.recordOutcome(verdict, user.id, transaction);
+        const deviceId = await this.devices.recordSignup(user.id, meta.device, transaction);
+        await this.emailVerification.issuePin(user.id, transaction);
+        return this.sessions.issue(user, { deviceId }, transaction);
       });
-
-      return {
-        ...this.buildAuthResponse(
-          createdUser.id,
-          createdUser.email,
-          createdUser.role,
-          createdUser.fullName,
-          createdUser.tenantId,
-        ),
-        refreshToken: await this.issueRefreshToken(createdUser.id),
-      };
     } catch (error: unknown) {
       if (error instanceof UniqueConstraintError) {
         throw new ConflictException('Ya existe una cuenta registrada con este correo.');
@@ -124,7 +134,7 @@ export class AuthService {
     }
   }
 
-  async login(input: LoginInput): Promise<AuthResponse> {
+  async login(input: LoginInput, device: ClientDeviceContext): Promise<AuthResponse> {
     const activeUser = await this.usersRepository.findActiveByEmail(input.email);
 
     // Always spend the cost of one bcrypt comparison, even when no account
@@ -154,16 +164,10 @@ export class AuthService {
       );
     }
 
-    return {
-      ...this.buildAuthResponse(
-        activeUser.id,
-        activeUser.email,
-        activeUser.role,
-        activeUser.fullName,
-        activeUser.tenantId,
-      ),
-      refreshToken: await this.issueRefreshToken(activeUser.id),
-    };
+    return this.sequelize.transaction(async (transaction) => {
+      const deviceId = await this.devices.recordSignIn(activeUser.id, device, transaction);
+      return this.sessions.issue(activeUser, { deviceId }, transaction);
+    });
   }
 
   /**
@@ -174,7 +178,7 @@ export class AuthService {
    * just failing the one request, cutting off a stolen token even if it was
    * captured after already being rotated once.
    */
-  async refresh(rawRefreshToken: string): Promise<AuthResponse> {
+  async refresh(rawRefreshToken: string, device: ClientDeviceContext): Promise<AuthResponse> {
     const tokenHash = hashOpaqueToken('refresh', rawRefreshToken);
     const existingToken = await this.refreshTokenRepository.findByHash(tokenHash);
 
@@ -203,27 +207,24 @@ export class AuthService {
     }
 
     return this.sequelize.transaction(async (transaction) => {
+      // A session bound to a revoked device dies here, even if its token row
+      // somehow escaped the revocation sweep.
+      const deviceId = await this.devices.resolveForRefresh(
+        activeUser.id,
+        existingToken.deviceId ?? null,
+        device,
+        transaction,
+      );
       await this.refreshTokenRepository.revoke(
         existingToken.id,
         RefreshTokenRevokedReason.ROTATED,
         transaction,
       );
-      const refreshToken = await this.issueRefreshToken(
-        activeUser.id,
-        existingToken.familyId,
+      return this.sessions.issue(
+        activeUser,
+        { familyId: existingToken.familyId, deviceId },
         transaction,
       );
-
-      return {
-        ...this.buildAuthResponse(
-          activeUser.id,
-          activeUser.email,
-          activeUser.role,
-          activeUser.fullName,
-          activeUser.tenantId,
-        ),
-        refreshToken,
-      };
     });
   }
 
@@ -309,54 +310,11 @@ export class AuthService {
    */
   async me(principal: AuthenticatedUser) {
     const account = await this.usersRepository.findActiveById(principal.id);
-    return { ...principal, rol: principal.role, nombreCompleto: account?.fullName ?? '' };
-  }
-
-  private buildAuthResponse(
-    userId: string,
-    emailAddress: string,
-    role: JwtPayload['role'],
-    fullName: string,
-    tenantId: string | null,
-  ): Omit<AuthResponse, 'refreshToken'> {
-    const payload: JwtPayload = {
-      sub: userId,
-      email: emailAddress,
-      role,
-    };
-    const accessToken = this.jwtService.sign(payload, {
-      secret: env.JWT_ACCESS_SECRET,
-      expiresIn: env.JWT_ACCESS_EXPIRES_IN,
-      issuer: env.JWT_ISSUER,
-      audience: env.JWT_AUDIENCE,
-      algorithm: 'HS256',
-    });
-
     return {
-      accessToken,
-      tokenType: 'Bearer',
-      user: {
-        id: userId,
-        email: emailAddress,
-        nombreCompleto: fullName,
-        rol: role,
-        // Las cuentas creadas antes de existir el campo no tienen gimnasio
-        // guardado. Se resuelven aquí contra la instalación en vez de
-        // reescribirlas en masa: una migración que asignara marca a treinta
-        // cuentas existentes sería una decisión de negocio disfrazada de esquema.
-        tenantId: tenantId ?? env.DEFAULT_TENANT_ID ?? null,
-      },
+      ...principal,
+      rol: principal.role,
+      nombreCompleto: account?.fullName ?? '',
+      emailVerified: Boolean(account?.emailVerifiedAt),
     };
-  }
-
-  private async issueRefreshToken(
-    userId: string,
-    familyId: string = randomUUID(),
-    transaction?: Transaction,
-  ): Promise<string> {
-    const { rawToken, tokenHash } = issueOpaqueToken('refresh');
-    const expiresAt = new Date(Date.now() + parseDurationToMs(env.JWT_REFRESH_EXPIRES_IN));
-    await this.refreshTokenRepository.create({ userId, familyId, tokenHash, expiresAt }, transaction);
-    return rawToken;
   }
 }

@@ -25,6 +25,8 @@
     "test",
     "scripts",
     "**/*.spec.ts",
+    // Spec-only fixtures (e.g. `modules/antibot/testing/`) never ship.
+    "src/**/testing/**",
     "**/*.e2e-spec.ts",
     "**/*.mjs"
   ]

@@ -55,6 +55,35 @@ tags: [backend, reference, config]
 | `REDIS_CONNECT_TIMEOUT_MS` | Timeout de conexión | No |
 | `RATE_LIMIT_TTL_SECONDS` `RATE_LIMIT_MAX` `AUTH_RATE_LIMIT_MAX` | Límites de petición | No |
 
+## Anti-bot de alta de cuentas ([[ADR-0013]])
+
+| Variable | Propósito | Por defecto | Requerida |
+|---|---|---|---:|
+| `REGISTRATION_TICKET_SECRET` | Clave HMAC de tickets de formulario y nonces de atestación (≥ 32) | aleatoria por proceso fuera de producción | Sí en producción (**secreto**) |
+| `SIGNUP_TICKET_REQUIRED` | Sin ticket se rechaza (`false` sólo para cortar clientes viejos) | `true` | No |
+| `SIGNUP_MIN_FILL_MS` | Tiempo mínimo entre emitir el ticket y enviar | `3000` | No |
+| `SIGNUP_LIMIT_PER_IP_HOUR` `SIGNUP_LIMIT_PER_INSTALLATION_DAY` `SIGNUP_LIMIT_PER_EMAIL_DOMAIN_HOUR` | Velocidad de altas (Redis si existe; si no, por proceso) | `5` / `3` / `30` | No |
+| `SIGNUP_EMAIL_DOMAIN_ALLOWLIST` | Dominios exentos del límite por dominio | gmail, outlook, hotmail, live, yahoo, icloud, me, proton | No |
+| `ANTIBOT_HTTP_TIMEOUT_MS` | Timeout de Turnstile, Google y HIBP | `3000` | No |
+| `TURNSTILE_SECRET` | Activa Cloudflare Turnstile en el canal WEB | vacío (apagado) | No (**secreto**) |
+| `TURNSTILE_FAIL_CLOSED` | Rechazar si Cloudflare no responde | `false` | No |
+| `ATTESTATION_ENABLED` | Exige Play Integrity en Android | `false` | No |
+| `PLAY_INTEGRITY_PACKAGE_NAME` `PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON` | Paquete y cuenta de servicio de Play Integrity | vacío | Si `ATTESTATION_ENABLED` (**secreto**) |
+| `PASSWORD_BREACH_CHECK_ENABLED` | Consulta k-anónima a Have I Been Pwned (sólo riesgo) | `false` | No |
+
+`IP_HASH_SECRET` (ya existente) también firma el `ip_hmac` de `auth.signup_audit`; sin él no se guarda evidencia de IP.
+
+## Acceso con Google / Apple
+
+| Variable | Propósito | Por defecto | Requerida |
+|---|---|---|---:|
+| `AUTH_GOOGLE_ENABLED` | Activa `POST /auth/google` y `/auth/google/complete` (apagado = 404) | `false` | No |
+| `GOOGLE_CLIENT_IDS` | Client ids aceptados como `aud`, separados por comas | vacío | Si `AUTH_GOOGLE_ENABLED` |
+| `AUTH_APPLE_ENABLED` | Activa `POST /auth/apple` y `/auth/apple/complete` (apagado = 404) | `false` | No |
+| `APPLE_CLIENT_IDS` | Bundle id / Services id aceptados como `aud` | vacío | Si `AUTH_APPLE_ENABLED` |
+
+`IP_HASH_SECRET` también firma `auth.user_devices.last_ip_hmac`; sin él no se guarda evidencia de IP del dispositivo.
+
 ## Métricas / acceso
 
 | Variable | Propósito | Requerida |
@@ -92,4 +121,4 @@ tags: [backend, reference, config]
 `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` (**secreto**), `SEED_ADMIN_FULL_NAME`, `SEED_MOCK_PASSWORD` (**secreto**).
 
 > [!danger] Secretos
-> `JWT_*_SECRET`, `DB_PASSWORD`, `NOTIFICATION_GATEWAY_SECRET`, `METRICS_SCRAPE_TOKEN`, `SEED_*_PASSWORD` son secretos: solo por env, nunca en el repo ni en logs.
+> `JWT_*_SECRET`, `DB_PASSWORD`, `REGISTRATION_TICKET_SECRET`, `TURNSTILE_SECRET`, `PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON`, `NOTIFICATION_GATEWAY_SECRET`, `METRICS_SCRAPE_TOKEN`, `SEED_*_PASSWORD` son secretos: solo por env, nunca en el repo ni en logs.

@@ -28,6 +28,10 @@ export class RefreshTokenModel extends Model {
   @Column({ type: DataType.UUID, allowNull: false, field: 'family_id' })
   declare familyId: string;
 
+  /** Device the session belongs to; revoking the device ends the session. */
+  @Column({ type: DataType.UUID, allowNull: true, field: 'device_id' })
+  declare deviceId: string | null;
+
   @Column({ type: DataType.STRING(64), allowNull: false, unique: true, field: 'token_hash' })
   declare tokenHash: string;
 

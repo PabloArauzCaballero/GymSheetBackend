@@ -7,7 +7,7 @@ import { HttpExceptionFilter } from "../src/common/filters/http-exception.filter
 import { ResponseInterceptor } from "../src/common/interceptors/response.interceptor";
 import { requestIdMiddleware } from "../src/common/middleware/request-id.middleware";
 import { env } from "../src/config/env";
-import { E2E_SIGNUP_FIELDS } from "./support/e2e-app";
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from "./support/e2e-app";
 
 describe("social blocks API (PostgreSQL integration)", () => {
   let application: INestApplication;
@@ -41,6 +41,9 @@ describe("social blocks API (PostgreSQL integration)", () => {
       request(httpServer).post(url("/auth/register")).send({ email: `block-c-${suffix}@example.test`, password: "block-qa-password", nombreCompleto: "QA Block C", ...E2E_SIGNUP_FIELDS }).expect(201),
       request(httpServer).post(url("/auth/register")).send({ email: `block-d-${suffix}@example.test`, password: "block-qa-password", nombreCompleto: "QA Block D", ...E2E_SIGNUP_FIELDS }).expect(201),
     ]);
+    for (const registered of [first, second, third, fourth]) {
+      await markEmailVerified(application, registered.body.data.user.id as string);
+    }
     firstToken = first.body.data.accessToken as string;
     secondToken = second.body.data.accessToken as string;
     firstId = first.body.data.user.id as string;

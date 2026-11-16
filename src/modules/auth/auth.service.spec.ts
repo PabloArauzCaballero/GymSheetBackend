@@ -5,9 +5,23 @@ import { Sequelize } from 'sequelize-typescript';
 import { UsersRepository } from '../users/users.repository';
 import { TenantsService } from '../tenants/tenants.service';
 import { LegalService } from '../legal/legal.service';
+import { SignupProtectionService } from '../antibot/signup-protection.service';
+import { AuthSessionService } from './auth-session.service';
 import { AuthService } from './auth.service';
+import { ClientDeviceContext } from './client-device-context';
+import { EmailVerificationService } from './email-verification.service';
+import { UserDeviceService } from './user-device.service';
 import { RefreshTokenRepository } from './refresh-token.repository';
 
+const noDevice: ClientDeviceContext = {
+  installationId: null,
+  platform: 'UNKNOWN',
+  appVersion: null,
+  osVersion: null,
+  deviceModel: null,
+  userAgent: null,
+  ipHmac: null,
+};
 const registeredEmail = 'registered@example.test';
 const unregisteredEmail = 'unregistered@example.test';
 const submittedPassword = 'wrong-password';
@@ -38,6 +52,10 @@ function createService(usersRepositoryOverrides: Partial<UsersRepository>): Auth
     {} as JwtService,
     {} as Sequelize,
     {} as LegalService,
+    {} as AuthSessionService,
+    {} as UserDeviceService,
+    {} as EmailVerificationService,
+    {} as SignupProtectionService,
   );
 }
 
@@ -61,10 +79,10 @@ describe('AuthService login account enumeration resistance', () => {
     });
 
     const knownAccountError = await knownAccountService
-      .login({ email: registeredEmail, password: submittedPassword })
+      .login({ email: registeredEmail, password: submittedPassword }, noDevice)
       .catch((error: unknown) => error);
     const unknownAccountError = await unknownAccountService
-      .login({ email: unregisteredEmail, password: submittedPassword })
+      .login({ email: unregisteredEmail, password: submittedPassword }, noDevice)
       .catch((error: unknown) => error);
 
     expect(knownAccountError).toBeInstanceOf(UnauthorizedException);
@@ -85,7 +103,7 @@ describe('AuthService login account enumeration resistance', () => {
     });
 
     await expect(
-      service.login({ email: unregisteredEmail, password: submittedPassword }),
+      service.login({ email: unregisteredEmail, password: submittedPassword }, noDevice),
     ).rejects.toThrow(UnauthorizedException);
 
     expect(compare).toHaveBeenCalledTimes(1);
@@ -109,7 +127,7 @@ describe('AuthService login de una cuenta suspendida', () => {
     });
 
     const error = await service
-      .login({ email: registeredEmail, password: 'right-password' })
+      .login({ email: registeredEmail, password: 'right-password' }, noDevice)
       .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(ForbiddenException);
@@ -133,7 +151,15 @@ describe('AuthService me', () => {
       ...principal,
       rol: 'CLIENTE',
       nombreCompleto: 'Registered User',
+      emailVerified: false,
     });
+  });
+
+  it('expone si el correo está verificado, leído de la cuenta', async () => {
+    const service = createService({
+      findActiveById: jest.fn().mockResolvedValue({ fullName: 'Registered User', emailVerifiedAt: new Date() }),
+    });
+    await expect(service.me(principal)).resolves.toMatchObject({ emailVerified: true });
   });
 
   it('no expone nada más de la cuenta (ni el hash de la contraseña)', async () => {

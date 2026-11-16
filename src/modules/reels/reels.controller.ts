@@ -20,6 +20,7 @@ import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { env } from "../../config/env";
 import { ReelSocialService, ReelTab } from "./reel-social.service";
 import { ReelsService } from "./reels.service";
+import { RequiresVerifiedEmail } from "../../common/decorators/requires-verified-email.decorator";
 
 export interface UploadedReelMedia {
   readonly originalname: string;
@@ -35,6 +36,7 @@ export class ReelsController {
     private readonly social: ReelSocialService,
   ) {}
 
+  @RequiresVerifiedEmail()
   @Post()
   @UseInterceptors(
     FileInterceptor("file", {
@@ -88,6 +90,7 @@ export class ReelsController {
     return this.social.toggleSave(user.id, reelId, saved);
   }
 
+  @RequiresVerifiedEmail()
   @Post(":id/repost")
   repost(
     @CurrentUser() user: AuthenticatedUser,
@@ -99,6 +102,7 @@ export class ReelsController {
     return this.social.toggleRepost(user.id, reelId, reposted);
   }
 
+  @RequiresVerifiedEmail()
   @Post(":id/like")
   like(
     @CurrentUser() user: AuthenticatedUser,
@@ -118,6 +122,7 @@ export class ReelsController {
     return this.social.comments(user.id, reelId);
   }
 
+  @RequiresVerifiedEmail()
   @Post(":id/comments")
   comment(
     @CurrentUser() user: AuthenticatedUser,

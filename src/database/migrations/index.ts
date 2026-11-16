@@ -120,7 +120,9 @@ import { tutorialProgressMigration } from "./202611120001-tutorial-progress";
 import { progressionStrikesAndCoachCardsMigration } from "./202610190002-progression-strikes-and-coach-cards";
 import { socialProfileDetailsMigration } from "./202611160101-social-profile-details";
 import { userBirthDateAndLegalAcceptancesMigration } from "./202611160201-user-birth-date-and-legal-acceptances";
+import { emailVerificationDevicesIdentitiesMigration } from "./202611170101-email-verification-devices-identities";
 import { DatabaseMigration } from "./migration.types";
+import { signupAntibotMigration } from "./202611170201-signup-antibot";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
 export const databaseMigrations: DatabaseMigration[] = [
@@ -248,4 +250,6 @@ export const databaseMigrations: DatabaseMigration[] = [
   tutorialProgressMigration,
   socialProfileDetailsMigration,
   userBirthDateAndLegalAcceptancesMigration,
+  emailVerificationDevicesIdentitiesMigration,
+  signupAntibotMigration,
 ];

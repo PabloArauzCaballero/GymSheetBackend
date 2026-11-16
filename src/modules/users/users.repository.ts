@@ -16,6 +16,9 @@ export type CreateClientUserInput = {
   birthDate?: string | null;
   acceptedTermsAt?: Date | null;
   termsVersion?: string | null;
+  /** Set at creation only when a provider already vouched for the address. */
+  emailVerifiedAt?: Date | null;
+  signupRisk?: 'LOW' | 'MEDIUM' | 'HIGH' | null;
 };
 
 /**
@@ -92,7 +95,17 @@ export class UsersRepository {
       birthDate: input.birthDate ?? null,
       acceptedTermsAt: input.acceptedTermsAt ?? null,
       termsVersion: input.termsVersion ?? null,
+      emailVerifiedAt: input.emailVerifiedAt ?? null,
+      signupRisk: input.signupRisk ?? null,
     }, { transaction });
+  }
+
+  /** Idempotent: the first verification timestamp is kept. */
+  async markEmailVerified(userId: string, transaction?: Transaction): Promise<void> {
+    await this.userModel.update(
+      { emailVerifiedAt: new Date() },
+      { where: { id: userId, emailVerifiedAt: null }, transaction },
+    );
   }
 
   createStaffUser(input: CreateStaffUserInput, transaction?: Transaction): Promise<UserModel> {

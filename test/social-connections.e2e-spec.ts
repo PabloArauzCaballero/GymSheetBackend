@@ -7,7 +7,7 @@ import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter
 import { ResponseInterceptor } from '../src/common/interceptors/response.interceptor';
 import { requestIdMiddleware } from '../src/common/middleware/request-id.middleware';
 import { env } from '../src/config/env';
-import { E2E_SIGNUP_FIELDS } from './support/e2e-app';
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from './support/e2e-app';
 
 /** Punto 11 y 10 del audit: solicitudes de conexión y estado social del perfil. */
 describe('Social connections and status (e2e)', () => {
@@ -58,6 +58,7 @@ describe('Social connections and status (e2e)', () => {
         ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
+    await markEmailVerified(application, response.body.data.user.id as string);
     return {
       accessToken: response.body.data.accessToken as string,
       userId: response.body.data.user.id as string,

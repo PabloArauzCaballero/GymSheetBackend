@@ -22,6 +22,7 @@ import {
 } from "./training-invite.schemas";
 import { TrainingInvitationsService } from "./training-invitations.service";
 import { TrainingInvitationCalendarService } from "./calendar.service";
+import { RequiresVerifiedEmail } from "../../common/decorators/requires-verified-email.decorator";
 
 @Controller("me/training-invitations")
 export class TrainingInvitationsController {
@@ -60,6 +61,7 @@ export class TrainingInvitationsController {
       .send(body);
   }
 
+  @RequiresVerifiedEmail()
   @Post()
   create(
     @CurrentUser() user: AuthenticatedUser,
@@ -69,6 +71,7 @@ export class TrainingInvitationsController {
     return this.invitations.create(user.id, user.tenantId, input);
   }
 
+  @RequiresVerifiedEmail()
   @Post(":id/respond")
   @HttpCode(200)
   respond(
@@ -80,6 +83,7 @@ export class TrainingInvitationsController {
     return this.invitations.respond(user.id, inviteId, input);
   }
 
+  @RequiresVerifiedEmail()
   @Post(":id/counterpropose")
   @HttpCode(200)
   counterpropose(

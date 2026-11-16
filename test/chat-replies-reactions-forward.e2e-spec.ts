@@ -11,7 +11,7 @@ import { requestIdMiddleware } from '../src/common/middleware/request-id.middlew
 import { env } from '../src/config/env';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { E2E_SIGNUP_FIELDS } from './support/e2e-app';
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from './support/e2e-app';
 
 type Account = { accessToken: string; userId: string };
 
@@ -62,6 +62,7 @@ describe('Chat: replies, reactions, forward and typing (e2e)', () => {
         ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
+    await markEmailVerified(application, response.body.data.user.id as string);
     return { accessToken: response.body.data.accessToken, userId: response.body.data.user.id };
   }
 

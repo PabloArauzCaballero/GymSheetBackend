@@ -36,7 +36,20 @@ describe('JwtStrategy', () => {
       // es exactamente ese, nunca «todos».
       tenantScope: 'topfitness',
       impersonating: false,
+      emailVerified: false,
     });
+  });
+
+  it('reports a verified mailbox from the persisted timestamp', async () => {
+    const strategy = strategyFor({
+      id: payload.sub,
+      email: payload.email,
+      role: UserRole.CLIENT,
+      tenantId: 'topfitness',
+      emailVerifiedAt: new Date('2026-11-01T10:00:00Z'),
+    });
+
+    await expect(strategy.validate(payload)).resolves.toMatchObject({ emailVerified: true });
   });
 
   it('keeps the account gym even when the installation declares a different default', async () => {

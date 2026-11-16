@@ -34,7 +34,7 @@ import { SocialRepository } from "../../src/modules/social/social.repository";
 import { runMigrations } from "../../src/database/migrate";
 import { chatMessageGlobalDeleteMigration } from "../../src/database/migrations/202610090015-chat-message-global-delete";
 import { databaseMigrations } from "../../src/database/migrations";
-import { E2E_SIGNUP_FIELDS } from "../support/e2e-app";
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from "../support/e2e-app";
 
 describe("H7 chat persistence", () => {
   let app: INestApplication;
@@ -81,6 +81,7 @@ describe("H7 chat persistence", () => {
       nombreCompleto: `H7 ${label}`,
       ...E2E_SIGNUP_FIELDS,
     }).expect(201);
+    await markEmailVerified(app, response.body.data.user.id as string);
     return { token: response.body.data.accessToken as string, id: response.body.data.user.id as string };
   }
 

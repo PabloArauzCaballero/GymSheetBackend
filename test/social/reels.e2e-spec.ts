@@ -19,7 +19,7 @@ import {
   MEDIA_STORAGE_PROVIDER,
   MediaStorageProvider,
 } from "../../src/modules/media/media-storage.port";
-import { E2E_SIGNUP_FIELDS } from "../support/e2e-app";
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from "../support/e2e-app";
 
 function box(type: string, payload: Buffer): Buffer {
   const header = Buffer.alloc(8);
@@ -153,6 +153,7 @@ describe("reels publication and owner feed (e2e)", () => {
         ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
+    await markEmailVerified(application, response.body.data.user.id as string);
     const user = {
       accessToken: response.body.data.accessToken as string,
       userId: response.body.data.user.id as string,
@@ -283,6 +284,7 @@ describe("reels publication and owner feed (e2e)", () => {
           ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const user = {
         accessToken: response.body.data.accessToken as string,
         userId: response.body.data.user.id as string,
@@ -419,6 +421,7 @@ describe("reels publication and owner feed (e2e)", () => {
         ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
+    await markEmailVerified(application, response.body.data.user.id as string);
     const userId = response.body.data.user.id as string;
     const token = response.body.data.accessToken as string;
     createdUserIds.push(userId);
