@@ -59,6 +59,22 @@ describe("ReportedContentRetentionService", () => {
     ]);
   });
 
+  it("releases every file of a row once and counts the row once (an upload and its poster)", async () => {
+    const { service, mediaRelease } = setup((sql) =>
+      sql.includes("FROM training.exercise_media t")
+        ? [
+            { id: "x1", storageKey: "upload.mp4", provider: null },
+            { id: "x1", storageKey: "poster.webp", provider: null },
+            { id: "x2", storageKey: "same.jpg", provider: null },
+            { id: "x2", storageKey: "same.jpg", provider: null },
+          ]
+        : [],
+    );
+    const erased = await service.purge(now);
+    expect(erased.EXERCISE).toBe(2);
+    expect(mediaRelease.requestRelease.mock.calls.map(([job]) => (job as { storageKey: string }).storageKey))
+      .toEqual(["upload.mp4", "poster.webp", "same.jpg"]);
+  });
   it("drains full batches before moving to the next step", async () => {
     const full = Array.from({ length: 200 }, (_, index) => ({ id: `r${index}`, storageKey: null, provider: null }));
     const { service, query } = setup((_sql, call) => (call === 0 ? full : []));
@@ -94,8 +110,24 @@ describe("REPORTED_CONTENT_RETENTION_STEPS", () => {
       REPORTED_CONTENT_RETENTION_STEPS.filter((step) => step.table === table).map((step) => reportedContentBatchSql(step));
     for (const sql of held("profile.photos")) expect(sql).toContain("OR t.author_deleted_at IS NOT NULL");
     for (const sql of held("community.content_comments")) expect(sql).toContain("OR t.estado = 'BORRADO_AUTOR'");
+    for (const sql of held("training.exercise_media")) expect(sql).toContain("OR t.author_deleted_at IS NOT NULL");
     for (const table of ["social.reels", "community.music_playlists", "chat.messages"]) {
       for (const sql of held(table)) expect(sql).not.toContain(" OR t.");
     }
+  });
+
+  it("erases the uploads of a reported personal exercise, file and poster, before the exercise itself", () => {
+    const steps = REPORTED_CONTENT_RETENTION_STEPS.filter((step) => step.kind === "EXERCISE");
+    expect(steps.map((step) => step.table)).toEqual(["training.exercise_media", "public.ejercicios"]);
+    const [uploads, exercise] = steps.map((step) => reportedContentBatchSql(step));
+    // The reports point to the exercise, not to the upload row.
+    expect(uploads).toContain("r.target_id = t.ejercicio_id");
+    expect(uploads).toContain("t.url");
+    expect(uploads).toContain("t.thumbnail_url");
+    expect(uploads).toContain("unnest(c.media_keys)");
+    // The exercise goes only once nothing uses it and its own uploads were released.
+    expect(exercise).toContain("r.target_id = t.id");
+    expect(exercise).toContain("training.routine_exercises");
+    expect(exercise).toContain("training.exercise_media m");
   });
 });

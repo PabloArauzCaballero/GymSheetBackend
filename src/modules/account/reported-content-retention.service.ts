@@ -56,8 +56,11 @@ export class ReportedContentRetentionService {
       replacements: { resolvedBefore, limit: BATCH_SIZE },
       transaction,
     });
+    const queued = new Set<string>();
     for (const row of rows) {
-      if (!row.storageKey || (await this.references.isReferenced(row.storageKey, transaction))) continue;
+      if (!row.storageKey || queued.has(row.storageKey)) continue;
+      if (await this.references.isReferenced(row.storageKey, transaction)) continue;
+      queued.add(row.storageKey);
       await this.mediaRelease.requestRelease(
         {
           aggregateType: "moderation.reported_content",
@@ -68,6 +71,7 @@ export class ReportedContentRetentionService {
         transaction,
       );
     }
-    return rows.length;
+    // A row holding several files (an upload and its poster) comes once per file.
+    return new Set(rows.map((row) => row.id)).size;
   }
 }

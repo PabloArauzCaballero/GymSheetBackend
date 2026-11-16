@@ -130,6 +130,7 @@ import { accountRightsMigration } from "./202611180101-account-rights";
 import { downloadAuditIpContractAndClosedAccountSanctionsMigration } from "./202611180301-download-audit-ip-contract-and-closed-account-sanctions";
 import { moderationLegalSafeguardsMigration } from "./202611180401-moderation-legal-safeguards";
 import { authorDeletedEvidenceHoldMigration } from "./202611190101-author-deleted-evidence-hold";
+import { exerciseMediaEvidenceHoldMigration } from "./202611190201-exercise-media-evidence-hold";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
 export const databaseMigrations: DatabaseMigration[] = [
@@ -266,4 +267,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   downloadAuditIpContractAndClosedAccountSanctionsMigration,
   moderationLegalSafeguardsMigration,
   authorDeletedEvidenceHoldMigration,
+  exerciseMediaEvidenceHoldMigration,
 ];
