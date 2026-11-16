@@ -279,8 +279,8 @@ export class KycRepository {
   async insertChecks(submissionId: string, records: readonly CheckRecord[], transaction: Transaction): Promise<void> {
     for (const record of records) {
       await this.sequelize.query(
-        `INSERT INTO business.kyc_checks (submission_id, code, outcome, detail, duration_ms)
-         VALUES (:submissionId, :code, :outcome, CAST(:detail AS jsonb), :durationMs)`,
+        `INSERT INTO business.kyc_checks (submission_id, code, outcome, detail, duration_ms, created_at)
+         VALUES (:submissionId, :code, :outcome, CAST(:detail AS jsonb), :durationMs, clock_timestamp())`,
         { replacements: { submissionId, ...record, detail: JSON.stringify(record.detail) }, transaction },
       );
     }
@@ -299,8 +299,8 @@ export class KycRepository {
     transaction: Transaction,
   ): Promise<string> {
     const [row] = await this.sequelize.query<{ id: string }>(
-      `INSERT INTO business.kyc_decisions (submission_id, decision, actor_user_id, reason_codes, note, allow_resubmit)
-       VALUES (:submissionId, :decision, :actorUserId, CAST(:reasonCodes AS text[]), :note, :allowResubmit)
+      `INSERT INTO business.kyc_decisions (submission_id, decision, actor_user_id, reason_codes, note, allow_resubmit, created_at)
+       VALUES (:submissionId, :decision, :actorUserId, CAST(:reasonCodes AS text[]), :note, :allowResubmit, clock_timestamp())
        RETURNING id`,
       { type: QueryTypes.SELECT, replacements: { ...input, reasonCodes: textArray(input.reasonCodes) }, transaction },
     );
@@ -332,8 +332,9 @@ export class KycRepository {
     transaction: Transaction,
   ): Promise<void> {
     await this.sequelize.query(
-      `INSERT INTO business.kyc_status_history (account_id, submission_id, from_status, to_status, decision_id, actor_user_id)
-       VALUES (:accountId, :submissionId, :from, :to, :decisionId, :actorUserId)`,
+      // clock_timestamp(): several rows of one transaction keep their real order (now() is the transaction start).
+      `INSERT INTO business.kyc_status_history (account_id, submission_id, from_status, to_status, decision_id, actor_user_id, at)
+       VALUES (:accountId, :submissionId, :from, :to, :decisionId, :actorUserId, clock_timestamp())`,
       { replacements: input, transaction },
     );
   }

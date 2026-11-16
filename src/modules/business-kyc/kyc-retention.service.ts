@@ -23,12 +23,12 @@ const DOCUMENT_RULES: Record<KycDocumentRule, { where: string; days: number; rea
   ABANDONED_DRAFT: { where: "s.status = 'DRAFT' AND s.updated_at < :cutoff", days: KYC_RETENTION.ABANDONED_DRAFT_DAYS, reason: "RETENTION" },
   REJECTED: { where: "s.status = 'REJECTED' AND s.decided_at < :cutoff", days: KYC_RETENTION.REJECTED_DAYS, reason: "RETENTION" },
   SELFIE_DECIDED: {
-    where: "d.kind = 'SELFIE' AND s.status IN ('AUTO_APPROVED', 'APPROVED', 'SUSPENDED', 'REJECTED') AND s.decided_at < :cutoff",
+    where: "d.kind = 'SELFIE' AND s.status IN ('AUTO_APPROVED', 'APPROVED', 'SUSPENDED', 'REJECTED', 'SUPERSEDED') AND s.decided_at < :cutoff",
     days: KYC_RETENTION.SELFIE_AFTER_DECISION_DAYS,
     reason: "RETENTION",
   },
   SUPERSEDED: {
-    where: `s.status IN ('AUTO_APPROVED', 'APPROVED', 'SUSPENDED') AND s.decided_at < :cutoff
+    where: `s.status IN ('AUTO_APPROVED', 'APPROVED', 'SUSPENDED', 'SUPERSEDED') AND s.decided_at < :cutoff
             AND a.current_submission_id IS DISTINCT FROM s.id`,
     days: KYC_RETENTION.SUPERSEDED_DAYS,
     reason: "RETENTION",

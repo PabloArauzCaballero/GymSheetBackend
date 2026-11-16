@@ -6,7 +6,7 @@ import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { RETIRED_LOCK_DAYS, addDays, parseHandle } from "../business-accounts/handle-rules";
 import { HandlesRepository } from "../business-accounts/handles.repository";
 import { KycCipher, assertKycAvailable, kycFingerprint } from "./kyc-cipher";
-import { ciIdentity, normalizeBolivianMobile, normalizeNit, parseCi } from "./kyc-formats";
+import { ciFingerprintValue, normalizeBolivianMobile, normalizeNit, parseCi } from "./kyc-formats";
 import { KycEffectsRepository } from "./kyc-effects.repository";
 import { KycNotices } from "./kyc-notices";
 import { KycReviewRepository } from "./kyc-review.repository";
@@ -166,6 +166,9 @@ export class BusinessAdminService {
     return this.sequelize.transaction(async (transaction) => {
       const row = await this.handles.findByHandle(from.handle, transaction);
       if (!row?.ownerEntityId || (row.status !== "ACTIVE" && row.status !== "PENDING")) throw new NotFoundException("Negocio no encontrado.");
+      // Same rule as every other REPP action: never on the operator's own business.
+      const owner = await this.effects.findAccountByEntity(row.ownerEntityId, transaction);
+      if (owner) assertNotOwnBusiness(actor, owner);
       const now = new Date();
       await this.handles.lockSkeleton(to.skeleton, transaction);
       if ((await this.handles.findHolders(to.skeleton, row.ownerEntityId, now, transaction)).length > 0) {
@@ -252,9 +255,10 @@ function normalizeIdentity(kind: BlocklistEntryInput["kind"], value: string): st
   if (kind === "NIT") return normalizeNit(value);
   if (kind === "PHONE") return normalizeBolivianMobile(value);
   if (kind === "EMAIL") return value.includes("@") ? value : null;
+  // A CI entry blocks the number, whatever complement it is written with (see `ciFingerprintValue`).
   const [number, complement] = value.split("-");
   const ci = parseCi(number ?? "", complement ?? null, null);
-  return ci ? ciIdentity(ci) : null;
+  return ci ? ciFingerprintValue(ci) : null;
 }
 
 function decodeAccountCursor(cursor: string | undefined): { createdAt: Date; id: string } | null {

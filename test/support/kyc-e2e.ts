@@ -46,10 +46,10 @@ export type KycHarness = {
   /** Signup, verified email, step 3 (category, city, handle) and, for a company, its logo. */
   business: (label: string, options?: { entityType?: string; email?: string; risk?: 'LOW' | 'MEDIUM' | 'HIGH' }) => Promise<KycBusiness>;
   verifyPhone: (owner: KycBusiness) => Promise<void>;
-  legal: (owner: KycBusiness, input: { nit?: string; ci?: string }) => Promise<void>;
+  legal: (owner: KycBusiness, input: { nit?: string; ci?: string; ciComplement?: string }) => Promise<void>;
   documents: (owner: KycBusiness) => Promise<void>;
   /** Everything up to a submit that passes every check. */
-  ready: (label: string, options?: { nit?: string; email?: string }) => Promise<KycBusiness>;
+  ready: (label: string, options?: { nit?: string; email?: string; ci?: string; ciComplement?: string }) => Promise<KycBusiness>;
   close: () => Promise<void>;
 };
 
@@ -119,7 +119,7 @@ export async function bootKycHarness(): Promise<KycHarness> {
     await e2e
       .as(owner.token)
       .put('/business/me/kyc/draft')
-      .send({ legalName: `${owner.name} S.R.L.`, nit: input.nit ?? randomDigits(10), repFullName: 'Representante Prueba', repCiNumber: input.ci ?? randomDigits(7), repCiExtension: 'LP', address: 'Av. Arce 123' })
+      .send({ legalName: `${owner.name} S.R.L.`, nit: input.nit ?? randomDigits(10), repFullName: 'Representante Prueba', repCiNumber: input.ci ?? randomDigits(7), ...(input.ciComplement ? { repCiComplement: input.ciComplement } : {}), repCiExtension: 'LP', address: 'Av. Arce 123' })
       .expect(200);
   };
 
@@ -146,7 +146,7 @@ export async function bootKycHarness(): Promise<KycHarness> {
     ready: async (label, options = {}) => {
       const owner = await business(label, { email: options.email });
       await verifyPhone(owner);
-      await legal(owner, { nit: options.nit });
+      await legal(owner, { nit: options.nit, ci: options.ci, ciComplement: options.ciComplement });
       await documents(owner);
       return owner;
     },

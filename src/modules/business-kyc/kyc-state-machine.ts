@@ -5,16 +5,18 @@ import { KycStatus } from "./kyc.catalog";
 /**
  * Allowed transitions of one KYC attempt (plan §2.5). REJECTED is terminal
  * for the attempt: a resubmission or a material change is a NEW version that
- * starts in DRAFT.
+ * starts in DRAFT. SUPERSEDED (terminal) is an approved version that an
+ * approved material change replaced.
  */
 export const KYC_TRANSITIONS: Readonly<Record<KycStatus, readonly KycStatus[]>> = {
   DRAFT: ["SUBMITTED"],
   SUBMITTED: ["AUTO_APPROVED", "IN_REVIEW"],
-  AUTO_APPROVED: ["APPROVED", "SUSPENDED", "REJECTED"],
+  AUTO_APPROVED: ["APPROVED", "SUSPENDED", "REJECTED", "SUPERSEDED"],
   IN_REVIEW: ["APPROVED", "REJECTED"],
-  APPROVED: ["SUSPENDED"],
+  APPROVED: ["SUSPENDED", "SUPERSEDED"],
   SUSPENDED: ["APPROVED", "REJECTED"],
   REJECTED: [],
+  SUPERSEDED: [],
 };
 
 export function canTransition(from: KycStatus, to: KycStatus): boolean {

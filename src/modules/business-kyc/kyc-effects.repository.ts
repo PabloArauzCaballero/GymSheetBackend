@@ -45,6 +45,15 @@ export class KycEffectsRepository {
     return row ?? null;
   }
 
+  /** The business account that owns a listing; null for a listing REPP seeded without one. */
+  async findAccountByEntity(entityId: string, transaction?: Transaction): Promise<KycAccountRow | null> {
+    const [row] = await this.sequelize.query<KycAccountRow>(
+      `SELECT ${ACCOUNT_COLUMNS} FROM business.accounts a JOIN public.usuarios u ON u.id = a.user_id WHERE a.entity_id = :entityId`,
+      { type: QueryTypes.SELECT, replacements: { entityId }, transaction },
+    );
+    return row ?? null;
+  }
+
   findEntity(entityId: string, transaction?: Transaction): Promise<DirectoryEntityModel | null> {
     return this.entities.findByPk(entityId, { transaction, lock: transaction ? transaction.LOCK.UPDATE : undefined });
   }

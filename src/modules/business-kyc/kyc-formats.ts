@@ -30,9 +30,15 @@ export function parseCi(number: string, complement?: string | null, extension?: 
   return { number: digits, complement: comp, extension: ext as CiExtension | null };
 }
 
-/** The identity of a CI for fingerprints: the number and its complement (the department does not make it another person). */
-export function ciIdentity(ci: ParsedCi): string {
-  return ci.complement ? `${ci.number}-${ci.complement}` : ci.number;
+/**
+ * What a CI fingerprint (HMAC) is computed from: the NUMBER alone. The
+ * complement tells apart two people SEGIP gave the same number, but keying on
+ * it let a blocked or duplicated CI pass by adding, changing or dropping the
+ * complement. Matching on the number at worst sends a legitimate homonym to
+ * REPP review (WARN / FAIL → IN_REVIEW); it never rejects.
+ */
+export function ciFingerprintValue(ci: ParsedCi): string {
+  return ci.number;
 }
 
 /** Bolivian mobile in E.164 (`+591` and 8 digits starting with 6 or 7), or null. */

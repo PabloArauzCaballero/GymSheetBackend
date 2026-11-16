@@ -116,7 +116,8 @@ export class KycReviewService {
 
   async claim(actor: AuthenticatedUser, submissionId: string): Promise<{ claimedByUserId: string; claimedAt: string }> {
     return this.repository.runInTransaction(async (transaction) => {
-      const { submission } = await this.load(actor, submissionId, transaction);
+      const { submission, account } = await this.load(actor, submissionId, transaction);
+      assertDecidable(account, submission);
       this.assertReviewable(submission.status);
       const holder = await this.review.claim(submissionId, actor.id, new Date(this.clock().getTime() - KYC_RULES.claimTtlMs), transaction);
       if (holder !== actor.id) throw claimedByOther();
@@ -137,6 +138,7 @@ export class KycReviewService {
   async decide(actor: AuthenticatedUser, submissionId: string, input: KycDecisionInput): Promise<{ status: KycStatus; decisionId: string }> {
     const outcome = await this.repository.runInTransaction(async (transaction) => {
       const { submission, account } = await this.load(actor, submissionId, transaction, true);
+      assertDecidable(account, submission);
       if (submission.claimedByUserId && submission.claimedByUserId !== actor.id && submission.claimedAt && submission.claimedAt > new Date(this.clock().getTime() - KYC_RULES.claimTtlMs)) {
         throw claimedByOther();
       }
@@ -187,7 +189,10 @@ export class KycReviewService {
   private async applyApproval(account: KycAccountRow, submission: SubmissionRow, decisionId: string, transaction: Transaction): Promise<void> {
     const entity = await this.effects.findEntity(account.entityId, transaction);
     if (!entity) throw new NotFoundException("Negocio no encontrado.");
-    if (submission.purpose === "MATERIAL_CHANGE") await this.effects.applyMaterialChange(entity, submission, transaction);
+    if (submission.purpose === "MATERIAL_CHANGE") {
+      await this.effects.applyMaterialChange(entity, submission, transaction);
+      await this.supersede(account, submission.id, decisionId, transaction);
+    }
     await this.effects.publish(entity, true, transaction);
     await this.effects.updateAccount(
       account.userId,
@@ -197,6 +202,27 @@ export class KycReviewService {
     );
     const handle = await this.handles.findCurrent(entity.id, this.clock(), transaction);
     await this.notices.send(account.userId, decisionId, { kind: "APPROVED", handle: submission.purpose === "MATERIAL_CHANGE" ? null : (handle?.handle ?? null) }, transaction);
+  }
+
+  /**
+   * The version an approved change replaces leaves every queue: an
+   * AUTO_APPROVED one waiting for its post-review would otherwise stay
+   * decidable and could put the old data back.
+   */
+  private async supersede(account: KycAccountRow, newSubmissionId: string, decisionId: string, transaction: Transaction): Promise<void> {
+    const previousId = account.currentSubmissionId;
+    if (!previousId || previousId === newSubmissionId) return;
+    const previous = await this.repository.findSubmission(previousId, transaction, true);
+    if (!previous || (previous.status !== "AUTO_APPROVED" && previous.status !== "APPROVED")) return;
+    await this.repository.updateSubmission(
+      previous.id,
+      { status: "SUPERSEDED", decided_at: this.clock(), post_review_due_at: null, claimed_by_user_id: null, claimed_at: null },
+      transaction,
+    );
+    await this.repository.insertHistory(
+      { accountId: account.userId, submissionId: previous.id, from: previous.status, to: "SUPERSEDED", decisionId, actorUserId: null },
+      transaction,
+    );
   }
 
   private async applyRejection(
@@ -243,6 +269,25 @@ export class KycReviewService {
   private assertReviewable(status: KycStatus): void {
     if (status !== "IN_REVIEW" && status !== "AUTO_APPROVED") assertKycTransition(status, "APPROVED");
   }
+}
+
+/**
+ * Only the attempt that matters now can be claimed or decided: the one in
+ * flight, or the account's current (approved) version. A stale id (an older
+ * version, a replaced one) is refused instead of re-approving or overwriting
+ * the account. A suspended or closed account is not decided here (REPP
+ * reinstates it from the account console), and a material change can only be
+ * approved while the version it changes is still approved.
+ */
+function assertDecidable(account: KycAccountRow, submission: SubmissionRow): void {
+  if (account.status === "SUSPENDED" || account.status === "CLOSED") {
+    throw new DomainException(HttpStatus.CONFLICT, "BUSINESS_ACCOUNT_LOCKED", "La cuenta del negocio está suspendida o cerrada.");
+  }
+  const open = submission.status === "DRAFT" || submission.status === "SUBMITTED" || submission.status === "IN_REVIEW";
+  const current = submission.id === account.currentSubmissionId;
+  const changeOfApproved = submission.purpose !== "MATERIAL_CHANGE" || account.kycStatus === "AUTO_APPROVED" || account.kycStatus === "APPROVED";
+  if ((open || current) && changeOfApproved) return;
+  throw new DomainException(HttpStatus.CONFLICT, "KYC_SUBMISSION_SUPERSEDED", "Esta versión de la verificación ya no es la vigente.");
 }
 
 function claimedByOther(): DomainException {

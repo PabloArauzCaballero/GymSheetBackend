@@ -12,7 +12,7 @@ import { pickGesture } from "../verification/verification.catalog";
 import { KycEffectsRepository, KycAccountRow } from "./kyc-effects.repository";
 import { KycCipher, assertKycAvailable, kycFingerprint } from "./kyc-cipher";
 import { measureKycDocument } from "./kyc-document-image";
-import { ciIdentity, maskTail, normalizeNit, parseCi } from "./kyc-formats";
+import { ciFingerprintValue, maskTail, normalizeNit, parseCi } from "./kyc-formats";
 import { KYC_RULES, KycDocumentKind } from "./kyc.catalog";
 import { KYC_CLOCK, KycClock } from "./kyc-pipeline.service";
 import { KycDocumentDto, mapDocument, mapSubmission, KycSubmissionDto } from "./kyc.mapper";
@@ -138,7 +138,7 @@ export class KycDraftsService {
     return { nit_masked: maskTail(nit), nit_enc: this.cipher.encryptText(nit), nit_hmac: kycFingerprint("NIT", nit) };
   }
 
-  /** The CI is one identity (number + complement): changing either recomputes its HMAC. */
+  /** Number, complement and department are validated together; the HMAC keys on the number alone (`ciFingerprintValue`). */
   private ciPatch(draft: SubmissionRow, input: KycDraftInput): SubmissionPatch {
     if (input.repCiNumber === null) {
       return { rep_ci_masked: null, rep_ci_enc: null, rep_ci_hmac: null, rep_ci_complement: null, rep_ci_extension: null };
@@ -152,7 +152,7 @@ export class KycDraftsService {
     return {
       rep_ci_masked: maskTail(ci.number),
       rep_ci_enc: this.cipher.encryptText(ci.number),
-      rep_ci_hmac: kycFingerprint("CI", ciIdentity(ci)),
+      rep_ci_hmac: kycFingerprint("CI", ciFingerprintValue(ci)),
       rep_ci_complement: ci.complement,
       rep_ci_extension: ci.extension,
     };

@@ -23,7 +23,7 @@ describe("REPP's KYC console: queues, viewer, decisions and accounts (e2e, franj
     await h.close();
   });
 
-  const submitted = async (label: string, options: { nit?: string; email?: string } = {}) => {
+  const submitted = async (label: string, options: { nit?: string; email?: string; ci?: string; ciComplement?: string } = {}) => {
     const owner = await h.ready(label, options);
     const response = await h.e2e.as(owner.token).post('/business/me/kyc/submit').expect(200);
     return { owner, submissionId: response.body.data.submissionId as string, status: response.body.data.status as string };
@@ -269,4 +269,64 @@ describe("REPP's KYC console: queues, viewer, decisions and accounts (e2e, franj
     expect(changes).toEqual([{ reason: 'REPP_FORCED' }]);
     await h.e2e.as(moderator.token).del(`/admin/business/handles/reservations/${brand}`).expect(204);
   }, 60000);
+
+  it('only the current or open version is decided: a superseded one, or a suspended account, is refused', async () => {
+    const { owner, submissionId: first } = await submitted('kyc-stale');
+    const change = (await h.e2e.as(owner.token).post('/business/me/kyc/changes').expect(201)).body.data.submissionId as string;
+    const newName = `Vigente ${letters(12)}`;
+    await h.e2e.as(owner.token).put('/business/me/kyc/draft').send({ tradeName: newName }).expect(200);
+    await h.e2e.as(owner.token).post('/business/me/kyc/submit').expect(200);
+    await h.e2e.as(moderator.token).post(`/admin/business/kyc/${change}/decide`).send({ decision: 'APPROVE' }).expect(200);
+    const [old] = await h.select<{ status: string }>('SELECT status FROM business.kyc_submissions WHERE id = :first', { first });
+    expect(old.status).toBe('SUPERSEDED');
+    const post = (await h.e2e.as(moderator.token).get('/admin/business/kyc/queue?queue=POST_REVIEW&limit=100').expect(200)).body.data;
+    expect(post.items.map((item: { submissionId: string }) => item.submissionId)).not.toContain(first);
+    for (const call of [
+      () => h.e2e.as(moderator.token).post(`/admin/business/kyc/${first}/decide`).send({ decision: 'APPROVE' }),
+      () => h.e2e.as(moderator.token).post(`/admin/business/kyc/${first}/claim`),
+    ]) {
+      const response = await call();
+      expect([response.status, response.body.code]).toEqual([409, 'KYC_SUBMISSION_SUPERSEDED']);
+    }
+    const [account] = await h.select<{ current: string }>('SELECT current_submission_id AS current FROM business.accounts WHERE user_id = :id', { id: owner.id });
+    expect(account.current).toBe(change);
+    expect(await entityOf(owner)).toMatchObject({ name: newName, isVerified: true });
+
+    await h.e2e.as(moderator.token).post(`/admin/business/accounts/${owner.id}/suspend`).send({ reasonCode: 'OTHER' }).expect(200);
+    const locked = await h.e2e.as(moderator.token).post(`/admin/business/kyc/${change}/decide`).send({ decision: 'REJECT', reasonCodes: ['OTHER'], allowResubmit: false });
+    expect([locked.status, locked.body.code]).toEqual([409, 'BUSINESS_ACCOUNT_LOCKED']);
+  }, 60000);
+
+  it('a CI matches by number alone: a complement cannot dodge the blocklist or the duplicate check', async () => {
+    const ci = randomDigits(7);
+    const entry = await h.e2e.as(moderator.token).post('/admin/business/blocklist').send({ kind: 'CI', value: ci, reasonCode: 'FRAUD' }).expect(201);
+    const blocked = await submitted('kyc-ci-block', { ci, ciComplement: '1A' });
+    expect(blocked.status).toBe('IN_REVIEW');
+    const failing = await h.select<{ code: string }>(
+      `SELECT code FROM business.kyc_checks WHERE submission_id = :id AND outcome <> 'PASS'`,
+      { id: blocked.submissionId },
+    );
+    expect(failing.map((row) => row.code)).toEqual(['BLOCKLIST']);
+    await h.e2e.as(moderator.token).del(`/admin/business/blocklist/${entry.body.data.id}`).expect(204);
+
+    const other = randomDigits(7);
+    await submitted('kyc-ci-first', { ci: other });
+    const second = await submitted('kyc-ci-second', { ci: other, ciComplement: '2B' });
+    expect(second.status).toBe('IN_REVIEW');
+    const warned = await h.select<{ code: string; outcome: string }>(
+      `SELECT code, outcome FROM business.kyc_checks WHERE submission_id = :id AND outcome <> 'PASS'`,
+      { id: second.submissionId },
+    );
+    expect(warned).toEqual([{ code: 'DUPLICATE_CI', outcome: 'WARN' }]);
+  }, 60000);
+
+  it('a forced rename is refused on the operator\'s own business (403 MODERATION_SELF_CASE)', async () => {
+    const self = await h.e2e.register(`kyc-rename-self-${letters(6)}`);
+    await h.e2e.promote(self.id, 'MODERATOR');
+    const [{ email }] = await h.select<{ email: string }>('SELECT email FROM public.usuarios WHERE id = :id', { id: self.id });
+    const { owner } = await submitted('kyc-rename-own', { email: email.replace('@', '+tienda@') });
+    const refused = await h.e2e.as(self.token).post(`/admin/business/handles/${owner.handle}/force-rename`).send({ newHandle: `${letters(10)}.own`, reason: 'x' });
+    expect([refused.status, refused.body.code]).toEqual([403, 'MODERATION_SELF_CASE']);
+    await request(h.e2e.http).get(h.e2e.url(`/public/handles/${owner.handle}`)).expect(200);
+  });
 });

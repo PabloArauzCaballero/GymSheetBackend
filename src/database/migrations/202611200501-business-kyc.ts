@@ -3,7 +3,7 @@ import { env } from "../../config/env";
 import { DatabaseMigration } from "./migration.types";
 import { executeSqlStatements } from "./sql-migration.helpers";
 
-const KYC_STATUSES = `'DRAFT', 'SUBMITTED', 'AUTO_APPROVED', 'IN_REVIEW', 'APPROVED', 'REJECTED', 'SUSPENDED'`;
+const KYC_STATUSES = `'DRAFT', 'SUBMITTED', 'AUTO_APPROVED', 'IN_REVIEW', 'APPROVED', 'REJECTED', 'SUSPENDED', 'SUPERSEDED'`;
 const FINGERPRINT_KINDS = `'NIT', 'CI', 'PHONE', 'EMAIL'`;
 const PREVIOUS_CONSENT_KINDS = `'HEALTH', 'ORIENTATION', 'VERIFICATION_SELFIE', 'PRECISE_LOCATION'`;
 const HMAC = "~ '^[0-9a-f]{64}$'";

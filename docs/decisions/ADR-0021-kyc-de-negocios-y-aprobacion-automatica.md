@@ -30,7 +30,10 @@ verificador inventado.
    arranque falla sin ella; `docker-compose.coolify.yml` la exige) y **sin respaldo** en secretos JWT:
    sin clave, el KYC responde `503 KYC_UNAVAILABLE`. NIT, CI y teléfono se guardan cifrados más su
    **HMAC con el pepper de privacidad** (`IP_HASH_SECRET`, prefijo por tipo `nit:`, `ci:`,
-   `phone:`, `email:`; el de correo es exactamente `hashEmail`). Solo una máscara (`•••••••059`) es
+   `phone:`, `email:`; el de correo es exactamente `hashEmail`). El HMAC del CI es **solo del
+   número**: con el complemento, añadirlo, cambiarlo o quitarlo esquivaba la lista negra y el
+   duplicado; dos personas con el mismo número van, a lo sumo, a revisión (WARN). La lista negra
+   de CI bloquea el número, se escriba con el complemento que sea. Solo una máscara (`•••••••059`) es
    legible sin la clave. Riesgo residual: perder la clave pierde los documentos.
 3. **Documentos** privados en `business/{accountId}/kyc/{submissionId}/{uuid}.bin` (nombre por id
    aleatorio: el cifrado con IV aleatorio hace inútil el nombre por contenido). El prefijo entra en
@@ -74,7 +77,12 @@ verificador inventado.
    máximo **3 intentos**, **24 h** después de la decisión; copia datos y documentos salvo la selfie.
    **Cambio material** (nombre, categoría, razón social, NIT, representante) de un negocio aprobado:
    `POST /business/me/kyc/changes` abre una versión nueva (copia todo) que **nunca se autoaprueba**
-   (`MATERIAL_CHANGE` WARN); la versión vigente sigue publicada hasta que REPP aprueba la nueva.
+   (`MATERIAL_CHANGE` WARN); la versión vigente sigue publicada hasta que REPP aprueba la nueva, y
+   entonces pasa a `SUPERSEDED` (terminal) y sale de las colas. **Solo se toma o decide la versión
+   abierta o la vigente** (`current_submission_id`); un id viejo responde `409
+   KYC_SUBMISSION_SUPERSEDED` en vez de reaprobar o pisar la cuenta, un cambio solo se aprueba
+   mientras la versión que cambia sigue aprobada, y una cuenta suspendida o cerrada no se decide
+   (`409 BUSINESS_ACCOUNT_LOCKED`; se reactiva desde la consola de cuentas).
 8. **Consola REPP** `admin/business/*` (`PLATFORM_MODERATION_ROLES`): colas `REVIEW` (`IN_REVIEW`,
    por `review_due_at` = envío + `BUSINESS_KYC_REVIEW_SLA_HOURS` horas hábiles lun–vie en
    `BUSINESS_TIME_ZONE`, sin feriados) y `POST_REVIEW` (`AUTO_APPROVED`, por `post_review_due_at` =
@@ -85,7 +93,8 @@ verificador inventado.
    reservas y renombre forzado de handles (el viejo se retira **sin** redirección y bloqueado 180
    días), lista negra (solo HMAC; nunca se guarda ni devuelve el valor) y términos prohibidos.
    ADR-0018 §8: nadie revisa su propio negocio — la cuenta del actor o un negocio dado de alta con
-   el mismo buzón canónico del actor → `403 MODERATION_SELF_CASE`. Métricas en `/health/metrics`:
+   el mismo buzón canónico del actor → `403 MODERATION_SELF_CASE`, también en suspender, reactivar
+   y el renombre forzado de su handle. Métricas en `/health/metrics`:
    tamaño, vencidos y edad p95 por cola, tasa de autoaprobación de 7 días.
 9. **Retención** (paso KYC del worker `privacy-retention`, borrado por `media.release`): DRAFT
    abandonado 30 días, intento rechazado 30 días (documentos y datos cifrados), selfie 30 días tras

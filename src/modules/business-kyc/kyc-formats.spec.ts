@@ -1,4 +1,4 @@
-import { ciIdentity, maskTail, normalizeBolivianMobile, normalizeNit, parseCi } from "./kyc-formats";
+import { ciFingerprintValue, maskTail, normalizeBolivianMobile, normalizeNit, parseCi } from "./kyc-formats";
 
 describe("KYC formats (shape only, no invented check digit)", () => {
   it.each([
@@ -30,9 +30,10 @@ describe("KYC formats (shape only, no invented check digit)", () => {
     ["1234567", null, "XX"],
   ])("refuses the CI %s / %s / %s", (number, complement, extension) => expect(parseCi(number, complement, extension)).toBeNull());
 
-  it("keys a CI by number and complement, not by department", () => {
-    expect(ciIdentity(parseCi("1234567", "1A", "LP")!)).toBe(ciIdentity(parseCi("1234567", "1A", "SC")!));
-    expect(ciIdentity(parseCi("1234567", "1A", null)!)).not.toBe(ciIdentity(parseCi("1234567", null, null)!));
+  it("fingerprints a CI by its number alone: neither the department nor the complement can dodge a match", () => {
+    expect(ciFingerprintValue(parseCi("1234567", "1A", "LP")!)).toBe(ciFingerprintValue(parseCi("1234567", "1A", "SC")!));
+    expect(ciFingerprintValue(parseCi("1234567", "1A", null)!)).toBe(ciFingerprintValue(parseCi("1234567", null, null)!));
+    expect(ciFingerprintValue(parseCi("1234567", "2B", null)!)).toBe("1234567");
   });
 
   it.each([

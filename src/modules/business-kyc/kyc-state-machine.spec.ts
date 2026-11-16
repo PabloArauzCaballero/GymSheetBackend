@@ -9,9 +9,11 @@ const ALLOWED: readonly [KycStatus, KycStatus][] = [
   ["AUTO_APPROVED", "APPROVED"],
   ["AUTO_APPROVED", "SUSPENDED"],
   ["AUTO_APPROVED", "REJECTED"],
+  ["AUTO_APPROVED", "SUPERSEDED"],
   ["IN_REVIEW", "APPROVED"],
   ["IN_REVIEW", "REJECTED"],
   ["APPROVED", "SUSPENDED"],
+  ["APPROVED", "SUPERSEDED"],
   ["SUSPENDED", "APPROVED"],
   ["SUSPENDED", "REJECTED"],
 ];
@@ -37,8 +39,9 @@ describe("KYC state machine (plan §2.5)", () => {
     }
   });
 
-  it("keeps REJECTED terminal for the attempt and never re-enters DRAFT", () => {
+  it("keeps REJECTED and SUPERSEDED terminal for the attempt and never re-enters DRAFT", () => {
     expect(KYC_STATUSES.filter((to) => canTransition("REJECTED", to))).toEqual([]);
+    expect(KYC_STATUSES.filter((to) => canTransition("SUPERSEDED", to))).toEqual([]);
     expect(KYC_STATUSES.filter((from) => canTransition(from, "DRAFT"))).toEqual([]);
   });
 });

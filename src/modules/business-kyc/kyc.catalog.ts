@@ -1,7 +1,7 @@
 import { LegalKind } from "../business-accounts/business-accounts.schemas";
 
 /** Status of one KYC attempt (`business.kyc_submissions.status`), plan §2.5. */
-export const KYC_STATUSES = ["DRAFT", "SUBMITTED", "AUTO_APPROVED", "IN_REVIEW", "APPROVED", "REJECTED", "SUSPENDED"] as const;
+export const KYC_STATUSES = ["DRAFT", "SUBMITTED", "AUTO_APPROVED", "IN_REVIEW", "APPROVED", "REJECTED", "SUSPENDED", "SUPERSEDED"] as const;
 export type KycStatus = (typeof KYC_STATUSES)[number];
 
 export type KycPurpose = "INITIAL" | "RESUBMISSION" | "MATERIAL_CHANGE";
