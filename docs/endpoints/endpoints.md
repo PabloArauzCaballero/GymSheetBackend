@@ -411,6 +411,13 @@ moderator.
 Audit rows of a `MODERATOR` are platform rows (`tenant_scope` null). Every notice to the people
 involved names «el equipo de moderación de REPP», never the gym.
 
+**Who decides a case (ADR-0018 §8).** The case file, claim and verdict answer `403
+MODERATION_SELF_CASE` when the reported account is the caller's own (any role), and `403
+MODERATION_PEER_CASE` when a `MODERATOR` opens a case about a `MODERATOR` or `SYSTEM_ADMIN` account:
+those cases belong to a `SYSTEM_ADMIN` who is not the reported account. The queue never lists the
+caller's own cases, and lists cases about platform accounts to `SYSTEM_ADMIN` only. Release stays
+open (it only hands an own claim back). Refusals log `moderation.case_refused`.
+
 ## Main status codes
 
 - `400`: invalid input or route format;
