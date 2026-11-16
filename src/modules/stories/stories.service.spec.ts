@@ -34,6 +34,7 @@ function createService(
       reused: false,
     }),
     remove: jest.fn(),
+    canRemove: () => true,
     ...mediaStorageOverrides,
   } as unknown as MediaStorageProvider;
 

@@ -14,6 +14,26 @@ export function selectRows<T extends object>(
   return e2e.app.get(Sequelize).query<T>(statement, { type: QueryTypes.SELECT, replacements });
 }
 
+/**
+ * `selectRows` until it returns at least one row, for writes the API makes
+ * after answering (the admin audit interceptor does not hold the response).
+ * Bounded: after `timeoutMs` it returns whatever the last read found.
+ */
+export async function selectRowsEventually<T extends object>(
+  e2e: E2eApp,
+  statement: string,
+  replacements: Record<string, unknown> = {},
+  timeoutMs = 2_000,
+): Promise<T[]> {
+  const deadline = Date.now() + timeoutMs;
+  let rows = await selectRows<T>(e2e, statement, replacements);
+  while (rows.length === 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    rows = await selectRows<T>(e2e, statement, replacements);
+  }
+  return rows;
+}
+
 /** Grants a consent for its current text version through the public endpoint. */
 export async function grantConsent(e2e: E2eApp, token: string, kind: ConsentKind): Promise<void> {
   await e2e.as(token).put(`/me/consents/${kind}`).send({ granted: true, version: CONSENT_VERSIONS[kind] }).expect(200);

@@ -6,6 +6,7 @@
  * (disco local vía Multer, MinIO/S3, Cloudinary, ...). Seleccionar el proveedor
  * es responsabilidad del factory, gobernado por `MEDIA_STORAGE_PROVIDER`.
  */
+import { isSafeStorageKey } from "../../common/media/own-media-key";
 
 /** Token de inyección de dependencias para el proveedor activo. */
 export const MEDIA_STORAGE_PROVIDER = Symbol("MEDIA_STORAGE_PROVIDER");
@@ -104,22 +105,28 @@ export interface StoredAsset {
 export interface MediaStorageProvider {
   readonly name: MediaStorageProviderName;
   /**
-   * `true` si el proveedor CONSERVA los binarios para siempre y su `remove` no
-   * borra nada.
+   * Whether `remove(key)` really deletes that object (ADR-0017).
    *
-   * No es un detalle del adaptador: cambia lo que `MediaRetentionService` puede
-   * prometer. Con un proveedor inmutable la fila se borra igual (la story
-   * caduca, la foto sale de la galería) pero el objeto sigue existiendo, y el
-   * servicio tiene que decirlo en su log y en su resultado en vez de anunciar
-   * un borrado que no ocurrió.
+   * It is per key, not per provider, because the storage now holds two kinds
+   * of content with opposite rules: what people upload (`users/{userId}/…`) is
+   * deletable, while the administered catalog (`catalog/`, `ejercicios/`) keeps
+   * the immutability of ADR-0010. `MediaRetentionService` asks before removing
+   * so it never reports a deletion the adapter is going to skip; consumers that
+   * promise deletion (texts, availability checks) ask with a `users/` key.
    */
-  readonly immutable: boolean;
+  canRemove(key: string): boolean;
   upload(
     input: MediaUploadInput,
     target: MediaUploadTarget,
   ): Promise<StoredAsset>;
   /** Reads private bytes for an authenticated application route. */
   download(key: string): Promise<Buffer>;
+  /**
+   * Deletes the object, or is a logged no-op when `canRemove(key)` is false.
+   * A removal the storage rejects (for example AccessDenied) MUST throw: the
+   * `media.release` outbox job then retries and dead-letters visibly instead
+   * of completing over a file that still exists.
+   */
   remove(key: string): Promise<void>;
 }
 
@@ -132,6 +139,17 @@ export interface MediaStorageProvider {
  * exactamente la misma estructura para que dev y producción se parezcan y para
  * que migrar entre ellos no reescriba ninguna clave.
  */
+/** Root of every key that belongs to a person (`users/{userId}/…`). */
+export const USER_CONTENT_KEY_PREFIX = "users/";
+
+/**
+ * Whether a storage key is a person's content. The key must be made of plain
+ * segments: `users/../catalog/x` is not under `users/`, whatever its prefix says.
+ */
+export function isUserContentKey(key: string): boolean {
+  return key.startsWith(USER_CONTENT_KEY_PREFIX) && isSafeStorageKey(key);
+}
+
 export function mediaTargetPrefix(target: MediaUploadTarget): string {
   if (target.category === "catalog") return "catalog";
   if (target.category === "ejercicios") {

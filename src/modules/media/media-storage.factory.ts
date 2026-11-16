@@ -14,6 +14,8 @@ export interface MinioConnectionConfig {
   readonly secretKey?: string;
   readonly bucket?: string;
   readonly region?: string;
+  /** `MEDIA_USER_CONTENT_DELETABLE`; unset means deletable (ADR-0017). */
+  readonly userContentDeletable?: boolean;
 }
 
 export interface MediaStorageConfig {
@@ -63,6 +65,9 @@ export function createMediaStorageProvider(
         bucket: minio.bucket as string,
         region: minio.region ?? "us-east-1",
         publicBaseUrl: config.publicBaseUrl,
+        // Production cannot reach here unset: the env schema demands an
+        // explicit value next to MEDIA_STORAGE_PROVIDER=minio.
+        userContentDeletable: minio.userContentDeletable ?? true,
       });
     }
     case "cloudinary":

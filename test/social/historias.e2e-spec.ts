@@ -24,7 +24,7 @@ describe('stories across tenant boundaries (e2e)', () => {
   const storedMedia = Buffer.from('story-private-media');
   const mediaProvider: MediaStorageProvider = {
     name: 'local',
-    immutable: false,
+    canRemove: () => true,
     upload: jest.fn(async () => ({
       provider: 'local' as const,
       key: 'users/story-owner/stories/selected.jpg',

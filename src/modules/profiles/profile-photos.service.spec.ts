@@ -41,6 +41,7 @@ function createService(
       reused: false,
     }),
     remove: jest.fn().mockResolvedValue(undefined),
+    canRemove: () => true,
     ...storageOverrides,
   } as unknown as MediaStorageProvider;
 

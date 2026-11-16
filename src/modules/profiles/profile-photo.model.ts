@@ -46,7 +46,8 @@ export class ProfilePhotoModel extends Model {
   declare createdAt: Date;
 
   /**
-   * Moderación: la fila deja de servirse, el binario nunca se borra (ADR-0010).
+   * Moderation: the row stops being served; while it exists, its file stays
+   * referenced and is never released (evidence hold, ADR-0017).
    * Nulo es lo normal; una fecha significa retirada y revisable.
    */
   @Column({ type: DataType.DATE, allowNull: true, field: "hidden_at" })

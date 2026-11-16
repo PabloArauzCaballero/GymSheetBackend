@@ -40,6 +40,7 @@ import { MEDIA_STORAGE_PROVIDER } from "./media-storage.port";
             secretKey: env.MINIO_SECRET_KEY,
             bucket: env.MINIO_BUCKET,
             region: env.MINIO_REGION,
+            userContentDeletable: env.MEDIA_USER_CONTENT_DELETABLE,
           },
         }),
     },

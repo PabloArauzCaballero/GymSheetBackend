@@ -181,7 +181,10 @@ x-app-environment: &app-environment
   MEDIA_MIRROR_ALLOWED_HOSTS: ${MEDIA_MIRROR_ALLOWED_HOSTS:-images.unsplash.com,raw.githubusercontent.com}
   MEDIA_MIRROR_TIMEOUT_MS: ${MEDIA_MIRROR_TIMEOUT_MS:-15000}
 
-  # Almacén de media inmutable (ADR-0010). `MINIO_ENDPOINT` es el alias INTERNO
+  # Almacén de media MinIO. En producción lo sirve `datacenter-minio`. El
+  # contenido de las personas (`users/…`) se borra de verdad, todas sus versiones
+  # (ADR-0017); el catálogo (`catalog/`, `ejercicios/`) sigue inmutable (ADR-0010).
+  # `MINIO_ENDPOINT` es el alias INTERNO
   # del servicio de abajo: por ahí escribe la API. Por dónde LEEN los navegadores
   # es otra cosa — `MEDIA_STORAGE_PUBLIC_BASE_URL`, que apunta al Funnel.
   # Las credenciales sólo se exigen con MEDIA_STORAGE_PROVIDER=minio, y quien lo
@@ -193,6 +196,12 @@ x-app-environment: &app-environment
   MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-}
   MINIO_BUCKET: ${MINIO_BUCKET:-gymsheet-media}
   MINIO_REGION: ${MINIO_REGION:-us-east-1}
+  # Obligatoria con MEDIA_STORAGE_PROVIDER=minio en producción: sin valor la API
+  # no arranca. `true` SÓLO después de aplicar al usuario de la API la política de
+  # borrado bajo `users/*` del runbook de ADR-0017 (si no, cada borrado termina en
+  # dead-letter con AccessDenied); `false` conserva el contenido de las personas y
+  # entonces ningún texto puede prometer su borrado.
+  MEDIA_USER_CONTENT_DELETABLE: ${MEDIA_USER_CONTENT_DELETABLE:-}
   CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
   CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
   CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
@@ -213,9 +222,9 @@ x-worker-service: &worker-service
     # vencido). Sin este
     # volumen veía un /app/storage/media vacío: la fila caía pero el fichero
     # quedaba huérfano en el volumen de `api`, sin error y sin rastro. Con
-    # MEDIA_STORAGE_PROVIDER=minio el borrado ya no ocurre nunca (ADR-0010) y
-    # el montaje es inocuo, pero mientras exista el proveedor local tiene que
-    # ver exactamente el mismo disco que la API.
+    # MEDIA_STORAGE_PROVIDER=minio borran en MinIO (ADR-0017) y el montaje es
+    # inocuo, pero mientras exista el proveedor local tiene que ver exactamente
+    # el mismo disco que la API.
     - media-data:/app/storage/media
   depends_on:
     postgres:
@@ -403,7 +412,7 @@ services:
       start_period: 20s
 
   # ---------------------------------------------------------------------------
-  # Almacén de media inmutable (ADR-0010). Sustituye al volumen `media-data`
+  # Almacén de media (ADR-0010, ADR-0017). Sustituye al volumen `media-data`
   # como destino de lo que suben los socios: fotos de perfil, stories y
   # adjuntos de chat, ordenados por usuario en
   # `users/<userId>/<categoria>/<sha256>.<ext>`.
@@ -494,13 +503,17 @@ services:
       start_period: 15s
 
   # Una pasada al desplegar, como `migrate`: crea el bucket, activa el
-  # versionado y deja al usuario de la API SIN permiso de borrado. Reutiliza la
-  # imagen del servidor —que ya trae `mc`— para no bajar una segunda.
+  # versionado y deja al usuario de la API con permiso de borrado SÓLO bajo
+  # `users/*` (ADR-0017). Reutiliza la imagen del servidor —que ya trae `mc`—
+  # para no bajar una segunda.
   #
   # Idempotente: se ejecuta entero en cada despliegue y converge al mismo
-  # estado. Es además el sitio donde vive la garantía de "no se borra nunca":
-  # el no-op del adaptador es código y alguien puede quitarlo; esto es el
-  # servidor diciendo que no.
+  # estado. Es además el sitio donde vive la garantía de que el catálogo no se
+  # borra: el no-op del adaptador para `catalog/` y `ejercicios/` es código y
+  # alguien puede quitarlo; esto es el servidor diciendo que no. Este servicio
+  # sólo configura el MinIO de este stack (perfil `media`): el
+  # `datacenter-minio` de producción se configura a mano con el runbook de
+  # ADR-0017.
   minio-init:
     # quay.io, NO Docker Hub: `minio/minio` ya no se puede bajar de Docker Hub
     # («pull access denied … repository does not exist»), y eso tumbó un
@@ -535,11 +548,13 @@ services:
         mc alias set gs "http://gymsheet-minio:9000" "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
 
         mc mb --ignore-existing gs/"$$MINIO_BUCKET"
-        # Versionado: una sobrescritura nunca destruye la versión previa.
+        # Versionado: una sobrescritura nunca destruye la versión previa. Por
+        # eso la API borra el contenido de una persona versión por versión.
         mc version enable gs/"$$MINIO_BUCKET"
 
-        # Política del usuario de la API: escribir y leer, NUNCA borrar. Sin
-        # s3:DeleteObject ni s3:DeleteObjectVersion, a propósito.
+        # Política del usuario de la API (ADR-0017): escribir y leer todo;
+        # borrar todas las versiones SÓLO bajo users/*. Nunca catalog/ ni
+        # ejercicios/. ListBucketVersions es del bucket: se acota por s3:prefix.
         cat > /tmp/app-policy.json <<JSON
         {
           "Version": "2012-10-17",
@@ -553,6 +568,17 @@ services:
               "Effect": "Allow",
               "Action": ["s3:ListBucket"],
               "Resource": ["arn:aws:s3:::$$MINIO_BUCKET"]
+            },
+            {
+              "Effect": "Allow",
+              "Action": ["s3:DeleteObject", "s3:DeleteObjectVersion"],
+              "Resource": ["arn:aws:s3:::$$MINIO_BUCKET/users/*"]
+            },
+            {
+              "Effect": "Allow",
+              "Action": ["s3:ListBucketVersions"],
+              "Resource": ["arn:aws:s3:::$$MINIO_BUCKET"],
+              "Condition": {"StringLike": {"s3:prefix": ["users/*"]}}
             }
           ]
         }
@@ -590,7 +616,7 @@ services:
         JSON
         mc anonymous set-json /tmp/bucket-policy.json gs/"$$MINIO_BUCKET"
 
-        echo "minio-init: bucket $$MINIO_BUCKET listo (versionado on, usuario de API sin borrado)"
+        echo "minio-init: bucket $$MINIO_BUCKET listo (versionado on, API borra sólo bajo users/)"
     restart: 'no'
     init: true
     networks:
