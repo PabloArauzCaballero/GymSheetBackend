@@ -14,7 +14,7 @@ import { ReportedContentRetentionService } from '../src/modules/account/reported
 import { PrivacyRetentionRepository } from '../src/modules/privacy/privacy-retention.repository';
 import { PrivacyRetentionService } from '../src/modules/privacy/privacy-retention.service';
 import { bootE2eApp, createPersonalExercise, E2eApp } from './support/e2e-app';
-import { openConversation, selectRows } from './support/privacy-e2e';
+import { openConversation, selectRows, selectRowsEventually } from './support/privacy-e2e';
 
 /**
  * IP minimisation, retention, accepted-text hash and blob deletion (ADR-0014).
@@ -61,7 +61,8 @@ describe('Privacy retention and minimisation (e2e)', () => {
       .send({ nombre: `privacy ${Date.now()}`, dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: exercise }] }] }).expect(201);
     const routineId = routine.body.data.id as string;
     await e2e.as(admin.token).del(`/admin/routines/${routineId}/official`).expect(200);
-    const audits = await selectRows<{ ip_hmac: string | null }>(
+    // The audit row is written after the response; wait for it instead of racing it.
+    const audits = await selectRowsEventually<{ ip_hmac: string | null }>(
       e2e, `SELECT ip_hmac FROM admin.audit_log WHERE actor_user_id = :id AND target_id = :routineId`,
       { id: admin.id, routineId });
     expect(audits).toHaveLength(1);

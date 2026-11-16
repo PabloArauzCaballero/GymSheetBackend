@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { bootE2eApp, E2eApp } from './support/e2e-app';
 import { Member } from './support/moderation-e2e';
-import { selectRows } from './support/privacy-e2e';
+import { selectRows, selectRowsEventually } from './support/privacy-e2e';
 
 const PASSWORD = 'e2e-strong-password';
 
@@ -94,12 +94,8 @@ describe('Staff account closure by the gym admin (e2e)', () => {
     expect(await selectRows(e2e, 'SELECT 1 FROM training.routine_assignments WHERE id = :id', { id: assignmentId })).toHaveLength(1);
     expect(await selectRows(e2e, 'SELECT 1 FROM training.routines WHERE id = :id', { id: routineId })).toHaveLength(1);
 
-    let audit: { actor_user_id: string; action: string }[] = [];
-    for (let attempt = 0; attempt < 20 && audit.length === 0; attempt += 1) {
-      audit = await selectRows(e2e,
-        `SELECT actor_user_id, action FROM admin.audit_log WHERE domain = 'account' AND target_id = :id`, { id: coach.id });
-      if (audit.length === 0) await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+    const audit = await selectRowsEventually<{ actor_user_id: string; action: string }>(e2e,
+      `SELECT actor_user_id, action FROM admin.audit_log WHERE domain = 'account' AND target_id = :id`, { id: coach.id });
     expect(audit).toEqual([{ actor_user_id: admin.id, action: 'close' }]);
 
     // Already closed: nothing left to close.
