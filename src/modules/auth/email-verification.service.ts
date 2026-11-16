@@ -123,6 +123,9 @@ export class EmailVerificationService {
         body: message.lines(pin).join("\n"),
         deduplicationKey: `${DEDUPLICATION_PREFIX[purpose]}-${userId}-${expiresAt.getTime()}`,
         ...(message.recipientEmail ? { metadata: { recipientEmail: message.recipientEmail } } : {}),
+        // Every PIN purpose is a credential (mailbox proof, account closure):
+        // email only, never in the in-app inbox, redacted once delivered.
+        secret: true,
       },
       transaction,
     );

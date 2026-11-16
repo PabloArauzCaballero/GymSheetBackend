@@ -58,6 +58,12 @@ describe('email verification (e2e)', () => {
     const me = await api.get('/auth/me').expect(200);
     expect(me.body.data.emailVerified).toBe(false);
 
+    // The PIN proves the mailbox, so the session must not be able to read it:
+    // it is never listed in the in-app inbox nor counted as unread.
+    const inbox = await api.get('/notifications/me').expect(200);
+    expect(JSON.stringify(inbox.body)).not.toMatch(/Tu código para confirmar el correo/u);
+    expect((await api.get('/notifications/me/unread-count').expect(200)).body.data).toMatchObject({ count: 0 });
+
     // Social: closed with a stable code. Own data and non-social features: open.
     const blocked = await api.post('/me/connections').send({ addresseeId: other.id }).expect(403);
     expect(blocked.body.code).toBe('EMAIL_VERIFICATION_REQUIRED');

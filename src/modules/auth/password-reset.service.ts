@@ -100,6 +100,8 @@ export class PasswordResetService {
         'Si no lo pediste tú, ignora este mensaje: tu contraseña sigue siendo la misma.',
       ].join('\n'),
       deduplicationKey: `password-reset-${user.id}-${expiraEn.getTime()}`,
+      // The body is a credential: email only, never in the in-app inbox.
+      secret: true,
     });
   }
 

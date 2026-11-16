@@ -124,6 +124,7 @@ import { emailVerificationDevicesIdentitiesMigration } from "./202611170101-emai
 import { DatabaseMigration } from "./migration.types";
 import { signupAntibotMigration } from "./202611170201-signup-antibot";
 import { sessionsValidAfterMigration } from "./202611170301-sessions-valid-after";
+import { notificationSecretMessagesMigration } from "./202611170401-notification-secret-messages";
 import { privacyIpHmacAndConsentsMigration } from "./202611180201-privacy-ip-hmac-and-consents";
 import { accountRightsMigration } from "./202611180101-account-rights";
 import { downloadAuditIpContractAndClosedAccountSanctionsMigration } from "./202611180301-download-audit-ip-contract-and-closed-account-sanctions";
@@ -258,6 +259,7 @@ export const databaseMigrations: DatabaseMigration[] = [
   emailVerificationDevicesIdentitiesMigration,
   signupAntibotMigration,
   sessionsValidAfterMigration,
+  notificationSecretMessagesMigration,
   privacyIpHmacAndConsentsMigration,
   accountRightsMigration,
   downloadAuditIpContractAndClosedAccountSanctionsMigration,
