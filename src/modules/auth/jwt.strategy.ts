@@ -31,6 +31,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('La sesión ya no es válida.');
     }
 
+    // Ending every session (account takeover, password reset) must also end
+    // the access tokens already issued, not only the refresh tokens. `sat` is
+    // the issue time in ms; tokens minted before it existed fall back to the
+    // start of their `iat` second, which errs on the side of rejecting.
+    const validAfter = activeUser.sessionsValidAfter;
+    if (validAfter) {
+      const issuedAtMs = typeof payload.sat === 'number' ? payload.sat : (payload.iat ?? 0) * 1000;
+      if (issuedAtMs < validAfter.getTime()) throw new UnauthorizedException('La sesión ya no es válida.');
+    }
+
     // La suspensión se comprueba en CADA petición, no sólo al entrar: una
     // sanción que espera a que caduque el token deja al sancionado dentro
     // durante toda la vida del access token, que es justo cuando más falta hace
@@ -68,6 +78,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       tenantScope: isSystemAdmin && !impersonating ? null : effectiveTenantId,
       impersonating,
       emailVerified: Boolean(activeUser.emailVerifiedAt),
+      deviceId: typeof payload.did === "string" ? payload.did : null,
     };
   }
 }

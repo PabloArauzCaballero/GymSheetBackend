@@ -64,13 +64,40 @@ describe('UserDeviceService.recordSignIn', () => {
     expect(first.notifications.enqueueDirectMessage).not.toHaveBeenCalled();
   });
 
-  it('records nothing without an installation id', async () => {
-    const upsert = jest.fn();
-    const { service } = build({ upsert });
+  it('binds a client without an installation id to a server-assigned device, so the session can be revoked', async () => {
+    const upsert = jest.fn().mockResolvedValue({ id: 'device-7', revokedAt: null, inserted: true });
+    const { service } = build({ upsert, countOtherDevices: jest.fn().mockResolvedValue(0) });
     await expect(
       service.recordSignIn(userId, { ...context, installationId: null }, transaction as never),
-    ).resolves.toBeNull();
-    expect(upsert).not.toHaveBeenCalled();
+    ).resolves.toBe('device-7');
+    const [, installationId] = upsert.mock.calls[0] as [string, string];
+    expect(installationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+  });
+});
+
+describe('UserDeviceService.revokeOthers', () => {
+  it('keeps the caller’s device and revokes every other device and session', async () => {
+    const findActiveByInstallation = jest.fn().mockResolvedValue({ id: 'device-1' });
+    const revokeAllExcept = jest.fn().mockResolvedValue(undefined);
+    const { service } = build({ findActiveByInstallation, revokeAllExcept });
+    await service.revokeOthers(userId, { deviceId: null, installationId: context.installationId });
+    expect(revokeAllExcept).toHaveBeenCalledWith(userId, 'device-1', 'DEVICE_REVOKED', transaction);
+  });
+
+  it('keeps the device the session token is bound to, even without device headers', async () => {
+    const findActiveByInstallation = jest.fn();
+    const revokeAllExcept = jest.fn().mockResolvedValue(undefined);
+    const { service } = build({ findActiveByInstallation, revokeAllExcept });
+    await service.revokeOthers(userId, { deviceId: 'device-3', installationId: null });
+    expect(findActiveByInstallation).not.toHaveBeenCalled();
+    expect(revokeAllExcept).toHaveBeenCalledWith(userId, 'device-3', 'DEVICE_REVOKED', transaction);
+  });
+
+  it('ends every session when the current device is unknown', async () => {
+    const revokeAllExcept = jest.fn().mockResolvedValue(undefined);
+    const { service } = build({ findActiveByInstallation: jest.fn(), revokeAllExcept });
+    await service.revokeOthers(userId, { deviceId: null, installationId: null });
+    expect(revokeAllExcept).toHaveBeenCalledWith(userId, null, 'DEVICE_REVOKED', transaction);
   });
 });
 

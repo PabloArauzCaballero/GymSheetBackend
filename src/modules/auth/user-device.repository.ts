@@ -90,6 +90,15 @@ export class UserDeviceRepository {
     return row ?? null;
   }
 
+  async findActiveByInstallation(userId: string, installationId: string, transaction?: Transaction): Promise<UserDeviceRow | null> {
+    const [row] = await this.sequelize.query<UserDeviceRow>(
+      `SELECT ${DEVICE_COLUMNS} FROM auth.user_devices
+        WHERE user_id = :userId AND installation_id = :installationId AND revoked_at IS NULL`,
+      { type: QueryTypes.SELECT, replacements: { userId, installationId }, transaction },
+    );
+    return row ?? null;
+  }
+
   /** Active devices of the account, most recent first; bounded, accounts have a handful. */
   listActive(userId: string, limit: number): Promise<UserDeviceRow[]> {
     return this.sequelize.query<UserDeviceRow>(
@@ -130,6 +139,26 @@ export class UserDeviceRepository {
         replacements: { deviceId, reason: RefreshTokenRevokedReason.DEVICE_REVOKED },
         transaction,
       },
+    );
+  }
+
+  /**
+   * Revokes every device of the account except `keepDeviceId`, and every
+   * refresh token not bound to it — unbound legacy sessions included, so no
+   * session survives a "sign out everywhere else".
+   */
+  async revokeAllExcept(userId: string, keepDeviceId: string | null, reason: RefreshTokenRevokedReason, transaction: Transaction): Promise<void> {
+    await this.sequelize.query(
+      `UPDATE auth.user_devices SET revoked_at = now()
+        WHERE user_id = :userId AND revoked_at IS NULL
+          AND (CAST(:keepDeviceId AS uuid) IS NULL OR id <> CAST(:keepDeviceId AS uuid))`,
+      { type: QueryTypes.UPDATE, replacements: { userId, keepDeviceId }, transaction },
+    );
+    await this.sequelize.query(
+      `UPDATE auth.refresh_tokens SET revoked_at = now(), revoked_reason = :reason
+        WHERE user_id = :userId AND revoked_at IS NULL
+          AND (CAST(:keepDeviceId AS uuid) IS NULL OR device_id IS DISTINCT FROM CAST(:keepDeviceId AS uuid))`,
+      { type: QueryTypes.UPDATE, replacements: { userId, keepDeviceId, reason }, transaction },
     );
   }
 }

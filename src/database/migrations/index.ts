@@ -123,6 +123,7 @@ import { userBirthDateAndLegalAcceptancesMigration } from "./202611160201-user-b
 import { emailVerificationDevicesIdentitiesMigration } from "./202611170101-email-verification-devices-identities";
 import { DatabaseMigration } from "./migration.types";
 import { signupAntibotMigration } from "./202611170201-signup-antibot";
+import { sessionsValidAfterMigration } from "./202611170301-sessions-valid-after";
 import { privacyIpHmacAndConsentsMigration } from "./202611180201-privacy-ip-hmac-and-consents";
 import { accountRightsMigration } from "./202611180101-account-rights";
 
@@ -254,6 +255,7 @@ export const databaseMigrations: DatabaseMigration[] = [
   userBirthDateAndLegalAcceptancesMigration,
   emailVerificationDevicesIdentitiesMigration,
   signupAntibotMigration,
+  sessionsValidAfterMigration,
   privacyIpHmacAndConsentsMigration,
   accountRightsMigration,
 ];
