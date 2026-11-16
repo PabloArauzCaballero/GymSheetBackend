@@ -7,6 +7,7 @@ import { OutboxJobModel } from "../integration/outbox-job.model";
 import { OutboxService } from "../integration/outbox.service";
 import { MediaRetentionService } from "./media-retention.service";
 import { MEDIA_STORAGE_PROVIDER, MediaStorageProvider } from "./media-storage.port";
+import { isSafeStorageKey } from "../../common/media/own-media-key";
 
 export const MEDIA_RELEASE_QUEUE = "media.release";
 const MEDIA_RELEASE_EVENT = "media.file-release-requested.v1";
@@ -68,6 +69,10 @@ export class MediaReleaseService implements OnModuleInit, OnModuleDestroy {
   }
 
   async requestRelease(request: MediaReleaseRequest, transaction: Transaction): Promise<void> {
+    // Defense in depth: never queue the deletion of a key that is not a plain path.
+    if (!isSafeStorageKey(request.storageKey)) {
+      throw new Error(`Refusing to release an unsafe storage key for ${request.aggregateType}.`);
+    }
     await this.outbox.enqueue(
       {
         queueName: MEDIA_RELEASE_QUEUE,
