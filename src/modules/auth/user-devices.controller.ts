@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, HttpCode, HttpStatus, Param, Req } from "@nestjs/common";
+import { Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Req } from "@nestjs/common";
 import { Request } from "express";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { UuidParamPipe } from "../../common/pipes/uuid-param.pipe";
@@ -13,6 +13,16 @@ export class UserDevicesController {
   @Get()
   list(@CurrentUser() user: AuthenticatedUser, @Req() request: Request) {
     return this.devices.listMine(user.id, clientDeviceContext(request).installationId);
+  }
+
+  /** Signs out every other device and every session not bound to this one. */
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post("revoke-others")
+  async revokeOthers(@CurrentUser() user: AuthenticatedUser, @Req() request: Request) {
+    await this.devices.revokeOthers(user.id, {
+      deviceId: user.deviceId ?? null,
+      installationId: clientDeviceContext(request).installationId,
+    });
   }
 
   /** Signs the device out: revokes it and every session bound to it. Foreign id → 404. */

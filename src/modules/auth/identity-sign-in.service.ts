@@ -10,7 +10,7 @@ import * as bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import { UniqueConstraintError } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
-import { UserStatus } from "../../common/enums/domain.enums";
+import { RefreshTokenRevokedReason, UserStatus } from "../../common/enums/domain.enums";
 import { DomainException } from "../../common/errors/domain.exception";
 import { env } from "../../config/env";
 import { LEGAL_DOCUMENTS } from "../legal/legal-documents";
@@ -75,7 +75,10 @@ export class IdentitySignInService {
     if (existing) {
       if (existing.status !== UserStatus.ACTIVE) throw new UnauthorizedException("Credenciales inválidas.");
       // The provider proved this mailbox, which is exactly what the PIN proves.
-      return this.openSession(existing, device, identity);
+      // An account that never verified it may have been pre-registered by
+      // someone else to hijack it later: the mailbox owner takes it over, so its
+      // password and every session that existed before are discarded.
+      return this.openSession(existing, device, identity, { takeOver: !existing.emailVerifiedAt });
     }
 
     return {
@@ -141,6 +144,7 @@ export class IdentitySignInService {
     user: UserModel,
     device: ClientDeviceContext,
     identityToLink: VerifiedIdentity | null,
+    options: { takeOver?: boolean } = {},
   ): Promise<IdentitySignInResult> {
     if (user.suspendedUntil && user.suspendedUntil.getTime() > Date.now()) {
       throw new ForbiddenException(
@@ -149,6 +153,11 @@ export class IdentitySignInService {
     }
     try {
       const session = await this.sequelize.transaction(async (transaction) => {
+        if (options.takeOver) {
+          const unusable = await bcrypt.hash(randomBytes(32).toString("hex"), env.BCRYPT_SALT_ROUNDS);
+          await this.users.updatePasswordHash(user.id, unusable, transaction);
+          await this.devices.endAllSessions(user.id, RefreshTokenRevokedReason.PASSWORD_RESET, transaction);
+        }
         if (identityToLink) {
           await this.identities.link(identityToLink.provider, identityToLink.subject, user.id, identityToLink.email, transaction);
           await this.users.markEmailVerified(user.id, transaction);

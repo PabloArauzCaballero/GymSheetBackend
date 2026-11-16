@@ -82,7 +82,11 @@ describe('device registry (e2e)', () => {
     const stranger = await e2e.register('devices-stranger');
     await e2e.as(stranger.token).del(`/me/devices/${phoneDevice?.id}`).expect(404);
     await e2e.as(stranger.token).del('/me/devices/not-a-uuid').expect(400);
-    expect((await e2e.as(stranger.token).get('/me/devices').expect(200)).body.data).toEqual([]);
+    // The stranger signed up without device headers: it sees only its own
+    // server-assigned device, never this account's.
+    const strangerDevices = (await e2e.as(stranger.token).get('/me/devices').expect(200)).body.data as Array<{ id: string }>;
+    expect(strangerDevices).toHaveLength(1);
+    expect(strangerDevices.map((device) => device.id)).not.toContain(phoneDevice?.id);
 
     // Revoke the phone: its refresh token stops working, the laptop's keeps rotating.
     await api.del(`/me/devices/${phoneDevice?.id}`).expect(204);
@@ -105,9 +109,24 @@ describe('device registry (e2e)', () => {
     expect((await api.get('/me/devices').expect(200)).body.data).toHaveLength(2);
   });
 
-  it('keeps working for clients that send no device headers', async () => {
-    const member = await e2e.register('devices-legacy');
-    expect((await e2e.as(member.token).get('/me/devices').expect(200)).body.data).toEqual([]);
+  it('gives clients without device headers a revocable server-assigned device', async () => {
+    const email = `devices-headerless-${Date.now()}@example.test`;
+    const password = 'headerless-e2e-password';
+    const signup = await request(e2e.http)
+      .post(e2e.url('/auth/register'))
+      .send({ email, password, nombreCompleto: 'Headerless Person', ...E2E_SIGNUP_FIELDS })
+      .expect(201);
+    const api = e2e.as(signup.body.data.accessToken as string);
+    const listed = (await api.get('/me/devices').expect(200)).body.data as Array<{ id: string; platform: string }>;
+    expect(listed).toEqual([expect.objectContaining({ platform: 'UNKNOWN' })]);
+
+    // A second headerless sign-in is a second device; "sign out everywhere
+    // else" from it ends the first one and keeps itself (its token names its device).
+    const second = await request(e2e.http).post(e2e.url('/auth/login')).send({ email, password }).expect(201);
+    expect((await api.get('/me/devices').expect(200)).body.data).toHaveLength(2);
+    await e2e.as(second.body.data.accessToken as string).post('/me/devices/revoke-others').expect(204);
+    await request(e2e.http).post(e2e.url('/auth/refresh')).send({ refreshToken: signup.body.data.refreshToken }).expect(401);
+    await request(e2e.http).post(e2e.url('/auth/refresh')).send({ refreshToken: second.body.data.refreshToken }).expect(201);
   });
 
   it('requires a session for the device endpoints', async () => {

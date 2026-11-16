@@ -68,6 +68,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       tenantScope: isSystemAdmin && !impersonating ? null : effectiveTenantId,
       impersonating,
       emailVerified: Boolean(activeUser.emailVerifiedAt),
+      deviceId: typeof payload.did === "string" ? payload.did : null,
     };
   }
 }

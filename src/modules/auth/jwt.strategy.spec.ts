@@ -37,6 +37,7 @@ describe('JwtStrategy', () => {
       tenantScope: 'topfitness',
       impersonating: false,
       emailVerified: false,
+      deviceId: null,
     });
   });
 

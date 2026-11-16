@@ -119,6 +119,18 @@ describe('Google / Apple sign-in (e2e)', () => {
       replacements: { userId: registered.body.data.user.id },
     });
     expect(links).toEqual([{ provider: 'GOOGLE' }]);
+
+    // The account had never verified its email, so whoever registered it may
+    // not own the mailbox (pre-hijacking): the Google owner takes it over and
+    // the earlier password and session stop working.
+    await request(e2e.http)
+      .post(e2e.url('/auth/login'))
+      .send({ email, password: 'linked-e2e-password' })
+      .expect(401);
+    await request(e2e.http)
+      .post(e2e.url('/auth/refresh'))
+      .send({ refreshToken: registered.body.data.refreshToken })
+      .expect(401);
   });
 
   it('rejects forged, foreign, unverified and nonce-mismatched tokens', async () => {

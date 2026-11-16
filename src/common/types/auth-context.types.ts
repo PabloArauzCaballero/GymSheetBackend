@@ -34,6 +34,8 @@ export type AuthenticatedUser = {
   tenantScope: string | null;
   /** `true` cuando un `SYSTEM_ADMIN` mira un gimnasio concreto vía suplantación. */
   impersonating: boolean;
+  /** Device of the session (from the token), when it is bound to one. */
+  deviceId?: string | null;
   /**
    * Whether the account proved its mailbox. Read from the database on every
    * request; absent (e.g. in hand-built principals) counts as not verified.
@@ -46,6 +48,8 @@ export type JwtPayload = {
   sub: string;
   email: string;
   role: UserRole;
+  /** Device the session is bound to; lets "sign out everywhere else" keep this one. */
+  did?: string;
   /**
    * Gimnasio suplantado. Presente SÓLO en los tokens que emite
    * `POST /auth/impersonate-tenant`, y honrado sólo si la cuenta sigue siendo
