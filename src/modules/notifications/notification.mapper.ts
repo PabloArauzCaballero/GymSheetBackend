@@ -41,7 +41,7 @@ export function mapNotificationPreference(preference: NotificationPreferenceMode
       }
     : {
         recordatoriosVencimiento: true,
-        vistaPreviaMensajes: false,
+        vistaPreviaMensajes: true,
         canalPreferido: 'IN_APP' as const,
         consentimientoExternoEn: null,
         versionConsentimiento: null,

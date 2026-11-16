@@ -15,6 +15,7 @@ import {
 } from "./stories.mapper";
 import { StoriesRepository } from "./stories.repository";
 import { canViewStory } from "./story-audience.policy";
+import { renderStoryThumbnail, STORY_THUMBNAIL_MIME_TYPE } from "./story-thumbnail";
 import type { StoryAudienceMode } from "./story-audience.policy";
 
 export interface UploadedStoryMedia {
@@ -163,6 +164,35 @@ export class StoriesService {
       mimeType: mimeTypeForStorageKey(story.storageKey),
       etag: storyMediaEtag(story.storageKey),
     };
+  }
+
+  /**
+   * Miniatura cuadrada de una story de foto para el anillo de la tira, con las
+   * mismas reglas de acceso que el medio completo (y sin marcarla como vista).
+   * El ETag sale de la clave de almacenamiento, así que una revalidación
+   * responde 304 sin descargar ni decodificar la imagen. Un vídeo no tiene
+   * miniatura: 404, y el cliente vuelve al avatar.
+   */
+  async thumbnail(
+    storyId: string,
+    viewerId: string,
+    ifNoneMatch: string | undefined,
+  ): Promise<{ etag: string; buffer: Buffer | null; mimeType: string }> {
+    const story = await this.requireViewableStory(storyId, viewerId);
+    if (!mimeTypeForStorageKey(story.storageKey).startsWith("image/")) {
+      throw new NotFoundException("Esta story no tiene miniatura.");
+    }
+    const etag = storyMediaEtag(`${story.storageKey}#thumbnail`);
+    if (ifNoneMatch?.split(",").some((tag) => tag.trim() === etag)) {
+      return { etag, buffer: null, mimeType: STORY_THUMBNAIL_MIME_TYPE };
+    }
+    const original = await this.mediaStorage.download(story.storageKey);
+    // Upload does not decode images, so a stored "photo" may not be one: that
+    // is a story without a thumbnail, not a server error.
+    const buffer = await renderStoryThumbnail(original).catch(() => {
+      throw new NotFoundException("Esta story no tiene miniatura.");
+    });
+    return { etag, buffer, mimeType: STORY_THUMBNAIL_MIME_TYPE };
   }
 
   /**
