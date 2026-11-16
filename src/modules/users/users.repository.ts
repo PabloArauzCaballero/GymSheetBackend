@@ -126,6 +126,11 @@ export class UsersRepository {
    * y una operación de seguridad no debe poder cambiar el rol o el estado de
    * la cuenta como efecto secundario.
    */
+  /** Every access token issued before now stops working on its next request. */
+  async invalidateIssuedSessions(userId: string, transaction?: Transaction): Promise<void> {
+    await this.userModel.update({ sessionsValidAfter: new Date() }, { where: { id: userId }, transaction });
+  }
+
   updatePasswordHash(
     userId: string,
     passwordHash: string,

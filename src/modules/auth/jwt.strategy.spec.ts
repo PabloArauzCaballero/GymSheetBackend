@@ -37,6 +37,7 @@ describe('JwtStrategy', () => {
       tenantScope: 'topfitness',
       impersonating: false,
       emailVerified: false,
+      deviceId: null,
     });
   });
 
@@ -81,6 +82,18 @@ describe('JwtStrategy', () => {
     await expect(strategy.validate(payload)).resolves.toMatchObject({
       tenantId: env.DEFAULT_TENANT_ID,
     });
+  });
+
+  it('rejects an access token issued before the account ended all its sessions', async () => {
+    const cut = new Date('2026-11-16T12:00:00.500Z');
+    const strategy = strategyFor({ id: payload.sub, email: payload.email, role: UserRole.CLIENT, sessionsValidAfter: cut });
+    const second = Math.floor(cut.getTime() / 1000);
+
+    // Same second, one millisecond apart: only the token minted after the cut survives.
+    await expect(strategy.validate({ ...payload, iat: second, sat: cut.getTime() - 1 })).rejects.toThrow(UnauthorizedException);
+    await expect(strategy.validate({ ...payload, iat: second, sat: cut.getTime() + 1 })).resolves.toMatchObject({ id: payload.sub });
+    // A token without `sat` (issued before it existed) is judged by the start of its second.
+    await expect(strategy.validate({ ...payload, iat: second })).rejects.toThrow(UnauthorizedException);
   });
 
   it('rejects a token when the user is missing or inactive', async () => {

@@ -84,6 +84,8 @@ export class EmailVerificationService {
           "Si no creaste una cuenta en GymSheet, ignora este mensaje.",
         ].join("\n"),
         deduplicationKey: `email-verification-${userId}-${expiresAt.getTime()}`,
+        // The body is a credential: email only, never in the in-app inbox.
+        secret: true,
       },
       transaction,
     );

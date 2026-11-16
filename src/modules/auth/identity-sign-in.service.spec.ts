@@ -51,6 +51,8 @@ function build(options: { linkedUserId?: string | null; byEmail?: unknown; verif
     findActiveById: jest.fn().mockResolvedValue(account),
     findByEmail: jest.fn().mockResolvedValue(options.byEmail ?? null),
     markEmailVerified: jest.fn().mockResolvedValue(undefined),
+    updatePasswordHash: jest.fn().mockResolvedValue(undefined),
+    invalidateIssuedSessions: jest.fn().mockResolvedValue(undefined),
     createClient: jest.fn().mockResolvedValue({ ...account, id: 'user-new', emailVerifiedAt: new Date() }),
   };
   const legal = { assertCurrentTermsVersion: jest.fn(), recordSignupAcceptances: jest.fn().mockResolvedValue(undefined) };
@@ -58,6 +60,7 @@ function build(options: { linkedUserId?: string | null; byEmail?: unknown; verif
   const devices = {
     recordSignIn: jest.fn().mockResolvedValue('device-1'),
     recordSignup: jest.fn().mockResolvedValue('device-1'),
+    endAllSessions: jest.fn().mockResolvedValue(undefined),
   };
   const signupProtection = {
     vouchedVerdict: jest.fn((source: string) => ({ allowed: true, risk: 'LOW', riskReasons: [source] })),
@@ -111,6 +114,24 @@ describe('IdentitySignInService', () => {
     expect(identities.link).toHaveBeenCalledWith('GOOGLE', 'sub-1', 'user-1', 'ana@gmail.com', transaction);
     expect(users.markEmailVerified).toHaveBeenCalledWith('user-1', transaction);
     expect(result).toMatchObject({ status: 'AUTHENTICATED', user: { emailVerified: true } });
+  });
+
+  it('takes over an account that never verified its email: old password and sessions are discarded', async () => {
+    // Pre-hijacking: someone registered the victim's address with a password and never verified it.
+    const { service, users, devices, identities } = build({ byEmail: { ...account, emailVerifiedAt: null } });
+    await service.signIn('GOOGLE', 'token', undefined, device);
+    expect(users.updatePasswordHash).toHaveBeenCalledWith('user-1', expect.stringMatching(/^\$2[aby]\$/u), transaction);
+    expect(devices.endAllSessions).toHaveBeenCalledWith('user-1', 'PASSWORD_RESET', transaction);
+    expect(users.invalidateIssuedSessions).toHaveBeenCalledWith('user-1', transaction);
+    expect(identities.link).toHaveBeenCalled();
+  });
+
+  it('links an already verified account without touching its password or sessions', async () => {
+    const { service, users, devices } = build({ byEmail: { ...account, emailVerifiedAt: new Date() } });
+    await service.signIn('GOOGLE', 'token', undefined, device);
+    expect(users.updatePasswordHash).not.toHaveBeenCalled();
+    expect(devices.endAllSessions).not.toHaveBeenCalled();
+    expect(users.invalidateIssuedSessions).not.toHaveBeenCalled();
   });
 
   it('refuses to link through an unverified Google email', async () => {

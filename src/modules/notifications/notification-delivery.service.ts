@@ -6,6 +6,9 @@ import { OutboxJobModel } from '../integration/outbox-job.model';
 import { NotificationAdapterFactory } from './delivery/notification-adapter.factory';
 import { NotificationRepository } from './notification.repository';
 
+/** What a secret message's body becomes once delivered. */
+export const SECRET_BODY_REDACTED = '[Código enviado por correo]';
+
 const deliveryPayloadSchema = z
   .object({ notificationId: z.string().uuid() })
   .strict();
@@ -87,7 +90,12 @@ export class NotificationDeliveryService {
       );
       await this.repository.updateDeliveryState(
         locked,
-        { status: NotificationStatus.SENT, sentAt: new Date() },
+        {
+          status: NotificationStatus.SENT,
+          sentAt: new Date(),
+          // A delivered credential has no reason to stay readable in the database.
+          ...(locked.secret ? { body: SECRET_BODY_REDACTED } : {}),
+        },
         transaction,
       );
     });

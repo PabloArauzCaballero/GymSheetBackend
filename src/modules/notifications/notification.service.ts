@@ -59,6 +59,8 @@ export class NotificationService {
       body: string;
       deduplicationKey: string;
       metadata?: Record<string, unknown>;
+      /** The body carries a credential (PIN): see `NotificationModel.secret`. */
+      secret?: boolean;
     },
     transaction?: Transaction,
   ): Promise<boolean> {
@@ -75,6 +77,7 @@ export class NotificationService {
             deduplicationKey: input.deduplicationKey,
             status: NotificationStatus.PENDING,
             metadata: input.metadata ?? {},
+            secret: input.secret ?? false,
           },
           currentTransaction,
         );

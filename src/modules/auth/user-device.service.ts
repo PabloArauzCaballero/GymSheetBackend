@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
-import { NotificationChannel } from "../../common/enums/domain.enums";
+import { NotificationChannel, RefreshTokenRevokedReason } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
 import { NotificationService } from "../notifications/notification.service";
 import { ClientDeviceContext } from "./client-device-context";
@@ -11,9 +12,9 @@ import { UserDeviceRepository } from "./user-device.repository";
 const MAX_LISTED_DEVICES = 50;
 
 /**
- * Registry of the installations an account signs in from. A device without an
- * `X-Installation-Id` is not recorded and its sessions stay unbound (legacy
- * behaviour): binding needs an id the client keeps across launches.
+ * Registry of the installations an account signs in from. A credential
+ * sign-in without an `X-Installation-Id` gets a server-assigned one, so every
+ * new session is bound to a device that the owner can see and revoke.
  */
 @Injectable()
 export class UserDeviceService {
@@ -24,9 +25,8 @@ export class UserDeviceService {
   ) {}
 
   /** Signup: the account's first device, so there is nothing to alert about. */
-  async recordSignup(userId: string, context: ClientDeviceContext, transaction: Transaction): Promise<string | null> {
-    if (!context.installationId) return null;
-    const device = await this.devices.upsert(userId, context.installationId, context, { reactivate: true }, transaction);
+  async recordSignup(userId: string, context: ClientDeviceContext, transaction: Transaction): Promise<string> {
+    const device = await this.devices.upsert(userId, installationOf(context), context, { reactivate: true }, transaction);
     return device.id;
   }
 
@@ -35,9 +35,8 @@ export class UserDeviceService {
    * for an account that already has devices triggers the "new sign-in" email,
    * enqueued in the same transaction as the session.
    */
-  async recordSignIn(userId: string, context: ClientDeviceContext, transaction: Transaction): Promise<string | null> {
-    if (!context.installationId) return null;
-    const device = await this.devices.upsert(userId, context.installationId, context, { reactivate: true }, transaction);
+  async recordSignIn(userId: string, context: ClientDeviceContext, transaction: Transaction): Promise<string> {
+    const device = await this.devices.upsert(userId, installationOf(context), context, { reactivate: true }, transaction);
     if (device.inserted && (await this.devices.countOtherDevices(userId, device.id, transaction)) > 0) {
       await this.enqueueNewDeviceAlert(userId, device.id, context, transaction);
     }
@@ -69,6 +68,27 @@ export class UserDeviceService {
   async listMine(userId: string, currentInstallationId: string | null): Promise<UserDeviceResponse[]> {
     const rows = await this.devices.listActive(userId, MAX_LISTED_DEVICES);
     return rows.map((row) => mapUserDevice(row, currentInstallationId));
+  }
+
+  /**
+   * "Sign out everywhere else": every device but the caller's, and every
+   * session not bound to it. Without a known current device, everything ends.
+   */
+  async revokeOthers(userId: string, current: { deviceId: string | null; installationId: string | null }): Promise<void> {
+    await this.sequelize.transaction(async (transaction) => {
+      // The session's own device (from the token) wins; the header is the fallback for older tokens.
+      const keepDeviceId =
+        current.deviceId ??
+        (current.installationId
+          ? ((await this.devices.findActiveByInstallation(userId, current.installationId, transaction))?.id ?? null)
+          : null);
+      await this.devices.revokeAllExcept(userId, keepDeviceId, RefreshTokenRevokedReason.DEVICE_REVOKED, transaction);
+    });
+  }
+
+  /** Ends every session and device of the account (identity takeover, compromise). */
+  async endAllSessions(userId: string, reason: RefreshTokenRevokedReason, transaction: Transaction): Promise<void> {
+    await this.devices.revokeAllExcept(userId, null, reason, transaction);
   }
 
   /** Foreign or unknown ids answer 404, never 403: existence is not disclosed. */
@@ -109,4 +129,9 @@ export class UserDeviceService {
       transaction,
     );
   }
+}
+
+/** The client's installation id, or a fresh server-assigned one for clients that send none. */
+function installationOf(context: ClientDeviceContext): string {
+  return context.installationId ?? randomUUID();
 }

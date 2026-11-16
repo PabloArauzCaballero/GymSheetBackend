@@ -54,11 +54,17 @@ export class AuthSessionService {
       options.deviceId ?? null,
       transaction,
     );
-    return { ...this.buildAccessResponse(account), refreshToken };
+    return { ...this.buildAccessResponse(account, options.deviceId ?? null), refreshToken };
   }
 
-  private buildAccessResponse(account: SessionAccount): Omit<AuthResponse, "refreshToken"> {
-    const payload: JwtPayload = { sub: account.id, email: account.email, role: account.role };
+  private buildAccessResponse(account: SessionAccount, deviceId: string | null): Omit<AuthResponse, "refreshToken"> {
+    const payload: JwtPayload = {
+      sub: account.id,
+      email: account.email,
+      role: account.role,
+      sat: Date.now(),
+      ...(deviceId ? { did: deviceId } : {}),
+    };
     const accessToken = this.jwtService.sign(payload, {
       secret: env.JWT_ACCESS_SECRET,
       expiresIn: env.JWT_ACCESS_EXPIRES_IN,
