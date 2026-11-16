@@ -14,7 +14,7 @@ export class CounterRegistry {
   private readonly families = new Map<string, CounterFamily>();
   private seriesCount = 0;
 
-  increment(name: string, help: string, labels: Record<string, string>): void {
+  increment(name: string, help: string, labels: Record<string, string>, amount = 1): void {
     let family = this.families.get(name);
     if (!family) {
       family = { help, series: new Map() };
@@ -27,7 +27,7 @@ export class CounterRegistry {
     const current = family.series.get(key);
     if (current === undefined && this.seriesCount >= maximumCounterSeries) return;
     if (current === undefined) this.seriesCount += 1;
-    family.series.set(key, (current ?? 0) + 1);
+    family.series.set(key, (current ?? 0) + amount);
   }
 
   render(): string[] {

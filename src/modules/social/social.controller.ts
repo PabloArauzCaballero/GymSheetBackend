@@ -175,6 +175,8 @@ export class SocialController {
       query,
     );
     if (page.nextCursor) response.setHeader("X-Next-Cursor", page.nextCursor);
+    // Ranking config version that ordered this page (A/B analysis).
+    if (page.rankingVersion) response.setHeader("X-Ranking-Config", page.rankingVersion);
     return page.items;
   }
 

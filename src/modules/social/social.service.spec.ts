@@ -28,6 +28,8 @@ function createService(
       canInteractAcrossTenants: jest.fn().mockResolvedValue(false),
       isBlockedEitherWay: jest.fn().mockResolvedValue(false),
       lockSocialPair: jest.fn(),
+      // A like clears an earlier pass on the same person (single match model).
+      deletePass: jest.fn().mockResolvedValue(0),
       runInTransaction: jest.fn(
         (work: (transaction: never) => Promise<unknown>) => work({} as never),
       ),

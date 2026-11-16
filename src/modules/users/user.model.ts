@@ -101,6 +101,10 @@ export class UserModel extends Model {
   @Column({ type: DataType.DATE, allowNull: true, field: 'last_seen_at' })
   declare lastSeenAt: Date | null;
 
+  /** Last authenticated request, written at most every 5 minutes (discovery activity). */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'last_active_at' })
+  declare lastActiveAt: Date | null;
+
   /** When the person proved the mailbox (PIN or a provider). Null = unverified. */
   @Column({ type: DataType.DATE, allowNull: true, field: 'email_verified_at' })
   declare emailVerifiedAt: Date | null;

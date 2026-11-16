@@ -19,6 +19,8 @@ import { SocialProfileService } from "./social-profile.service";
 import { SocialRepository } from "./social.repository";
 import { SocialService } from "./social.service";
 import { RecommendationsClient } from "./recommendations-client";
+import { DiscoveryRankingRepository } from "./discovery-ranking.repository";
+import { DiscoveryRankingService } from "./discovery-ranking.service";
 import { IntegrationModule } from "../integration/integration.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { ChatModule } from "../chat/chat.module";
@@ -51,6 +53,8 @@ import { ChatModule } from "../chat/chat.module";
     SocialMapRepository,
     SocialMapService,
     RecommendationsClient,
+    DiscoveryRankingRepository,
+    DiscoveryRankingService,
     SocialProfileRepository,
     SocialProfileService,
   ],

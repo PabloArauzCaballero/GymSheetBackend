@@ -1,14 +1,18 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UserRole } from '../../common/enums/domain.enums';
 import { AuthenticatedUser, JwtPayload } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
 import { UsersRepository } from '../users/users.repository';
+import { UserActivityService } from '../users/user-activity.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private readonly usersRepository: UsersRepository) {
+  constructor(
+    private readonly usersRepository: UsersRepository,
+    @Optional() private readonly activity?: UserActivityService,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -46,6 +50,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // efecto en la siguiente petición, sin esperar a que caduque la sesión.
     // El respaldo agrupa a las cuentas sin tenant propio bajo el tenant por
     // defecto en vez de dejarlas sin filtro (ver DEFAULT_TENANT_ID en env.ts).
+    // Discovery activity signal (at most one write every 5 minutes per account).
+    this.activity?.recordIfStale(activeUser.id, activeUser.lastActiveAt);
+
     const ownTenantId = activeUser.tenantId ?? env.DEFAULT_TENANT_ID;
     const isSystemAdmin = activeUser.role === UserRole.SYSTEM_ADMIN;
 

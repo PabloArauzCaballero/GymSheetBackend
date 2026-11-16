@@ -11,6 +11,13 @@ import type { SocialDiscoverySettings } from "./social-discovery-settings.policy
 import type { DiscoveryIntent, DiscoveryPreferencesInput } from "./social.schemas";
 import { SocialRecommendationOutboxService } from "./social-recommendation-outbox.service";
 import type { PublicAboutRow } from "./social-profile.mapper";
+import {
+  consumeDiscoveryImpressionRow,
+  findOpenDiscoveryImpression,
+  insertDiscoveryImpressions,
+  markDiscoveryImpressionObserved,
+  type IssuedImpression,
+} from "./discovery-impressions.sql";
 
 export interface DiscoveryPreferences {
   configured: true;
@@ -108,8 +115,6 @@ export interface DirectoryFilters {
   discoveryOnly?: boolean;
   /** Map directory: never return an account without a verified adult age. */
   adultOnly?: boolean;
-  /** Alfabético para el directorio; por puntos para la baraja. */
-  orderBy?: "name" | "points";
 }
 
 /** Qué fue lo último que decidió el viewer, y qué hay que tocar para revertirlo. */
@@ -906,94 +911,40 @@ export class SocialRepository {
 
   async issueDiscoveryImpressions(
     viewerId: string,
-    impressions: readonly {
-      id: string;
-      targetId: string;
-      featureCodes: string[];
-    }[],
+    impressions: readonly IssuedImpression[],
     transaction?: Transaction,
   ): Promise<void> {
-    for (const impression of impressions) {
-      await this.sequelize.query(
-        `INSERT INTO social.discovery_impressions
-           (id, viewer_id, target_id, feature_codes)
-         VALUES (:id, :viewerId, :targetId,
-           ARRAY(SELECT jsonb_array_elements_text(CAST(:featureCodes AS jsonb))))
-         ON CONFLICT (id) DO NOTHING`,
-        {
-          replacements: {
-            id: impression.id,
-            viewerId,
-            targetId: impression.targetId,
-            featureCodes: JSON.stringify(impression.featureCodes),
-          },
-          transaction,
-        },
-      );
-    }
+    await insertDiscoveryImpressions(this.sequelize, viewerId, impressions, transaction);
   }
 
-  async getDiscoveryImpression(
+  getDiscoveryImpression(
     viewerId: string,
     impressionId: string,
     transaction?: Transaction,
   ): Promise<{ targetId: string } | null> {
-    const rows = await this.sequelize.query<{ target_id: string }>(
-      `SELECT target_id FROM social.discovery_impressions
-        WHERE id = :impressionId AND viewer_id = :viewerId
-          AND issued_at >= NOW() - INTERVAL '24 hours'
-          AND retracted_at IS NULL AND action IS NULL`,
-      {
-        type: QueryTypes.SELECT,
-        replacements: { viewerId, impressionId },
-        transaction,
-      },
-    );
-    return rows[0] ? { targetId: rows[0].target_id } : null;
+    return findOpenDiscoveryImpression(this.sequelize, viewerId, impressionId, transaction);
   }
 
-  async observeDiscoveryImpression(
+  observeDiscoveryImpression(
     viewerId: string,
     impressionId: string,
     transaction: Transaction,
   ): Promise<boolean> {
-    const rows = await this.sequelize.query<{ id: string }>(
-      `UPDATE social.discovery_impressions
-          SET observed_at = COALESCE(observed_at, NOW())
-        WHERE id = :impressionId AND viewer_id = :viewerId
-          AND issued_at >= NOW() - INTERVAL '24 hours'
-          AND retracted_at IS NULL AND action IS NULL
-        RETURNING id`,
-      {
-        type: QueryTypes.SELECT,
-        replacements: { viewerId, impressionId },
-        transaction,
-      },
-    );
-    return rows.length === 1;
+    return markDiscoveryImpressionObserved(this.sequelize, viewerId, impressionId, transaction);
   }
 
-  async consumeDiscoveryImpression(
+  consumeDiscoveryImpression(
     viewerId: string,
     targetId: string,
     impressionId: string,
     action: "LIKE" | "PASS",
     transaction: Transaction,
   ): Promise<string[] | null> {
-    const rows = await this.sequelize.query<{ feature_codes: string[] }>(
-      `UPDATE social.discovery_impressions
-          SET action = :action, acted_at = NOW()
-        WHERE id = :impressionId AND viewer_id = :viewerId AND target_id = :targetId
-          AND observed_at IS NOT NULL AND issued_at >= NOW() - INTERVAL '24 hours'
-          AND retracted_at IS NULL AND action IS NULL
-        RETURNING feature_codes`,
-      {
-        type: QueryTypes.SELECT,
-        replacements: { viewerId, targetId, impressionId, action },
-        transaction,
-      },
+    return consumeDiscoveryImpressionRow(
+      this.sequelize,
+      { viewerId, targetId, impressionId, action },
+      transaction,
     );
-    return rows[0]?.feature_codes ?? null;
   }
 
   async enqueueRecommendationSignal(
@@ -1241,12 +1192,6 @@ export class SocialRepository {
     // generaría ni siquiera es SQL válido.
     if (filters.userIds && filters.userIds.length === 0) return [];
 
-    // Lista blanca, nunca entrada del usuario: la cláusula se interpola.
-    const orderBy =
-      filters.orderBy === "points"
-        ? "up.points DESC NULLS LAST, u.nombre_completo ASC"
-        : "u.nombre_completo ASC";
-
     const rows = await this.sequelize.query<{
       usuario_id: string;
       full_name: string;
@@ -1371,7 +1316,7 @@ export class SocialRepository {
                AND NOT EXISTS (
                   SELECT 1 FROM social.discovery_passes dp
                    WHERE dp.viewer_id = :viewerId AND dp.target_id = u.id)))
-        ORDER BY ${orderBy}
+        ORDER BY u.nombre_completo ASC, u.id ASC
         LIMIT :limit`,
       {
         type: QueryTypes.SELECT,

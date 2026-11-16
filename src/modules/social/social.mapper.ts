@@ -77,6 +77,42 @@ export function mapDirectoryRowToResponse(row: DirectoryRow): DirectoryEntryResp
   };
 }
 
+/** Why a card was ranked where it is (closed list; clients ignore unknown codes). */
+export const DISCOVERY_REASON_CODES = [
+  "NEARBY",
+  "TRAINING_NOW",
+  "ACTIVE_NOW",
+  "SAME_GOAL",
+  "SAME_ROUTINE",
+  "SHARED_INTERESTS",
+  "VERIFIED",
+  "NEW_HERE",
+] as const;
+export type DiscoveryReasonCode = (typeof DISCOVERY_REASON_CODES)[number];
+
+/** A "Conocer" deck card: the directory entry plus ranking context. */
+export type DiscoveryCardResponse = DirectoryEntryResponse & {
+  reasons: DiscoveryReasonCode[];
+  /** Whole kilometres, never below 1: an exact location is never exposed. */
+  distanceKm: number | null;
+};
+
+export function mapDiscoveryCard(
+  row: DirectoryRow,
+  ranking: { reasons: readonly string[]; distanceKm: number | null } | undefined,
+): DiscoveryCardResponse {
+  return {
+    ...mapDirectoryRowToResponse(row),
+    reasons: (ranking?.reasons ?? []).filter((code): code is DiscoveryReasonCode =>
+      (DISCOVERY_REASON_CODES as readonly string[]).includes(code),
+    ),
+    distanceKm:
+      ranking?.distanceKm === null || ranking?.distanceKm === undefined
+        ? null
+        : Math.max(1, Math.round(ranking.distanceKm)),
+  };
+}
+
 /**
  * Una insignia del perfil de otra persona.
  *
