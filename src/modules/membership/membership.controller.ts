@@ -285,7 +285,7 @@ export class AdminMembershipController {
     @Body(new ZodValidationPipe(createCustomerSchema))
     input: CreateCustomerInput,
   ) {
-    return this.service.createCustomer(input, actor.id);
+    return this.service.createCustomer(input, actor);
   }
 
   @Get("customers")

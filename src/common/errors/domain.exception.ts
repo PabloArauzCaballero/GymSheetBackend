@@ -57,7 +57,8 @@ export type DomainErrorCode =
   | 'STAFF_CLOSURE_LAST_ADMIN'
   | 'MODERATOR_NOT_ASSIGNABLE'
   | 'MODERATION_SELF_CASE'
-  | 'MODERATION_PEER_CASE';
+  | 'MODERATION_PEER_CASE'
+  | 'TENANT_SCOPE_REQUIRED';
 
 /**
  * Error de dominio con `code` estable y `details` opcional (por ejemplo

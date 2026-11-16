@@ -169,8 +169,8 @@ export class MembershipService {
     return mapPlan(this.requirePlan(await this.repository.findPlan(planId)));
   }
 
-  createCustomer(input: CreateCustomerInput, actorUserId: string) {
-    return this.customerStaff.createCustomer(input, actorUserId);
+  createCustomer(input: CreateCustomerInput, actor: AuthenticatedUser) {
+    return this.customerStaff.createCustomer(input, actor);
   }
 
   listCustomers(page: number, pageSize: number, tenantScope: string | null) {
