@@ -95,7 +95,8 @@ export type DomainErrorCode =
   | 'PHONE_OTP_UNAVAILABLE'
   | 'PHONE_OTP_NOT_REQUESTED'
   | 'BLOCKLIST_ENTRY_EXISTS'
-  | 'HANDLE_NOT_RESERVABLE';
+  | 'HANDLE_NOT_RESERVABLE'
+  | 'TENANT_SCOPE_REQUIRED';
 
 /**
  * Error de dominio con `code` estable y `details` opcional (por ejemplo
