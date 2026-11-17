@@ -41,14 +41,18 @@ paginación real y sin superficie para el negocio.
    públicas. Una fila nueva nace `HELD` por defecto (falla cerrada).
 3. **Post-moderación.** Al crear, editar o cambiar el precio corren comprobaciones síncronas: banda de
    precio en BOB (`LISTING_PRICE_MIN_BOB`–`LISTING_PRICE_MAX_BOB`, 1–50 000 por defecto,
-   `PRICE_OUT_OF_BAND`), desvío respecto de la mediana de las publicaciones vivas del mismo tipo
-   (`LISTING_PRICE_OUTLIER_FACTOR` = 5×, hacia arriba o abajo, con al menos
-   `LISTING_PRICE_MEDIAN_MIN_SAMPLES` = 5 muestras, `PRICE_OUTLIER`) y términos prohibidos de REPP
+   `PRICE_OUT_OF_BAND`), desvío respecto del precio de referencia del tipo
+   (`LISTING_PRICE_OUTLIER_FACTOR` = 5×, hacia arriba o abajo, `PRICE_OUTLIER`) y términos prohibidos de REPP
    (`business.banned_terms`, ámbito `LISTING|BOTH`, la misma regla de palabra completa del KYC,
    extraída a `common/sql/banned-terms.ts`). Todo pasa → `LIVE` en el acto; algo falla → `HELD` con los
    códigos. En una publicación `LIVE` solo se vuelve a comprobar lo que cambió (texto o precio), así
    una liberación de REPP no se deshace por editar la descripción; una `HELD` vuelve a correr todo, y
    así el negocio la corrige. `HIDDEN` y `REJECTED` son de REPP: ninguna edición del negocio los levanta.
+   **Precio de referencia** (corrección de la revisión de seguridad de 0ab2073): es la mediana de las
+   medianas de cada **otro** vendedor, una por negocio y sin contar al que se comprueba, y solo existe con
+   `LISTING_PRICE_MEDIAN_MIN_SELLERS` = 5 vendedores **distintos**. Antes era la mediana de filas: un
+   vendedor con muchas publicaciones la movía a su gusto (para pasar su precio o para retener el de
+   otros). Los códigos de cada pasada de comprobaciones se guardan siempre.
    La moderación de imagen de las fotos de publicaciones no entra (el puerto de 8b sigue `Noop`).
 4. **Qué es público** (una sola definición, `PUBLIC_LISTING_SQL`): `moderation_status = LIVE`,
    `status = ACTIVE` y la ficha del negocio `ACTIVE`. Un negocio suspendido, pausado, en borrador o
@@ -66,7 +70,12 @@ paginación real y sin superficie para el negocio.
    cuenta, así que lo ajeno es `404`. Esquemas estrictos: moneda, estado de moderación, `type` o stock
    reservado en el cuerpo son `400`. Estados del negocio sobre su publicación: pausar
    (`ACTIVE→INACTIVE`), reanudar y archivar (terminal, no se edita: `409 LISTING_NOT_EDITABLE`). Precio
-   por el historial append-only existente. Fotos (publicación ≤ 10, galería del perfil ≤ 10) solo por
+   por el historial append-only existente. **Mientras REPP la tiene oculta o rechazada, el contenido
+   queda congelado** (nombre, descripción, beneficios, validez, sesiones, categoría, precio y fotos
+   nuevas: `409 LISTING_LOCKED_BY_REPP`); pausar, reanudar, archivar, stock y quitar una foto siguen
+   abiertos. Así REPP libera o restaura exactamente lo que revisó; se eligió frente a «volver a
+   comprobar al liberar» porque esa variante anulaba la liberación humana de un falso positivo (un
+   precio legítimo fuera de banda volvería a `HELD`). Fotos (publicación ≤ 10, galería del perfil ≤ 10) solo por
    multipart, JPEG/PNG verificados por bytes, públicas bajo `business/{entityId}/public/` y borradas de
    verdad cuando ninguna fila las referencia (`entity_plans.media_urls` y `entities.gallery` entran en
    el recuento de ADR-0017).
@@ -91,8 +100,9 @@ paginación real y sin superficie para el negocio.
    `moderation.reports.target_kind` los admite, y el de `resolution`, `NEGOCIO_SUSPENDIDO`. Solo se
    denuncia lo público. El expediente trae la copia de la publicación o del perfil (§9, filas planas y
    mapper). Una publicación es ocultable: tres denunciantes distintos la ocultan a la espera de un
-   moderador, el veredicto `hideContent` la pasa a `HIDDEN` y `false` devuelve a `LIVE` solo lo que
-   estaba `HIDDEN`. El veredicto gana `suspendBusiness`: suspende al negocio **dentro de la misma
+   moderador, el veredicto `hideContent` la pasa a `HIDDEN` y `false` restaura solo lo que estaba
+   `HIDDEN`: a `LIVE` si sus códigos guardados están limpios y a `HELD` si no (estaba retenida cuando
+   se ocultó). El veredicto gana `suspendBusiness`: suspende al negocio **dentro de la misma
    transacción** por la máquina de estados del KYC (`BusinessAdminService.suspendEntityFromCase`, el
    mismo camino que la consola: decisión, historial, ficha y cuenta `SUSPENDED`, aviso por la app y por
    correo; `409 BUSINESS_ACCOUNT_REQUIRED` si la ficha no tiene cuenta). La escalera de personas no se
@@ -119,8 +129,9 @@ paginación real y sin superficie para el negocio.
   `POST /directory/payments/orders` también exigen `LIVE`; `admin/directory/plans*` rechaza una moneda
   distinta de `BOB`; `POST /me/reports` y el veredicto de moderación ganan tipos y `suspendBusiness`;
   `GET /business/me` suma `entity.gallery`.
-- Riesgos aceptados: la mediana es una heurística que un vendedor con muchas publicaciones puede
-  mover; tres personas pueden ocultar a la espera de revisión la publicación de un competidor
+- Riesgos aceptados: el precio de referencia sigue siendo una heurística (cinco vendedores coordinados
+  la mueven); entre que REPP mira una publicación `HELD` y la libera, el negocio puede editarla (la
+  consola libera lo vigente; una versión esperada en la liberación cerraría esa ventana); tres personas pueden ocultar a la espera de revisión la publicación de un competidor
   (reversible, como con el resto del contenido); los archivos de una publicación oculta siguen
   accesibles por su URL pública si alguien la guardó (igual que el logo; servirlos tras una puerta es
   otra decisión); una sede declarada por un coach individual publica la dirección que él escriba (la

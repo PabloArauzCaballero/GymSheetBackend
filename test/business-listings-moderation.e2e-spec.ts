@@ -36,7 +36,7 @@ describe('post-moderation of the marketplace: suspension, reports, hide and REPP
     await publicGet(h, `/public/directory/listings/${listing.id}`).expect(200);
   });
 
-  it('report → REPP queue with the listing snapshot → hide → gone from public; the seller cannot republish it; REPP releases it', async () => {
+  it('report → REPP queue with the listing snapshot → hide → gone from public; the seller cannot change or republish it; REPP releases it', async () => {
     const seller = await publishedBusiness(h, 'lst-report');
     const listing = await createListing(h, seller);
     const person = await h.e2e.register('lst-reporter-a');
@@ -55,7 +55,7 @@ describe('post-moderation of the marketplace: suspension, reports, hide and REPP
     await publicGet(h, `/public/directory/listings/${listing.id}`).expect(404);
     expect(await publicIds(h, `entity_id=${seller.entityId}`)).not.toContain(listing.id);
     expect(await ownListing(seller, listing.id)).toMatchObject({ moderationStatus: 'HIDDEN', visibility: 'HIDDEN_BY_REPP', moderationReasonCode: 'SPAM' });
-    await h.e2e.as(seller.token).patch(`/business/me/listings/${listing.id}`).send({ name: 'Plan mensual renovado' }).expect(200);
+    expect((await h.e2e.as(seller.token).patch(`/business/me/listings/${listing.id}`).send({ name: 'Plan mensual renovado' })).body.code).toBe('LISTING_LOCKED_BY_REPP');
     expect((await ownListing(seller, listing.id)).moderationStatus).toBe('HIDDEN');
 
     const hidden = (await h.e2e.as(moderator.token).get('/admin/business/listings?moderationStatus=HIDDEN&limit=50').expect(200)).body.data.items;
@@ -73,6 +73,32 @@ describe('post-moderation of the marketplace: suspension, reports, hide and REPP
     }
     await publicGet(h, `/public/directory/listings/${listing.id}`).expect(404);
     expect((await ownListing(seller, listing.id)).moderationStatus).toBe('HIDDEN');
+  });
+
+  it('while REPP holds a listing hidden or rejected its content is frozen (409); dismissing restores what REPP reviewed', async () => {
+    const seller = await publishedBusiness(h, 'lst-frozen');
+    const listing = await createListing(h, seller);
+    for (const label of ['lst-frozen-a', 'lst-frozen-b', 'lst-frozen-c']) {
+      await report((await h.e2e.register(label)).token, 'BUSINESS_LISTING', listing.id).expect(201);
+    }
+    expect((await ownListing(seller, listing.id)).moderationStatus).toBe('HIDDEN');
+    const as = h.e2e.as(seller.token);
+    for (const call of [
+      () => as.patch(`/business/me/listings/${listing.id}`).send({ description: 'Contenido nuevo después de la denuncia.' }),
+      () => as.patch(`/business/me/listings/${listing.id}/price`).send({ price: 999 }),
+      () => as.post(`/business/me/listings/${listing.id}/media`).attach('file', h.logo, { filename: 'p.png', contentType: 'image/png' }),
+    ]) {
+      const response = await call();
+      expect([response.status, response.body.code]).toEqual([409, 'LISTING_LOCKED_BY_REPP']);
+    }
+    await as.post(`/business/me/listings/${listing.id}/pause`).expect(200);
+    await as.post(`/business/me/listings/${listing.id}/resume`).expect(200);
+    await resolveCase(h.e2e, moderator, { kind: 'BUSINESS_LISTING', id: listing.id }, { hideContent: false });
+    expect(await ownListing(seller, listing.id)).toMatchObject({ moderationStatus: 'LIVE', description: 'Acceso libre a sala y clases.', price: '250.00' });
+
+    await h.e2e.as(moderator.token).post(`/admin/business/listings/${listing.id}/reject`).send({ reasonCode: 'MISLEADING' }).expect(200);
+    const rejected = await as.patch(`/business/me/listings/${listing.id}`).send({ name: 'Otro plan' });
+    expect([rejected.status, rejected.body.code]).toEqual([409, 'LISTING_LOCKED_BY_REPP']);
   });
 
   it('a profile report can suspend the business from the verdict: every listing goes, the case closes as NEGOCIO_SUSPENDIDO', async () => {

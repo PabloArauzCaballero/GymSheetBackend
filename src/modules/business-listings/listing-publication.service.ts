@@ -15,7 +15,7 @@ export type PublicationOutcome = {
   publishedAt: Date | null;
 };
 
-type Candidate = { offerKind: ListingOfferKind; name: string; description: string; benefits: string[]; price: number };
+type Candidate = { entityId: string; offerKind: ListingOfferKind; name: string; description: string; benefits: string[]; price: number };
 
 /**
  * Post-moderation (ADR-0022): a listing goes LIVE the moment the automatic
@@ -37,7 +37,7 @@ export class ListingPublicationService {
     const checkAll = !current || current.moderationStatus === 'HELD';
     const codes: PublicationCheckCode[] = [];
     if (checkAll || scope.price) {
-      const median = await this.repository.priceMedian(candidate.offerKind, env.LISTING_PRICE_MEDIAN_MIN_SAMPLES, transaction);
+      const median = await this.repository.priceMedian(candidate.offerKind, candidate.entityId, env.LISTING_PRICE_MEDIAN_MIN_SELLERS, transaction);
       codes.push(
         ...priceCheckCodes(
           candidate.price,
@@ -50,18 +50,12 @@ export class ListingPublicationService {
       codes.push('BANNED_TERMS');
     }
     const status = moderationAfterChecks(current?.moderationStatus ?? null, codes);
-    if (current && status === current.moderationStatus && status !== 'HELD') {
-      // Still LIVE (nothing failed) or a REPP decision that the seller cannot lift.
-      return {
-        moderationStatus: status,
-        moderationReasonCode: current.moderationReasonCode,
-        autoCheckCodes: current.autoCheckCodes,
-        publishedAt: current.publishedAt,
-      };
-    }
+    // The codes of this run are always stored: they are what an un-hide reads (ADR-0022 §3).
+    // A REPP decision (HIDDEN, REJECTED) keeps REPP's reason; the checks' first code otherwise.
+    const repp = status === 'HIDDEN' || status === 'REJECTED';
     return {
       moderationStatus: status,
-      moderationReasonCode: codes[0] ?? null,
+      moderationReasonCode: repp && current ? current.moderationReasonCode : (codes[0] ?? null),
       autoCheckCodes: codes,
       publishedAt: status === 'LIVE' ? (current?.publishedAt ?? new Date()) : (current?.publishedAt ?? null),
     };

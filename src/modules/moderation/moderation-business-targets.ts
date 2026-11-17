@@ -35,8 +35,9 @@ export const BUSINESS_TARGET_ENTITY_SQL = {
 } as const;
 
 /**
- * Hides a listing (LIVE or HELD → HIDDEN) or restores one (HIDDEN → LIVE);
- * any other state is left alone, so dismissing a case never publishes a
+ * Hides a listing (LIVE or HELD → HIDDEN) or restores one: HIDDEN → LIVE only
+ * when its stored check codes are clean, else HELD (it was held when hidden).
+ * Any other state is left alone, so dismissing a case never publishes a
  * listing the checks held or REPP rejected.
  */
 export function listingVisibilitySql(hidden: boolean): string {
@@ -46,7 +47,9 @@ export function listingVisibilitySql(hidden: boolean): string {
               moderated_by_user_id = :moderatorUserId, moderated_at = now(), updated_at = now()
         WHERE id = :targetId AND moderation_status IN ('LIVE', 'HELD')`
     : `UPDATE directory.entity_plans
-          SET moderation_status = 'LIVE', moderation_reason_code = NULL, published_at = COALESCE(published_at, now()),
+          SET moderation_status = CASE WHEN cardinality(auto_check_codes) = 0 THEN 'LIVE' ELSE 'HELD' END,
+              moderation_reason_code = auto_check_codes[1],
+              published_at = CASE WHEN cardinality(auto_check_codes) = 0 THEN COALESCE(published_at, now()) ELSE published_at END,
               moderated_by_user_id = :moderatorUserId, moderated_at = now(), updated_at = now()
         WHERE id = :targetId AND moderation_status = 'HIDDEN'`;
 }

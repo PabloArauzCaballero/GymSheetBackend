@@ -38,7 +38,7 @@ export class ListingMediaService {
     try {
       await this.mediaRelease.clearAndRelease({ aggregateType: 'directory.entity_plan', aggregateId: listingId, storageKeys: [] }, async (transaction) => {
         await this.listings.lockOwner(actor, transaction);
-        const listing = await this.listings.requireEditable(account.entityId, listingId, transaction);
+        const listing = await this.listings.requireEditable(account.entityId, listingId, transaction, { content: true });
         const urls = listing.mediaUrls ?? [];
         // Re-checked under the lock: two parallel uploads cannot both take the last slot.
         if (urls.length >= LISTING_MEDIA_MAX) throw mediaLimit();

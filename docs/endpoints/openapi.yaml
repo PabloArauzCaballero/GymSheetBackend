@@ -2902,7 +2902,7 @@ paths:
         "400": { $ref: "#/components/responses/Problem400" }
         "403": { $ref: "#/components/responses/Problem403" }
         "404": { $ref: "#/components/responses/Problem404" }
-        "409": { description: "LISTING_NOT_EDITABLE | BUSINESS_ACCOUNT_LOCKED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "LISTING_NOT_EDITABLE | LISTING_LOCKED_BY_REPP | BUSINESS_ACCOUNT_LOCKED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "422": { description: "LISTING_SHAPE_INVALID | LISTING_CATEGORY_INVALID", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
   /business/me/listings/{id}/price:
     patch:
@@ -3011,7 +3011,7 @@ paths:
         "400": { $ref: "#/components/responses/Problem400" }
         "403": { $ref: "#/components/responses/Problem403" }
         "404": { $ref: "#/components/responses/Problem404" }
-        "409": { description: "LISTING_MEDIA_LIMIT", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "LISTING_MEDIA_LIMIT | LISTING_LOCKED_BY_REPP", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "413": { $ref: "#/components/responses/Problem413" }
   /business/me/listings/{id}/media/{position}:
     delete:

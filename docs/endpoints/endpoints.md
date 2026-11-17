@@ -569,17 +569,19 @@ Fields per `offerKind` (`422 LISTING_SHAPE_INVALID {violations}` otherwise):
 
 Automatic checks (`autoCheckCodes`): `PRICE_OUT_OF_BAND` (outside `LISTING_PRICE_MIN_BOB`–`LISTING_PRICE_MAX_BOB`,
 default 1–50 000), `PRICE_OUTLIER` (more than `LISTING_PRICE_OUTLIER_FACTOR`, default 5×, above or below
-the median of live listings of the kind, once there are `LISTING_PRICE_MEDIAN_MIN_SAMPLES`), `BANNED_TERMS`
+the reference price of the kind: the median of each other seller's median, one value per business and
+never the seller being checked, once there are `LISTING_PRICE_MEDIAN_MIN_SELLERS` = 5 distinct sellers), `BANNED_TERMS`
 (REPP's list, scope `LISTING|BOTH`). On a `LIVE` listing an edit re-checks only what changed (text or
-price); a `HELD` listing re-runs everything, so fixing it publishes it. `HIDDEN`/`REJECTED` are REPP's
-and no seller edit lifts them.
+price); a `HELD` listing re-runs everything, so fixing it publishes it. `HIDDEN`/`REJECTED` are REPP's:
+while REPP holds a listing so, its content (fields, price, new photos) is frozen with `409
+LISTING_LOCKED_BY_REPP {moderationStatus}`; pause, resume, archive, stock and removing a photo stay open.
 
 | Method | Route | Body / response | Codes |
 | ------ | ----- | --------------- | ----- |
 | GET | `/business/me/listings` | `?status=ACTIVE\|INACTIVE\|ARCHIVED&moderationStatus&cursor&limit≤50` (archived only when asked) → `{ items: Listing[], nextCursor }`, newest first | `200`, `400 INVALID_CURSOR` |
 | POST | `/business/me/listings` | `{ offerKind, name (2–180), description (5–5000), benefits?: string[≤20], price (0–10 000 000, 2 decimals), validityDays?, sessionsCount?, stockQuantity?, productCategoryId? (active, scope = business type or ALL), displayOrder? }` strict (`currency`, `moderationStatus`, `type`… → `400`) → `Listing`. Allowed while the KYC is pending (the listing waits, `BUSINESS_NOT_PUBLIC`); at most 500 not archived | `201`, `400`, `403 EMAIL_VERIFICATION_REQUIRED`, `409 BUSINESS_ACCOUNT_LOCKED`, `409 LISTING_LIMIT`, `422 LISTING_SHAPE_INVALID`, `422 LISTING_CATEGORY_INVALID` |
 | GET | `/business/me/listings/:id` | → `Listing` | `200`, `404` (not yours) |
-| PATCH | `/business/me/listings/:id` | any of `{ name, description, benefits, validityDays, sessionsCount, productCategoryId, displayOrder }` (the kind never changes) → `Listing` | `200`, `400`, `404`, `409 LISTING_NOT_EDITABLE` (archived), `409 BUSINESS_ACCOUNT_LOCKED`, `422` |
+| PATCH | `/business/me/listings/:id` | any of `{ name, description, benefits, validityDays, sessionsCount, productCategoryId, displayOrder }` (the kind never changes) → `Listing` | `200`, `400`, `404`, `409 LISTING_NOT_EDITABLE` (archived), `409 LISTING_LOCKED_BY_REPP`, `409 BUSINESS_ACCOUNT_LOCKED`, `422` |
 | PATCH | `/business/me/listings/:id/price` | `{ price, reason? }` → `Listing` (append-only price history) | `200`, `400 LISTING_SAME_PRICE`, `404`, `409` |
 | PATCH | `/business/me/listings/:id/stock` | `{ stockQuantity: int\|null }` (products only) → `Listing` | `200`, `404`, `409 LISTING_STOCK_BELOW_RESERVED {reserved}`, `422 LISTING_SHAPE_INVALID` |
 | POST | `/business/me/listings/:id/pause` \| `/resume` \| `/archive` | → `Listing`. `ACTIVE→INACTIVE`, `INACTIVE→ACTIVE`, `ACTIVE\|INACTIVE→ARCHIVED` (terminal) | `200`, `404`, `409 LISTING_INVALID_TRANSITION {status}` |
@@ -617,7 +619,7 @@ automatically (pending review, like other content). In `/admin/moderation/cases/
 validityDays, sessionsCount, mediaUrls, status, moderationStatus, seller: { entityId, name, handle } }`
 or `{ kind: BUSINESS_PROFILE, name, entityType, headline, description, logoUrl, coverUrl, gallery, city,
 status, isVerified, handle }`. The verdict on these cases: `hideContent` (listing → `HIDDEN`; `false`
-restores a hidden one) and `suspendBusiness: true` (the business is suspended through its KYC state
+restores a hidden one: `LIVE` if its stored check codes are clean, otherwise `HELD`) and `suspendBusiness: true` (the business is suspended through its KYC state
 machine in the same transaction; resolution `NEGOCIO_SUSPENDIDO`; `409 BUSINESS_ACCOUNT_REQUIRED` for a
 listing REPP seeded without an account). `sanction`/`confirmMinor` there, or `suspendBusiness` on any other
 kind: `422 MODERATION_RESOLUTION_NOT_APPLICABLE`. A business registered with the moderator's own mailbox
