@@ -1072,6 +1072,14 @@ pasan. Arranque real de `dist/main.js`: readiness `migrations: up-to-date`, ruta
 Fuera de 8f (chat): cierre, exportación y retención del negocio, contracción de `receipt_url`,
 socket del negocio, desbloqueo y denuncias hechas por un negocio.
 
+Integración sobre 8d (con 8c), merge 9aee9b5 (17/11/2026, base `gym_sheet_f8fi_e2e` nueva; el ciclo
+`migration:down` ×2 bajó 0801 y luego 0701, y volvió a subir): lint y type-check limpios, build OK,
+unitarias 264 suites / 2401 pruebas; e2e de negocios (cuentas, KYC, consola, publicaciones, pedidos y
+chat) 9 suites / 95 pruebas; «Escribir» desde la publicación (`seller.id`) y desde el pedido
+(`seller.entityId`) abre la misma conversación sin cambio de código; e2e completa: 76 suites en verde y
+exactamente las 47 pruebas en rojo de la línea base (10 suites, mismos nombres). Arranque real de
+`dist/main.js`: readiness `migrations: up-to-date`.
+
 
 ---
 
