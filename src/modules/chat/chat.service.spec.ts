@@ -52,6 +52,8 @@ function createService(
       ) => operation({} as Transaction, [userA]),
       lockReadReceiptParticipants: jest.fn().mockResolvedValue([userA]),
       readReceiptPolicy: jest.fn().mockResolvedValue({ allowed: true, enabledSince: null }),
+      // Not a business conversation unless a case says so.
+      assertBusinessSenderActive: jest.fn().mockResolvedValue(undefined),
       ...repositoryOverrides,
     } as unknown as ChatRepository,
     { isConnected: jest.fn().mockResolvedValue(true), ...socialOverrides } as unknown as SocialService,
@@ -264,6 +266,21 @@ describe("ChatService.sendMediaMessage", () => {
     await expect(
       service.sendMediaMessage("conv-1", userA, undefined, { type: "image", viewOnce: false }),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it("a suspended business is refused before anything is uploaded (ADR-0023)", async () => {
+    const upload = jest.fn();
+    const locked = Object.assign(new ConflictException("locked"), { code: "BUSINESS_ACCOUNT_LOCKED" });
+    const service = createService(
+      {
+        getParticipant: jest.fn().mockResolvedValue({ canWrite: true }),
+        assertBusinessSenderActive: jest.fn().mockRejectedValue(locked),
+      },
+      {}, {}, {}, {}, {}, {},
+      { name: "local", upload } as unknown as Partial<MediaStorageProvider>,
+    );
+    await expect(service.sendMediaMessage("conv-1", userA, file, { type: "image", viewOnce: false })).rejects.toBe(locked);
+    expect(upload).not.toHaveBeenCalled();
   });
 
   it("rejects a file over the size limit", async () => {

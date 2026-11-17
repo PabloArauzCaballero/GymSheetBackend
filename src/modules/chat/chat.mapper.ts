@@ -1,5 +1,6 @@
 import { ConversationSummaryRow, DisappearingTimerEvent, PendingReplyRow, SystemConversationKind } from "./chat.repository";
 import { MessageModel, MessageType } from "./message.model";
+import type { ConversationKind } from "./conversation.model";
 import { isExpired } from "./chat-disappearing";
 import { resolveMediaUrl } from "../../common/media/media-url";
 
@@ -227,6 +228,10 @@ export type ConversationSummaryResponse = {
   lastMessageAt: string | null;
   canWrite: boolean;
   systemKind: SystemConversationKind | null;
+  /** DIRECT (two persons), SYSTEM (REPP support) or BUSINESS (a person with a business, ADR-0023). */
+  kind: ConversationKind;
+  /** BUSINESS: the listing (public profile); `null` otherwise. */
+  businessEntityId: string | null;
   /** Apodo propio para esta conversación (privado), o `null` si no se puso ninguno. */
   nickname: string | null;
   /** Cursores del otro participante: comparar contra `createdAt` de mis mensajes para pintar el check. */
@@ -267,12 +272,15 @@ export function mapConversationSummary(
     otherUserId: row.other_user_id,
     otherUserName: row.other_user_name,
     otherUserPhotoUrl: resolveMediaUrl(row.other_user_photo_url),
-    otherUserOnline,
+    // A business never learns when its customer is online (ADR-0023); the query already hides last seen.
+    otherUserOnline: row.viewer_is_business ? false : otherUserOnline,
     otherUserLastSeenAt: row.other_user_last_seen_at,
     lastMessage: row.last_message_body,
     lastMessageAt: row.last_message_at,
     canWrite: row.can_write,
     systemKind: row.system_kind,
+    kind: row.kind,
+    businessEntityId: row.business_entity_id ?? null,
     nickname: row.nickname,
     otherUserLastDeliveredAt: row.other_last_delivered_at,
     otherUserLastReadAt: row.other_last_read_at,

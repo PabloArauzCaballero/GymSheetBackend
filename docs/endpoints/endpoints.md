@@ -553,6 +553,37 @@ Metrics on `/health/metrics`: `gym_sheet_kyc_queue_size{queue}`, `gym_sheet_kyc_
 
 New plans default to `BOB`.
 
+## Chat with businesses (ADR-0023, franja 8f)
+
+A person writes to a business; the business only answers. Once open, both sides use the ordinary
+chat routes (`/me/conversations/:id/messages`, media, reactions, edits, read receipts, push) with the
+same participant check: anyone else gets `404`.
+
+| Method | Route | Access | Body → response | Codes |
+| ------ | ----- | ------ | --------------- | ----- |
+| POST | `/me/business-conversations` | person, verified email | `{ entityId }` → `{ conversationId }`. No social connection needed. Only an `ACTIVE` listing whose business account is `ACTIVE` | `201` opened now, `200` the live one already existed (also under concurrency); `400`; `403 ACCOUNT_KIND_NOT_ALLOWED` (business account), `403 BUSINESS_CHAT_BLOCKED` (the business blocked this person); `404` draft, paused, suspended, closed or unknown listing (same body); `429 BUSINESS_CHAT_LIMIT` (10 new business chats per person in 24 h, revoked ones included) |
+| POST | `/business/me/conversations/:id/block` | `NEGOCIO` | → `{ conversationId, blocked: true }`; revokes the conversation (socket `conversation:revoked`), idempotent | `200`; `403` (person); `404` not a conversation of this listing |
+
+What a business account reaches in `/me/conversations`: list, history, send (text, sticker, media),
+forward, reactions, edit, delete, view-once, nickname, read. Refused with `403 ACCOUNT_KIND_NOT_ALLOWED`:
+`POST /me/conversations` (it never opens a chat), `GET /me/conversations/pending-replies` and the socket
+ticket (the business uses REST and push).
+
+In a `BUSINESS` conversation:
+
+- `PUT /me/conversations/:id/disappearing` with seconds → `422 BUSINESS_CHAT_NO_DISAPPEARING` (also a
+  database CHECK); a location message (sent or forwarded) → `422 BUSINESS_CHAT_NO_LOCATION`.
+- A business account that is not `ACTIVE` (suspended by REPP, closed) cannot send:
+  `409 BUSINESS_ACCOUNT_LOCKED`. Its customers can still write to it.
+- Reporting a message: `POST /me/reports { targetKind: CHAT_MESSAGE }` as any chat; the report goes to the
+  REPP queue with its evidence copy, also when the person and the business are in different gyms.
+
+`GET /me/conversations` items gain `kind: DIRECT|SYSTEM|BUSINESS` and `businessEntityId` (the listing,
+`null` otherwise). For the person, `otherUserName` and `otherUserPhotoUrl` are the listing's name and
+logo. For the business, they are the person's display name and first profile photo, and
+`otherUserOnline` is always `false` and `otherUserLastSeenAt` `null`. `disappearingSeconds` is always
+`null` there.
+
 ## Main status codes
 
 - `400`: invalid input or route format;

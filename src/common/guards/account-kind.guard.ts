@@ -9,9 +9,10 @@ import { AccountKind, AuthenticatedUser, accountKindOf } from '../types/auth-con
  * (ADR-0020). Everything else is a person's surface: profile, social,
  * discovery, training, community, chat and the admin consoles.
  *
- * Chat with persons (`me/conversations`, the socket ticket) and closing or
- * exporting the account (`me/account`, `me/export`) are business features of
- * franja 8f; until they exist, a business account is refused there.
+ * Chat with persons (`me/conversations`, ADR-0023) is open to a business: it
+ * reads and answers the conversations persons opened with it. The socket
+ * ticket and closing or exporting the account (`me/account`, `me/export`)
+ * stay refused until they are decided for businesses.
  */
 const BUSINESS_ALLOWED_PREFIXES = [
   'auth/',
@@ -20,6 +21,7 @@ const BUSINESS_ALLOWED_PREFIXES = [
   'me/devices/',
   'health/',
   'business/',
+  'me/conversations/',
   'public/',
   'notifications/me/',
   'notifications/preferences/me/',
@@ -30,8 +32,11 @@ const BUSINESS_ALLOWED_PREFIXES = [
 /** Read-receipt style routes with a parameter in the middle: `notifications/:id/read`. */
 const BUSINESS_ALLOWED_PATTERNS = [/^notifications\/[^/]+\/read\/$/u] as const;
 
-/** Under an allowed prefix but still a person's surface. */
-const BUSINESS_DENIED_UNDER_ALLOWED = ['auth/socket-ticket/'] as const;
+/** Under an allowed prefix but still a person's surface (matches pending replies of social matches too). */
+const BUSINESS_DENIED_UNDER_ALLOWED = ['auth/socket-ticket/', 'me/conversations/pending-replies/'] as const;
+
+/** Exact `METHOD path/` refusals: a business only answers, it never opens a conversation (ADR-0023). */
+const BUSINESS_DENIED_ROUTES = ['POST me/conversations/'] as const;
 
 /** Only business accounts enter here; `business/signup` is public and never reaches the guard with a user. */
 const BUSINESS_ONLY_PREFIX = 'business/';
@@ -45,10 +50,11 @@ export function relativeRoutePath(path: string, apiPrefix: string = env.API_PREF
   return relative.endsWith('/') ? relative : `${relative}/`;
 }
 
-/** Whether an account of `kind` may reach `relativePath` (as returned by `relativeRoutePath`). */
-export function accountKindMayReach(kind: AccountKind, relativePath: string): boolean {
+/** Whether an account of `kind` may call `method` on `relativePath` (as returned by `relativeRoutePath`). */
+export function accountKindMayReach(kind: AccountKind, relativePath: string, method: string): boolean {
   if (kind === 'PERSON') return !relativePath.startsWith(BUSINESS_ONLY_PREFIX);
   if (BUSINESS_DENIED_UNDER_ALLOWED.some((denied) => relativePath.startsWith(denied))) return false;
+  if ((BUSINESS_DENIED_ROUTES as readonly string[]).includes(`${method.toUpperCase()} ${relativePath}`)) return false;
   return (
     BUSINESS_ALLOWED_PREFIXES.some((allowed) => relativePath.startsWith(allowed)) ||
     BUSINESS_ALLOWED_PATTERNS.some((pattern) => pattern.test(relativePath))
@@ -71,7 +77,7 @@ export class AccountKindGuard implements CanActivate {
     if (context.getType() !== 'http') return true;
     const request = context.switchToHttp().getRequest<Request & { user?: AuthenticatedUser }>();
     if (!request.user) return true;
-    if (accountKindMayReach(accountKindOf(request.user.role), relativeRoutePath(request.path))) return true;
+    if (accountKindMayReach(accountKindOf(request.user.role), relativeRoutePath(request.path), request.method)) return true;
     throw new DomainException(HttpStatus.FORBIDDEN, 'ACCOUNT_KIND_NOT_ALLOWED', ACCOUNT_KIND_NOT_ALLOWED_MESSAGE);
   }
 }

@@ -58,9 +58,15 @@ const CASE_REFUSAL_MESSAGES: Record<CaseRefusalCode, string> = {
   MODERATION_PEER_CASE: "Un caso sobre una cuenta del equipo de REPP solo lo revisa la administración de la plataforma.",
 };
 
+/**
+ * Also a chat message: being a participant (`canReporterViewChatMessage`) is
+ * the proof of access, and a person's chat with a business (ADR-0023) always
+ * crosses gyms because the business account belongs to no gym.
+ */
 const CROSS_TENANT_TARGETS: ReadonlySet<ModerationTargetKindValue> = new Set([
   ModerationTargetKind.REEL,
   ModerationTargetKind.MUSIC_PLAYLIST,
+  ModerationTargetKind.CHAT_MESSAGE,
 ]);
 
 /** Lo que se le enseña al moderador antes de que decida. */

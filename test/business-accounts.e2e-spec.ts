@@ -7,6 +7,7 @@ import { env } from '../src/config/env';
 import { businessAccountsMigration } from '../src/database/migrations/202611200401-business-accounts';
 import { storedNameSkeletonMigration } from '../src/database/migrations/202611200403-stored-name-skeleton';
 import { businessKycMigration } from '../src/database/migrations/202611200501-business-kyc';
+import { businessConversationsMigration } from '../src/database/migrations/202611200701-business-conversations';
 import { businessNameSkeleton, handleSkeleton } from '../src/modules/business-accounts/handle-rules';
 import { E2eApp, bootE2eApp, markEmailVerified } from './support/e2e-app';
 
@@ -178,11 +179,14 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
   it('a business token gets 403 ACCOUNT_KIND_NOT_ALLOWED on person surfaces; a person gets 403 on business/*', async () => {
     const owner = await business('kind');
     for (const path of ['/profile', '/me/onboarding', '/me/social-profile', '/social/catalog/interests', '/me/gym-directory',
-      '/me/discovery/deck', '/me/conversations', '/workouts', '/me/progression/leaderboard']) {
+      '/me/discovery/deck', '/me/conversations/pending-replies', '/workouts', '/me/progression/leaderboard']) {
       const response = await e2e.as(owner.token).get(path);
       expect({ path, status: response.status, code: response.body.code }).toEqual({ path, status: 403, code: 'ACCOUNT_KIND_NOT_ALLOWED' });
     }
     await e2e.as(owner.token).post('/auth/socket-ticket').expect(403);
+    // Since 8f (ADR-0023) a business reads and answers chats, but never opens one.
+    const opening = await e2e.as(owner.token).post('/me/conversations').send({ otherUserId: owner.id });
+    expect([opening.status, opening.body.code]).toEqual([403, 'ACCOUNT_KIND_NOT_ALLOWED']);
     const person = await e2e.register('kind-person');
     const refused = await e2e.as(person.token).get('/business/me');
     expect(refused.status).toBe(403);
@@ -433,7 +437,9 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
     const queryInterface = sequelize.getQueryInterface();
     const transaction = await sequelize.transaction();
     try {
-      // Migrations roll back in reverse order: the KYC tables (202611200501) depend on business.accounts.
+      // Migrations roll back in reverse order: business chats (202611200701) reference the listings,
+      // the KYC tables (202611200501) depend on business.accounts.
+      await businessConversationsMigration.down(queryInterface, transaction);
       await businessKycMigration.down(queryInterface, transaction);
       await businessAccountsMigration.down(queryInterface, transaction);
       const [user] = await sequelize.query<{ rol: string; estado: string }>(
@@ -448,6 +454,7 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
       expect(tables).toEqual({ accounts: null, handles: null });
       await businessAccountsMigration.up(queryInterface, transaction);
       await businessKycMigration.up(queryInterface, transaction);
+      await businessConversationsMigration.up(queryInterface, transaction);
       const [again] = await sequelize.query<{ accounts: string | null }>(
         `SELECT to_regclass('business.accounts')::text AS accounts`,
         { type: QueryTypes.SELECT, transaction },
