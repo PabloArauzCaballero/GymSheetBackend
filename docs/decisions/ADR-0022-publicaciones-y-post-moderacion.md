@@ -112,8 +112,16 @@ paginación real y sin superficie para el negocio.
    del moderador es su propio caso (`403 MODERATION_SELF_CASE`), en el expediente, al tomarlo y en el
    veredicto.
 10. **Consola de publicaciones** `admin/business/listings` (`PLATFORM_MODERATION_ROLES`): cola `HELD`
-    (o `HIDDEN`/`REJECTED`), más antigua primero; liberar (`LIVE`, solo si cumple la forma de su tipo y
-    está en BOB: `409 LISTING_NOT_PUBLISHABLE`) o rechazar con motivo
+    (o `HIDDEN`/`REJECTED`), más antigua primero, con el contenido que REPP revisa (nombre,
+    descripción, beneficios, fotos, precio) y su sello de versión `updatedAt`; liberar (`LIVE`, solo si
+    cumple la forma de su tipo y está en BOB: `409 LISTING_NOT_PUBLISHABLE`) **contra la versión
+    revisada**: el cuerpo lleva `seenUpdatedAt` (el `updatedAt` tal como lo dio la lista) y, si la
+    publicación cambió desde entonces, `409 LISTING_CHANGED_SINCE_REVIEW {currentUpdatedAt}` y no se
+    publica nada. El sello es `updated_at` con microsegundos, y la migración
+    `202611200602-listing-version-stamp` lo mueve con un disparador en **toda** actualización
+    (`clock_timestamp()`), escriba quien escriba (ORM, SQL, franjas siguientes), así que no depende de que
+    cada escritor se acuerde. Rechazar no lo pide: rechazar una versión más nueva solo es más
+    restrictivo, nunca publica nada. O rechazar con motivo
     (`PROHIBITED_PRODUCT|MISLEADING|PRICE_ABUSE|DUPLICATE|OTHER`); aviso al negocio en la app, auditoría
     `business/listing-release|listing-reject`, nunca sobre el propio negocio. Es una superficie que el
     plan no listaba para 8c, pero sin ella una publicación retenida no tenía salida.
@@ -130,15 +138,15 @@ paginación real y sin superficie para el negocio.
   distinta de `BOB`; `POST /me/reports` y el veredicto de moderación ganan tipos y `suspendBusiness`;
   `GET /business/me` suma `entity.gallery`.
 - Riesgos aceptados: el precio de referencia sigue siendo una heurística (cinco vendedores coordinados
-  la mueven); entre que REPP mira una publicación `HELD` y la libera, el negocio puede editarla (la
-  consola libera lo vigente; una versión esperada en la liberación cerraría esa ventana); tres personas pueden ocultar a la espera de revisión la publicación de un competidor
+  la mueven); tres personas pueden ocultar a la espera de revisión la publicación de un competidor
   (reversible, como con el resto del contenido); los archivos de una publicación oculta siguen
   accesibles por su URL pública si alguien la guardó (igual que el logo; servirlos tras una puerta es
   otra decisión); una sede declarada por un coach individual publica la dirección que él escriba (la
   interfaz debe advertirlo).
 - `docs/db/schema.sql` no recoge las tablas del directorio ni del negocio (se aplican por migración)
   y no se toca.
-- Rollback: `yarn migration:down` pasa a `INACTIVE` toda publicación no `LIVE` (el código anterior no
+- Rollback: `yarn migration:down` de `202611200602-listing-version-stamp` quita el disparador del sello
+  (`updated_at` vuelve a depender de cada escritor); el de `202611200601-business-listings` pasa a `INACTIVE` toda publicación no `LIVE` (el código anterior no
   conoce la moderación y no debe publicar lo retenido, oculto o rechazado), borra las sedes y las
   columnas, restricciones e índices nuevos, y restaura los CHECK de denuncias `NOT VALID` (las
   denuncias sobre publicaciones quedan como historia). Volver a subir no devuelve esas publicaciones a

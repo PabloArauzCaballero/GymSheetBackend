@@ -17,6 +17,21 @@ describe('post-moderation of the marketplace: suspension, reports, hide and REPP
 
   const report = (token: string, targetKind: string, targetId: string, reason = 'SPAM') =>
     h.e2e.as(token).post('/me/reports').send({ targetKind, targetId, reason });
+  /** The console row of a listing (oldest first: walks the cursor; the shared database keeps older ones). */
+  const consoleRow = async (moderationStatus: string, id: string) => {
+    let cursor: string | null = null;
+    for (let page = 0; page < 100; page += 1) {
+      const query: string = cursor ? `&cursor=${cursor}` : '';
+      const data = (await h.e2e.as(moderator.token).get(`/admin/business/listings?moderationStatus=${moderationStatus}&limit=50${query}`).expect(200)).body
+        .data as { items: Record<string, unknown>[]; nextCursor: string | null };
+      for (const item of data.items) expect(item).not.toHaveProperty('ownerEmail');
+      const found = data.items.find((item) => item.id === id);
+      if (found) return found;
+      cursor = data.nextCursor;
+      if (!cursor) return undefined;
+    }
+    return undefined;
+  };
   const ownListing = async (owner: KycBusiness, id: string) => (await h.e2e.as(owner.token).get(`/business/me/listings/${id}`).expect(200)).body.data as Record<string, unknown>;
 
   it('a SUSPENDED business takes every listing off the marketplace (D7) and edits nothing; reinstated, they are back', async () => {
@@ -58,9 +73,9 @@ describe('post-moderation of the marketplace: suspension, reports, hide and REPP
     expect((await h.e2e.as(seller.token).patch(`/business/me/listings/${listing.id}`).send({ name: 'Plan mensual renovado' })).body.code).toBe('LISTING_LOCKED_BY_REPP');
     expect((await ownListing(seller, listing.id)).moderationStatus).toBe('HIDDEN');
 
-    const hidden = (await h.e2e.as(moderator.token).get('/admin/business/listings?moderationStatus=HIDDEN&limit=50').expect(200)).body.data.items;
-    expect(hidden.map((item: { id: string }) => item.id)).toContain(listing.id);
-    await h.e2e.as(moderator.token).post(`/admin/business/listings/${listing.id}/release`).send({}).expect(200);
+    const hidden = await consoleRow('HIDDEN', listing.id);
+    expect(hidden).toBeDefined();
+    await h.e2e.as(moderator.token).post(`/admin/business/listings/${listing.id}/release`).send({ seenUpdatedAt: hidden?.updatedAt }).expect(200);
     await publicGet(h, `/public/directory/listings/${listing.id}`).expect(200);
   });
 
@@ -101,6 +116,27 @@ describe('post-moderation of the marketplace: suspension, reports, hide and REPP
     expect([rejected.status, rejected.body.code]).toEqual([409, 'LISTING_LOCKED_BY_REPP']);
   });
 
+  it('release publishes only the version REPP reviewed: edited since → 409 LISTING_CHANGED_SINCE_REVIEW, nothing published', async () => {
+    const seller = await publishedBusiness(h, 'lst-stale');
+    const held = await createListing(h, seller, membership({ price: 0 }));
+    const seen = await consoleRow('HELD', held.id);
+    expect(seen?.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/u);
+    // The seller swaps the content after the moderator read it; still HELD (price out of band).
+    await h.e2e.as(seller.token).patch(`/business/me/listings/${held.id}`).send({ description: 'Contenido cambiado después de la revisión.' }).expect(200);
+    const stale = await h.e2e.as(moderator.token).post(`/admin/business/listings/${held.id}/release`).send({ seenUpdatedAt: seen?.updatedAt });
+    expect([stale.status, stale.body.code]).toEqual([409, 'LISTING_CHANGED_SINCE_REVIEW']);
+    expect(stale.body.details.currentUpdatedAt).not.toBe(seen?.updatedAt);
+    expect((await ownListing(seller, held.id)).moderationStatus).toBe('HELD');
+    await publicGet(h, `/public/directory/listings/${held.id}`).expect(404);
+    await h.e2e.as(moderator.token).post(`/admin/business/listings/${held.id}/release`).send({}).expect(400);
+
+    const fresh = await consoleRow('HELD', held.id);
+    expect(fresh).toMatchObject({ description: 'Contenido cambiado después de la revisión.', updatedAt: stale.body.details.currentUpdatedAt });
+    await h.e2e.as(moderator.token).post(`/admin/business/listings/${held.id}/release`).send({ seenUpdatedAt: fresh?.updatedAt }).expect(200);
+    expect((await ownListing(seller, held.id)).moderationStatus).toBe('LIVE');
+    await publicGet(h, `/public/directory/listings/${held.id}`).expect(200);
+  });
+
   it('a profile report can suspend the business from the verdict: every listing goes, the case closes as NEGOCIO_SUSPENDIDO', async () => {
     const seller = await publishedBusiness(h, 'lst-profile');
     const listing = await createListing(h, seller);
@@ -128,29 +164,20 @@ describe('post-moderation of the marketplace: suspension, reports, hide and REPP
     const seller = await publishedBusiness(h, 'lst-held');
     const held = await createListing(h, seller, membership({ price: 60_000 }));
     expect(held.autoCheckCodes).toEqual(['PRICE_OUT_OF_BAND']);
-    // Oldest first: walk the cursor until the new one appears (the shared database keeps older held listings).
-    let found: Record<string, unknown> | undefined;
-    let cursor: string | null = null;
-    for (let page = 0; page < 100 && !found; page += 1) {
-      const query: string = cursor ? `&cursor=${cursor}` : '';
-      const data = (await h.e2e.as(moderator.token).get(`/admin/business/listings?limit=50${query}`).expect(200)).body.data as { items: Record<string, unknown>[]; nextCursor: string | null };
-      for (const item of data.items) expect(item).not.toHaveProperty('ownerEmail');
-      found = data.items.find((item) => item.id === held.id);
-      cursor = data.nextCursor;
-      if (!cursor) break;
-    }
-    expect(found).toMatchObject({ moderationStatus: 'HELD', autoCheckCodes: ['PRICE_OUT_OF_BAND'], sellerHandle: seller.handle });
+    const found = await consoleRow('HELD', held.id);
+    expect(found).toMatchObject({ moderationStatus: 'HELD', autoCheckCodes: ['PRICE_OUT_OF_BAND'], sellerHandle: seller.handle, description: 'Acceso libre a sala y clases.' });
     const person = await h.e2e.register('lst-held-person');
     await h.e2e.as(person.token).get('/admin/business/listings').expect(403);
     await h.e2e.as(seller.token).get('/admin/business/listings').expect(403);
-    await h.e2e.as(seller.token).post(`/admin/business/listings/${held.id}/release`).send({}).expect(403);
+    await h.e2e.as(seller.token).post(`/admin/business/listings/${held.id}/release`).send({ seenUpdatedAt: found?.updatedAt }).expect(403);
 
     await h.e2e.as(moderator.token).post(`/admin/business/listings/${held.id}/reject`).send({ reasonCode: 'PRICE_ABUSE' }).expect(200);
     expect(await ownListing(seller, held.id)).toMatchObject({ moderationStatus: 'REJECTED', visibility: 'REJECTED_BY_REPP', moderationReasonCode: 'PRICE_ABUSE' });
     await publicGet(h, `/public/directory/listings/${held.id}`).expect(404);
     const inbox = (await h.e2e.as(seller.token).get('/notifications/me').expect(200)).body.data.items as { asunto: string | null }[];
     expect(inbox.map((item) => item.asunto)).toContain('REPP no aprobó tu publicación');
-    await h.e2e.as(moderator.token).post(`/admin/business/listings/${held.id}/release`).send({}).expect(200);
+    const rejected = await consoleRow('REJECTED', held.id);
+    await h.e2e.as(moderator.token).post(`/admin/business/listings/${held.id}/release`).send({ seenUpdatedAt: rejected?.updatedAt }).expect(200);
     await publicGet(h, `/public/directory/listings/${held.id}`).expect(200);
     const audits = await h.select<{ action: string }>(
       `SELECT action FROM admin.audit_log WHERE domain = 'business' AND target_id = :id ORDER BY occurred_at`,

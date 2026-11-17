@@ -5,6 +5,7 @@ import { NotificationChannel } from '../../common/enums/domain.enums';
 import { DomainException } from '../../common/errors/domain.exception';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { assertNotOwnBusiness } from '../business-kyc/kyc-review.service';
+import { resolveMediaUrls } from '../../common/media/media-url';
 import { NotificationService } from '../notifications/notification.service';
 import { AdminListingDecisionInput, AdminListingReleaseInput, AdminListingsQuery } from './business-listings.schemas';
 import { shapeViolations } from './listing-checks';
@@ -21,6 +22,9 @@ type HeldRow = {
   sellerHandle: string | null;
   offerKind: ListingOfferKind;
   name: string;
+  description: string;
+  benefits: string[];
+  mediaUrls: string[];
   price: string;
   currency: string;
   validityDays: number | null;
@@ -37,6 +41,7 @@ type HeldRow = {
 
 const SELECT = `SELECT p.id, p.entity_id AS "entityId", e.user_id AS "ownerUserId", u.email AS "ownerEmail",
        e.name AS "sellerName", h.handle AS "sellerHandle", p.offer_kind AS "offerKind", p.name,
+       p.description, p.benefits, p.media_urls AS "mediaUrls",
        p.current_price AS price, p.currency, p.duration_days AS "validityDays", p.sessions_count AS "sessionsCount",
        p.stock_quantity AS "stockQuantity", p.product_category_id AS "productCategoryId",
        p.moderation_status AS "moderationStatus", p.moderation_reason_code AS "moderationReasonCode",
@@ -70,16 +75,37 @@ export class AdminListingsService {
     const page = rows.slice(0, query.limit);
     const last = page[page.length - 1];
     return {
-      items: page.map(({ ownerEmail: _email, ownerUserId: _owner, cursorKey: _key, updatedAt, ...row }) => ({ ...row, price: String(row.price), updatedAt: new Date(updatedAt).toISOString() })),
+      // `updatedAt` is the full-precision version stamp a release must send back (`seenUpdatedAt`).
+      items: page.map(({ ownerEmail: _email, ownerUserId: _owner, cursorKey, updatedAt: _at, mediaUrls, ...row }) => ({
+        ...row,
+        mediaUrls: resolveMediaUrls(mediaUrls ?? []),
+        price: String(row.price),
+        updatedAt: cursorKey,
+      })),
       nextCursor: rows.length > query.limit && last ? encodeCursor(last.cursorKey, last.id) : null,
     };
   }
 
-  /** Back to LIVE. Only a listing that meets today's shape and currency rules can be public. */
+  /**
+   * Back to LIVE, and only the version REPP reviewed: a listing edited since
+   * (a HELD one stays editable so its seller can fix it) answers
+   * `409 LISTING_CHANGED_SINCE_REVIEW` and nothing is published. Only a
+   * listing that meets today's shape and currency rules can be public.
+   */
   async release(actor: AuthenticatedUser, listingId: string, input: AdminListingReleaseInput) {
     return this.sequelize.transaction(async (transaction) => {
       const row = await this.load(actor, listingId, transaction);
       if (row.moderationStatus === 'LIVE') throw invalidTransition(row.moderationStatus);
+      // Compared by the database at full precision; the row is locked, so the stamp cannot move now.
+      const [stamp] = await this.sequelize.query<{ unchanged: boolean }>(
+        'SELECT updated_at = CAST(:seen AS timestamptz) AS unchanged FROM directory.entity_plans WHERE id = :listingId',
+        { type: QueryTypes.SELECT, replacements: { listingId, seen: input.seenUpdatedAt }, transaction },
+      );
+      if (stamp?.unchanged !== true) {
+        throw new DomainException(HttpStatus.CONFLICT, 'LISTING_CHANGED_SINCE_REVIEW', 'La publicación cambió desde que la revisaste; vuelve a revisarla.', {
+          currentUpdatedAt: row.cursorKey,
+        });
+      }
       const violations = shapeViolations({ ...row, validityDays: row.validityDays });
       if (violations.length > 0 || row.currency !== LISTING_CURRENCY) {
         throw new DomainException(HttpStatus.CONFLICT, 'LISTING_NOT_PUBLISHABLE', 'La publicación no cumple los datos de su tipo; el negocio debe corregirla.', {

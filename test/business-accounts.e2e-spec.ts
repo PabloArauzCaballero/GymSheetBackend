@@ -8,6 +8,7 @@ import { businessAccountsMigration } from '../src/database/migrations/2026112004
 import { storedNameSkeletonMigration } from '../src/database/migrations/202611200403-stored-name-skeleton';
 import { businessKycMigration } from '../src/database/migrations/202611200501-business-kyc';
 import { businessListingsMigration } from '../src/database/migrations/202611200601-business-listings';
+import { listingVersionStampMigration } from '../src/database/migrations/202611200602-listing-version-stamp';
 import { businessNameSkeleton, handleSkeleton } from '../src/modules/business-accounts/handle-rules';
 import { E2eApp, bootE2eApp, markEmailVerified } from './support/e2e-app';
 
@@ -435,6 +436,7 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
     const transaction = await sequelize.transaction();
     try {
       // Migrations roll back in reverse order: the listings (202611200601) and the KYC tables (202611200501) come after business.accounts.
+      await listingVersionStampMigration.down(queryInterface, transaction);
       await businessListingsMigration.down(queryInterface, transaction);
       await businessKycMigration.down(queryInterface, transaction);
       await businessAccountsMigration.down(queryInterface, transaction);
@@ -451,6 +453,7 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
       await businessAccountsMigration.up(queryInterface, transaction);
       await businessKycMigration.up(queryInterface, transaction);
       await businessListingsMigration.up(queryInterface, transaction);
+      await listingVersionStampMigration.up(queryInterface, transaction);
       const [again] = await sequelize.query<{ accounts: string | null }>(
         `SELECT to_regclass('business.accounts')::text AS accounts`,
         { type: QueryTypes.SELECT, transaction },
