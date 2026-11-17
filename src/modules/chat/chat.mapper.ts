@@ -236,6 +236,8 @@ export type ConversationSummaryResponse = {
   kind: ConversationKind;
   /** BUSINESS: the listing (public profile); `null` otherwise. */
   businessEntityId: string | null;
+  /** BUSINESS whose business closed its account: read-only (`canWrite` false), shown as «Negocio cerrado». */
+  businessClosed: boolean;
   /** Apodo propio para esta conversación (privado), o `null` si no se puso ninguno. */
   nickname: string | null;
   /** Cursores del otro participante: comparar contra `createdAt` de mis mensajes para pintar el check. */
@@ -287,6 +289,7 @@ export function mapConversationSummary(
     systemKind: row.system_kind,
     kind: row.kind,
     businessEntityId: row.business_entity_id ?? null,
+    businessClosed: row.business_closed === true,
     nickname: row.nickname,
     otherUserLastDeliveredAt: row.other_last_delivered_at,
     otherUserLastReadAt: row.other_last_read_at,

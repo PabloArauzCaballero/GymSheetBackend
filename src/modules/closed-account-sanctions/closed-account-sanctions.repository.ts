@@ -45,10 +45,18 @@ export class ClosedAccountSanctionsRepository {
     return { suspendedUntil: account?.suspendedUntil ?? null, strikes: z.array(carriedStrikeSchema).parse(strikes) };
   }
 
-  async insert(emailHmac: string, snapshot: SanctionSnapshot, expiresAt: Date, transaction: Transaction): Promise<void> {
+  async insert(
+    emailHmac: string,
+    snapshot: SanctionSnapshot,
+    expiresAt: Date,
+    transaction: Transaction,
+    business?: { nitHmacs: string[]; ciHmacs: string[]; suspended: boolean },
+  ): Promise<void> {
     await this.sequelize.query(
-      `INSERT INTO moderation.closed_account_sanctions (email_hmac, suspended_until, strike_count, strikes, expires_at)
-       VALUES (:emailHmac, :suspendedUntil, :strikeCount, CAST(:strikes AS jsonb), :expiresAt)`,
+      `INSERT INTO moderation.closed_account_sanctions
+         (email_hmac, suspended_until, strike_count, strikes, expires_at, nit_hmacs, ci_hmacs, business_suspended)
+       VALUES (:emailHmac, :suspendedUntil, :strikeCount, CAST(:strikes AS jsonb), :expiresAt,
+               CAST(:nitHmacs AS varchar(64)[]), CAST(:ciHmacs AS varchar(64)[]), :businessSuspended)`,
       {
         replacements: {
           emailHmac,
@@ -56,20 +64,37 @@ export class ClosedAccountSanctionsRepository {
           strikeCount: snapshot.strikes.length,
           strikes: JSON.stringify(snapshot.strikes),
           expiresAt,
+          nitHmacs: pgArray(business?.nitHmacs ?? []),
+          ciHmacs: pgArray(business?.ciHmacs ?? []),
+          businessSuspended: business?.suspended ?? false,
         },
         transaction,
       },
     );
   }
 
-  /** Deletes and returns every unexpired record of this email: a record is used once. */
+  /**
+   * Returns every unexpired, unconsumed record of this email: a record is used
+   * once. A plain record is deleted; one that carries a business's NIT or CI
+   * (ADR-0028) is only marked consumed, so those keep counting for the KYC.
+   */
   async consume(emailHmac: string, now: Date, transaction: Transaction): Promise<SanctionSnapshot[]> {
     const rows = await this.sequelize.query<{ suspendedUntil: Date | null; strikes: unknown }>(
-      `WITH consumed AS (
-         DELETE FROM moderation.closed_account_sanctions
-          WHERE email_hmac = :emailHmac AND expires_at > :now
-         RETURNING suspended_until, strikes)
-       SELECT suspended_until AS "suspendedUntil", strikes FROM consumed`,
+      `WITH taken AS (
+         SELECT id, cardinality(nit_hmacs) + cardinality(ci_hmacs) > 0 AS traced
+           FROM moderation.closed_account_sanctions
+          WHERE email_hmac = :emailHmac AND expires_at > :now AND consumed_at IS NULL
+          FOR UPDATE),
+       deleted AS (
+         DELETE FROM moderation.closed_account_sanctions s USING taken
+          WHERE s.id = taken.id AND NOT taken.traced
+         RETURNING s.suspended_until, s.strikes),
+       marked AS (
+         UPDATE moderation.closed_account_sanctions s SET consumed_at = :now FROM taken
+          WHERE s.id = taken.id AND taken.traced
+         RETURNING s.suspended_until, s.strikes)
+       SELECT suspended_until AS "suspendedUntil", strikes FROM deleted
+       UNION ALL SELECT suspended_until AS "suspendedUntil", strikes FROM marked`,
       { type: QueryTypes.SELECT, replacements: { emailHmac, now }, transaction },
     );
     return rows.map((row) => storedSchema.parse({ ...row, suspendedUntil: row.suspendedUntil && new Date(row.suspendedUntil) }));
@@ -94,4 +119,9 @@ export class ClosedAccountSanctionsRepository {
       transaction,
     });
   }
+}
+
+/** A Postgres array literal of HMACs (hex only, checked by the table's CHECK). */
+function pgArray(values: readonly string[]): string {
+  return `{${values.join(",")}}`;
 }

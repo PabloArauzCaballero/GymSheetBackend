@@ -3,6 +3,8 @@ import { QueryTypes, Transaction } from 'sequelize';
 import { subscriptionLedgerMigration } from '../src/database/migrations/202611201001-subscription-ledger';
 import { retireMembershipMachineryMigration } from '../src/database/migrations/202611201002-retire-membership-machinery';
 import { gymMembershipVisibilityMigration } from '../src/database/migrations/202611201101-gym-membership-visibility';
+import { businessClosureMigration } from '../src/database/migrations/202611201201-business-closure';
+import { contractPaymentReceiptUrlMigration } from '../src/database/migrations/202611201202-contract-payment-receipt-url';
 import { KycHarness, bootKycHarness } from './support/kyc-e2e';
 import { createListing } from './support/listings-e2e';
 import { removeReceipts } from './support/orders-e2e';
@@ -86,6 +88,9 @@ describe('retirement of the gym-operated membership machinery (e2e, franja 8e)',
     const queryInterface = h.sequelize.getQueryInterface();
     const transaction = await h.sequelize.transaction();
     try {
+      // The business closure (202611201202, 202611201201) rolls back first: it is the newest.
+      await contractPaymentReceiptUrlMigration.down(queryInterface, transaction);
+      await businessClosureMigration.down(queryInterface, transaction);
       await gymMembershipVisibilityMigration.down(queryInterface, transaction);
       await retireMembershipMachineryMigration.down(queryInterface, transaction);
       await subscriptionLedgerMigration.down(queryInterface, transaction);
@@ -100,6 +105,8 @@ describe('retirement of the gym-operated membership machinery (e2e, franja 8e)',
       await subscriptionLedgerMigration.up(queryInterface, transaction);
       await retireMembershipMachineryMigration.up(queryInterface, transaction);
       await gymMembershipVisibilityMigration.up(queryInterface, transaction);
+      await businessClosureMigration.up(queryInterface, transaction);
+      await contractPaymentReceiptUrlMigration.up(queryInterface, transaction);
       expect(await snapshot(transaction)).toEqual(before);
     } finally {
       await transaction.rollback();

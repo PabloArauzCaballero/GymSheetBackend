@@ -9,6 +9,8 @@ import { affiliationsClosedRowsMigration } from '../src/database/migrations/2026
 import { subscriptionLedgerMigration } from '../src/database/migrations/202611201001-subscription-ledger';
 import { retireMembershipMachineryMigration } from '../src/database/migrations/202611201002-retire-membership-machinery';
 import { gymMembershipVisibilityMigration } from '../src/database/migrations/202611201101-gym-membership-visibility';
+import { businessClosureMigration } from '../src/database/migrations/202611201201-business-closure';
+import { contractPaymentReceiptUrlMigration } from '../src/database/migrations/202611201202-contract-payment-receipt-url';
 import { KycBusiness, KycHarness, bootKycHarness, letters } from './support/kyc-e2e';
 import { createListing, membership, publicGet, publicIds, publishedBusiness } from './support/listings-e2e';
 
@@ -220,6 +222,9 @@ describe('business listings, locations and the public marketplace (e2e, franja 8
     try {
       // Reverse id order: 202611201101, 202611201002, 202611201001, the affiliations (202611200901, which
       // reference the locations), the orders (202611200801) and the business chats (202611200701) go first.
+      // The business closure (202611201202, 202611201201) rolls back first: it is the newest.
+      await contractPaymentReceiptUrlMigration.down(queryInterface, transaction);
+      await businessClosureMigration.down(queryInterface, transaction);
       await gymMembershipVisibilityMigration.down(queryInterface, transaction);
       await retireMembershipMachineryMigration.down(queryInterface, transaction);
       await subscriptionLedgerMigration.down(queryInterface, transaction);
@@ -245,6 +250,8 @@ describe('business listings, locations and the public marketplace (e2e, franja 8
       await subscriptionLedgerMigration.up(queryInterface, transaction);
       await retireMembershipMachineryMigration.up(queryInterface, transaction);
       await gymMembershipVisibilityMigration.up(queryInterface, transaction);
+      await businessClosureMigration.up(queryInterface, transaction);
+      await contractPaymentReceiptUrlMigration.up(queryInterface, transaction);
       const [back] = await h.sequelize.query<{ offerKind: string; moderationStatus: string }>(
         'SELECT offer_kind AS "offerKind", moderation_status AS "moderationStatus" FROM directory.entity_plans WHERE id = :id',
         { type: QueryTypes.SELECT, replacements: { id: live.id }, transaction },

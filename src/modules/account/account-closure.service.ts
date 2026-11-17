@@ -8,6 +8,9 @@ import { effectiveTenantOf, isAccountInScope } from "../../common/tenancy/tenant
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { env } from "../../config/env";
 import { EMAIL_PIN_POLICY, EmailPinFailure, EmailVerificationService, emailPinError } from "../auth/email-verification.service";
+import { BUSINESS_CLOSURE_STEPS } from "../business-closure/business-closure.catalog";
+import { ACCOUNT_CLOSURE_STEPS } from "./account-closure.catalog";
+import { BusinessClosureService } from "../business-closure/business-closure.service";
 import { ClosedAccountSanctionsService } from "../closed-account-sanctions/closed-account-sanctions.service";
 import { MediaReleaseService } from "../media/media-release.service";
 import { SocialRecommendationOutboxService } from "../social/social-recommendation-outbox.service";
@@ -40,17 +43,22 @@ export class AccountClosureService {
     private readonly mediaRelease: MediaReleaseService,
     private readonly recommendations: SocialRecommendationOutboxService,
     private readonly sanctions: ClosedAccountSanctionsService,
+    private readonly businessClosure: BusinessClosureService,
   ) {}
 
   async preview(userId: string): Promise<ClosurePreview> {
     const user = await this.activeUser(userId);
-    const [counts, hasIdentity] = await Promise.all([
-      this.repository.countSteps(userId),
+    const business = user.role === UserRole.BUSINESS;
+    const [counts, hasIdentity, blockers] = await Promise.all([
+      this.repository.countSteps(userId, business ? BUSINESS_CLOSURE_STEPS : ACCOUNT_CLOSURE_STEPS),
       this.repository.hasLinkedIdentity(userId),
+      business ? this.businessClosure.blockers(userId) : Promise.resolve([]),
     ]);
     return mapClosurePreview(counts, {
-      allowed: user.role === UserRole.CLIENT,
+      allowed: user.role === UserRole.CLIENT || business,
       pinAllowed: hasIdentity,
+      business,
+      blockers,
     });
   }
 
@@ -90,6 +98,12 @@ export class AccountClosureService {
       if (input.pin !== undefined) {
         const outcome = await this.emailPins.verifyPurposePin(userId, "CLOSE_ACCOUNT", input.pin, transaction);
         if (outcome.kind !== "VERIFIED") return { failed: outcome };
+      }
+      if (locked.role === UserRole.BUSINESS) {
+        // Refuses (409) while a receipt waits for the business; then orders, affiliations and periods (ADR-0028).
+        const prepared = await this.businessClosure.prepare(userId, transaction);
+        await this.sanctions.recordAtClosure(locked, transaction, new Date(), prepared.sanction);
+        return { closedAt: await this.eraseInTransaction(userId, unusablePasswordHash, transaction, { business: true, extraKeys: prepared.mediaKeys }) };
       }
       await this.sanctions.recordAtClosure(locked, transaction);
       return { closedAt: await this.eraseInTransaction(userId, unusablePasswordHash, transaction) };
@@ -166,7 +180,7 @@ export class AccountClosureService {
         "Las cuentas de socios las cierra cada socio desde su app.",
       );
     }
-    // A business account is not staff either; its own closure (listing, handle, orders) is franja 8f (ADR-0020).
+    // A business account is not staff either: it closes itself with `DELETE /me/account` (ADR-0028).
     if (user.role === UserRole.BUSINESS) {
       throw new DomainException(
         HttpStatus.BAD_REQUEST,
@@ -176,16 +190,22 @@ export class AccountClosureService {
     }
   }
 
-  private async eraseInTransaction(userId: string, unusablePasswordHash: string, transaction: Transaction): Promise<Date> {
-    const mediaKeys = await this.repository.collectMediaKeys(userId, transaction);
-    await this.repository.eraseAll(userId, transaction);
+  private async eraseInTransaction(
+    userId: string,
+    unusablePasswordHash: string,
+    transaction: Transaction,
+    options: { business: boolean; extraKeys: string[] } = { business: false, extraKeys: [] },
+  ): Promise<Date> {
+    const catalog = options.business ? BUSINESS_CLOSURE_STEPS : ACCOUNT_CLOSURE_STEPS;
+    const mediaKeys = [...new Set([...(await this.repository.collectMediaKeys(userId, transaction, catalog)), ...options.extraKeys])];
+    await this.repository.eraseAll(userId, transaction, catalog);
     const closedAt = await this.repository.anonymizeAccount(
       userId,
       { tombstoneEmail: closedAccountEmail(userId), unusablePasswordHash },
       transaction,
     );
-    // The account is inactive now, so the snapshot tells the recommender to drop the profile.
-    await this.recommendations.enqueueProfileSnapshot(userId, transaction);
+    // The account is inactive now, so the snapshot tells the recommender to drop the profile (a business has none).
+    if (!options.business) await this.recommendations.enqueueProfileSnapshot(userId, transaction);
     const inUse = await this.repository.keysStillInUse(mediaKeys, transaction);
     for (const storageKey of mediaKeys.filter((key) => !inUse.has(key))) {
       await this.mediaRelease.requestRelease({ aggregateType: "account", aggregateId: userId, storageKey }, transaction);
@@ -199,9 +219,9 @@ export class AccountClosureService {
     return user;
   }
 
-  /** Staff accounts carry the gym's operations; the gym closes them, not the app. */
+  /** Staff accounts carry the gym's operations; the gym closes them, not the app. A business closes itself (ADR-0028). */
   private assertClosable(user: UserModel): void {
-    if (user.role !== UserRole.CLIENT) {
+    if (user.role !== UserRole.CLIENT && user.role !== UserRole.BUSINESS) {
       throw new DomainException(
         HttpStatus.FORBIDDEN,
         "ACCOUNT_CLOSURE_STAFF",

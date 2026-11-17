@@ -16,6 +16,13 @@ export const businessOrdersEnvironmentShape = {
   ORDER_MAX_QUANTITY: z.coerce.number().int().min(1).max(1000).default(20),
   /** Orders a person may hold open (waiting for payment or for the business) at once. */
   ORDER_OPEN_MAX_PER_PERSON: z.coerce.number().int().min(1).max(100).default(5),
+  /**
+   * Open orders (waiting for payment or for the business) a business NOT yet
+   * verified by REPP may hold at once (plan §6.1, ADR-0028): an automatic
+   * approval is «Nuevo» until REPP's post-review. Beyond it, 409
+   * ORDER_SELLER_OPEN_LIMIT; a confirmed or cancelled order frees its place.
+   */
+  ORDER_OPEN_MAX_UNVERIFIED_SELLER: z.coerce.number().int().min(1).max(10_000).default(10),
   /** Receipts a buyer may send for one order (the first one and the resends after a rejection). */
   ORDER_RECEIPT_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
   /** `worker:orders-maintenance`: pause between idle passes and orders per pass. */

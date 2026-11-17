@@ -113,10 +113,13 @@ describe("KYC automatic checks", () => {
     );
   });
 
-  it("CLOSED_ACCOUNT_SANCTION fails on a sanction inherited by the email", async () => {
+  it("CLOSED_ACCOUNT_SANCTION fails on a sanction under the email, the NIT or the CI of a closed account", async () => {
     const probe = queries({ hasClosedAccountSanction: jest.fn().mockResolvedValue(true) });
     await expect(check("CLOSED_ACCOUNT_SANCTION").run(context(), probe, tx)).resolves.toEqual({ outcome: "FAIL" });
-    expect(probe.hasClosedAccountSanction).toHaveBeenCalledWith("e".repeat(64), tx);
+    expect(probe.hasClosedAccountSanction).toHaveBeenCalledWith(
+      { email: "e".repeat(64), nit: "n".repeat(64), ci: "c".repeat(64) },
+      tx,
+    );
   });
 
   it("BANNED_TERMS looks at the name, the handle and the description", async () => {

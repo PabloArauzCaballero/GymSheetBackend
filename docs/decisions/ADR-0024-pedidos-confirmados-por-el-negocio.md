@@ -114,3 +114,7 @@ vencimiento, ni historial.
   disparador completa `unit_amount` y el plazo de 24 h para un escritor anterior a la migración (la
   versión previa durante el despliegue). El down de 8a (`202611200401`) ya no borra una ficha de negocio
   que tiene pedidos: la deja `SUSPENDED` con su historia financiera.
+
+## Continuación en 8f (cierre del negocio)
+
+[ADR-0028](./ADR-0028-cierre-exportacion-y-retencion-del-negocio.md) abre `me/account/*` (salvo `PATCH`) y `me/export/*` al negocio y define su cierre, su exportación, la retención del KYC por entorno (con los 5 años de los registros), el borrado del KYC a pedido, la contracción de `payment_orders.receipt_url`, el tope de pedidos abiertos de un negocio no verificado y el fin de las afiliaciones cuando cierra un gimnasio o un coach (`BUSINESS_CLOSED`).

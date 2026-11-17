@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { ProductEvents } from '../../common/tracking/product-events';
+import { KycExportModule } from '../business-kyc/kyc-export.module';
 import { EquipmentModule } from '../equipment/equipment.module';
 import { ProfilesModule } from '../profiles/profiles.module';
 import { UsersModule } from '../users/users.module';
@@ -30,6 +31,7 @@ import { RoutineProgressDownloadAuditModel } from './routine-progress-download-a
     EquipmentModule,
     IntegrationModule,
     NotificationsModule,
+    KycExportModule,
     SequelizeModule.forFeature([
       RoutineProgressDownloadAuditModel,
       RoutineModel,

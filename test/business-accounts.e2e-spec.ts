@@ -16,6 +16,8 @@ import { affiliationsClosedRowsMigration } from '../src/database/migrations/2026
 import { subscriptionLedgerMigration } from '../src/database/migrations/202611201001-subscription-ledger';
 import { retireMembershipMachineryMigration } from '../src/database/migrations/202611201002-retire-membership-machinery';
 import { gymMembershipVisibilityMigration } from '../src/database/migrations/202611201101-gym-membership-visibility';
+import { businessClosureMigration } from '../src/database/migrations/202611201201-business-closure';
+import { contractPaymentReceiptUrlMigration } from '../src/database/migrations/202611201202-contract-payment-receipt-url';
 import { businessNameSkeleton, handleSkeleton } from '../src/modules/business-accounts/handle-rules';
 import { E2eApp, bootE2eApp, markEmailVerified } from './support/e2e-app';
 
@@ -452,6 +454,9 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
       // tables (202611201002), the subscription ledger (202611201001), the affiliations (202611200901), the
       // orders (202611200801), the business chats (202611200701), the listings (202611200602, 202611200601)
       // and the KYC tables (202611200501) come after business.accounts.
+      // The business closure (202611201202, 202611201201) rolls back first: it is the newest.
+      await contractPaymentReceiptUrlMigration.down(queryInterface, transaction);
+      await businessClosureMigration.down(queryInterface, transaction);
       await gymMembershipVisibilityMigration.down(queryInterface, transaction);
       await retireMembershipMachineryMigration.down(queryInterface, transaction);
       await subscriptionLedgerMigration.down(queryInterface, transaction);
@@ -484,6 +489,8 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
       await subscriptionLedgerMigration.up(queryInterface, transaction);
       await retireMembershipMachineryMigration.up(queryInterface, transaction);
       await gymMembershipVisibilityMigration.up(queryInterface, transaction);
+      await businessClosureMigration.up(queryInterface, transaction);
+      await contractPaymentReceiptUrlMigration.up(queryInterface, transaction);
       const [again] = await sequelize.query<{ accounts: string | null }>(
         `SELECT to_regclass('business.accounts')::text AS accounts`,
         { type: QueryTypes.SELECT, transaction },

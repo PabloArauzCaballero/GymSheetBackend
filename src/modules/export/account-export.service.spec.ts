@@ -2,7 +2,9 @@ import { NotFoundException } from '@nestjs/common';
 import { OutboxService } from '../integration/outbox.service';
 import { NoticeEmailService } from '../notifications/notice-email.service';
 import { NotificationService } from '../notifications/notification.service';
+import { KycExportReader } from '../business-kyc/kyc-export.reader';
 import { AccountExportRepository } from './account-export.repository';
+import { BUSINESS_EXPORT_SECTIONS } from './business-export.sections';
 import { ACCOUNT_EXPORT_SECTIONS } from './account-export.sections';
 import { ACCOUNT_EXPORT_QUEUE, ACCOUNT_EXPORT_ROWS_PER_TABLE, AccountExportService } from './account-export.service';
 
@@ -11,7 +13,7 @@ const exportId = '00000000-0000-4000-8000-0000000000e1';
 const transaction = { id: 'tx' };
 const pending = { id: exportId, userId, status: 'PENDING', sizeBytes: null, requestedAt: new Date(), completedAt: null, expiresAt: null };
 
-function build(options: { latest?: Date | null; row?: object | null; archive?: string | null; sectionRows?: number; transitioned?: boolean } = {}) {
+function build(options: { latest?: Date | null; row?: object | null; archive?: string | null; sectionRows?: number; transitioned?: boolean; businessKyc?: object | null } = {}) {
   const repository = {
     runInTransaction: jest.fn((work: (t: unknown) => unknown) => work(transaction)),
     lockAccount: jest.fn().mockResolvedValue(undefined),
@@ -28,11 +30,13 @@ function build(options: { latest?: Date | null; row?: object | null; archive?: s
   const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
   const notifications = { enqueueDirectMessage: jest.fn().mockResolvedValue(true) };
   const noticeEmails = { enqueue: jest.fn().mockResolvedValue(true) };
+  const kycExport = { read: jest.fn().mockResolvedValue(options.businessKyc ?? null) };
   const service = new AccountExportService(
     repository as unknown as AccountExportRepository,
     outbox as unknown as OutboxService,
     notifications as unknown as NotificationService,
     noticeEmails as unknown as NoticeEmailService,
+    kycExport as unknown as KycExportReader,
   );
   return { service, repository, outbox, notifications, noticeEmails };
 }
@@ -65,6 +69,27 @@ describe('AccountExportService', () => {
     await expect(service.latest(userId)).resolves.toEqual({ export: expect.objectContaining({ id: exportId, status: 'PENDING' }) });
     expect(repository.findLatestOwn).toHaveBeenCalledWith(userId);
     await expect(build({ row: null }).service.latest(userId)).resolves.toEqual({ export: null });
+  });
+
+  it('adds the business sections and its KYC only for a business account (ADR-0028)', async () => {
+    const businessKyc = { submissions: [], documents: [] };
+    const { service, repository } = build({ businessKyc });
+    await service.build(exportId);
+    expect(repository.readSection).toHaveBeenCalledTimes(ACCOUNT_EXPORT_SECTIONS.length + BUSINESS_EXPORT_SECTIONS.length);
+    const parsed = JSON.parse((repository.markReady.mock.calls[0] as [string, string])[1]) as { tables: Record<string, unknown>; businessKyc?: unknown };
+    expect(Object.keys(parsed.tables)).toEqual(expect.arrayContaining(['business.profile', 'business.orders', 'business.affiliations', 'directory.payment_orders']));
+    expect(parsed.businessKyc).toEqual(businessKyc);
+    const person = build();
+    await person.service.build(exportId);
+    expect(JSON.parse((person.repository.markReady.mock.calls[0] as [string, string])[1])).not.toHaveProperty('businessKyc');
+  });
+
+  it('never exports the buyer id, notes or a member\'s CI digits to the business', () => {
+    const omitted = (key: string) => BUSINESS_EXPORT_SECTIONS.find((entry) => entry.key === key)?.omit ?? [];
+    expect(omitted('business.orders')).toEqual(expect.arrayContaining(['athlete_user_id', 'athlete_notes', 'receipt_private_key']));
+    expect(omitted('business.affiliations')).toEqual(expect.arrayContaining(['user_id', 'ci_last3']));
+    expect(omitted('business.subscriptions')).toEqual(expect.arrayContaining(['user_id', 'notes']));
+    for (const entry of BUSINESS_EXPORT_SECTIONS) expect([entry.key, entry.where.includes(':userId')]).toEqual([entry.key, true]);
   });
 
   it('builds one section per data-map table and flags a capped table as truncated', async () => {

@@ -134,9 +134,6 @@ export class PaymentOrderModel extends Model {
   @Column({ type: DataType.STRING(30), allowNull: false })
   declare status: PaymentOrderStatus;
 
-  @Column({ type: DataType.TEXT, allowNull: true, field: 'receipt_url' })
-  declare receiptUrl: string | null;
-
   @Column({ type: DataType.TEXT, allowNull: true, field: 'receipt_storage_key' })
   declare receiptStorageKey: string | null;
 

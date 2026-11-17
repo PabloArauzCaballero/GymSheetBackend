@@ -46,7 +46,28 @@ describe("ClosedAccountSanctionsService.recordAtClosure", () => {
       { suspendedUntil: until, strikes },
       new Date("2027-11-01T00:00:00.000Z"),
       transaction,
+      undefined,
     );
+  });
+
+  it("keeps a closing business suspended by REPP under its email, NIT and CI for 5 years, even without strikes (ADR-0028)", async () => {
+    const { service, repository } = build();
+    const trace = { nitHmacs: ["a".repeat(64)], ciHmacs: ["b".repeat(64)], suspended: true };
+    await expect(withIpHashSecret(secret, () => service.recordAtClosure(account, transaction, now, trace))).resolves.toBe(true);
+    expect(repository.insert).toHaveBeenCalledWith(
+      emailHmac,
+      { suspendedUntil: null, strikes: [] },
+      new Date(now.getTime() + 5 * 365 * 86_400_000),
+      transaction,
+      trace,
+    );
+  });
+
+  it("records nothing for a business that closes without a sanction", async () => {
+    const { service, repository } = build();
+    const trace = { nitHmacs: ["a".repeat(64)], ciHmacs: [], suspended: false };
+    await expect(withIpHashSecret(secret, () => service.recordAtClosure(account, transaction, now, trace))).resolves.toBe(false);
+    expect(repository.insert).not.toHaveBeenCalled();
   });
 
   it("cannot keep the email without the privacy pepper", async () => {

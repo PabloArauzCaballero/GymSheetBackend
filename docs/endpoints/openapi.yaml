@@ -116,6 +116,7 @@ paths:
     patch:
       tags: [Account]
       summary: Corregir el nombre de la cuenta
+      description: Solo personas; una cuenta de negocio recibe 403 ACCOUNT_KIND_NOT_ALLOWED (su nombre cambia por el KYC, ADR-0028).
       requestBody:
         required: true
         content:
@@ -134,7 +135,12 @@ paths:
       summary: Cerrar la cuenta y borrar o anonimizar los datos personales
       description: >-
         Una transacción. Contraseña actual o, para cuentas de Google/Apple, el PIN de
-        `/me/account/closure-pin`. Solo CLIENTE. Los archivos se borran después por el outbox.
+        `/me/account/closure-pin`. Personas (CLIENTE) y cuentas de negocio (NEGOCIO, ADR-0028).
+        Los archivos se borran después por el outbox. Un negocio: ficha CLOSED, @handle RETIRED sin
+        redirección y bloqueado 180 días, publicaciones ARCHIVED, pedidos sin pagar CANCELLED
+        (BUSINESS_CLOSED, con aviso), afiliaciones ENDED y periodos en curso CANCELLED (con aviso),
+        chats en solo lectura para la persona (businessClosed); 409 BUSINESS_HAS_PENDING_VERIFICATIONS
+        {count, action} mientras haya comprobantes QR por decidir.
       requestBody:
         required: true
         content:
@@ -149,6 +155,7 @@ paths:
         "400": { $ref: "#/components/responses/Problem400" }
         "401": { $ref: "#/components/responses/Problem401" }
         "403": { $ref: "#/components/responses/Problem403" }
+        "409": { description: "BUSINESS_HAS_PENDING_VERIFICATIONS {count, action}", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "429": { $ref: "#/components/responses/Problem429" }
   /me/account/closure-preview:
     get:
@@ -238,7 +245,11 @@ paths:
         - { $ref: "#/components/parameters/IdParam" }
       responses:
         "200":
-          description: Archivo JSON con una sección por tabla del mapa de datos
+          description: >-
+            Archivo JSON con una sección por tabla del mapa de datos. Una cuenta de negocio suma las secciones
+            business.* (perfil, sedes, publicaciones, precios, pedidos con buyer_display_name, afiliaciones sin
+            ci_last3, suscripciones) y businessKyc (NIT en claro; CI, teléfono e imágenes solo si es INDIVIDUAL;
+            documentos de una COMPANY retenidos como REPRESENTATIVE_IDENTITY), ADR-0028.
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
@@ -1938,6 +1949,30 @@ paths:
               schema: { $ref: "#/components/schemas/SuccessEnvelope" }
         "403": { $ref: "#/components/responses/Problem403" }
         "409": { $ref: "#/components/responses/Problem409" }
+  /business/me/kyc/erase:
+    post:
+      tags: [BusinessKyc]
+      summary: "Borrar el KYC propio a pedido (la cuenta queda SUSPENDED con KYC_MISSING)"
+      description: >
+        ADR-0017/0028. Documentos por media.release; NIT, CI y teléfono cifrados, nombre y dirección del
+        representante se borran; quedan máscaras, HMAC y decisiones. Un intento aprobado pasa a SUSPENDED,
+        uno en revisión a REJECTED (con reenvío); la ficha deja de ser pública. REPP no puede reactivarla
+        tal cual (409 KYC_INVALID_TRANSITION {reason: KYC_MISSING}).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [password], properties: { password: { type: string, minLength: 1, maxLength: 128 } } }
+      responses:
+        "200":
+          description: "{ status: SUSPENDED, suspensionReasonCode: KYC_MISSING, kycStatus, documentsErased }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "429": { $ref: "#/components/responses/Problem429" }
   /admin/business/kyc/queue:
     get:
       tags: [AdminBusiness]
@@ -2684,7 +2719,7 @@ paths:
         "400": { description: "Cuerpo inválido o con campos no declarados (amount, planId...)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "404": { description: "Publicación no pública o vendedor sin cuenta de negocio", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "403": { description: "EMAIL_VERIFICATION_REQUIRED (con affiliation)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "409": { description: "ORDER_OUT_OF_STOCK | ORDER_ALREADY_OPEN | ORDER_OPEN_LIMIT | ORDER_PAYMENT_METHOD_UNAVAILABLE | SOCIO_OF_ANOTHER_GYM {affiliationId, action: SWITCH_GYM} | AFFILIATION_SOCIO_PENDING | AFFILIATION_COOLDOWN | AFFILIATION_LIMIT", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "ORDER_OUT_OF_STOCK | ORDER_ALREADY_OPEN | ORDER_OPEN_LIMIT | ORDER_SELLER_OPEN_LIMIT (negocio aún no verificado por REPP con ORDER_OPEN_MAX_UNVERIFIED_SELLER pedidos abiertos) | ORDER_PAYMENT_METHOD_UNAVAILABLE | SOCIO_OF_ANOTHER_GYM {affiliationId, action: SWITCH_GYM} | AFFILIATION_SOCIO_PENDING | AFFILIATION_COOLDOWN | AFFILIATION_LIMIT", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "422": { description: "ORDER_QUANTITY_NOT_ALLOWED | AFFILIATION_REQUIRED {gymEntityId}", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
   /directory/payments/orders/my-orders:
     get:
@@ -2761,7 +2796,7 @@ paths:
               schema: { $ref: "#/components/schemas/SuccessEnvelope" }
         "400": { description: "Archivo ausente o no JPEG/PNG", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "404": { description: "Pedido ajeno o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "409": { description: "ORDER_INVALID_TRANSITION | ORDER_RECEIPT_LIMIT | ORDER_OUT_OF_STOCK", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "ORDER_INVALID_TRANSITION | ORDER_RECEIPT_LIMIT | ORDER_OUT_OF_STOCK | ORDER_BUSINESS_UNAVAILABLE (el negocio dejó de ser público)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "413": { description: "Archivo demasiado grande", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "503": { description: "PAYMENT_EVIDENCE_UNAVAILABLE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
     get:
@@ -3384,7 +3419,8 @@ paths:
         Sin conexión social. Solo fichas ACTIVE con cuenta de negocio ACTIVE; cualquier otra
         responde 404 con el mismo cuerpo. 201 si se abrió ahora, 200 si ya existía la
         conversación viva. Un negocio recibe 403 ACCOUNT_KIND_NOT_ALLOWED. Después se lee y se
-        escribe por /me/conversations/:id/*.
+        escribe por /me/conversations/:id/*. En GET /me/conversations, `businessClosed: true` marca
+        el chat de un negocio que cerró su cuenta (ADR-0028): `canWrite` es false («Negocio cerrado»).
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -3777,9 +3813,18 @@ components:
           properties:
             data:
               type: object
-              required: [allowed, proof, account, deleted, anonymized, kept]
+              required: [allowed, blockers, proof, account, deleted, anonymized, kept]
               properties:
                 allowed: { type: boolean }
+                blockers:
+                  type: array
+                  description: Vacío si el cierre puede hacerse ya (persona siempre vacío; negocio con comprobantes por decidir, ADR-0028).
+                  items:
+                    type: object
+                    required: [code, count]
+                    properties:
+                      code: { type: string, enum: [BUSINESS_HAS_PENDING_VERIFICATIONS] }
+                      count: { type: integer, minimum: 1 }
                 proof:
                   type: object
                   properties:

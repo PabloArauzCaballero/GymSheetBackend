@@ -41,8 +41,8 @@ export class AccountClosureRepository {
   }
 
   /** One round trip: a count per visible step, evaluated on the current state. */
-  async countSteps(userId: string): Promise<ClosureStepCount[]> {
-    const visible = ACCOUNT_CLOSURE_STEPS.filter((step) => !step.internal);
+  async countSteps(userId: string, catalog: readonly ClosureStep[] = ACCOUNT_CLOSURE_STEPS): Promise<ClosureStepCount[]> {
+    const visible = catalog.filter((step) => !step.internal);
     const sql = visible
       .map((step, index) => `SELECT ${index} AS idx, count(*)::int AS count FROM ${step.table} t WHERE ${step.where}`)
       .join("\nUNION ALL\n");
@@ -55,8 +55,8 @@ export class AccountClosureRepository {
   }
 
   /** Storage keys of every row the closure removes, read before anything changes. */
-  async collectMediaKeys(userId: string, transaction: Transaction): Promise<string[]> {
-    const withMedia = ACCOUNT_CLOSURE_STEPS.filter((step) => step.mediaKey && step.disposition !== "KEPT");
+  async collectMediaKeys(userId: string, transaction: Transaction, catalog: readonly ClosureStep[] = ACCOUNT_CLOSURE_STEPS): Promise<string[]> {
+    const withMedia = catalog.filter((step) => step.mediaKey && step.disposition !== "KEPT" && !step.effect);
     if (withMedia.length === 0) return [];
     const sql = withMedia
       .flatMap((step) => mediaKeysOf(step.mediaKey).map((key) => `SELECT ${key} AS key FROM ${step.table} t WHERE ${step.where}`))
@@ -69,10 +69,10 @@ export class AccountClosureRepository {
     return [...new Set(rows.map((row) => row.key).filter((key): key is string => Boolean(key)))];
   }
 
-  /** Runs the catalogue in order, inside the closure transaction. */
-  async eraseAll(userId: string, transaction: Transaction): Promise<void> {
-    for (const step of ACCOUNT_CLOSURE_STEPS) {
-      if (step.disposition === "KEPT") continue;
+  /** Runs the catalogue in order, inside the closure transaction; `effect` steps are applied by their service. */
+  async eraseAll(userId: string, transaction: Transaction, catalog: readonly ClosureStep[] = ACCOUNT_CLOSURE_STEPS): Promise<void> {
+    for (const step of catalog) {
+      if (step.disposition === "KEPT" || step.effect) continue;
       const sql = step.disposition === "DELETED"
         ? `DELETE FROM ${step.table} t WHERE ${step.where}`
         : `UPDATE ${step.table} t SET ${step.set} WHERE ${step.where}`;

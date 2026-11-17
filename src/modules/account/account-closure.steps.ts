@@ -30,7 +30,15 @@ export type ClosureStep = {
   mediaKey?: MediaKeySql;
   /** Side effect on other people's rows: runs, but is not listed in the preview. */
   internal?: boolean;
+  /**
+   * Counted by the preview with this same predicate, but applied by the
+   * business closure (orders, affiliations, periods: stock, history and a
+   * notice per row), never by the generic UPDATE (ADR-0028).
+   */
+  effect?: BusinessClosureEffect;
 };
+
+export type BusinessClosureEffect = "CANCEL_UNPAID_ORDERS" | "END_AFFILIATIONS" | "CANCEL_PERIODS";
 
 export const del = (table: string, label: string, where: string, mediaKey?: MediaKeySql): ClosureStep => ({
   table,

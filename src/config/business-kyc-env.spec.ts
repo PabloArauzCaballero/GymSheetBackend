@@ -28,6 +28,20 @@ describe("business KYC environment (ADR-0021)", () => {
     });
   });
 
+  it("defaults the KYC retention to the proposal of plan §2.14 and refuses a records period under one year (ADR-0028)", () => {
+    expect(schema.parse({ NODE_ENV: "development" })).toMatchObject({
+      KYC_RETENTION_ABANDONED_DRAFT_DAYS: 30,
+      KYC_RETENTION_REJECTED_DAYS: 30,
+      KYC_RETENTION_SELFIE_DAYS: 30,
+      KYC_RETENTION_SUPERSEDED_DAYS: 30,
+      KYC_RETENTION_CLOSED_ACCOUNT_DAYS: 180,
+      KYC_RETENTION_PHONE_CODE_DAYS: 1,
+      KYC_RETENTION_RECORDS_DAYS: 1825,
+    });
+    expect(schema.parse({ NODE_ENV: "development", KYC_RETENTION_CLOSED_ACCOUNT_DAYS: "365" }).KYC_RETENTION_CLOSED_ACCOUNT_DAYS).toBe(365);
+    expect(schema.safeParse({ NODE_ENV: "development", KYC_RETENTION_RECORDS_DAYS: "30" }).success).toBe(false);
+  });
+
   it("whatsapp-cloud needs its token, phone number id and template", () => {
     const base = { NODE_ENV: "development", BUSINESS_PHONE_OTP_PROVIDER: "whatsapp-cloud" };
     expect(schema.safeParse(base).success).toBe(false);

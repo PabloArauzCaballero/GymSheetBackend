@@ -5,6 +5,9 @@ import { ClosedAccountSanctionsService } from '../closed-account-sanctions/close
 import { MediaReleaseService } from '../media/media-release.service';
 import { SocialRecommendationOutboxService } from '../social/social-recommendation-outbox.service';
 import { UsersRepository } from '../users/users.repository';
+import { BUSINESS_CLOSURE_STEPS } from '../business-closure/business-closure.catalog';
+import { BusinessClosureService } from '../business-closure/business-closure.service';
+import { ACCOUNT_CLOSURE_STEPS } from './account-closure.catalog';
 import { AccountClosureRepository } from './account-closure.repository';
 import { AccountClosureService, closedAccountEmail } from './account-closure.service';
 
@@ -48,6 +51,7 @@ async function build(options: BuildOptions = {}) {
   const mediaRelease = { requestRelease: jest.fn().mockResolvedValue(undefined) };
   const sanctions = { recordAtClosure: jest.fn().mockResolvedValue(false) };
   const recommendations = { enqueueProfileSnapshot: jest.fn().mockResolvedValue(undefined) };
+  const businessClosure = { prepare: jest.fn(), blockers: jest.fn().mockResolvedValue([]) };
   const service = new AccountClosureService(
     repository as unknown as AccountClosureRepository,
     users as unknown as UsersRepository,
@@ -55,8 +59,9 @@ async function build(options: BuildOptions = {}) {
     mediaRelease as unknown as MediaReleaseService,
     recommendations as unknown as SocialRecommendationOutboxService,
     sanctions as unknown as ClosedAccountSanctionsService,
+    businessClosure as unknown as BusinessClosureService,
   );
-  return { service, repository, users, pins, mediaRelease, recommendations, sanctions };
+  return { service, repository, users, pins, mediaRelease, recommendations, sanctions, businessClosure };
 }
 
 describe('AccountClosureService.close', () => {
@@ -91,7 +96,7 @@ describe('AccountClosureService.close', () => {
     await expect(service.close(userId, { password: 'secret-pass' })).resolves.toEqual({ closed: true, closedAt });
 
     expect(repository.collectMediaKeys.mock.invocationCallOrder[0]).toBeLessThan(repository.eraseAll.mock.invocationCallOrder[0]);
-    expect(repository.eraseAll).toHaveBeenCalledWith(userId, transaction);
+    expect(repository.eraseAll).toHaveBeenCalledWith(userId, transaction, ACCOUNT_CLOSURE_STEPS);
     const [, values] = repository.anonymizeAccount.mock.calls[0] as [string, { tombstoneEmail: string; unusablePasswordHash: string }];
     expect(values.tombstoneEmail).toBe(closedAccountEmail(userId));
     await expect(bcrypt.compare('secret-pass', values.unusablePasswordHash)).resolves.toBe(false);
@@ -108,6 +113,39 @@ describe('AccountClosureService.close', () => {
     // The sanction snapshot is taken in the same transaction, before the row is anonymized.
     expect(sanctions.recordAtClosure).toHaveBeenCalledWith(expect.objectContaining({ id: userId, email: 'ana@example.test' }), transaction);
     expect(sanctions.recordAtClosure.mock.invocationCallOrder[0]).toBeLessThan(repository.anonymizeAccount.mock.invocationCallOrder[0]);
+  });
+});
+
+describe('AccountClosureService.close (business account, ADR-0028)', () => {
+  const trace = { nitHmacs: ['a'.repeat(64)], ciHmacs: ['b'.repeat(64)], suspended: true };
+
+  it('runs the business part first, carries its NIT/CI trace and erases with the business catalogue', async () => {
+    const { service, repository, mediaRelease, recommendations, sanctions, businessClosure } = await build({ role: UserRole.BUSINESS });
+    businessClosure.prepare.mockResolvedValue({ mediaKeys: ['business/e1/public/logo.png'], sanction: trace });
+    await expect(service.close(userId, { password: 'secret-pass' })).resolves.toEqual({ closed: true, closedAt });
+
+    expect(businessClosure.prepare).toHaveBeenCalledWith(userId, transaction);
+    expect(sanctions.recordAtClosure).toHaveBeenCalledWith(expect.objectContaining({ id: userId }), transaction, expect.any(Date), trace);
+    expect(repository.eraseAll).toHaveBeenCalledWith(userId, transaction, BUSINESS_CLOSURE_STEPS);
+    expect(businessClosure.prepare.mock.invocationCallOrder[0]).toBeLessThan(repository.eraseAll.mock.invocationCallOrder[0]);
+    expect(mediaRelease.requestRelease).toHaveBeenCalledWith(expect.objectContaining({ storageKey: 'business/e1/public/logo.png' }), transaction);
+    expect(recommendations.enqueueProfileSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('erases nothing when the business still has receipts to decide (409 from the business part)', async () => {
+    const { service, repository, sanctions, businessClosure } = await build({ role: UserRole.BUSINESS });
+    businessClosure.prepare.mockRejectedValue(Object.assign(new Error('pending'), { code: 'BUSINESS_HAS_PENDING_VERIFICATIONS' }));
+    await expect(service.close(userId, { password: 'secret-pass' })).rejects.toMatchObject({ code: 'BUSINESS_HAS_PENDING_VERIFICATIONS' });
+    expect(repository.eraseAll).not.toHaveBeenCalled();
+    expect(sanctions.recordAtClosure).not.toHaveBeenCalled();
+  });
+
+  it('previews with the business catalogue and its blockers', async () => {
+    const { service, repository, businessClosure } = await build({ role: UserRole.BUSINESS });
+    businessClosure.blockers.mockResolvedValue([{ code: 'BUSINESS_HAS_PENDING_VERIFICATIONS', count: 2 }]);
+    const preview = await service.preview(userId);
+    expect(repository.countSteps).toHaveBeenCalledWith(userId, BUSINESS_CLOSURE_STEPS);
+    expect(preview).toMatchObject({ allowed: true, blockers: [{ code: 'BUSINESS_HAS_PENDING_VERIFICATIONS', count: 2 }], account: { label: 'Tu cuenta de negocio' } });
   });
 });
 
@@ -128,7 +166,7 @@ describe('AccountClosureService.closeByModeration', () => {
     const { service, repository, users, pins, sanctions } = await build();
     await expect(service.closeByModeration(userId)).resolves.toBe('CLOSED');
     expect(users.lockUserForUpdate).toHaveBeenCalledWith(userId, transaction);
-    expect(repository.eraseAll).toHaveBeenCalledWith(userId, transaction);
+    expect(repository.eraseAll).toHaveBeenCalledWith(userId, transaction, ACCOUNT_CLOSURE_STEPS);
     expect(repository.anonymizeAccount).toHaveBeenCalledWith(userId, expect.objectContaining({ tombstoneEmail: closedAccountEmail(userId) }), transaction);
     expect(pins.verifyPurposePin).not.toHaveBeenCalled();
     expect(sanctions.recordAtClosure).not.toHaveBeenCalled();
@@ -159,7 +197,7 @@ describe('AccountClosureService.closeStaffByAdmin', () => {
     await expect(service.closeStaffByAdmin(admin, userId)).resolves.toEqual({ closed: true, closedAt });
     expect(users.lockUserForUpdate).toHaveBeenCalledWith(userId, transaction);
     expect(sanctions.recordAtClosure).toHaveBeenCalledWith(expect.objectContaining({ id: userId }), transaction);
-    expect(repository.eraseAll).toHaveBeenCalledWith(userId, transaction);
+    expect(repository.eraseAll).toHaveBeenCalledWith(userId, transaction, ACCOUNT_CLOSURE_STEPS);
     expect(repository.anonymizeAccount).toHaveBeenCalledWith(userId, expect.objectContaining({ tombstoneEmail: closedAccountEmail(userId) }), transaction);
     expect(repository.lockActiveAdmins).not.toHaveBeenCalled();
   });

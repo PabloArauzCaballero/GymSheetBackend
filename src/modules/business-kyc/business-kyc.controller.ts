@@ -28,10 +28,11 @@ import { ConsentsService } from "../consents/consents.service";
 import { legalClientContext } from "../legal/legal-client-context";
 import { UploadedSelfie } from "../verification/selfie-image";
 import { KycDraftsService } from "./kyc-drafts.service";
+import { KycErasureService } from "./kyc-erasure.service";
 import { KycStatusService } from "./kyc-status.service";
 import { KycSubmitService } from "./kyc-submit.service";
 import { KYC_RULES, KycDocumentKind } from "./kyc.catalog";
-import { KycDraftInput, kycConsentSchema, kycDocumentBodySchema, kycDraftSchema, phoneConfirmSchema, phoneRequestSchema } from "./kyc.schemas";
+import { KycDraftInput, kycConsentSchema, kycDocumentBodySchema, kycDraftSchema, kycEraseSchema, phoneConfirmSchema, phoneRequestSchema } from "./kyc.schemas";
 import { PhoneVerificationService } from "./phone/phone-verification.service";
 
 const ttl = env.RATE_LIMIT_TTL_SECONDS * 1000;
@@ -47,6 +48,7 @@ export class BusinessKycController {
     private readonly submits: KycSubmitService,
     private readonly phones: PhoneVerificationService,
     private readonly consents: ConsentsService,
+    private readonly erasure: KycErasureService,
   ) {}
 
   @Post("phone/verify/request")
@@ -128,5 +130,16 @@ export class BusinessKycController {
   @HttpCode(HttpStatus.CREATED)
   startChange(@CurrentUser() user: AuthenticatedUser) {
     return this.submits.startChange(user.id);
+  }
+
+  /**
+   * Erases the business's own KYC documents and identity data (ADR-0017, ADR-0028).
+   * The account is left SUSPENDED with `KYC_MISSING`: a business cannot operate without a KYC.
+   */
+  @Post("kyc/erase")
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: env.AUTH_RATE_LIMIT_MAX, ttl } })
+  erase(@CurrentUser() user: AuthenticatedUser, @Body(new ZodValidationPipe(kycEraseSchema)) body: { password: string }) {
+    return this.erasure.erase(user.id, body.password);
   }
 }

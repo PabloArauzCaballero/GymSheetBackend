@@ -17,8 +17,12 @@
  * moderator are not.
  */
 export type AccountExportSection = {
-  /** `schema.table`; also the key in the archive. */
+  /** `schema.table`; also the key in the archive unless `key` names another. */
   table: string;
+  /** Key in the archive when it is not the table (two sections over one table). */
+  key?: string;
+  /** A SELECT over the table that adds columns (a display name), read as alias `t` instead of the bare table. */
+  from?: string;
   label: string;
   /** Predicate over alias `t`; uses `:userId`. */
   where: string;

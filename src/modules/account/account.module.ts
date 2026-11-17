@@ -1,6 +1,7 @@
 import { BrandingModule } from "../../common/branding/branding.module";
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
+import { BusinessClosureModule } from "../business-closure/business-closure.module";
 import { ClosedAccountSanctionsModule } from "../closed-account-sanctions/closed-account-sanctions.module";
 import { IntegrationModule } from "../integration/integration.module";
 import { MediaModule } from "../media/media.module";
@@ -15,7 +16,7 @@ import { EmailChangeService } from "./email-change.service";
 
 /** Account rights (franja 4): rename, email change and closure. The export lives in ExportModule. */
 @Module({
-  imports: [BrandingModule, AuthModule, UsersModule, IntegrationModule, NotificationsModule, MediaModule, ClosedAccountSanctionsModule],
+  imports: [BrandingModule, AuthModule, UsersModule, IntegrationModule, NotificationsModule, MediaModule, ClosedAccountSanctionsModule, BusinessClosureModule],
   controllers: [AccountController, AdminAccountClosureController, EmailChangeController],
   providers: [AccountClosureRepository, AccountClosureService, EmailChangeService],
 })

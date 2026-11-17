@@ -66,10 +66,13 @@ export class KycCheckQueriesRepository implements KycCheckQueries {
     );
   }
 
-  hasClosedAccountSanction(emailHmac: string, transaction: Transaction): Promise<boolean> {
+  /** Consumed records count too: the email was inherited, the NIT and CI of a closed business still are its trace. */
+  hasClosedAccountSanction(trace: { email?: string; nit?: string; ci?: string }, transaction: Transaction): Promise<boolean> {
     return this.exists(
-      `SELECT 1 FROM moderation.closed_account_sanctions WHERE email_hmac = :emailHmac AND expires_at > now()`,
-      { emailHmac },
+      `SELECT 1 FROM moderation.closed_account_sanctions
+        WHERE expires_at > now()
+          AND (email_hmac = :email OR CAST(:nit AS varchar) = ANY(nit_hmacs) OR CAST(:ci AS varchar) = ANY(ci_hmacs))`,
+      { email: trace.email ?? null, nit: trace.nit ?? null, ci: trace.ci ?? null },
       transaction,
     );
   }

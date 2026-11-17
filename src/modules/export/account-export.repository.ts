@@ -92,7 +92,7 @@ export class AccountExportRepository {
   async readSection(section: AccountExportSection, userId: string, limit: number): Promise<unknown[]> {
     const omit = section.omit?.length ? ` - ARRAY[${section.omit.map((column) => `'${column}'`).join(", ")}]` : "";
     const rows = await this.sequelize.query<{ row: unknown }>(
-      `SELECT to_jsonb(t)${omit} AS row FROM ${section.table} t WHERE ${section.where} LIMIT :limit`,
+      `SELECT to_jsonb(t)${omit} AS row FROM ${section.from ? `(${section.from})` : section.table} t WHERE ${section.where} LIMIT :limit`,
       { type: QueryTypes.SELECT, replacements: { userId, limit: limit + 1 } },
     );
     return rows.map((entry) => entry.row);
