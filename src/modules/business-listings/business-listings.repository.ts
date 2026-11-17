@@ -74,16 +74,25 @@ export class BusinessListingsRepository {
     await listing.update(patch, { transaction });
   }
 
-  /** Median price of the public listings of a kind; null under `minSamples` of them. */
-  async priceMedian(offerKind: ListingOfferKind, minSamples: number, transaction: Transaction): Promise<number | null> {
-    const [row] = await this.sequelize.query<{ median: string | null; samples: string }>(
-      `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY p.current_price) AS median, count(*) AS samples
-         FROM directory.entity_plans p
-         JOIN directory.entities e ON e.id = p.entity_id AND e.status = 'ACTIVE'
-        WHERE p.offer_kind = :offerKind AND p.moderation_status = 'LIVE' AND p.status = 'ACTIVE'`,
-      { type: QueryTypes.SELECT, replacements: { offerKind }, transaction },
+  /**
+   * Reference price of a kind: the median of each OTHER seller's own median
+   * over its public listings. One value per seller, so nobody moves it by
+   * listing many times, and the seller being checked never counts toward its
+   * own reference. Null under `minSellers` distinct sellers.
+   */
+  async priceMedian(offerKind: ListingOfferKind, exceptEntityId: string, minSellers: number, transaction: Transaction): Promise<number | null> {
+    const [row] = await this.sequelize.query<{ median: string | null; sellers: string }>(
+      `WITH per_seller AS (
+         SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY p.current_price) AS price
+           FROM directory.entity_plans p
+           JOIN directory.entities e ON e.id = p.entity_id AND e.status = 'ACTIVE'
+          WHERE p.offer_kind = :offerKind AND p.moderation_status = 'LIVE' AND p.status = 'ACTIVE'
+            AND p.entity_id <> :exceptEntityId
+          GROUP BY p.entity_id)
+       SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY price) AS median, count(*) AS sellers FROM per_seller`,
+      { type: QueryTypes.SELECT, replacements: { offerKind, exceptEntityId }, transaction },
     );
-    if (!row || Number(row.samples) < minSamples || row.median === null) return null;
+    if (!row || Number(row.sellers) < minSellers || row.median === null) return null;
     return Number(row.median);
   }
 

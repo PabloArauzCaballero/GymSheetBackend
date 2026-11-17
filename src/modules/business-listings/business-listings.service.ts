@@ -59,7 +59,7 @@ export class BusinessListingsService {
       if ((await this.repository.countOpen(account.entityId, transaction)) >= LISTINGS_MAX) {
         throw new DomainException(HttpStatus.CONFLICT, 'LISTING_LIMIT', `Puedes tener hasta ${LISTINGS_MAX} publicaciones sin archivar.`);
       }
-      const outcome = await this.publication.evaluate({ ...input }, null, { text: true, price: true }, transaction);
+      const outcome = await this.publication.evaluate({ ...input, entityId: account.entityId }, null, { text: true, price: true }, transaction);
       const created = await this.repository.create(
         {
           slug: listingSlug(input.name),
@@ -95,7 +95,7 @@ export class BusinessListingsService {
   async update(actor: AuthenticatedUser, listingId: string, patch: UpdateListingInput): Promise<OwnListingDto> {
     await this.sequelize.transaction(async (transaction) => {
       const { account } = await this.lockOwner(actor, transaction);
-      const listing = await this.requireEditable(account.entityId, listingId, transaction);
+      const listing = await this.requireEditable(account.entityId, listingId, transaction, { content: true });
       const merged: ListingShape = {
         offerKind: listing.offerKind,
         validityDays: patch.validityDays !== undefined ? patch.validityDays : listing.durationDays,
@@ -105,6 +105,7 @@ export class BusinessListingsService {
       };
       await this.assertShape(merged, account);
       const candidate = {
+        entityId: account.entityId,
         offerKind: listing.offerKind,
         name: patch.name ?? listing.name,
         description: patch.description ?? listing.description,
@@ -135,12 +136,12 @@ export class BusinessListingsService {
   async changePrice(actor: AuthenticatedUser, listingId: string, input: ListingPriceInput): Promise<OwnListingDto> {
     await this.sequelize.transaction(async (transaction) => {
       const { account } = await this.lockOwner(actor, transaction);
-      const listing = await this.requireEditable(account.entityId, listingId, transaction);
+      const listing = await this.requireEditable(account.entityId, listingId, transaction, { content: true });
       const price = input.price.toFixed(2);
       if (price === listing.currentPrice) {
         throw new DomainException(HttpStatus.BAD_REQUEST, 'LISTING_SAME_PRICE', 'El nuevo precio debe ser distinto del actual.');
       }
-      const candidate = { offerKind: listing.offerKind, name: listing.name, description: listing.description, benefits: listing.benefits ?? [], price: input.price };
+      const candidate = { entityId: account.entityId, offerKind: listing.offerKind, name: listing.name, description: listing.description, benefits: listing.benefits ?? [], price: input.price };
       const outcome = await this.publication.evaluate(candidate, listing, { text: false, price: true }, transaction);
       await this.repository.recordPrice(
         { listingId, price, currency: LISTING_CURRENCY, actorUserId: actor.id, reason: input.reason ?? 'Cambio de precio', at: new Date() },
@@ -208,11 +209,21 @@ export class BusinessListingsService {
     return listing;
   }
 
-  /** An archived listing is history: it is read, never edited. */
-  async requireEditable(entityId: string, listingId: string, transaction: Transaction): Promise<EntityPlanModel> {
+  /**
+   * An archived listing is history: it is read, never edited. With `content`,
+   * a listing REPP hid or rejected is frozen too (`409 LISTING_LOCKED_BY_REPP`):
+   * REPP releases or restores exactly what it reviewed, never content swapped
+   * in after its decision. Pausing, archiving, stock and removing a photo stay open.
+   */
+  async requireEditable(entityId: string, listingId: string, transaction: Transaction, options: { content?: boolean } = {}): Promise<EntityPlanModel> {
     const listing = await this.requireOwn(entityId, listingId, transaction);
     if (listing.status === 'ARCHIVED') {
       throw new DomainException(HttpStatus.CONFLICT, 'LISTING_NOT_EDITABLE', 'Una publicación archivada no se edita.');
+    }
+    if (options.content && (listing.moderationStatus === 'HIDDEN' || listing.moderationStatus === 'REJECTED')) {
+      throw new DomainException(HttpStatus.CONFLICT, 'LISTING_LOCKED_BY_REPP', 'REPP está revisando esta publicación; no se puede cambiar su contenido.', {
+        moderationStatus: listing.moderationStatus,
+      });
     }
     return listing;
   }

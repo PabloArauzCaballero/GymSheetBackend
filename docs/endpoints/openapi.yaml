@@ -2902,7 +2902,7 @@ paths:
         "400": { $ref: "#/components/responses/Problem400" }
         "403": { $ref: "#/components/responses/Problem403" }
         "404": { $ref: "#/components/responses/Problem404" }
-        "409": { description: "LISTING_NOT_EDITABLE | BUSINESS_ACCOUNT_LOCKED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "LISTING_NOT_EDITABLE | LISTING_LOCKED_BY_REPP | BUSINESS_ACCOUNT_LOCKED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "422": { description: "LISTING_SHAPE_INVALID | LISTING_CATEGORY_INVALID", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
   /business/me/listings/{id}/price:
     patch:
@@ -3011,7 +3011,7 @@ paths:
         "400": { $ref: "#/components/responses/Problem400" }
         "403": { $ref: "#/components/responses/Problem403" }
         "404": { $ref: "#/components/responses/Problem404" }
-        "409": { description: "LISTING_MEDIA_LIMIT", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "LISTING_MEDIA_LIMIT | LISTING_LOCKED_BY_REPP", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "413": { $ref: "#/components/responses/Problem413" }
   /business/me/listings/{id}/media/{position}:
     delete:
@@ -3200,7 +3200,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { type: object, additionalProperties: false, properties: { note: { type: string } } }
+            schema: { type: object, additionalProperties: false, required: [seenUpdatedAt], properties: { seenUpdatedAt: { type: string, description: "updatedAt del ítem tal como lo dio GET /admin/business/listings (ISO, microsegundos)", example: "2026-11-17T01:01:00.738123Z" }, note: { type: string } } }
       responses:
         "200":
           description: "{ id, moderationStatus: LIVE }"
@@ -3209,7 +3209,7 @@ paths:
               schema: { $ref: "#/components/schemas/SuccessEnvelope" }
         "403": { $ref: "#/components/responses/Problem403" }
         "404": { $ref: "#/components/responses/Problem404" }
-        "409": { description: "LISTING_INVALID_TRANSITION | LISTING_NOT_PUBLISHABLE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "LISTING_CHANGED_SINCE_REVIEW {currentUpdatedAt} | LISTING_INVALID_TRANSITION | LISTING_NOT_PUBLISHABLE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
   /admin/business/listings/{id}/reject:
     post:
       tags: [AdminBusiness]

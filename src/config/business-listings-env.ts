@@ -10,8 +10,8 @@ export const businessListingsEnvironmentShape = {
   LISTING_PRICE_MAX_BOB: z.coerce.number().min(1).max(10_000_000).default(50_000),
   /** A price this many times above (or below) the median of its offer kind is HELD. */
   LISTING_PRICE_OUTLIER_FACTOR: z.coerce.number().min(2).max(100).default(5),
-  /** Below this many live listings of a kind there is no meaningful median, so no outlier check. */
-  LISTING_PRICE_MEDIAN_MIN_SAMPLES: z.coerce.number().int().min(3).max(1000).default(5),
+  /** Below this many DISTINCT other sellers of a kind there is no meaningful median, so no outlier check. */
+  LISTING_PRICE_MEDIAN_MIN_SELLERS: z.coerce.number().int().min(3).max(1000).default(5),
 };
 
 type BusinessListingsEnvironment = { LISTING_PRICE_MIN_BOB: number; LISTING_PRICE_MAX_BOB: number };

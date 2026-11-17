@@ -10,7 +10,7 @@ function build(options: { median?: number | null; banned?: boolean } = {}) {
   return { service: new ListingPublicationService(repository as unknown as BusinessListingsRepository), repository };
 }
 
-const candidate = { offerKind: 'PRODUCT' as const, name: 'Mancuernas', description: 'Par de 10 kg', benefits: [], price: 300 };
+const candidate = { entityId: 'entity-1', offerKind: 'PRODUCT' as const, name: 'Mancuernas', description: 'Par de 10 kg', benefits: [], price: 300 };
 const existing = (patch: Partial<EntityPlanModel>) =>
   ({ moderationStatus: 'LIVE', moderationReasonCode: null, autoCheckCodes: [], publishedAt: new Date('2026-11-01T00:00:00Z'), ...patch }) as EntityPlanModel;
 const tx = {} as never;
@@ -41,8 +41,14 @@ describe('ListingPublicationService (post-moderation, ADR-0022)', () => {
     expect(outcome).toMatchObject({ moderationStatus: 'LIVE', autoCheckCodes: [] });
   });
 
-  it('a listing REPP hid stays hidden whatever the seller edits', async () => {
-    const outcome = await build().service.evaluate(candidate, existing({ moderationStatus: 'HIDDEN', moderationReasonCode: 'SPAM' }), { text: true, price: true }, tx);
-    expect(outcome).toMatchObject({ moderationStatus: 'HIDDEN', moderationReasonCode: 'SPAM' });
+  it('a listing REPP hid stays hidden, keeps REPP\'s reason and still records what the checks found', async () => {
+    const outcome = await build({ banned: true }).service.evaluate(candidate, existing({ moderationStatus: 'HIDDEN', moderationReasonCode: 'SPAM' }), { text: true, price: true }, tx);
+    expect(outcome).toMatchObject({ moderationStatus: 'HIDDEN', moderationReasonCode: 'SPAM', autoCheckCodes: ['BANNED_TERMS'] });
+  });
+
+  it('the reference price never counts the seller being checked', async () => {
+    const { service, repository } = build();
+    await service.evaluate(candidate, null, { text: true, price: true }, tx);
+    expect(repository.priceMedian).toHaveBeenCalledWith('PRODUCT', 'entity-1', expect.any(Number), tx);
   });
 });

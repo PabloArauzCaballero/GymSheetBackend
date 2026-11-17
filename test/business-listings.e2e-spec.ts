@@ -1,6 +1,7 @@
 import { QueryTypes } from 'sequelize';
 import request from 'supertest';
 import { businessListingsMigration } from '../src/database/migrations/202611200601-business-listings';
+import { listingVersionStampMigration } from '../src/database/migrations/202611200602-listing-version-stamp';
 import { KycBusiness, KycHarness, bootKycHarness, letters } from './support/kyc-e2e';
 import { createListing, membership, publicGet, publicIds, publishedBusiness } from './support/listings-e2e';
 
@@ -202,7 +203,7 @@ describe('business listings, locations and the public marketplace (e2e, franja 8
     expect((await h.e2e.as(seller.token).del('/business/me/gallery/0').expect(200)).body.data.gallery).toEqual([]);
   });
 
-  it('migration 202611200601 goes down (what is not LIVE stops being sold) and up again, inside a rolled-back transaction', async () => {
+  it('migrations 202611200602 and 202611200601 go down (what is not LIVE stops being sold) and up again, inside a rolled-back transaction', async () => {
     const live = await createListing(h, seller);
     const held = await createListing(h, seller, membership({ price: 0 }));
     const queryInterface = h.sequelize.getQueryInterface();
@@ -210,6 +211,7 @@ describe('business listings, locations and the public marketplace (e2e, franja 8
     const statusOf = async (id: string) =>
       (await h.sequelize.query<{ status: string }>('SELECT status FROM directory.entity_plans WHERE id = :id', { type: QueryTypes.SELECT, replacements: { id }, transaction }))[0]?.status;
     try {
+      await listingVersionStampMigration.down(queryInterface, transaction);
       await businessListingsMigration.down(queryInterface, transaction);
       expect([await statusOf(live.id), await statusOf(held.id)]).toEqual(['ACTIVE', 'INACTIVE']);
       const [gone] = await h.sequelize.query<{ locations: string | null; column: number }>(
@@ -219,6 +221,7 @@ describe('business listings, locations and the public marketplace (e2e, franja 8
       );
       expect(gone).toEqual({ locations: null, column: 0 });
       await businessListingsMigration.up(queryInterface, transaction);
+      await listingVersionStampMigration.up(queryInterface, transaction);
       const [back] = await h.sequelize.query<{ offerKind: string; moderationStatus: string }>(
         'SELECT offer_kind AS "offerKind", moderation_status AS "moderationStatus" FROM directory.entity_plans WHERE id = :id',
         { type: QueryTypes.SELECT, replacements: { id: live.id }, transaction },

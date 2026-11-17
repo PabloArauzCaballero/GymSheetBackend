@@ -144,5 +144,14 @@ export const adminListingDecisionSchema = z
   .object({ reasonCode: z.enum(LISTING_REJECTION_REASONS), note: text(1000).optional() })
   .strict();
 export type AdminListingDecisionInput = z.infer<typeof adminListingDecisionSchema>;
-export const adminListingReleaseSchema = z.object({ note: text(1000).optional() }).strict();
+/**
+ * `seenUpdatedAt` is the listing's `updatedAt` exactly as `GET /admin/business/listings`
+ * returned it (ISO instant, microseconds): REPP publishes only the version it reviewed.
+ */
+export const adminListingReleaseSchema = z
+  .object({
+    seenUpdatedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/u, 'Instante ISO en UTC.'),
+    note: text(1000).optional(),
+  })
+  .strict();
 export type AdminListingReleaseInput = z.infer<typeof adminListingReleaseSchema>;
