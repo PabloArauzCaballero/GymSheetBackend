@@ -5,11 +5,12 @@
  *    recently active verified members of the gym (`ix_usuarios_discovery_active`),
  *    the newest 60 (`ix_usuarios_discovery_new`, exploration), cross-gym members
  *    who opted in (`ix_profile_settings_cross_gym`) and whoever already liked
- *    the viewer (`ix_connections_addressee`).
+ *    the viewer (`ix_connections_addressee`) and the confirmed members of the
+ *    viewer's gym (`ix_affiliations_gym_confirmed`, ADR-0027).
  * 2. `cand`: hard filters — adult, verified email, 2+ visible photos, profile
  *    enabled, two-sided preferences (each side's genders and age range include
  *    the other; `flexible_age` widens a range by 2 years), not blocked, not
- *    decided, tenant or bilateral cross-gym consent.
+ *    decided, tenant, same confirmed gym or bilateral cross-gym consent.
  * 3. `feat` / `scored`: radius filter (1.5× with `flexibleDistance`) and the
  *    seven factors, combined with the weights of the assigned config version.
  * 4. Keyset `(score, id)` inside a snapshot (`:asOf` freezes every clock read).
@@ -28,6 +29,8 @@ WITH p AS (
 viewer AS (
   SELECT u.id, u.genero AS gender, va.age, pa.objetivo AS goal,
          ob.weekly_frequency AS frequency, u.sede_id AS branch_id,
+         (SELECT va.gym_entity_id FROM directory.affiliations va
+           WHERE va.user_id = u.id AND va.kind = 'SOCIO' AND va.status = 'CONFIRMED') AS gym_id,
          COALESCE(pd.interests, '{}'::text[]) AS interests, u.active_hours,
          CASE WHEN ml.user_id IS NOT NULL THEN ml.latitude::float8 ELSE br.latitude::float8 END AS lat,
          CASE WHEN ml.user_id IS NOT NULL THEN ml.longitude::float8 ELSE br.longitude::float8 END AS lon,
@@ -68,6 +71,10 @@ pool AS (
     (SELECT c.requester_id FROM social.connections c
       WHERE c.addressee_id = :viewerId AND c.status = 'PENDING'
       ORDER BY c.created_at DESC LIMIT 100)
+    UNION ALL
+    (SELECT a.user_id FROM viewer v JOIN directory.affiliations a ON a.gym_entity_id = v.gym_id
+      WHERE a.kind = 'SOCIO' AND a.status = 'CONFIRMED'
+      ORDER BY a.confirmed_at DESC, a.id DESC LIMIT :poolLimit)
   ) sources
 ),
 cand AS (
@@ -76,7 +83,8 @@ cand AS (
          pa.objetivo AS goal, ob.weekly_frequency AS frequency,
          COALESCE(pd.interests, '{}'::text[]) AS interests, s.social_status,
          cp.intents, cp.min_age AS their_min_age, cp.max_age AS their_max_age,
-         (liked.id IS NOT NULL) AS liked_viewer, dist.distance_km
+         (liked.id IS NOT NULL) AS liked_viewer, dist.distance_km,
+         (ga.gym_entity_id IS NOT NULL AND ga.gym_entity_id = v.gym_id) AS same_gym
     FROM pool
     JOIN public.usuarios u ON u.id = pool.id
     JOIN social.profile_settings s ON s.user_id = u.id AND s.profile_enabled
@@ -110,13 +118,16 @@ cand AS (
     ) dist
     LEFT JOIN social.connections liked
       ON liked.requester_id = u.id AND liked.addressee_id = :viewerId AND liked.status = 'PENDING'
+    -- ADR-0027: the candidate's CONFIRMED SOCIO, only when they show it.
+    LEFT JOIN directory.affiliations ga
+      ON ga.user_id = u.id AND ga.kind = 'SOCIO' AND ga.status = 'CONFIRMED' AND s.gym_membership_visible
    WHERE u.id <> :viewerId
      AND (v.lat IS NULL
           OR dist.distance_km <= :radiusKm * CASE WHEN :flexibleDistance THEN 1.5 ELSE 1 END)
      AND u.estado = 'ACTIVO' AND u.rol <> 'NEGOCIO' AND u.email_verified_at IS NOT NULL
      AND (u.suspended_until IS NULL OR u.suspended_until <= p.as_of)
      AND u.genero IN (:genders)
-     AND (u.tenant_id = :tenantId OR (:includeCrossGym AND s.cross_gym_enabled))
+     AND (u.tenant_id = :tenantId OR ga.gym_entity_id = v.gym_id OR (:includeCrossGym AND s.cross_gym_enabled))
      AND ca.age >= 18
      AND ca.age BETWEEN :minAge - CASE WHEN :flexibleAge THEN 2 ELSE 0 END
                     AND :maxAge + CASE WHEN :flexibleAge THEN 2 ELSE 0 END
@@ -178,6 +189,7 @@ scored AS MATERIALIZED (
                 + :wNovelty * x.novelty - 0.05 * f.years_outside)::numeric, 6) AS score,
          array_remove(ARRAY[
            CASE WHEN f.distance_km IS NOT NULL AND f.distance_km <= 5 THEN 'NEARBY' END,
+           CASE WHEN f.same_gym THEN 'SAME_GYM' END,
            -- Activity (training now, online now) only ranks; it is never shown:
            -- telling strangers someone is at the gym right now exposes their
            -- real-time presence and location.
@@ -207,6 +219,7 @@ scored AS MATERIALIZED (
         CASE WHEN v.frequency IS NULL OR f.frequency IS NULL THEN NULL
              ELSE GREATEST(0, 1 - abs(v.frequency - f.frequency) / 6.0) END,
         CASE WHEN v.branch_id IS NULL OR f.sede_id IS NULL THEN NULL WHEN v.branch_id = f.sede_id THEN 1 ELSE 0 END,
+        CASE WHEN v.gym_id IS NULL THEN NULL WHEN f.same_gym THEN 1 ELSE 0 END,
         CASE WHEN cardinality(v.interests) = 0 OR cardinality(f.interests) = 0 THEN NULL
              ELSE f.shared_interests::float8
                   / (cardinality(v.interests) + cardinality(f.interests) - f.shared_interests) END,

@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { SequelizeModule } from "@nestjs/sequelize";
+import { GymCommunityModule } from "../gym-community/gym-community.module";
 import { UsersModule } from "../users/users.module";
 import { ChallengesRepository } from "./challenges.repository";
 import { PrizesRepository } from "./prizes.repository";
@@ -21,6 +22,7 @@ import { WeeklyChallengesService } from "./weekly-challenges.service";
 
 @Module({
   imports: [
+    GymCommunityModule,
     UsersModule,
     SequelizeModule.forFeature([
       ProgressionLevelModel,

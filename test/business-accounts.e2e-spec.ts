@@ -14,6 +14,7 @@ import { affiliationsMigration } from '../src/database/migrations/202611200901-a
 import { affiliationsClosedRowsMigration } from '../src/database/migrations/202611200901-affiliations-closed-rows';
 import { subscriptionLedgerMigration } from '../src/database/migrations/202611201001-subscription-ledger';
 import { retireMembershipMachineryMigration } from '../src/database/migrations/202611201002-retire-membership-machinery';
+import { gymMembershipVisibilityMigration } from '../src/database/migrations/202611201101-gym-membership-visibility';
 import { businessNameSkeleton, handleSkeleton } from '../src/modules/business-accounts/handle-rules';
 import { E2eApp, bootE2eApp, markEmailVerified } from './support/e2e-app';
 
@@ -374,8 +375,11 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
     expect(JSON.stringify(directory.body.data)).not.toContain(owner.id);
     await e2e.as(person.token).get(`/me/gym-directory/${owner.id}`).expect(404);
     await e2e.as(person.token).post('/me/connections').send({ addresseeId: owner.id }).expect(404);
-    const board = await e2e.as(person.token).get('/me/progression/leaderboard').expect(200);
-    expect((board.body.data as { userId: string }[]).map((row) => row.userId)).not.toContain(owner.id);
+    // The leaderboard is the ranking of a confirmed gym (ADR-0027); a business
+    // as a member of one is covered by test/gym-community.e2e-spec.ts.
+    const board = await e2e.as(person.token).get('/me/progression/leaderboard');
+    expect([board.status, board.body.code]).toEqual([403, 'GYM_MEMBERSHIP_REQUIRED']);
+    expect(JSON.stringify(board.body)).not.toContain(owner.id);
   });
 
   it('a look-alike of a public name of the same type is refused: allowlisted characters, one stored fold', async () => {
@@ -442,6 +446,7 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
     try {
       // Migrations roll back in reverse order: the affiliations (202611200901), the orders (202611200801), the listings (202611200601)
       // and the KYC tables (202611200501) come after business.accounts.
+      await gymMembershipVisibilityMigration.down(queryInterface, transaction);
       await retireMembershipMachineryMigration.down(queryInterface, transaction);
       await subscriptionLedgerMigration.down(queryInterface, transaction);
       await affiliationsClosedRowsMigration.down(queryInterface, transaction);
@@ -470,6 +475,7 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
       await affiliationsClosedRowsMigration.up(queryInterface, transaction);
       await subscriptionLedgerMigration.up(queryInterface, transaction);
       await retireMembershipMachineryMigration.up(queryInterface, transaction);
+      await gymMembershipVisibilityMigration.up(queryInterface, transaction);
       const [again] = await sequelize.query<{ accounts: string | null }>(
         `SELECT to_regclass('business.accounts')::text AS accounts`,
         { type: QueryTypes.SELECT, transaction },

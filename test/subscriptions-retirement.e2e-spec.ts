@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { QueryTypes, Transaction } from 'sequelize';
 import { subscriptionLedgerMigration } from '../src/database/migrations/202611201001-subscription-ledger';
 import { retireMembershipMachineryMigration } from '../src/database/migrations/202611201002-retire-membership-machinery';
+import { gymMembershipVisibilityMigration } from '../src/database/migrations/202611201101-gym-membership-visibility';
 import { KycHarness, bootKycHarness } from './support/kyc-e2e';
 import { createListing } from './support/listings-e2e';
 import { removeReceipts } from './support/orders-e2e';
@@ -85,6 +86,7 @@ describe('retirement of the gym-operated membership machinery (e2e, franja 8e)',
     const queryInterface = h.sequelize.getQueryInterface();
     const transaction = await h.sequelize.transaction();
     try {
+      await gymMembershipVisibilityMigration.down(queryInterface, transaction);
       await retireMembershipMachineryMigration.down(queryInterface, transaction);
       await subscriptionLedgerMigration.down(queryInterface, transaction);
       const old = await h.sequelize.query<{ withPlan: number; plans: string | null; intents: string | null }>(
@@ -97,6 +99,7 @@ describe('retirement of the gym-operated membership machinery (e2e, franja 8e)',
       expect(old).toEqual([{ withPlan: 3, plans: 'membership.plans', intents: 'membership.intents' }]);
       await subscriptionLedgerMigration.up(queryInterface, transaction);
       await retireMembershipMachineryMigration.up(queryInterface, transaction);
+      await gymMembershipVisibilityMigration.up(queryInterface, transaction);
       expect(await snapshot(transaction)).toEqual(before);
     } finally {
       await transaction.rollback();

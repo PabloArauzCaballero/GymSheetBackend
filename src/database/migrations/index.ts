@@ -147,6 +147,7 @@ import { affiliationsMigration } from "./202611200901-affiliations";
 import { affiliationsClosedRowsMigration } from "./202611200901-affiliations-closed-rows";
 import { subscriptionLedgerMigration } from "./202611201001-subscription-ledger";
 import { retireMembershipMachineryMigration } from "./202611201002-retire-membership-machinery";
+import { gymMembershipVisibilityMigration } from "./202611201101-gym-membership-visibility";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
 export const databaseMigrations: DatabaseMigration[] = [
@@ -300,4 +301,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   affiliationsClosedRowsMigration,
   subscriptionLedgerMigration,
   retireMembershipMachineryMigration,
+  gymMembershipVisibilityMigration,
 ];

@@ -790,6 +790,37 @@ Notices (in-app, key `affiliation:{id}:{event}`): `requested` to the gym (it nev
 `confirmed`, `rejected`, `ended` to the person or the coach. To report a gym's handling, use
 `POST /me/reports` with `targetKind: BUSINESS_PROFILE` and the gym's entity id.
 
+## Gym community by confirmed affiliation (ADR-0027, franja 7c)
+
+The gym of a person is their single **CONFIRMED SOCIO** affiliation (`directory.affiliations`), never
+`usuarios.tenant_id`, which stays as installation/brand. No gym id is ever taken from the client: every
+gym-scoped route reads the viewer's own confirmed gym, so another gym's community cannot be addressed.
+Without a confirmed SOCIO those routes answer `403 GYM_MEMBERSHIP_REQUIRED { status: NONE | REQUESTED }`
+(the same tenant grants nothing). Persons only: a business account gets `403 ACCOUNT_KIND_NOT_ALLOWED`.
+
+`MyGym` = `{ status: NONE|REQUESTED|CONFIRMED, gym: { id, name, handle, logoUrl } | null (CONFIRMED only),
+location: { id, name } | null, since (confirmedAt) | null, affiliationId | null, pendingRequest: {
+affiliationId, gym, location, requestedAt, switchesGym } | null, membershipVisible }`. `REQUESTED` is the
+«Solicitud enviada» card (`gym: null`, the request in `pendingRequest`); a gym switch shows `CONFIRMED`
+with `pendingRequest.switchesGym: true` until the new gym confirms.
+
+| Method | Route | Body / response | Codes |
+| ------ | ----- | --------------- | ----- |
+| GET | `/me/gym` | `MyGym` (`Cache-Control: private, no-store`) | `200`, `403 ACCOUNT_KIND_NOT_ALLOWED` |
+| PUT | `/me/gym/visibility` | strict `{ membershipVisible: boolean }` → `MyGym` | `200`, `400`, `403` |
+| GET | `/me/gym/members` | `?q&limit (1–50, 20)` → `DirectoryEntry[]` of the gym's confirmed SOCIOs who show their membership and have their social profile on, by name; verified email | `200`, `400`, `403 GYM_MEMBERSHIP_REQUIRED`, `403 EMAIL_VERIFICATION_REQUIRED` |
+| GET | `/me/progression/leaderboard` | `?limit (1–50, 10)&sortBy (points\|streak)` → `[{ position, userId, points, levelCode, streakDays, displayName, photoUrl, badges, isMe }]`: the confirmed SOCIOs of the viewer's gym with points; whoever hides the membership is left out (except for themselves); a block hides the photo | `200`, `403 GYM_MEMBERSHIP_REQUIRED` |
+
+**«Socio de X».** Every directory card (`/me/gym-directory`, `/me/gym-directory/:userId`, the Conocer deck,
+likes and passes, map people, `/me/gym/members`) carries `gymBadge: { id, name, handle, logoUrl } | null`:
+set only for a CONFIRMED SOCIO of a public (`ACTIVE`) gym whose member has the social profile on and
+`membershipVisible`. It is computed from the database on every read; no input sets it.
+
+**Conocer.** Reason `SAME_GYM` and an affinity signal when the viewer and the candidate are CONFIRMED SOCIOs
+of the same gym (candidate showing it). The confirmed members of the viewer's gym enter the candidate pool
+and are inside the perimeter whatever their tenant (also for like/connect); the rest of the perimeter is
+unchanged (tenant + bilateral cross-gym consent).
+
 ## Main status codes
 
 - `400`: invalid input or route format;

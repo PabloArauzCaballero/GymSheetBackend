@@ -6,6 +6,7 @@ import { ThrottlerStorageService } from '@nestjs/throttler/dist/throttler.servic
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { ResilientThrottlerStorage } from './common/redis/resilient-throttler.storage';
 import { AffiliationsModule } from './modules/affiliations/affiliations.module';
+import { GymCommunityModule } from './modules/gym-community/gym-community.module';
 import { BusinessAccountsModule } from './modules/business-accounts/business-accounts.module';
 import { BusinessKycModule } from './modules/business-kyc/business-kyc.module';
 import { BusinessListingsModule } from './modules/business-listings/business-listings.module';
@@ -147,6 +148,7 @@ import { ConsentsModule } from './modules/consents/consents.module';
     BusinessOrdersModule,
     AffiliationsModule,
     SubscriptionsModule,
+    GymCommunityModule,
     VerificationModule,
   ],
   providers: [

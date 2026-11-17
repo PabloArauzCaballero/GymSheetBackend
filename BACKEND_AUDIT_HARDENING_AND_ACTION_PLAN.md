@@ -1107,6 +1107,35 @@ Fuera de 8e: consumo de sesiones (`sessions_used`) sin ruta todavía; «Mi gimna
 del pago en efectivo por el negocio (`orders/cash`); cierre del negocio y sus suscriptores (8f); `DROP` de
 `retired.*` (franja posterior, ≥ 30 días); contracción de `access_control.*` y de las tablas de personal (7d).
 
+### Franja 7c: «Mi gimnasio», clasificación, sello «Socio de X» y Conocer por la afiliación (ADR-0027)
+
+| Cambio / riesgo | Corrección | Prueba |
+|---|---|---|
+| La clasificación del gimnasio se concedía por `usuarios.tenant_id`: cualquiera del tenant por defecto veía a todos | El gimnasio es la SOCIO `CONFIRMED`; sin ella `403 GYM_MEMBERSHIP_REQUIRED {status}`; ninguna ruta acepta un id de gimnasio | `test/gym-community.e2e-spec.ts` (mismo tenant sin afiliación y `REQUESTED` → `403`); sonda ad hoc contra a3c0a5f: `200` con la lista ajena |
+| Tarjeta «Mi gimnasio» sin contrato (el móvil comparaba tenants) | `GET /me/gym`: `NONE`/`REQUESTED` («Solicitud enviada»)/`CONFIRMED`, cambio de gimnasio pendiente | e2e (los tres estados, cambio de gimnasio), `my-gym.service.spec.ts` |
+| Fin o cambio de gimnasio | Sin caché: la petición siguiente ya lee la fila nueva; el cambio mueve clasificación, socios y sello al confirmar el nuevo gimnasio | e2e (`end` → `403` inmediato; `switchGym` → todo en el gimnasio nuevo) |
+| Enumeración de socios (revisión de seguridad de esta franja) | Lista de socios solo para socios confirmados, de quienes tienen el perfil social activo y muestran la afiliación; interruptor `gym_membership_visible` (también clasificación y `SAME_GYM`) | e2e (oculta / perfil social apagado → fuera de la lista y sin sello; la clasificación conserva el puesto) |
+| Sello falsificable o de un gimnasio suspendido | `gymBadge` calculado en la consulta desde la SOCIO `CONFIRMED` y la ficha `ACTIVE`; el único escrito es un booleano estricto | e2e (`REQUESTED` sin sello, suspendido sin sello, cuerpo con `gymEntityId` → `400`) |
+| Un negocio en la clasificación | Filtro de persona (`personAccountSql`) aun si se le escribe una SOCIO por SQL | e2e |
+| Conocer «mismo gimnasio» | `SAME_GYM` y señal de afinidad solo con ambos `CONFIRMED`; socios del gimnasio en el *pool* y en el perímetro (también para conectar) sin consultas por candidato | `test/gym-community-conocer.e2e-spec.ts` |
+| Índices | Clasificación y *pool* por `ix_affiliations_gym_confirmed`; gimnasio propio por `ux_affiliations_confirmed_socio` | e2e con `EXPLAIN` (estadísticas frescas, `enable_seqscan = off`) |
+| Relleno de socios por tenant | No se hace: confirmar es del gimnasio, la sede no se inventa, el tenant por defecto es toda la instalación | e2e (mismo tenant → `NONE`) y ADR-0027 |
+
+Evidencia (17/11/2026, sobre 368d2fe = 7b con su corrección; base `gym_sheet_f7c_e2e` nueva con schema +
+migraciones up → down (`202611201101`) → up + semilla base): `yarn lint` y `yarn type-check` limpios;
+`yarn build` OK; unitarias 267 suites / 2407 pruebas en verde; integración de la consulta de Conocer y de
+historias contra la base migrada 2 suites / 21 pruebas en verde; e2e nuevas `gym-community` 7/7 y
+`gym-community-conocer` 3/3; e2e relacionadas (afiliaciones, Conocer, conexiones, perfil, bloqueos,
+recomendador, cuentas de negocio, rachas) 14 suites / 86 pruebas en verde. e2e completa: 78 suites en verde;
+en rojo las 10 suites / 47 pruebas de la línea base (mismos nombres) más 2 pruebas de
+`minor-reports-closure` por el tope de 5 s de Jest bajo carga: aisladas pasan (dos veces) y tardan lo mismo
+sobre 368d2fe (4,5 s y 4,9 s), no las toca esta franja. Contra a3c0a5f una persona del mismo tenant sin
+afiliación recibía `200` con la clasificación ajena (sonda ad hoc); con 7c, `403`.
+
+Fuera de 7c: el directorio de instalación `/me/gym-directory` sigue por tenant (decisión a confirmar, ADR-0027);
+la afinidad «misma sede» y el mapa de gimnasios siguen sobre `facilities.branches` hasta 7e; la lista de
+socios no tiene cursor (tope 50 y búsqueda por nombre, como el directorio).
+
 ---
 
 ## 5. Matriz de alcance funcional (dominio real: gimnasio)
