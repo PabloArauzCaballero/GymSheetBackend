@@ -50,21 +50,37 @@ export class BusinessAdminService {
 
   /** The current (approved) attempt goes SUSPENDED; the listing stops being public. */
   async suspend(actor: AuthenticatedUser, accountId: string, input: AccountActionInput): Promise<{ status: "SUSPENDED" }> {
-    await this.sequelize.transaction(async (transaction) => {
-      const { account, submission, entity } = await this.loadAccount(actor, accountId, transaction);
-      assertKycTransition(submission.status, "SUSPENDED");
-      const decisionId = await this.record(account.userId, submission.id, submission.status, "SUSPENDED", "SUSPEND", actor, input, transaction);
-      const now = new Date();
-      await this.effects.setEntityStatus(entity, "SUSPENDED", entity.isVerified, transaction);
-      await this.effects.updateAccount(
-        account.userId,
-        { status: "SUSPENDED", kyc_status: "SUSPENDED", suspension_reason_code: input.reasonCode, suspended_at: now },
-        {},
-        transaction,
-      );
-      await this.notices.send(account.userId, decisionId, { kind: "SUSPENDED", reason: input.reasonCode }, transaction);
-    });
+    await this.sequelize.transaction((transaction) => this.suspendWithin(actor, accountId, input, transaction));
     return { status: "SUSPENDED" };
+  }
+
+  /**
+   * A moderation case about a listing or a profile suspends its business
+   * (ADR-0022) inside the verdict's transaction, through the same KYC state
+   * machine as the console. Already suspended: nothing to do.
+   */
+  async suspendEntityFromCase(actor: AuthenticatedUser, entityId: string, input: AccountActionInput, transaction: Transaction): Promise<void> {
+    const owner = await this.effects.findAccountByEntity(entityId, transaction);
+    if (!owner) {
+      throw new DomainException(HttpStatus.CONFLICT, "BUSINESS_ACCOUNT_REQUIRED", "Esta ficha no tiene una cuenta de negocio que suspender.");
+    }
+    if (owner.status === "SUSPENDED") return;
+    await this.suspendWithin(actor, owner.userId, input, transaction);
+  }
+
+  private async suspendWithin(actor: AuthenticatedUser, accountId: string, input: AccountActionInput, transaction: Transaction): Promise<void> {
+    const { account, submission, entity } = await this.loadAccount(actor, accountId, transaction);
+    assertKycTransition(submission.status, "SUSPENDED");
+    const decisionId = await this.record(account.userId, submission.id, submission.status, "SUSPENDED", "SUSPEND", actor, input, transaction);
+    const now = new Date();
+    await this.effects.setEntityStatus(entity, "SUSPENDED", entity.isVerified, transaction);
+    await this.effects.updateAccount(
+      account.userId,
+      { status: "SUSPENDED", kyc_status: "SUSPENDED", suspension_reason_code: input.reasonCode, suspended_at: now },
+      {},
+      transaction,
+    );
+    await this.notices.send(account.userId, decisionId, { kind: "SUSPENDED", reason: input.reasonCode }, transaction);
   }
 
   /** SUSPENDED → APPROVED: a human looked at it, so it comes back «Verificado por REPP». */

@@ -136,6 +136,7 @@ export class ModerationAdminController {
         sanction: verdict.sanction?.kind ?? null,
         contentHidden: verdict.contentHidden,
         minorConfirmed: verdict.minorConfirmed,
+        businessSuspended: verdict.businessSuspended,
         reportsClosed: verdict.reportsClosed,
       },
       ip: request.ip ?? null,

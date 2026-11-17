@@ -16,6 +16,7 @@ import { UserStrikeModel } from "./user-strike.model";
 import { ReelsModule } from "../reels/reels.module";
 import { SocialModule } from "../social/social.module";
 import { MediaModule } from "../media/media.module";
+import { BusinessKycModule } from "../business-kyc/business-kyc.module";
 import { ModerationAutoHideService } from "./moderation-auto-hide.service";
 import { ModerationCaseContentRepository } from "./moderation-case-content.repository";
 import { ModerationCaseContentService } from "./moderation-case-content.service";
@@ -42,6 +43,8 @@ import { PlatformModeratorsService } from "./platform-moderators.service";
     ReelsModule,
     SocialModule,
     MediaModule,
+    // A marketplace case can suspend the business (ADR-0022).
+    BusinessKycModule,
   ],
   controllers: [ReportsController, ModerationAdminController, PlatformModeratorsController],
   providers: [

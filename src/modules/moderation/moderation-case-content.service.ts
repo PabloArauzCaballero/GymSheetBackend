@@ -14,6 +14,7 @@ import {
 } from "./moderation-case-content.mapper";
 import { ModerationTargetKind, ModerationTargetKindValue } from "./moderation.policy";
 import { ChatMessageEvidence } from "./moderation-safeguards.repository";
+import { mapListingContent, mapProfileContent } from "./moderation-business-content";
 
 /**
  * Why `content` is null: `ERASED` — the target no longer exists (retention,
@@ -89,6 +90,14 @@ export class ModerationCaseContentService {
       case ModerationTargetKind.MUSIC_PLAYLIST: {
         const row = await this.repository.findPlaylist(targetId);
         return row ? mapPlaylistContent(row) : null;
+      }
+      case ModerationTargetKind.BUSINESS_LISTING: {
+        const row = await this.repository.findListing(targetId);
+        return row ? mapListingContent(row) : null;
+      }
+      case ModerationTargetKind.BUSINESS_PROFILE: {
+        const row = await this.repository.findBusinessProfile(targetId);
+        return row ? mapProfileContent(row) : null;
       }
       default:
         return null;

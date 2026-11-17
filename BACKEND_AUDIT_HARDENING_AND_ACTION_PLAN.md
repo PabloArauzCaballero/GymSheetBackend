@@ -985,6 +985,30 @@ WhatsApp (adaptador probado con transporte falso).
 
 Fuera de 8b: cancelar órdenes al suspender (8d), prioridad por afiliaciones (8e), cierre y exportación del negocio (8f), verificación externa SIN/SEGIP/SEPREC, cotejo facial automático y rotación de la clave KYC.
 
+### Franja 8c: publicaciones, sedes y marketplace con post-moderación (ADR-0022)
+
+| Cambio / riesgo | Corrección | Prueba |
+|---|---|---|
+| Los negocios no podían publicar y `entity_plans` no tenía estado de moderación | Migración reversible `202611200601-business-listings`: `offer_kind` (relleno desde `type`, que queda derivado y comprobado; un disparador lo completa para quien no lo manda), sesiones, stock, categoría de producto y `moderation_status LIVE\|HELD\|HIDDEN\|REJECTED` (nace `HELD`); CHECK de forma y de `BOB` sobre toda fila `LIVE`; filas viejas no conformes quedan `HELD` con su código | `listing-checks.spec.ts`, e2e (CHECK en base, down/up con datos en transacción revertida) |
+| Publicar en segundos sin revisión previa | Comprobaciones síncronas (banda de precio BOB, desvío 5× sobre la mediana del tipo, términos prohibidos de REPP con la regla del KYC); todo pasa → `LIVE`, si no `HELD`; en `LIVE` solo se re-comprueba lo editado; `HIDDEN`/`REJECTED` no los levanta el negocio | `listing-checks.spec.ts`, `listing-publication.service.spec.ts`, `test/business-listings.e2e-spec.ts` |
+| Qué es público | Una sola condición (`LIVE` + `ACTIVE` + negocio `ACTIVE`) en búsqueda, detalle, perfil por @handle, rutas viejas `/public/directory/plans*`, órdenes y denuncias; lo demás `404` (sin enumeración) | e2e: HELD no público ni denunciable ni comprable; negocio `SUSPENDED` → desaparecen todas (D7); pausada/archivada fuera |
+| BOLA/BFLA en las rutas nuevas | `business/me/*` solo `NEGOCIO` (inventario de rutas actualizado), todo acotado a la ficha de la cuenta → lo ajeno `404`; `admin/business/listings*` solo `PLATFORM_MODERATION_ROLES`, auditado y nunca sobre el propio negocio | `account-kind.route-inventory.spec.ts`, e2e (7 rutas ajenas → 404, persona → 403, negocio → 403 en la consola) |
+| Mass assignment y búsqueda | Esquemas estrictos (moneda, moderación, `type`, stock reservado → `400`); texto normalizado por `repp_normalize` en la base (sin comodines), `category_path` por expresión regular, cursor keyset validado (`400 INVALID_CURSOR`), filtros como parámetros | `keyset-cursor.spec.ts`, e2e (`%`, comillas, cursor alterado) |
+| Inundación de publicaciones (revisión de seguridad de esta franja) | Tope de 500 sin archivar por negocio, contado bajo el candado de la ficha (`409 LISTING_LIMIT`) | e2e (falla sin el tope) |
+| Cursor que repetía páginas (hallado en esta franja) | Las claves de tiempo del cursor viajan con microsegundos (texto de la base), no como `Date` de JS: filas creadas en el mismo milisegundo ya no se repiten página tras página | e2e (499 filas con el mismo instante: 500 únicas; con milisegundos devuelve 51) |
+| Cerrar la cuenta de un moderador | `entity_plans.moderated_by_user_id` entra al catálogo de cierre (anonimizado) | `test/account-closure.e2e-spec.ts` (catálogo completo) |
+| Moderación del marketplace | Denuncias `BUSINESS_LISTING`/`BUSINESS_PROFILE`, copia en el expediente, ocultar (también por 3 denunciantes), `suspendBusiness` por la máquina del KYC en la misma transacción (`NEGOCIO_SUSPENDIDO`); escalera de personas y menores no aplican (`422`); el buzón canónico del moderador cuenta como propio | `moderation-business.service.spec.ts`, `moderation.policy.spec.ts`, `test/business-listings-moderation.e2e-spec.ts` |
+| Medios | Fotos de publicación y galería del perfil solo por multipart (bytes JPEG/PNG), públicas bajo `business/{entityId}/public/`, en el recuento de referencias de ADR-0017 | e2e |
+
+Evidencia (17/11/2026, base `gym_sheet_f8c_e2e` nueva: schema + migraciones + semilla base): `yarn lint` y
+`yarn type-check` limpios; `yarn build` OK; unitarias 259 suites / 2372 pruebas en verde; migración
+up → down → up en base nueva y con datos (filas USD de `seed-marketplace-test.sql` quedan `HELD
+CURRENCY_NOT_BOB`; el down las deja `INACTIVE`); e2e nuevas `business-listings` 12 y
+`business-listings-moderation` 5 en verde; e2e completa: 72 suites en verde y exactamente las 47
+pruebas en rojo de la línea base (mismas 10 suites, mismos nombres).
+
+Fuera de 8c: pedidos y reserva de stock (8d), moderación de imagen de las fotos (puerto `Noop`), orden por relevancia, filtros «cerca» y «abierto ahora» de publicaciones, servir tras una puerta los archivos de una publicación oculta.
+
 
 ---
 

@@ -28,7 +28,8 @@ import { Sequelize } from "sequelize-typescript";
  * | `media.files`            | `storage_url`                     | URL        |
  * | `training.exercise_media`| `url`, `thumbnail_url`            | URL        |
  * | `facilities.branches`    | `cover_image_url`, `gallery_image_urls` | URL  |
- * | `directory.entities`     | `logo_url`, `cover_url`           | URL        |
+ * | `directory.entities`     | `logo_url`, `cover_url`, `gallery` | URL       |
+ * | `directory.entity_plans` | `media_urls`                      | URL        |
  * | `business.kyc_documents` | `storage_key`                     | clave      |
  *
  * Las tablas que solo guardan la URL pública (no la clave) se comparan por
@@ -106,6 +107,16 @@ export class MediaReferencesRepository {
                 SELECT 1 FROM directory.entities
                  WHERE (logo_url IS NOT NULL AND right(logo_url, :suffixLength) = :urlSuffix)
                     OR (cover_url IS NOT NULL AND right(cover_url, :suffixLength) = :urlSuffix)
+                    OR EXISTS (
+                         SELECT 1 FROM jsonb_array_elements_text(gallery) AS gallery(image_url)
+                          WHERE right(gallery.image_url, :suffixLength) = :urlSuffix
+                       )
+                 UNION ALL
+                SELECT 1 FROM directory.entity_plans
+                 WHERE EXISTS (
+                         SELECT 1 FROM jsonb_array_elements_text(media_urls) AS media(url)
+                          WHERE right(media.url, :suffixLength) = :urlSuffix
+                       )
               ) AS referenced`,
       {
         type: QueryTypes.SELECT,

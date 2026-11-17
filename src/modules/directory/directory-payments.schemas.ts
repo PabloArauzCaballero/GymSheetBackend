@@ -42,8 +42,8 @@ export const createEntityPlanSchema = z.object({
   benefits: z.array(z.string().trim().min(1)).optional().default([]),
   durationDays: z.number().int().min(1).max(3650).nullable().optional(),
   price: z.number().nonnegative(),
-  // Bolivia prices in BOB (D8).
-  currency: z.string().trim().length(3).regex(/^[A-Z]{3}$/).optional().default('BOB'),
+  // Bolivia prices in BOB only (D8, ADR-0022: ck_entity_plan_live_currency).
+  currency: z.literal('BOB').optional().default('BOB'),
   displayOrder: z.number().int().optional().default(0),
   mediaUrls: z.array(webUrl).max(20).optional().default([]),
   metadata: z.record(z.unknown()).optional().default({}),
@@ -65,7 +65,7 @@ export type UpdateEntityPlanInput = z.infer<typeof updateEntityPlanSchema>;
 
 export const updatePlanPriceSchema = z.object({
   newPrice: z.number().nonnegative(),
-  currency: z.string().trim().length(3).regex(/^[A-Z]{3}$/).optional(),
+  currency: z.literal('BOB').optional(),
   reason: z.string().trim().min(5).max(500),
   isPromotional: z.boolean().optional().default(false),
 });

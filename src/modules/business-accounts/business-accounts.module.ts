@@ -11,6 +11,7 @@ import { SanctionStatusModule } from '../sanction-status/sanction-status.module'
 import { UsersModule } from '../users/users.module';
 import { BusinessAccountsRepository } from './business-accounts.repository';
 import { BusinessAccountsService } from './business-accounts.service';
+import { BusinessGalleryService } from './business-gallery.service';
 import { BusinessMeController } from './business-me.controller';
 import { BusinessSignupController } from './business-signup.controller';
 import { BusinessSignupService } from './business-signup.service';
@@ -32,8 +33,8 @@ import { PublicHandlesController } from './public-handles.controller';
     SequelizeModule.forFeature([DirectoryEntityModel]),
   ],
   controllers: [BusinessSignupController, BusinessMeController, PublicHandlesController],
-  providers: [BusinessAccountsRepository, BusinessAccountsService, BusinessSignupService, HandlesRepository, HandlesService],
-  // The KYC (ADR-0021) reads the account and moves the listing's handle.
-  exports: [BusinessAccountsRepository, HandlesRepository],
+  providers: [BusinessAccountsRepository, BusinessAccountsService, BusinessGalleryService, BusinessSignupService, HandlesRepository, HandlesService],
+  // The KYC (ADR-0021) reads the account and moves the listing's handle; listings (ADR-0022) resolve profiles.
+  exports: [BusinessAccountsRepository, HandlesRepository, HandlesService],
 })
 export class BusinessAccountsModule {}

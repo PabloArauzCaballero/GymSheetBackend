@@ -29,9 +29,11 @@ import { ModerationEvidenceService } from "./moderation-evidence.service";
 import { ModerationMinorService } from "./moderation-minor.service";
 import { emailModerationNotice, ModerationNotice, sanctionNotice } from "./moderation-notices";
 import { CaseContentSnapshot, ModerationCaseContentService } from "./moderation-case-content.service";
+import { BUSINESS_TARGET_HIDDEN_SQL } from "./moderation-business-targets";
 import {
   caseRefusalFor,
   CaseRefusalCode,
+  isBusinessTarget,
   isHideableTarget,
   ModerationReason,
   ModerationReasonValue,
@@ -48,6 +50,8 @@ import {
 import { CreateReportInput, ResolveCaseInput } from "./moderation.schemas";
 import { ReelSocialService } from "../reels/reel-social.service";
 import { ChatEventsService } from "../chat/chat-events.service";
+import { BusinessAdminService } from "../business-kyc/business-admin.service";
+import { businessSuspensionReasonFor } from "./moderation-business-resolution";
 
 /**
  * Contenido que se ve entre gimnasios (reels y playlists públicas): quien lo ve
@@ -61,6 +65,9 @@ const CASE_REFUSAL_MESSAGES: Record<CaseRefusalCode, string> = {
 const CROSS_TENANT_TARGETS: ReadonlySet<ModerationTargetKindValue> = new Set([
   ModerationTargetKind.REEL,
   ModerationTargetKind.MUSIC_PLAYLIST,
+  // The marketplace is public: anyone who sees a listing or a profile can report it.
+  ModerationTargetKind.BUSINESS_LISTING,
+  ModerationTargetKind.BUSINESS_PROFILE,
 ]);
 
 /** Lo que se le enseña al moderador antes de que decida. */
@@ -109,6 +116,7 @@ export class ModerationService {
     private readonly recommendationOutbox?: SocialRecommendationOutboxService,
     @Optional() private readonly reelSocial?: ReelSocialService,
     @Optional() private readonly chatEvents?: ChatEventsService,
+    @Optional() private readonly businessAdmin?: BusinessAdminService,
   ) {}
 
   /**
@@ -186,7 +194,8 @@ export class ModerationService {
         if (input.targetKind === ModerationTargetKind.CHAT_MESSAGE) {
           await this.evidence.captureChatMessage(input.targetId, transaction);
         }
-        if (input.reason === ModerationReason.MENOR_DE_EDAD) {
+        // A business account is not a person: the minor flow does not apply to marketplace targets.
+        if (input.reason === ModerationReason.MENOR_DE_EDAD && !isBusinessTarget(input.targetKind)) {
           await this.minors.suspendIfCorroborated({ reportedUserId: owner.userId, tenantId: owner.tenantId, targetKind: input.targetKind }, transaction);
         }
         return created;
@@ -203,7 +212,7 @@ export class ModerationService {
         throw error;
       });
 
-    await this.distanceFromReportedUser(reporter.id, owner.userId);
+    if (!isBusinessTarget(input.targetKind)) await this.distanceFromReportedUser(reporter.id, owner.userId);
     const autoHidden = await this.autoHide.hideIfThresholdReached(
       { kind: input.targetKind, id: input.targetId },
       owner,
@@ -383,6 +392,13 @@ export class ModerationService {
     targetKind: ModerationTargetKindValue,
     targetId: string,
   ): Promise<boolean> {
+    if (targetKind === ModerationTargetKind.BUSINESS_LISTING || targetKind === ModerationTargetKind.BUSINESS_PROFILE) {
+      const [row] = await this.sequelize.query<{ hidden: boolean }>(BUSINESS_TARGET_HIDDEN_SQL[targetKind], {
+        type: QueryTypes.SELECT,
+        replacements: { targetId },
+      });
+      return row?.hidden ?? false;
+    }
     if (!isHideableTarget(targetKind)) return false;
     const queries: Partial<Record<ModerationTargetKindValue, string>> = {
       STORY: "SELECT (hidden_at IS NOT NULL) AS hidden FROM profile.stories WHERE id = :targetId",
@@ -465,6 +481,7 @@ export class ModerationService {
     if (openReports.length === 0) {
       throw new NotFoundException("Este caso ya no está abierto.");
     }
+    assertResolutionApplies(targetKind, input);
 
     const first = openReports[0];
     const reportedUserId = first.reportedUserId;
@@ -542,6 +559,7 @@ export class ModerationService {
         }
       }
 
+      if (input.suspendBusiness) await this.suspendBusinessOf(actor, targetKind, targetId, reason, input.note, transaction);
       if (isHideableTarget(targetKind)) {
         await this.repository.setContentHidden(
           {
@@ -567,7 +585,7 @@ export class ModerationService {
           resolution: this.resolutionFor(input, sanction),
           note: input.note,
           moderatorUserId: actor.id,
-          discarded: !input.sanction && !input.hideContent && !input.confirmMinor,
+          discarded: !input.sanction && !input.hideContent && !input.confirmMinor && input.suspendBusiness !== true,
           tenantScope: platformScopeOf(actor),
         },
         transaction,
@@ -595,7 +613,27 @@ export class ModerationService {
         : null,
       contentHidden: isHideableTarget(targetKind) ? input.hideContent : false,
       minorConfirmed: input.confirmMinor,
+      businessSuspended: input.suspendBusiness === true,
     };
+  }
+
+  /** The business behind a listing or profile is suspended in the verdict's transaction (ADR-0022). */
+  private async suspendBusinessOf(
+    actor: AuthenticatedUser,
+    targetKind: ModerationTargetKindValue,
+    targetId: string,
+    reason: ModerationReasonValue,
+    note: string | null,
+    transaction: Transaction,
+  ): Promise<void> {
+    const entityId = await this.repository.findBusinessEntityOf(targetKind, targetId, transaction);
+    if (!entityId || !this.businessAdmin) throw new NotFoundException("No encontramos ese negocio.");
+    await this.businessAdmin.suspendEntityFromCase(
+      actor,
+      entityId,
+      { reasonCode: businessSuspensionReasonFor(reason), ...(note ? { note } : {}) },
+      transaction,
+    );
   }
 
   /**
@@ -609,7 +647,9 @@ export class ModerationService {
     transaction?: Transaction,
   ): Promise<void> {
     const role = await this.repository.findAccountRole(reportedUserId, transaction);
-    const refusal = caseRefusalFor(actor, { id: reportedUserId, role });
+    // Only a business needs its mailbox compared (ADR-0021 §8); persons are told apart by id.
+    const email = role === UserRole.BUSINESS ? await this.repository.findAccountEmail(reportedUserId, transaction) : null;
+    const refusal = caseRefusalFor(actor, { id: reportedUserId, role, email });
     if (!refusal) return;
     this.logger.warn(
       { event: "moderation.case_refused", code: refusal, actorUserId: actor.id, actorRole: actor.role, reportedUserId },
@@ -624,6 +664,7 @@ export class ModerationService {
   ): ModerationResolutionValue {
     if (input.confirmMinor) return ModerationResolution.MENOR_CONFIRMADO;
     if (sanction) return sanction.resolution;
+    if (input.suspendBusiness) return ModerationResolution.NEGOCIO_SUSPENDIDO;
     if (input.hideContent) return ModerationResolution.CONTENIDO_OCULTO;
     return ModerationResolution.SIN_ACCION;
   }
@@ -658,7 +699,7 @@ export class ModerationService {
         recipientUserId: report.reporterUserId,
         channel: NotificationChannel.IN_APP,
         subject: "Revisamos tu reporte",
-        body: input.hideContent
+        body: input.hideContent || input.suspendBusiness
           ? "Gracias por avisar. El equipo de moderación de REPP revisó el contenido que reportaste y lo retiró."
           : "Gracias por avisar. El equipo de moderación de REPP revisó el contenido que reportaste.",
         deduplicationKey: `moderation.report-reviewed:${report.id}`,
@@ -727,5 +768,23 @@ export class ModerationService {
         expired: strike.expiresAt.getTime() <= Date.now(),
       })),
     };
+  }
+}
+
+/**
+ * The person ladder (strikes, minors) does not apply to a business account,
+ * and suspending a business is only for marketplace cases (ADR-0022). Refused
+ * before anything is applied.
+ */
+function assertResolutionApplies(targetKind: ModerationTargetKindValue, input: ResolveCaseInput): void {
+  const business = isBusinessTarget(targetKind);
+  if ((business && (input.sanction || input.confirmMinor)) || (!business && input.suspendBusiness)) {
+    throw new DomainException(
+      HttpStatus.UNPROCESSABLE_ENTITY,
+      "MODERATION_RESOLUTION_NOT_APPLICABLE",
+      business
+        ? "En un caso del marketplace se oculta la publicación o se suspende el negocio; no se sanciona a una persona."
+        : "Suspender un negocio solo se decide en un caso de una publicación o de un perfil de negocio.",
+    );
   }
 }

@@ -265,4 +265,7 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
     "La entrada sigue vigente sin tu nombre."),
   anonymize("business.banned_terms", "Términos prohibidos para negocios", "t.created_by_user_id = :userId",
     "created_by_user_id = NULL", "El término sigue vigente sin tu nombre."),
+  // REPP's decision on a marketplace listing (ADR-0022) outlives the moderator who took it.
+  anonymize("directory.entity_plans", "Publicaciones de negocios que moderaste", "t.moderated_by_user_id = :userId",
+    "moderated_by_user_id = NULL", "La decisión sobre la publicación sigue vigente sin tu nombre."),
 ];

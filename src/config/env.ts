@@ -2,6 +2,7 @@ import * as dotenv from "dotenv";
 import { z } from "zod";
 import { antibotEnvironmentShape, refineAntibotEnvironment } from "./antibot-env";
 import { businessKycEnvironmentShape, refineBusinessKycEnvironment } from "./business-kyc-env";
+import { businessListingsEnvironmentShape, refineBusinessListingsEnvironment } from "./business-listings-env";
 import { identityEnvironmentShape, refineIdentityEnvironment } from "./identity-env";
 import { mediaEnvironmentShape, refineMediaEnvironment } from "./media-env";
 import { privacyEnvironmentShape, refinePrivacyEnvironment } from "./privacy-env";
@@ -654,6 +655,7 @@ export const environmentSchema = z
     ...privacyEnvironmentShape,
     ...mediaEnvironmentShape,
     ...businessKycEnvironmentShape,
+    ...businessListingsEnvironmentShape,
   })
   .superRefine((configuration, context) => {
     refineAntibotEnvironment(configuration, context);
@@ -661,6 +663,7 @@ export const environmentSchema = z
     refinePrivacyEnvironment(configuration, context);
     refineMediaEnvironment(configuration, context);
     refineBusinessKycEnvironment(configuration, context);
+    refineBusinessListingsEnvironment(configuration, context);
     if (configuration.DB_POOL_MIN > configuration.DB_POOL_MAX)
       context.addIssue({
         code: z.ZodIssueCode.custom,

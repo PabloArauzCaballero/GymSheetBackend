@@ -3,6 +3,7 @@ import { InjectModel } from "@nestjs/sequelize";
 import { Op, QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { exerciseVisibleSql, routineVisibleSql } from "../../common/sql/content-visibility";
+import { BUSINESS_QUEUE_HIDDEN, BUSINESS_QUEUE_JOINS, BUSINESS_TARGET_ENTITY_SQL, BUSINESS_TARGET_OWNER_SQL, listingVisibilitySql } from "./moderation-business-targets";
 import { ModerationReportModel } from "./report.model";
 import { UserStrikeModel } from "./user-strike.model";
 import {
@@ -153,7 +154,8 @@ export class ModerationRepository {
                OR bool_or(rl.hidden_at IS NOT NULL)
                OR bool_or(mp.hidden_at IS NOT NULL)
                OR bool_or(ex.estado_moderacion <> 'VISIBLE')
-               OR bool_or(cm.estado IN ('OCULTO_AUTO','OCULTO_MODERACION'))), false) AS content_hidden,
+               OR bool_or(cm.estado IN ('OCULTO_AUTO','OCULTO_MODERACION'))
+               OR ${BUSINESS_QUEUE_HIDDEN}), false) AS content_hidden,
               bool_or(ah.id IS NOT NULL)                          AS auto_hidden
          FROM moderation.reports r
          JOIN public.usuarios u ON u.id = r.reported_user_id
@@ -173,6 +175,7 @@ export class ModerationRepository {
            ON r.target_kind = 'EXERCISE' AND ex.id = r.target_id
          LEFT JOIN community.content_comments cm
            ON r.target_kind = 'COMMENT' AND cm.id = r.target_id
+         ${BUSINESS_QUEUE_JOINS}
          LEFT JOIN moderation.auto_hide_reviews ah -- at most one open per target
            ON ah.target_kind = r.target_kind AND ah.target_id = r.target_id AND ah.reviewed_at IS NULL
         WHERE r.status IN ('PENDIENTE', 'EN_REVISION')
@@ -200,6 +203,24 @@ export class ModerationRepository {
       { type: QueryTypes.SELECT, replacements: { userId }, transaction },
     );
     return row?.role ?? null;
+  }
+
+  /** Login email of an account, to tell a business opened with a moderator's own mailbox (ADR-0021 §8). */
+  async findAccountEmail(userId: string, transaction?: Transaction): Promise<string | null> {
+    const [row] = await this.sequelize.query<{ email: string }>(`SELECT email FROM public.usuarios WHERE id = :userId`, {
+      type: QueryTypes.SELECT,
+      replacements: { userId },
+      transaction,
+    });
+    return row?.email ?? null;
+  }
+
+  /** The business (entity) a marketplace case is about; null for any other kind or a missing row. */
+  async findBusinessEntityOf(targetKind: ModerationTargetKindValue, targetId: string, transaction: Transaction): Promise<string | null> {
+    const sql = targetKind === "BUSINESS_LISTING" || targetKind === "BUSINESS_PROFILE" ? BUSINESS_TARGET_ENTITY_SQL[targetKind] : null;
+    if (!sql) return null;
+    const [row] = await this.sequelize.query<{ entityId: string }>(sql, { type: QueryTypes.SELECT, replacements: { targetId }, transaction });
+    return row?.entityId ?? null;
   }
 
   /** Las quejas concretas de un caso, con el nombre de quien las puso. */
@@ -400,6 +421,14 @@ export class ModerationRepository {
       EXERCISE: { sql: "UPDATE public.ejercicios SET estado_moderacion = :state, updated_at = now() WHERE id = :targetId", state: exerciseState },
       COMMENT: { sql: "UPDATE community.content_comments SET estado = :state, updated_at = now() WHERE id = :targetId AND estado <> 'BORRADO_AUTOR'", state: commentState },
     };
+    if (input.targetKind === "BUSINESS_LISTING") {
+      await this.sequelize.query(listingVisibilitySql(input.hidden), {
+        type: QueryTypes.UPDATE,
+        replacements: { targetId: input.targetId, moderatorUserId: input.moderatorUserId, reason: input.reason ?? "AUTO_HIDDEN" },
+        transaction,
+      });
+      return;
+    }
     const update = updates[input.targetKind];
     if (update) {
       await this.sequelize.query(update.sql, {
@@ -462,6 +491,7 @@ export class ModerationRepository {
       MUSIC_PLAYLIST: `SELECT p.user_id AS "userId", u.tenant_id AS "tenantId"
                    FROM community.music_playlists p JOIN public.usuarios u ON u.id = p.user_id
                   WHERE p.id = :targetId AND p.visibilidad = 'PUBLIC' AND p.hidden_at IS NULL`,
+      ...BUSINESS_TARGET_OWNER_SQL,
     };
 
     const sql = queries[targetKind];

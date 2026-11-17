@@ -124,6 +124,8 @@ nombre ni la categoría cambian (`409 KYC_NOT_EDITABLE`).
 
 `directory.entity_locations` queda para la franja 8c (perfil público, sedes y publicaciones): no hace
 falta para el alta ni para el handle.
+Llegó con [ADR-0022](./ADR-0022-publicaciones-y-post-moderacion.md), junto con las publicaciones y el
+perfil público por @handle.
 
 ## Consecuencias
 

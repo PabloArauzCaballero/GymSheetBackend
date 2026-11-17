@@ -27,7 +27,7 @@ export async function resolveCase(
   e2e: E2eApp,
   moderator: Member,
   target: { kind: string; id: string },
-  decision: { hideContent?: boolean; sanction?: boolean; confirmMinor?: boolean; note?: string },
+  decision: { hideContent?: boolean; sanction?: boolean; confirmMinor?: boolean; suspendBusiness?: boolean; note?: string },
 ) {
   const base = `/admin/moderation/cases/${target.kind}/${target.id}`;
   await e2e.as(moderator.token).post(`${base}/claim`).expect(201);

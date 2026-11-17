@@ -50,6 +50,24 @@ const BUSINESS_REACHABLE: string[] = [
   'POST business/me/phone/verify/request',
   'PUT business/me/kyc/consent',
   'PUT business/me/kyc/draft',
+  // Listings, locations and gallery of the business (ADR-0022, franja 8c).
+  'DELETE business/me/gallery/:position',
+  'DELETE business/me/listings/:id/media/:position',
+  'DELETE business/me/locations/:id',
+  'GET business/me/listings',
+  'GET business/me/listings/:id',
+  'GET business/me/locations',
+  'PATCH business/me/listings/:id',
+  'PATCH business/me/listings/:id/price',
+  'PATCH business/me/listings/:id/stock',
+  'PATCH business/me/locations/:id',
+  'POST business/me/gallery',
+  'POST business/me/listings',
+  'POST business/me/listings/:id/archive',
+  'POST business/me/listings/:id/media',
+  'POST business/me/listings/:id/pause',
+  'POST business/me/listings/:id/resume',
+  'POST business/me/locations',
 ];
 
 type Route = { method: string; path: string; controller: Type; handler: object };

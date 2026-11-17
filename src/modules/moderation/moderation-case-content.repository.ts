@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { QueryTypes } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
+import { LISTING_CONTENT_SQL, ListingContentRow, PROFILE_CONTENT_SQL, ProfileContentRow } from "./moderation-business-content";
 
 /** Raw rows read for the case content snapshot; `moderation-case-content.mapper.ts` turns them into the response. */
 export type RoutineContentRow = {
@@ -48,6 +49,14 @@ export class ModerationCaseContentRepository {
     return this.sequelize
       .query<T>(sql, { type: QueryTypes.SELECT, replacements: { targetId } })
       .then((rows) => rows[0] ?? null);
+  }
+
+  findListing(targetId: string): Promise<ListingContentRow | null> {
+    return this.one(LISTING_CONTENT_SQL, targetId);
+  }
+
+  findBusinessProfile(targetId: string): Promise<ProfileContentRow | null> {
+    return this.one(PROFILE_CONTENT_SQL, targetId);
   }
 
   findRoutine(targetId: string): Promise<RoutineContentRow | null> {

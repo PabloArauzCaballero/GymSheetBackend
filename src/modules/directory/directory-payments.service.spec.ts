@@ -135,7 +135,7 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
         benefits: ['Pase libre', 'Vestuarios'],
         durationDays: 30,
         price: 45,
-        currency: 'USD',
+        currency: 'BOB',
         displayOrder: 1,
         mediaUrls: [],
         metadata: {},
@@ -235,6 +235,7 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
         currentPrice: '45.00',
         currency: 'USD',
         status: 'ACTIVE',
+        moderationStatus: 'LIVE',
         entity: { id: 'entity-1', status: 'ACTIVE' },
       };
       mockRepo.findPlanById.mockResolvedValue(plan);
@@ -280,6 +281,14 @@ describe('DirectoryPaymentsService - Marketplace, Histórico de Precios y Pagos 
       mockRepo.findPlanById.mockResolvedValue({ id: 'plan-1', status: 'ACTIVE', entity: { id: 'entity-1', status: 'SUSPENDED' } });
       await expect(service.createPaymentOrder(mockAthleteUser, { planId: 'plan-1' })).rejects.toThrow(NotFoundException);
       await expect(service.getPublicPlan('plan-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('ADR-0022: a listing that is not LIVE (held, hidden, rejected) is neither shown nor bought (404)', async () => {
+      for (const moderationStatus of ['HELD', 'HIDDEN', 'REJECTED']) {
+        mockRepo.findPlanById.mockResolvedValue({ id: 'plan-1', status: 'ACTIVE', moderationStatus, entity: { id: 'entity-1', status: 'ACTIVE' } });
+        await expect(service.createPaymentOrder(mockAthleteUser, { planId: 'plan-1' })).rejects.toThrow(NotFoundException);
+        await expect(service.getPublicPlan('plan-1')).rejects.toThrow(NotFoundException);
+      }
     });
 
     it('D4/D5: public reads of a listing that is not ACTIVE answer 404', async () => {

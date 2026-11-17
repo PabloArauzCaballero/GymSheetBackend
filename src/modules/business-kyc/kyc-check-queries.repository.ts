@@ -5,6 +5,7 @@ import { businessNameSkeleton } from "../business-accounts/handle-rules";
 import type { DirectoryEntityType } from "../directory/directory-entity.model";
 import { KycCheckQueries } from "./kyc-checks";
 import { FingerprintKind } from "./kyc-cipher";
+import { bannedTermExistsSql } from "../../common/sql/banned-terms";
 
 /** Trigram similarity at or above which two commercial names are too close (plan §2.2). */
 export const NAME_SIMILARITY_THRESHOLD = 0.8;
@@ -75,11 +76,7 @@ export class KycCheckQueriesRepository implements KycCheckQueries {
 
   /** Whole-word match of a NAME/BOTH term in the normalized texts. */
   containsBannedTerm(texts: readonly string[], transaction: Transaction): Promise<boolean> {
-    return this.exists(
-      `SELECT 1 FROM business.banned_terms t
-        WHERE t.scope IN ('NAME', 'BOTH')
-          AND (' ' || public.repp_normalize(:text) || ' ') LIKE ('% ' || public.repp_normalize(t.term) || ' %')`,
-      { text: texts.join(" ") },
+    return this.exists(bannedTermExistsSql("NAME"), { text: texts.join(" ") },
       transaction,
     );
   }

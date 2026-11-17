@@ -99,7 +99,7 @@ export class BusinessAccountsService {
     file: UploadedSelfie | undefined,
   ): Promise<{ slot: BusinessMediaSlot; url: string }> {
     const account = await this.requireAccount(actor);
-    const image = validateImage(file);
+    const image = validateBusinessImage(file);
     const stored = await this.storage.upload(
       { originalName: image.originalname, mimeType: image.mimeType, sizeBytes: image.size, buffer: image.buffer },
       { category: 'business', entityId: account.entityId },
@@ -126,14 +126,14 @@ export class BusinessAccountsService {
     );
   }
 
-  private async requireAccount(actor: AuthenticatedUser): Promise<BusinessAccountRow> {
+  async requireAccount(actor: AuthenticatedUser): Promise<BusinessAccountRow> {
     const account = await this.repository.findByUserId(actor.id);
     if (!account) throw new NotFoundException('Cuenta de negocio no encontrada.');
     return account;
   }
 
   /** A suspended or closed business cannot edit its listing. */
-  private async lockEditable(account: BusinessAccountRow, transaction: Transaction): Promise<DirectoryEntityModel> {
+  async lockEditable(account: BusinessAccountRow, transaction: Transaction): Promise<DirectoryEntityModel> {
     if (account.status === 'SUSPENDED' || account.status === 'CLOSED') {
       throw new DomainException(HttpStatus.CONFLICT, 'BUSINESS_ACCOUNT_LOCKED', 'Tu negocio no se puede editar en este estado.');
     }
@@ -150,7 +150,7 @@ function keyOf(url: string | null): string | null {
 }
 
 /** JPEG or PNG only, within the upload limit, and the bytes must match the declared type. */
-function validateImage(file: UploadedSelfie | undefined): UploadedSelfie & { mimeType: string } {
+export function validateBusinessImage(file: UploadedSelfie | undefined): UploadedSelfie & { mimeType: string } {
   if (!file || !file.buffer || file.size === 0) throw new BadRequestException('Se requiere una imagen no vacía.');
   if (file.size > env.MEDIA_UPLOAD_MAX_BYTES) {
     throw new BadRequestException(`La imagen excede el tamaño máximo de ${env.MEDIA_UPLOAD_MAX_BYTES} bytes.`);

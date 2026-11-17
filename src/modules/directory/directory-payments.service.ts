@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   Optional,
@@ -31,6 +32,8 @@ import { EntityPlanModel } from './models/entity-plan.model';
 import { PaymentOrderModel } from './models/payment-order.model';
 import { PlanPriceHistoryModel } from './models/plan-price-history.model';
 import { PublicPaymentConfigDto, PublicPlanDto, mapPublicPaymentConfig, mapPublicPlan } from './directory-payments.mapper';
+import { legacyListingState, shapeViolations } from '../business-listings/listing-checks';
+import { DomainException } from '../../common/errors/domain.exception';
 
 @Injectable()
 export class DirectoryPaymentsService {
@@ -147,7 +150,7 @@ export class DirectoryPaymentsService {
   /** Public: an active plan of an active listing, mapped (D4); anything else is 404. */
   async getPublicPlan(planId: string): Promise<PublicPlanDto> {
     const plan = await this.repository.findPlanById(planId);
-    if (!plan || plan.status !== 'ACTIVE' || plan.entity?.status !== 'ACTIVE') {
+    if (!plan || plan.status !== 'ACTIVE' || plan.moderationStatus !== 'LIVE' || plan.entity?.status !== 'ACTIVE') {
       throw new NotFoundException('Plan o producto no encontrado.');
     }
     return mapPublicPlan(plan);
@@ -173,6 +176,7 @@ export class DirectoryPaymentsService {
         {
           entityId,
           type: input.type ?? 'MEMBERSHIP_PLAN',
+          ...legacyListingState(input.type ?? 'MEMBERSHIP_PLAN', input.durationDays ?? null),
           name: input.name,
           slug,
           description: input.description,
@@ -215,6 +219,14 @@ export class DirectoryPaymentsService {
     const plan = await this.repository.findPlanById(planId);
     if (!plan) throw new NotFoundException('Plan o producto no encontrado.');
     this.assertEntityOwnership(actor, plan.entity?.userId ?? null);
+    if (input.durationDays !== undefined && plan.moderationStatus === 'LIVE') {
+      // A public listing keeps the shape of its kind (ck_entity_plan_live_validity), checked here as a 422, not a 500.
+      const validityDays = plan.offerKind === 'DAY_PASS' && input.durationDays === 1 ? null : input.durationDays;
+      const violations = shapeViolations({ offerKind: plan.offerKind, validityDays, sessionsCount: plan.sessionsCount, stockQuantity: plan.stockQuantity, productCategoryId: plan.productCategoryId });
+      if (violations.length > 0) {
+        throw new DomainException(HttpStatus.UNPROCESSABLE_ENTITY, 'LISTING_SHAPE_INVALID', 'Faltan o sobran datos para este tipo de publicación.', { violations });
+      }
+    }
 
     return this.repository.updatePlan(plan, input);
   }
@@ -296,7 +308,8 @@ export class DirectoryPaymentsService {
   ): Promise<{ order: PaymentOrderModel; paymentConfig: PublicPaymentConfigDto | null }> {
     const plan = await this.repository.findPlanById(input.planId);
     // A seller that is not public (DRAFT, paused, suspended, closed) sells nothing (D7).
-    if (!plan || plan.entity?.status !== 'ACTIVE') throw new NotFoundException('Plan no encontrado.');
+    // Nor does a listing REPP or the publication checks keep off the marketplace (ADR-0022): 404, it is not public.
+    if (!plan || plan.entity?.status !== 'ACTIVE' || plan.moderationStatus !== 'LIVE') throw new NotFoundException('Plan no encontrado.');
     if (plan.status !== 'ACTIVE') throw new BadRequestException('Este plan no se encuentra activo para compra.');
 
     const currentPriceHistory = await this.repository.findCurrentPriceHistory(plan.id);

@@ -407,7 +407,7 @@ moderator.
 | GET    | `/admin/moderation/cases/:targetKind/:targetId` | MODERATOR, SYSTEM_ADMIN | Case file, with `tenantId` and the read-only snapshot of the reported target: `content` (by `content.kind`, below), `contentUnavailableReason` (`null`, `ERASED` when the target no longer exists, `CHAT_EVIDENCE` for a chat message) and `evidence` (chat message copy). Hidden content is included. Same `403 MODERATION_SELF_CASE` / `MODERATION_PEER_CASE` refusals (ADR-0018 §8) |
 | POST   | `/admin/moderation/cases/:targetKind/:targetId/claim` | MODERATOR, SYSTEM_ADMIN | Claim (`409` if someone else holds it); audited `moderation/claim` |
 | POST   | `/admin/moderation/cases/:targetKind/:targetId/release` | MODERATOR, SYSTEM_ADMIN | Release own claim; audited `moderation/release` |
-| POST   | `/admin/moderation/cases/:targetKind/:targetId/resolve` | MODERATOR, SYSTEM_ADMIN | Verdict (hide/restore content, sanction, confirm/dismiss minor). Response adds `tenantId` and `resolution`. Audited `moderation/resolve` with `metadata { caseKind, tenantId, resolution, sanction, contentHidden, minorConfirmed, reportsClosed }` |
+| POST   | `/admin/moderation/cases/:targetKind/:targetId/resolve` | MODERATOR, SYSTEM_ADMIN | Verdict (hide/restore content, sanction, confirm/dismiss minor; `suspendBusiness` on marketplace cases, ADR-0022). Response adds `tenantId`, `resolution` and `businessSuspended`. Audited `moderation/resolve` with `metadata { caseKind, tenantId, resolution, sanction, contentHidden, minorConfirmed, businessSuspended, reportsClosed }` |
 | GET    | `/admin/moderation/users/:userId/history` | MODERATOR, SYSTEM_ADMIN | Strike history |
 | GET    | `/admin/signups` | MODERATOR, SYSTEM_ADMIN | Signup verdicts (a moderator sees every gym and the rejections) |
 | GET    | `/admin/routines` | MODERATOR, SYSTEM_ADMIN | REPP routine console (official, hidden, open reports) |
@@ -427,6 +427,7 @@ author's routes (`GET /routines/:id` stays author or `SYSTEM_ADMIN`):
 | `USER` | `displayName`, `mainPhotoUrl` (first gallery photo, hidden or not); a closed account is `ERASED` |
 | `MUSIC_PLAYLIST` | `name`, `url`, `type`, `imageUrl` (tracks are not stored: the playlist is a provider link) |
 | `CHAT_MESSAGE` | `content: null`, the message is in `evidence` |
+| `BUSINESS_LISTING`, `BUSINESS_PROFILE` | see «Moderation of the marketplace» (ADR-0022) |
 
 Audit rows of a `MODERATOR` are platform rows (`tenant_scope` null). Every notice to the people
 involved names «el equipo de moderación de REPP», never the gym.
@@ -540,18 +541,106 @@ business that is their own account or uses their own mailbox: `403 MODERATION_SE
 Metrics on `/health/metrics`: `gym_sheet_kyc_queue_size{queue}`, `gym_sheet_kyc_queue_overdue{queue}`,
 `gym_sheet_kyc_queue_age_p95_seconds{queue}`, `gym_sheet_kyc_auto_approval_ratio`.
 
+## Business listings, locations and the public marketplace (ADR-0022, franja 8c)
+
+A **listing** is a row of `directory.entity_plans`: a plan, pass, class pack, service or product of
+one business. Prices are always **BOB**. **Post-moderation**: a listing goes `LIVE` the moment the
+automatic checks pass; a failing check holds it (`HELD`, not public) for REPP with the codes in
+`autoCheckCodes`; REPP can later hide (`HIDDEN`) or reject (`REJECTED`) it. Public =
+`moderationStatus LIVE` + `status ACTIVE` + the business `ACTIVE` (a `DRAFT`, paused, `SUSPENDED` or
+`CLOSED` business takes every listing with it). Anything else is `404` on every public route,
+including the legacy `/public/directory/plans*`, order creation and `POST /me/reports`.
+
+`Listing` (own, `business/me/*`): `{ id, offerKind, name, description, benefits[], price ("250.00"),
+currency: "BOB", validityDays|null, sessionsCount|null, stockQuantity|null, stockReserved,
+productCategoryId|null, displayOrder, mediaUrls[], status: ACTIVE|INACTIVE|ARCHIVED, moderationStatus:
+LIVE|HELD|HIDDEN|REJECTED, moderationReasonCode|null, autoCheckCodes[], visibility: PUBLIC|BUSINESS_NOT_PUBLIC|PAUSED|ARCHIVED|UNDER_REVIEW|HIDDEN_BY_REPP|REJECTED_BY_REPP, publishedAt|null, createdAt, updatedAt }`.
+
+Fields per `offerKind` (`422 LISTING_SHAPE_INVALID {violations}` otherwise):
+
+| `offerKind` | `validityDays` | `sessionsCount` | stock / `productCategoryId` |
+| --- | --- | --- | --- |
+| `MEMBERSHIP` | required | — | — |
+| `DAY_PASS` | — | — | — |
+| `MULTI_DAY_PASS` | required, ≥ 2 | — | — |
+| `CLASS_PACK`, `SERVICE_PACK` | optional (pack expiry) | required, 1–1000 | — |
+| `SERVICE_SESSION` | — | — | — |
+| `PRODUCT` | — | — | optional (`null` stock = not tracked) |
+
+Automatic checks (`autoCheckCodes`): `PRICE_OUT_OF_BAND` (outside `LISTING_PRICE_MIN_BOB`–`LISTING_PRICE_MAX_BOB`,
+default 1–50 000), `PRICE_OUTLIER` (more than `LISTING_PRICE_OUTLIER_FACTOR`, default 5×, above or below
+the median of live listings of the kind, once there are `LISTING_PRICE_MEDIAN_MIN_SAMPLES`), `BANNED_TERMS`
+(REPP's list, scope `LISTING|BOTH`). On a `LIVE` listing an edit re-checks only what changed (text or
+price); a `HELD` listing re-runs everything, so fixing it publishes it. `HIDDEN`/`REJECTED` are REPP's
+and no seller edit lifts them.
+
+| Method | Route | Body / response | Codes |
+| ------ | ----- | --------------- | ----- |
+| GET | `/business/me/listings` | `?status=ACTIVE\|INACTIVE\|ARCHIVED&moderationStatus&cursor&limit≤50` (archived only when asked) → `{ items: Listing[], nextCursor }`, newest first | `200`, `400 INVALID_CURSOR` |
+| POST | `/business/me/listings` | `{ offerKind, name (2–180), description (5–5000), benefits?: string[≤20], price (0–10 000 000, 2 decimals), validityDays?, sessionsCount?, stockQuantity?, productCategoryId? (active, scope = business type or ALL), displayOrder? }` strict (`currency`, `moderationStatus`, `type`… → `400`) → `Listing`. Allowed while the KYC is pending (the listing waits, `BUSINESS_NOT_PUBLIC`); at most 500 not archived | `201`, `400`, `403 EMAIL_VERIFICATION_REQUIRED`, `409 BUSINESS_ACCOUNT_LOCKED`, `409 LISTING_LIMIT`, `422 LISTING_SHAPE_INVALID`, `422 LISTING_CATEGORY_INVALID` |
+| GET | `/business/me/listings/:id` | → `Listing` | `200`, `404` (not yours) |
+| PATCH | `/business/me/listings/:id` | any of `{ name, description, benefits, validityDays, sessionsCount, productCategoryId, displayOrder }` (the kind never changes) → `Listing` | `200`, `400`, `404`, `409 LISTING_NOT_EDITABLE` (archived), `409 BUSINESS_ACCOUNT_LOCKED`, `422` |
+| PATCH | `/business/me/listings/:id/price` | `{ price, reason? }` → `Listing` (append-only price history) | `200`, `400 LISTING_SAME_PRICE`, `404`, `409` |
+| PATCH | `/business/me/listings/:id/stock` | `{ stockQuantity: int\|null }` (products only) → `Listing` | `200`, `404`, `409 LISTING_STOCK_BELOW_RESERVED {reserved}`, `422 LISTING_SHAPE_INVALID` |
+| POST | `/business/me/listings/:id/pause` \| `/resume` \| `/archive` | → `Listing`. `ACTIVE→INACTIVE`, `INACTIVE→ACTIVE`, `ACTIVE\|INACTIVE→ARCHIVED` (terminal) | `200`, `404`, `409 LISTING_INVALID_TRANSITION {status}` |
+| POST | `/business/me/listings/:id/media` | multipart `file` (JPEG/PNG by bytes, ≤ `MEDIA_UPLOAD_MAX_BYTES`), ≤ 10 per listing → `Listing` | `201`, `400`, `404`, `409 LISTING_MEDIA_LIMIT`, `413` |
+| DELETE | `/business/me/listings/:id/media/:position` | removes the photo at that index (file released, ADR-0017) → `Listing` | `200`, `404` |
+| GET | `/business/me/locations` | → `Location[]` where `Location = { id, name, address, city, latitude, longitude, businessHours, displayOrder, createdAt, updatedAt }` | `200` |
+| POST | `/business/me/locations` | `{ name (2–120), city, address?, latitude?+longitude? (both or none), businessHours?, displayOrder? }` → `Location` (≤ 50) | `201`, `400`, `409 LOCATION_NAME_TAKEN`, `409 LOCATION_LIMIT`, `409 BUSINESS_ACCOUNT_LOCKED` |
+| PATCH | `/business/me/locations/:id` | any of the fields → `Location` | `200`, `400`, `404`, `409` |
+| DELETE | `/business/me/locations/:id` | | `204`, `404` |
+| POST | `/business/me/gallery` | multipart `file` → `{ gallery: string[] }` (public profile gallery, ≤ 10) | `201`, `400`, `409 BUSINESS_GALLERY_LIMIT` |
+| DELETE | `/business/me/gallery/:position` | → `{ gallery }` | `200`, `404` |
+
+All `business/me/*` routes: `NEGOCIO` only (a person gets `403 ACCOUNT_KIND_NOT_ALLOWED`); another
+business's listing or location is `404`. `GET /business/me` adds `entity.gallery`.
+
+### Public marketplace (no token, `PUBLIC_RATE_LIMIT_MAX`)
+
+`PublicListing`: `{ id, offerKind, name, description, benefits[], price, currency, validityDays,
+sessionsCount, inStock: boolean|null, productCategory: { id, name, path }|null, mediaUrls[], publishedAt,
+seller: { id, name, handle|null, entityType, logoUrl, city, badge: VERIFIED|NEW } }` — no moderation
+state, stock numbers, metadata, owner or tenant.
+
+| Method | Route | Query / response | Codes |
+| ------ | ----- | ---------------- | ----- |
+| GET | `/public/directory/listings` | `?q (text, or @handle)&offer_kind&entity_type&entity_id&category_path (product category, else the seller's)&city&price_min&price_max&verified_only=true&sort=recent\|price_asc\|price_desc&cursor&limit≤50` (unknown keys → `400`) → `{ items: PublicListing[], nextCursor }`, keyset-paginated | `200`, `400`, `400 INVALID_CURSOR` |
+| GET | `/public/directory/listings/:id` | → `PublicListing` | `200`, `404` (not public) |
+| GET | `/public/directory/profiles/:handle` | → `{ handle, entity: <public directory detail>, locations: [{ id, name, address, city, latitude, longitude, businessHours }], listings: { items, nextCursor } }` (first page, continue with `GET /public/directory/listings?entity_id=…&cursor=…`); `{ redirectTo }` for a renamed handle | `200`, `404` |
+
+### Moderation of the marketplace
+
+`POST /me/reports` accepts `targetKind: BUSINESS_LISTING` (listing id) and `BUSINESS_PROFILE`
+(entity id) — only while public, otherwise `404`. Three distinct reporters hide a listing
+automatically (pending review, like other content). In `/admin/moderation/cases/BUSINESS_LISTING|BUSINESS_PROFILE/:id`
+`content` is `{ kind: BUSINESS_LISTING, name, description, benefits, offerKind, price, currency,
+validityDays, sessionsCount, mediaUrls, status, moderationStatus, seller: { entityId, name, handle } }`
+or `{ kind: BUSINESS_PROFILE, name, entityType, headline, description, logoUrl, coverUrl, gallery, city,
+status, isVerified, handle }`. The verdict on these cases: `hideContent` (listing → `HIDDEN`; `false`
+restores a hidden one) and `suspendBusiness: true` (the business is suspended through its KYC state
+machine in the same transaction; resolution `NEGOCIO_SUSPENDIDO`; `409 BUSINESS_ACCOUNT_REQUIRED` for a
+listing REPP seeded without an account). `sanction`/`confirmMinor` there, or `suspendBusiness` on any other
+kind: `422 MODERATION_RESOLUTION_NOT_APPLICABLE`. A business registered with the moderator's own mailbox
+is `403 MODERATION_SELF_CASE`. The audit row adds `businessSuspended`.
+
+| Method | Route | Access | Body / response | Codes |
+| ------ | ----- | ------ | --------------- | ----- |
+| GET | `/admin/business/listings` | MODERATOR, SYSTEM_ADMIN | `?moderationStatus=HELD\|HIDDEN\|REJECTED (default HELD)&cursor&limit` → `{ items: [{ id, entityId, sellerName, sellerHandle, offerKind, name, price, currency, validityDays, sessionsCount, stockQuantity, productCategoryId, moderationStatus, moderationReasonCode, autoCheckCodes, updatedAt }], nextCursor }`, oldest first | `200`, `403` |
+| POST | `/admin/business/listings/:id/release` | MODERATOR, SYSTEM_ADMIN | `{ note? }` → `{ id, moderationStatus: LIVE }` (seller notified); audited `business/listing-release` | `200`, `403 MODERATION_SELF_CASE`, `404`, `409 LISTING_INVALID_TRANSITION`, `409 LISTING_NOT_PUBLISHABLE {violations}` |
+| POST | `/admin/business/listings/:id/reject` | MODERATOR, SYSTEM_ADMIN | `{ reasonCode: PROHIBITED_PRODUCT\|MISLEADING\|PRICE_ABUSE\|DUPLICATE\|OTHER, note? }` → `{ id, moderationStatus: REJECTED, reasonCode }` (seller notified); audited `business/listing-reject` | `200`, `403`, `404`, `409 LISTING_INVALID_TRANSITION` |
+
 ## Directory (franja 8a fixes)
 
 | Method | Route | Access | Notes |
 | ------ | ----- | ------ | ----- |
 | POST | `/directory/entities` | `SYSTEM_ADMIN` | REPP seeds a listing it owns; strict body without `is_verified`, `tenant_id` or `user_id` (`400`). Anyone else: `403` |
 | GET | `/public/directory/entities/:entityId/payment-config` | public | `{ bankName, accountHolderName, accountNumber, aliasOrPhone, qrImageUrl, qrPayload, instructions, isActive } \| null` (no `taxId`, ids or dates; `null` when inactive); `404` when the listing is not `ACTIVE` |
-| GET | `/public/directory/plans`, `/public/directory/entities/:entityId/plans`, `/public/directory/plans/:planId` | public | mapped (`metadata: {}`, seller as a summary); only active plans of `ACTIVE` listings (`404` otherwise) |
-| POST | `/directory/payments/orders` | authenticated | `404` for a plan of a listing that is not `ACTIVE`; `paymentConfig` comes mapped like the public one |
+| GET | `/public/directory/plans`, `/public/directory/entities/:entityId/plans`, `/public/directory/plans/:planId` | public | mapped (`metadata: {}`, seller as a summary); only active, `LIVE` plans of `ACTIVE` listings (`404` otherwise; ADR-0022) |
+| POST | `/directory/payments/orders` | authenticated | `404` for a plan of a listing that is not `ACTIVE` or not `LIVE`; `paymentConfig` comes mapped like the public one |
 | PATCH/DELETE | `/directory/reviews/:id` | author (delete: also `SYSTEM_ADMIN`) | someone else's review: `404` |
 | POST | `/directory/entities/:id/reviews` | authenticated | `404` when the listing is not `ACTIVE` |
 
-New plans default to `BOB`.
+Plans are priced in `BOB` only: the legacy `admin/directory/plans*` routes accept `currency: "BOB"` or nothing (`400` otherwise), and a plan they create is `LIVE` only with the shape of its kind (ADR-0022).
 
 ## Main status codes
 

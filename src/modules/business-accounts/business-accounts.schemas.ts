@@ -76,3 +76,6 @@ export const businessMediaBodySchema = z.object({ slot: businessMediaSlotEnum })
 
 /** Path parameter of the public handle routes; the service normalizes it. */
 export const handleParamSchema = z.string().trim().min(1).max(64);
+
+/** Index of a photo in the public gallery (`DELETE business/me/gallery/:position`). */
+export const galleryPositionSchema = z.coerce.number().int().min(0).max(50);

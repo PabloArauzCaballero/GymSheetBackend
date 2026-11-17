@@ -29,8 +29,9 @@ describe('directory defects (e2e, franja 8a)', () => {
   async function insertPlan(entityId: string): Promise<string> {
     const id = randomUUID();
     await e2e.sql(
-      `INSERT INTO directory.entity_plans (id, entity_id, type, name, slug, description, current_price, metadata)
-       VALUES (:id, :entityId, 'MEMBERSHIP_PLAN', 'Plan E2E', :slug, 'Plan de prueba', 100, '{"internal":"secret"}')`,
+      // A published listing (ADR-0022): LIVE, so the seller's status is what each test exercises.
+      `INSERT INTO directory.entity_plans (id, entity_id, type, name, slug, description, current_price, metadata, duration_days, moderation_status, published_at)
+       VALUES (:id, :entityId, 'MEMBERSHIP_PLAN', 'Plan E2E', :slug, 'Plan de prueba', 100, '{"internal":"secret"}', 30, 'LIVE', now())`,
       { id, entityId, slug: `plan-${id}` },
     );
     return id;

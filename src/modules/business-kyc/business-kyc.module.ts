@@ -80,5 +80,7 @@ export function phoneOtpSenderFactory(fetcher: PhoneOtpFetch): PhoneOtpSender {
     KycReviewService,
     BusinessAdminService,
   ],
+  // Moderation cases about a listing or a profile suspend the business (ADR-0022).
+  exports: [BusinessAdminService],
 })
 export class BusinessKycModule {}

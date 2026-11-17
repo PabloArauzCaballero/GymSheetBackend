@@ -1,4 +1,5 @@
 import { reelMediaUrl } from "../reels/reels.mapper";
+import type { BusinessCaseContent } from "./moderation-business-content";
 import type {
   CommentContentRow,
   ExerciseContentRow,
@@ -48,7 +49,8 @@ export type CaseContent =
   | { kind: "COMMENT"; text: string; attachmentUrl: string | null; attachmentType: string | null; deletedByAuthor: boolean }
   | { kind: "REEL" | "STORY" | "PROFILE_PHOTO"; mediaUrl: string; mediaType: string | null; caption: string | null }
   | { kind: "USER"; displayName: string; mainPhotoUrl: string | null }
-  | { kind: "MUSIC_PLAYLIST"; name: string; url: string; type: string; imageUrl: string | null };
+  | { kind: "MUSIC_PLAYLIST"; name: string; url: string; type: string; imageUrl: string | null }
+  | BusinessCaseContent;
 
 export function mapRoutineContent(
   routine: RoutineContentRow,

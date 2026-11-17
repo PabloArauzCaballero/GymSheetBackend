@@ -1,4 +1,4 @@
-import { resolveMediaUrl } from '../../common/media/media-url';
+import { resolveMediaUrl, resolveMediaUrls } from '../../common/media/media-url';
 import { DirectoryEntityModel } from '../directory/directory-entity.model';
 import { BusinessAccountRow } from './business-accounts.repository';
 import { CurrentHandle } from './handles.service';
@@ -38,6 +38,7 @@ export type BusinessMeDto = {
     isOnlineOnly: boolean;
     logoUrl: string | null;
     coverUrl: string | null;
+    gallery: string[];
     contactInfo: Record<string, string>;
     businessHours: Record<string, { open: string; close: string }>;
   };
@@ -91,6 +92,7 @@ export function mapBusinessMe(
       isOnlineOnly: entity.isOnlineOnly,
       logoUrl: resolveMediaUrl(entity.logoUrl),
       coverUrl: resolveMediaUrl(entity.coverUrl),
+      gallery: resolveMediaUrls(entity.gallery ?? []),
       contactInfo: entity.contactInfo ?? {},
       businessHours: entity.businessHours ?? {},
     },

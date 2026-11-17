@@ -7,6 +7,7 @@ import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis'
 import { ResilientThrottlerStorage } from './common/redis/resilient-throttler.storage';
 import { BusinessAccountsModule } from './modules/business-accounts/business-accounts.module';
 import { BusinessKycModule } from './modules/business-kyc/business-kyc.module';
+import { BusinessListingsModule } from './modules/business-listings/business-listings.module';
 import { AccountKindGuard } from './common/guards/account-kind.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { EmailVerificationGuard } from './common/guards/email-verification.guard';
@@ -143,6 +144,7 @@ import { ConsentsModule } from './modules/consents/consents.module';
     DirectoryModule,
     BusinessAccountsModule,
     BusinessKycModule,
+    BusinessListingsModule,
     VerificationModule,
   ],
   providers: [

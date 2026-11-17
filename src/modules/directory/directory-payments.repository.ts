@@ -72,7 +72,9 @@ export class DirectoryPaymentsRepository {
   async listPlans(entityId: string, onlyActive = true, transaction?: Transaction): Promise<EntityPlanModel[]> {
     const where: Record<string, unknown> = { entityId };
     if (onlyActive) {
+      // Public read: a held, hidden or rejected listing is not for sale (ADR-0022).
       where.status = 'ACTIVE';
+      where.moderationStatus = 'LIVE';
     }
     return this.planModel.findAll({
       where,
@@ -82,7 +84,7 @@ export class DirectoryPaymentsRepository {
   }
 
   async listAllMarketplacePlans(type?: string, limit = 50, transaction?: Transaction): Promise<EntityPlanModel[]> {
-    const where: Record<string, unknown> = { status: 'ACTIVE' };
+    const where: Record<string, unknown> = { status: 'ACTIVE', moderationStatus: 'LIVE' };
     if (type) {
       where.type = type;
     }

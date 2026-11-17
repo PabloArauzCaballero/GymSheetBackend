@@ -30,14 +30,19 @@ import {
   businessMediaBodySchema,
   businessMediaSlotEnum,
   businessProfilePatchSchema,
+  galleryPositionSchema,
 } from './business-accounts.schemas';
 import { BusinessAccountsService } from './business-accounts.service';
+import { BusinessGalleryService } from './business-gallery.service';
 
 /** The business's own account and listing (ADR-0020). Persons get 403 here. */
 @Roles(UserRole.BUSINESS)
 @Controller('business/me')
 export class BusinessMeController {
-  constructor(private readonly service: BusinessAccountsService) {}
+  constructor(
+    private readonly service: BusinessAccountsService,
+    private readonly gallery: BusinessGalleryService,
+  ) {}
 
   @Get()
   @Header('Cache-Control', 'private, no-store')
@@ -73,6 +78,22 @@ export class BusinessMeController {
     @Body(new ZodValidationPipe(businessMediaBodySchema)) body: { slot: BusinessMediaSlot },
   ) {
     return this.service.uploadMedia(user, body.slot, file);
+  }
+
+  @RequiresVerifiedEmail()
+  @Post('gallery')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: env.MEDIA_UPLOAD_MAX_BYTES, files: 1 } }))
+  addGalleryImage(@CurrentUser() user: AuthenticatedUser, @UploadedFile() file: UploadedSelfie | undefined) {
+    return this.gallery.add(user, file);
+  }
+
+  @Delete('gallery/:position')
+  removeGalleryImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('position', new ZodValidationPipe(galleryPositionSchema)) position: number,
+  ) {
+    return this.gallery.remove(user, position);
   }
 
   @Delete('media/:slot')

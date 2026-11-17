@@ -32,7 +32,9 @@ tags:
   - name: BusinessKyc
     description: KYC del negocio (ADR-0021)
   - name: AdminBusiness
-    description: Consola REPP de negocios y KYC (ADR-0021)
+    description: Consola REPP de negocios, KYC y publicaciones (ADR-0021, ADR-0022)
+  - name: BusinessListings
+    description: Publicaciones, sedes y marketplace público con post-moderación (ADR-0022)
 paths:
   /auth/register:
     post:
@@ -2832,6 +2834,403 @@ paths:
               schema: { $ref: "#/components/schemas/SuccessEnvelope" }
         "400": { $ref: "#/components/responses/Problem400" }
         "403": { $ref: "#/components/responses/Problem403" }
+  /business/me/listings:
+    get:
+      tags: [BusinessListings]
+      summary: "Mis publicaciones (cursor)"
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [ACTIVE, INACTIVE, ARCHIVED] } }
+        - { name: moderationStatus, in: query, schema: { type: string, enum: [LIVE, HELD, HIDDEN, REJECTED] } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items: Listing[], nextCursor }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+    post:
+      tags: [BusinessListings]
+      summary: "Publicar: LIVE si pasa las comprobaciones, HELD si no"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [offerKind, name, description, price], properties: { offerKind: { type: string, enum: [MEMBERSHIP, DAY_PASS, MULTI_DAY_PASS, CLASS_PACK, PRODUCT, SERVICE_SESSION, SERVICE_PACK] }, name: { type: string, minLength: 2, maxLength: 180 }, description: { type: string, minLength: 5, maxLength: 5000 }, benefits: { type: array, maxItems: 20, items: { type: string } }, price: { type: number, minimum: 0, maximum: 10000000 }, validityDays: { type: integer, nullable: true }, sessionsCount: { type: integer, nullable: true }, stockQuantity: { type: integer, nullable: true }, productCategoryId: { type: string, format: uuid, nullable: true }, displayOrder: { type: integer } } }
+      responses:
+        "201":
+          description: "Listing (ADR-0022): { id, offerKind, name, description, benefits, price, currency: BOB, validityDays, sessionsCount, stockQuantity, stockReserved, productCategoryId, displayOrder, mediaUrls, status, moderationStatus, moderationReasonCode, autoCheckCodes, visibility, publishedAt, createdAt, updatedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { description: "BUSINESS_ACCOUNT_LOCKED | LISTING_LIMIT", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "LISTING_SHAPE_INVALID | LISTING_CATEGORY_INVALID", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/listings/{id}:
+    get:
+      tags: [BusinessListings]
+      summary: "Una publicación propia"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Listing (ADR-0022): { id, offerKind, name, description, benefits, price, currency: BOB, validityDays, sessionsCount, stockQuantity, stockReserved, productCategoryId, displayOrder, mediaUrls, status, moderationStatus, moderationReasonCode, autoCheckCodes, visibility, publishedAt, createdAt, updatedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+    patch:
+      tags: [BusinessListings]
+      summary: "Editar (re-comprueba lo que cambió)"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, minProperties: 1, properties: { name: { type: string }, description: { type: string }, benefits: { type: array, items: { type: string } }, validityDays: { type: integer, nullable: true }, sessionsCount: { type: integer, nullable: true }, productCategoryId: { type: string, format: uuid, nullable: true }, displayOrder: { type: integer } } }
+      responses:
+        "200":
+          description: "Listing (ADR-0022): { id, offerKind, name, description, benefits, price, currency: BOB, validityDays, sessionsCount, stockQuantity, stockReserved, productCategoryId, displayOrder, mediaUrls, status, moderationStatus, moderationReasonCode, autoCheckCodes, visibility, publishedAt, createdAt, updatedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { description: "LISTING_NOT_EDITABLE | BUSINESS_ACCOUNT_LOCKED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "LISTING_SHAPE_INVALID | LISTING_CATEGORY_INVALID", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/listings/{id}/price:
+    patch:
+      tags: [BusinessListings]
+      summary: "Cambiar el precio (historial append-only)"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [price], properties: { price: { type: number }, reason: { type: string } } }
+      responses:
+        "200":
+          description: "Listing (ADR-0022): { id, offerKind, name, description, benefits, price, currency: BOB, validityDays, sessionsCount, stockQuantity, stockReserved, productCategoryId, displayOrder, mediaUrls, status, moderationStatus, moderationReasonCode, autoCheckCodes, visibility, publishedAt, createdAt, updatedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "LISTING_SAME_PRICE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+  /business/me/listings/{id}/stock:
+    patch:
+      tags: [BusinessListings]
+      summary: "Stock de un producto"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [stockQuantity], properties: { stockQuantity: { type: integer, nullable: true } } }
+      responses:
+        "200":
+          description: "Listing (ADR-0022): { id, offerKind, name, description, benefits, price, currency: BOB, validityDays, sessionsCount, stockQuantity, stockReserved, productCategoryId, displayOrder, mediaUrls, status, moderationStatus, moderationReasonCode, autoCheckCodes, visibility, publishedAt, createdAt, updatedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { description: "LISTING_STOCK_BELOW_RESERVED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "LISTING_SHAPE_INVALID", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/listings/{id}/pause:
+    post:
+      tags: [BusinessListings]
+      summary: "Pausar (ACTIVE→INACTIVE)"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Listing (ADR-0022): { id, offerKind, name, description, benefits, price, currency: BOB, validityDays, sessionsCount, stockQuantity, stockReserved, productCategoryId, displayOrder, mediaUrls, status, moderationStatus, moderationReasonCode, autoCheckCodes, visibility, publishedAt, createdAt, updatedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { description: "LISTING_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/listings/{id}/resume:
+    post:
+      tags: [BusinessListings]
+      summary: "Reanudar (INACTIVE→ACTIVE)"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Listing (ADR-0022): { id, offerKind, name, description, benefits, price, currency: BOB, validityDays, sessionsCount, stockQuantity, stockReserved, productCategoryId, displayOrder, mediaUrls, status, moderationStatus, moderationReasonCode, autoCheckCodes, visibility, publishedAt, createdAt, updatedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { description: "LISTING_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/listings/{id}/archive:
+    post:
+      tags: [BusinessListings]
+      summary: "Archivar (terminal)"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Listing (ADR-0022): { id, offerKind, name, description, benefits, price, currency: BOB, validityDays, sessionsCount, stockQuantity, stockReserved, productCategoryId, displayOrder, mediaUrls, status, moderationStatus, moderationReasonCode, autoCheckCodes, visibility, publishedAt, createdAt, updatedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { description: "LISTING_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/listings/{id}/media:
+    post:
+      tags: [BusinessListings]
+      summary: "Subir una foto (JPEG/PNG, máx. 10)"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } }
+      responses:
+        "201":
+          description: "Listing (ADR-0022): { id, offerKind, name, description, benefits, price, currency: BOB, validityDays, sessionsCount, stockQuantity, stockReserved, productCategoryId, displayOrder, mediaUrls, status, moderationStatus, moderationReasonCode, autoCheckCodes, visibility, publishedAt, createdAt, updatedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { description: "LISTING_MEDIA_LIMIT", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "413": { $ref: "#/components/responses/Problem413" }
+  /business/me/listings/{id}/media/{position}:
+    delete:
+      tags: [BusinessListings]
+      summary: "Quitar la foto de esa posición"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: position, in: path, required: true, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: "Listing (ADR-0022): { id, offerKind, name, description, benefits, price, currency: BOB, validityDays, sessionsCount, stockQuantity, stockReserved, productCategoryId, displayOrder, mediaUrls, status, moderationStatus, moderationReasonCode, autoCheckCodes, visibility, publishedAt, createdAt, updatedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /business/me/locations:
+    get:
+      tags: [BusinessListings]
+      summary: "Mis sedes"
+      responses:
+        "200":
+          description: "Location[]: { id, name, address, city, latitude, longitude, businessHours, displayOrder, createdAt, updatedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+    post:
+      tags: [BusinessListings]
+      summary: "Declarar una sede (máx. 50)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [name, city], properties: { name: { type: string }, city: { type: string }, address: { type: string, nullable: true }, latitude: { type: number, nullable: true }, longitude: { type: number, nullable: true }, businessHours: { type: object }, displayOrder: { type: integer } } }
+      responses:
+        "201":
+          description: "Location"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { description: "LOCATION_NAME_TAKEN | LOCATION_LIMIT | BUSINESS_ACCOUNT_LOCKED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/locations/{id}:
+    patch:
+      tags: [BusinessListings]
+      summary: "Editar una sede"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, minProperties: 1 }
+      responses:
+        "200":
+          description: "Location"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { $ref: "#/components/responses/Problem409" }
+    delete:
+      tags: [BusinessListings]
+      summary: "Quitar una sede"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: No Content }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /business/me/gallery:
+    post:
+      tags: [BusinessListings]
+      summary: "Agregar una foto a la galería pública (máx. 10)"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } }
+      responses:
+        "201":
+          description: "{ gallery: string[] }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "409": { description: "BUSINESS_GALLERY_LIMIT", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/gallery/{position}:
+    delete:
+      tags: [BusinessListings]
+      summary: "Quitar una foto de la galería"
+      parameters:
+        - { name: position, in: path, required: true, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: "{ gallery: string[] }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+  /public/directory/listings:
+    get:
+      tags: [BusinessListings]
+      summary: "Buscar publicaciones LIVE de negocios ACTIVE (cursor)"
+      security: []
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: "Texto o @handle" }
+        - { name: offer_kind, in: query, schema: { type: string, enum: [MEMBERSHIP, DAY_PASS, MULTI_DAY_PASS, CLASS_PACK, PRODUCT, SERVICE_SESSION, SERVICE_PACK] } }
+        - { name: entity_type, in: query, schema: { type: string } }
+        - { name: entity_id, in: query, schema: { type: string, format: uuid } }
+        - { name: category_path, in: query, schema: { type: string, pattern: "^[a-z0-9-]+(\\.[a-z0-9-]+)*$" } }
+        - { name: city, in: query, schema: { type: string } }
+        - { name: price_min, in: query, schema: { type: number } }
+        - { name: price_max, in: query, schema: { type: number } }
+        - { name: verified_only, in: query, schema: { type: string, enum: ["true", "false"] } }
+        - { name: sort, in: query, schema: { type: string, enum: [recent, price_asc, price_desc], default: recent } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items: PublicListing[], nextCursor }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "INVALID_CURSOR | parámetros inválidos", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /public/directory/listings/{id}:
+    get:
+      tags: [BusinessListings]
+      summary: "Detalle público de una publicación"
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "PublicListing: { id, offerKind, name, description, benefits, price, currency, validityDays, sessionsCount, inStock, productCategory, mediaUrls, publishedAt, seller: { id, name, handle, entityType, logoUrl, city, badge: VERIFIED|NEW } }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /public/directory/profiles/{handle}:
+    get:
+      tags: [BusinessListings]
+      summary: "Perfil público por @handle: ficha, sedes y primera página de publicaciones"
+      security: []
+      parameters:
+        - { name: handle, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: "{ handle, entity, locations, listings: { items, nextCursor } } | { redirectTo }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "429": { $ref: "#/components/responses/Problem429" }
+  /admin/business/listings:
+    get:
+      tags: [AdminBusiness]
+      summary: "Publicaciones retenidas, ocultas o rechazadas (cursor)"
+      parameters:
+        - { name: moderationStatus, in: query, schema: { type: string, enum: [HELD, HIDDEN, REJECTED], default: HELD } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items, nextCursor }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+  /admin/business/listings/{id}/release:
+    post:
+      tags: [AdminBusiness]
+      summary: "Publicar (LIVE), auditado"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, properties: { note: { type: string } } }
+      responses:
+        "200":
+          description: "{ id, moderationStatus: LIVE }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { description: "LISTING_INVALID_TRANSITION | LISTING_NOT_PUBLISHABLE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /admin/business/listings/{id}/reject:
+    post:
+      tags: [AdminBusiness]
+      summary: "Rechazar, auditado"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [reasonCode], properties: { reasonCode: { type: string, enum: [PROHIBITED_PRODUCT, MISLEADING, PRICE_ABUSE, DUPLICATE, OTHER] }, note: { type: string } } }
+      responses:
+        "200":
+          description: "{ id, moderationStatus: REJECTED, reasonCode }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "409": { description: "LISTING_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
   /public/handles/{handle}:
     get:
       tags: [Business]
