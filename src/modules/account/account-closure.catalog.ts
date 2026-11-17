@@ -14,16 +14,20 @@ const OWN = "t.user_id = :userId";
 const OWN_ES = "t.usuario_id = :userId";
 
 /**
- * Conversations of the person with the platform or the gym (no third party's
- * history). The person is the member side (`can_write = false`, see
- * `createSystemConversation`): when a gym admin's account closes, the
- * members' chats with the gym it answered stay theirs.
+ * Conversations of the person with the platform (no third party's history).
+ * The person is the member side (`can_write = false`, see
+ * `createSystemConversation`).
  */
 const systemConversation = (alias: string): string => `${alias}.system_kind IS NOT NULL
   AND EXISTS (SELECT 1 FROM chat.participants p
                WHERE p.conversation_id = ${alias}.id AND p.user_id = :userId AND p.can_write = false)
   AND NOT EXISTS (SELECT 1 FROM chat.messages m WHERE m.conversation_id = ${alias}.id AND ${reported("CHAT_MESSAGE", "m.id")})`;
 const IN_SYSTEM_CONVERSATION = `t.conversation_id IN (SELECT c.id FROM chat.conversations c WHERE ${systemConversation("c")})`;
+
+/** A gym admin chat copied to `retired` (ADR-0029) where the account took part, on either side. */
+const RETIRED_ADMIN_CHAT = (idColumn: string): string =>
+  `EXISTS (SELECT 1 FROM retired.chat_tenant_admin_participants p WHERE p.conversation_id = ${idColumn} AND p.user_id = :userId)`;
+const IN_RETIRED_ADMIN_CHAT = RETIRED_ADMIN_CHAT("t.conversation_id");
 
 const OWN_PERSONAL_EXERCISE = "t.tipo_ejercicio = 'PERSONAL' AND t.created_by_usuario_id = :userId";
 const EXERCISE_USED_ELSEWHERE = `(
@@ -192,6 +196,12 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
   del("chat.business_blocks", "Negocios que bloquearon tu chat", "t.person_user_id = :userId"),
   del("chat.messages", "Mensajes de tus chats con REPP y con tu gimnasio", IN_SYSTEM_CONVERSATION, "t.media_key"),
   del("chat.conversations", "Chats con REPP y con tu gimnasio", systemConversation("t")),
+  // The gym admin chat retired by ADR-0029: nobody can read it, so either side closing erases it
+  // (messages first, for their files; the copies cascade from the conversation).
+  del("retired.chat_tenant_admin_messages", "Mensajes del chat retirado con tu gimnasio",
+    `${IN_RETIRED_ADMIN_CHAT} AND NOT ${reported("CHAT_MESSAGE")}`, "t.media_key"),
+  del("retired.chat_tenant_admin_conversations", "Chat retirado con tu gimnasio", `${RETIRED_ADMIN_CHAT("t.id")}
+    AND NOT EXISTS (SELECT 1 FROM retired.chat_tenant_admin_messages m WHERE m.conversation_id = t.id AND ${reported("CHAT_MESSAGE", "m.id")})`),
   anonymize("chat.messages", "Tus mensajes, fotos, audios y ubicaciones",
     `t.sender_id = :userId AND NOT ${reported("CHAT_MESSAGE")} AND NOT ${IN_SYSTEM_CONVERSATION}`, WIPED_MESSAGE_FIELDS,
     "Queda «mensaje eliminado» en el chat de la otra persona.", "t.media_key"),
@@ -223,7 +233,7 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
   // The gym's records (the gym is responsible; REPP only processes them). The `retired.*` tables
   // hold the gym-operated membership machinery retired by ADR-0026 until their final DROP: their
   // personal data is still erased here.
-  anonymize("membership.staff_profiles", "Ficha de personal del gimnasio", OWN,
+  anonymize("retired.membership_staff_profiles", "Ficha de personal del gimnasio (registro retirado)", OWN,
     `employment_status = 'TERMINATED', terminated_on = GREATEST(t.hired_on, COALESCE(t.terminated_on, CURRENT_DATE)),
      unlimited_access = false, metadata = '{}'::jsonb, updated_at = now()`,
     "El gimnasio conserva el puesto y las fechas de la relación laboral; la ficha queda dada de baja."),
@@ -251,18 +261,21 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
     "actor_user_id = NULL", "Los cambios quedan sin tu cuenta como autor."),
   anonymize("retired.membership_activation_requests", "Activaciones de membresía (registro retirado)", OWN_ES,
     "nota = NULL, updated_at = now()", GYM_RECORD),
-  anonymize("access_control.credentials", "Credenciales de acceso al gimnasio", OWN,
+  // Physical access control and staff tables, retired by ADR-0029 until their final DROP.
+  anonymize("retired.access_control_credentials", "Credenciales de acceso al gimnasio (registro retirado)", OWN,
     `status = 'REVOKED', revoked_at = COALESCE(t.revoked_at, now()), revocation_reason = 'Cuenta cerrada',
      metadata = '{}'::jsonb, updated_at = now()`,
     "Se revocan. El gimnasio conserva el registro y debe borrar la plantilla de su propio equipo."),
-  keep("access_control.decisions", "Registro de entradas al gimnasio", OWN, GYM_RECORD),
+  keep("retired.access_control_decisions", "Registro de entradas al gimnasio (registro retirado)", OWN, GYM_RECORD),
 
   // Internal records that only carry the account id.
   keep("integration.domain_events", "Registro técnico de eventos", "t.actor_user_id = :userId",
     "Registro interno de operaciones; no se muestra a nadie."),
-  del("admin.user_permissions", "Permisos de personal", OWN),
+  del("retired.admin_user_permissions", "Permisos de personal (registro retirado)", OWN),
   // Copies of the gym-level moderation grants retired by ADR-0018, kept only for rollback.
-  del("admin.retired_permission_grants", "Permisos de personal retirados", OWN),
+  del("retired.admin_retired_permission_grants", "Permisos de personal retirados", OWN),
+  // Rollback ledger of the staff role this account had (ADR-0029): a closed account keeps no role to restore.
+  { ...del("retired.staff_role_conversions", "Rol de personal heredado", OWN), internal: true },
   keep("admin.audit_log", "Bitácora de administración", "t.actor_user_id = :userId",
     "Registro de seguridad de acciones de personal."),
 

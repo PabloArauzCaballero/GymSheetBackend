@@ -293,8 +293,6 @@ export class RoutinesShowcaseSeeder {
   private async ensureDemoUser(demo: DemoUser): Promise<void> {
     const user = await this.ensureUser(demo.email, demo.fullName, demo.gender, this.password);
     await this.ensureAvatar(user.id, demo.key);
-    // Demo users are members: a run before franja 7a promoted the trainer demo to COACH (ADR-0019).
-    if (user.role === UserRole.COACH) await user.update({ role: UserRole.CLIENT });
     this.users.set(demo.key, { user, actor: this.actorOf(user) });
     await this.ensureOnboarding(user.id, demo);
   }

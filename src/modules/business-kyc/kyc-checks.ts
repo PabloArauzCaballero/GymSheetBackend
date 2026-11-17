@@ -28,7 +28,8 @@ export interface KycCheckQueries {
   /** A public listing of the same type whose normalized name is ≥ 0.8 similar, or a REPP-reserved skeleton. */
   nameLooksTaken(name: string, entityType: DirectoryEntityType, exceptEntityId: string, transaction: Transaction): Promise<boolean>;
   isBlocked(fingerprints: readonly { kind: FingerprintKind; hmac: string }[], transaction: Transaction): Promise<boolean>;
-  hasClosedAccountSanction(emailHmac: string, transaction: Transaction): Promise<boolean>;
+  /** A closed account's sanction under this email, or a closed business's under this NIT or CI (ADR-0028). */
+  hasClosedAccountSanction(trace: { email?: string; nit?: string; ci?: string }, transaction: Transaction): Promise<boolean>;
   containsBannedTerm(texts: readonly string[], transaction: Transaction): Promise<boolean>;
 }
 
@@ -102,8 +103,9 @@ export const KYC_CHECKS: readonly KycCheck[] = [
   {
     code: "CLOSED_ACCOUNT_SANCTION",
     async run(context, queries, transaction) {
-      const email = context.fingerprints.EMAIL;
-      return email && (await queries.hasClosedAccountSanction(email, transaction)) ? { outcome: "FAIL" } : PASS;
+      const { EMAIL: email, NIT: nit, CI: ci } = context.fingerprints;
+      if (!email && !nit && !ci) return PASS;
+      return (await queries.hasClosedAccountSanction({ email, nit, ci }, transaction)) ? { outcome: "FAIL" } : PASS;
     },
   },
   {

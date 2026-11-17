@@ -85,10 +85,11 @@ describe("business chat rules", () => {
       other_user_last_seen_at: null, last_message_body: null,
     last_message_type: null,
     last_message_from_me: false, last_message_at: null, can_write: true,
-      system_kind: null, kind: "BUSINESS", business_entity_id: entityId, viewer_is_business: true, nickname: null,
+      system_kind: null, kind: "BUSINESS", business_entity_id: entityId, viewer_is_business: true, business_closed: false, nickname: null,
       other_last_delivered_at: null, other_last_read_at: null, other_read_receipts_enabled_since: null, disappearing_seconds: null,
     } satisfies ConversationSummaryRow;
     expect(mapConversationSummary(row, true)).toMatchObject({ kind: "BUSINESS", businessEntityId: entityId, otherUserOnline: false });
-    expect(mapConversationSummary({ ...row, viewer_is_business: false }, true)).toMatchObject({ otherUserOnline: true });
+    expect(mapConversationSummary({ ...row, viewer_is_business: false }, true)).toMatchObject({ otherUserOnline: true, businessClosed: false });
+    expect(mapConversationSummary({ ...row, viewer_is_business: false, business_closed: true }, true)).toMatchObject({ businessClosed: true });
   });
 });

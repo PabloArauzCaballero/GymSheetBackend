@@ -125,3 +125,6 @@ export const bannedTermsSchema = z
   })
   .strict();
 export type BannedTermsInput = z.infer<typeof bannedTermsSchema>;
+
+/** Erasing the business's own KYC on request (ADR-0028): confirmed with the account password, like a closure. */
+export const kycEraseSchema = z.object({ password: z.string().min(1).max(128) }).strict();

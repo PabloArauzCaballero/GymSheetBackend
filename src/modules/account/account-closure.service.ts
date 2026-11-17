@@ -4,10 +4,11 @@ import { randomBytes } from "node:crypto";
 import { Transaction } from "sequelize";
 import { UserRole } from "../../common/enums/domain.enums";
 import { DomainException } from "../../common/errors/domain.exception";
-import { effectiveTenantOf, isAccountInScope } from "../../common/tenancy/tenant-scope";
-import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { env } from "../../config/env";
 import { EMAIL_PIN_POLICY, EmailPinFailure, EmailVerificationService, emailPinError } from "../auth/email-verification.service";
+import { BUSINESS_CLOSURE_STEPS } from "../business-closure/business-closure.catalog";
+import { ACCOUNT_CLOSURE_STEPS } from "./account-closure.catalog";
+import { BusinessClosureService } from "../business-closure/business-closure.service";
 import { ClosedAccountSanctionsService } from "../closed-account-sanctions/closed-account-sanctions.service";
 import { MediaReleaseService } from "../media/media-release.service";
 import { SocialRecommendationOutboxService } from "../social/social-recommendation-outbox.service";
@@ -40,17 +41,22 @@ export class AccountClosureService {
     private readonly mediaRelease: MediaReleaseService,
     private readonly recommendations: SocialRecommendationOutboxService,
     private readonly sanctions: ClosedAccountSanctionsService,
+    private readonly businessClosure: BusinessClosureService,
   ) {}
 
   async preview(userId: string): Promise<ClosurePreview> {
     const user = await this.activeUser(userId);
-    const [counts, hasIdentity] = await Promise.all([
-      this.repository.countSteps(userId),
+    const business = user.role === UserRole.BUSINESS;
+    const [counts, hasIdentity, blockers] = await Promise.all([
+      this.repository.countSteps(userId, business ? BUSINESS_CLOSURE_STEPS : ACCOUNT_CLOSURE_STEPS),
       this.repository.hasLinkedIdentity(userId),
+      business ? this.businessClosure.blockers(userId) : Promise.resolve([]),
     ]);
     return mapClosurePreview(counts, {
-      allowed: user.role === UserRole.CLIENT,
+      allowed: user.role === UserRole.CLIENT || business,
       pinAllowed: hasIdentity,
+      business,
+      blockers,
     });
   }
 
@@ -91,6 +97,12 @@ export class AccountClosureService {
         const outcome = await this.emailPins.verifyPurposePin(userId, "CLOSE_ACCOUNT", input.pin, transaction);
         if (outcome.kind !== "VERIFIED") return { failed: outcome };
       }
+      if (locked.role === UserRole.BUSINESS) {
+        // Refuses (409) while a receipt waits for the business; then orders, affiliations and periods (ADR-0028).
+        const prepared = await this.businessClosure.prepare(userId, transaction);
+        await this.sanctions.recordAtClosure(locked, transaction, new Date(), prepared.sanction);
+        return { closedAt: await this.eraseInTransaction(userId, unusablePasswordHash, transaction, { business: true, extraKeys: prepared.mediaKeys }) };
+      }
       await this.sanctions.recordAtClosure(locked, transaction);
       return { closedAt: await this.eraseInTransaction(userId, unusablePasswordHash, transaction) };
     });
@@ -123,69 +135,22 @@ export class AccountClosureService {
     return outcome;
   }
 
-  /**
-   * REPP's `SYSTEM_ADMIN` closes a legacy gym staff account (the staff cannot:
-   * `ACCOUNT_CLOSURE_STAFF`; the gym has no staff powers since ADR-0019). No
-   * password or PIN: the authority is the platform role, and the audit log
-   * records who did it. Same erasure transaction as
-   * any closure, with the strikes still counting carried as at a self-service
-   * closure. Another gym's account, a member, a platform admin or an account
-   * already closed reads as not found; the admin's own account and the gym's
-   * last active admin are refused, so a gym never ends up without one.
-   */
-  async closeStaffByAdmin(actor: AuthenticatedUser, userId: string): Promise<{ closed: true; closedAt: Date }> {
-    if (actor.id === userId) throw staffClosureError("STAFF_CLOSURE_SELF", "No puedes cerrar tu propia cuenta desde aquí.");
-    const unusablePasswordHash = await bcrypt.hash(randomBytes(32).toString("hex"), env.BCRYPT_SALT_ROUNDS);
-    const closedAt = await this.repository.runInTransaction(async (transaction) => {
-      const candidate = await this.users.findActiveById(userId, transaction);
-      this.assertStaffInScope(candidate, actor);
-      if (candidate.role === UserRole.ADMIN) {
-        const admins = await this.repository.lockActiveAdmins(effectiveTenantOf(candidate), env.DEFAULT_TENANT_ID, transaction);
-        if (admins.length <= 1) {
-          throw staffClosureError("STAFF_CLOSURE_LAST_ADMIN", "Es el único administrador del gimnasio: nombra otro antes de cerrar esta cuenta.");
-        }
-      }
-      await this.users.lockUserForUpdate(userId, transaction);
-      const locked = await this.users.findActiveById(userId, transaction);
-      this.assertStaffInScope(locked, actor);
-      await this.sanctions.recordAtClosure(locked, transaction);
-      return this.eraseInTransaction(userId, unusablePasswordHash, transaction);
-    });
-    this.logger.log({ event: "account.closed_by_admin", userId, actorUserId: actor.id });
-    return { closed: true, closedAt };
-  }
-
-  private assertStaffInScope(user: UserModel | null, actor: AuthenticatedUser): asserts user is UserModel {
-    // Platform accounts are not gym staff: a gym cannot close them (ADR-0018).
-    const platformAccount = user?.role === UserRole.SYSTEM_ADMIN || user?.role === UserRole.MODERATOR;
-    if (!user || platformAccount || !isAccountInScope(user, actor.tenantScope)) throw accountNotFound();
-    if (user.role === UserRole.CLIENT) {
-      throw new DomainException(
-        HttpStatus.BAD_REQUEST,
-        "STAFF_CLOSURE_NOT_STAFF",
-        "Las cuentas de socios las cierra cada socio desde su app.",
-      );
-    }
-    // A business account is not staff either; its own closure (listing, handle, orders) is franja 8f (ADR-0020).
-    if (user.role === UserRole.BUSINESS) {
-      throw new DomainException(
-        HttpStatus.BAD_REQUEST,
-        "STAFF_CLOSURE_NOT_STAFF",
-        "Las cuentas de negocio no se cierran por esta vía.",
-      );
-    }
-  }
-
-  private async eraseInTransaction(userId: string, unusablePasswordHash: string, transaction: Transaction): Promise<Date> {
-    const mediaKeys = await this.repository.collectMediaKeys(userId, transaction);
-    await this.repository.eraseAll(userId, transaction);
+  private async eraseInTransaction(
+    userId: string,
+    unusablePasswordHash: string,
+    transaction: Transaction,
+    options: { business: boolean; extraKeys: string[] } = { business: false, extraKeys: [] },
+  ): Promise<Date> {
+    const catalog = options.business ? BUSINESS_CLOSURE_STEPS : ACCOUNT_CLOSURE_STEPS;
+    const mediaKeys = [...new Set([...(await this.repository.collectMediaKeys(userId, transaction, catalog)), ...options.extraKeys])];
+    await this.repository.eraseAll(userId, transaction, catalog);
     const closedAt = await this.repository.anonymizeAccount(
       userId,
       { tombstoneEmail: closedAccountEmail(userId), unusablePasswordHash },
       transaction,
     );
-    // The account is inactive now, so the snapshot tells the recommender to drop the profile.
-    await this.recommendations.enqueueProfileSnapshot(userId, transaction);
+    // The account is inactive now, so the snapshot tells the recommender to drop the profile (a business has none).
+    if (!options.business) await this.recommendations.enqueueProfileSnapshot(userId, transaction);
     const inUse = await this.repository.keysStillInUse(mediaKeys, transaction);
     for (const storageKey of mediaKeys.filter((key) => !inUse.has(key))) {
       await this.mediaRelease.requestRelease({ aggregateType: "account", aggregateId: userId, storageKey }, transaction);
@@ -199,9 +164,9 @@ export class AccountClosureService {
     return user;
   }
 
-  /** Staff accounts carry the gym's operations; the gym closes them, not the app. */
+  /** Persons and business accounts (ADR-0028) close here; platform accounts (SYSTEM_ADMIN, MODERATOR) do not. */
   private assertClosable(user: UserModel): void {
-    if (user.role !== UserRole.CLIENT) {
+    if (user.role !== UserRole.CLIENT && user.role !== UserRole.BUSINESS) {
       throw new DomainException(
         HttpStatus.FORBIDDEN,
         "ACCOUNT_CLOSURE_STAFF",
@@ -209,11 +174,6 @@ export class AccountClosureService {
       );
     }
   }
-}
-
-/** 403: the request is understood, the gym's rules forbid it. */
-function staffClosureError(code: "STAFF_CLOSURE_SELF" | "STAFF_CLOSURE_LAST_ADMIN", message: string): DomainException {
-  return new DomainException(HttpStatus.FORBIDDEN, code, message);
 }
 
 function accountNotFound(): NotFoundException {

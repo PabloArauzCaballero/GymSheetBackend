@@ -7,7 +7,9 @@ import { OutboxService } from "../integration/outbox.service";
 import { NoticeEmailService } from "../notifications/notice-email.service";
 import { NotificationService } from "../notifications/notification.service";
 import { AccountExportRepository, AccountExportRow } from "./account-export.repository";
+import { KycExportReader } from "../business-kyc/kyc-export.reader";
 import { ACCOUNT_EXPORT_SECTIONS } from "./account-export.sections";
+import { BUSINESS_EXPORT_SECTIONS } from "./business-export.sections";
 import { MAX_ROUTINE_PROGRESS_ROWS } from "./export.service";
 
 export const ACCOUNT_EXPORT_QUEUE = "account.export";
@@ -46,6 +48,7 @@ export class AccountExportService {
     private readonly outbox: OutboxService,
     private readonly notifications: NotificationService,
     private readonly noticeEmails: NoticeEmailService,
+    private readonly kycExport: KycExportReader,
   ) {}
 
   async request(userId: string): Promise<AccountExportStatusResponse> {
@@ -104,11 +107,14 @@ export class AccountExportService {
   async build(exportId: string): Promise<void> {
     const row = await this.repository.findById(exportId);
     if (!row || row.status !== "PENDING") return;
+    // A business account adds its own sections and its KYC (ADR-0028); null for a person.
+    const businessKyc = await this.kycExport.read(row.userId);
+    const sections = businessKyc ? [...ACCOUNT_EXPORT_SECTIONS, ...BUSINESS_EXPORT_SECTIONS] : ACCOUNT_EXPORT_SECTIONS;
     const tables: Record<string, { label: string; rows: unknown[]; truncated: boolean }> = {};
-    for (const section of ACCOUNT_EXPORT_SECTIONS) {
+    for (const section of sections) {
       const rows = await this.repository.readSection(section, row.userId, ACCOUNT_EXPORT_ROWS_PER_TABLE);
       const truncated = rows.length > ACCOUNT_EXPORT_ROWS_PER_TABLE;
-      tables[section.table] = { label: section.label, rows: truncated ? rows.slice(0, -1) : rows, truncated };
+      tables[section.key ?? section.table] = { label: section.label, rows: truncated ? rows.slice(0, -1) : rows, truncated };
     }
     const archive = JSON.stringify({
       format: "gymsheet.account-export",
@@ -116,6 +122,7 @@ export class AccountExportService {
       generatedAt: new Date().toISOString(),
       userId: row.userId,
       tables,
+      ...(businessKyc ? { businessKyc } : {}),
     });
     const expiresAt = new Date(Date.now() + ACCOUNT_EXPORT_TTL_DAYS * DAY_MS);
     // The state change and its notice commit together, and only the call that

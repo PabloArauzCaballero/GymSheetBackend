@@ -5,6 +5,8 @@ import { AccountClosureRepository } from "../modules/account/account-closure.rep
 import { AccountClosureService } from "../modules/account/account-closure.service";
 import { EmailVerificationPinRepository } from "../modules/auth/email-verification-pin.repository";
 import { EmailVerificationService } from "../modules/auth/email-verification.service";
+import { BusinessClosureModule } from "../modules/business-closure/business-closure.module";
+import { KycExportModule } from "../modules/business-kyc/kyc-export.module";
 import { ClosedAccountSanctionsModule } from "../modules/closed-account-sanctions/closed-account-sanctions.module";
 import { AccountExportRepository } from "../modules/export/account-export.repository";
 import { AccountExportService } from "../modules/export/account-export.service";
@@ -19,7 +21,8 @@ import { AccountDataRunner } from "./account-data.runner";
  * that one pulls AuthModule, whose JwtService only the HTTP app registers.
  */
 @Module({
-  imports: [BrandingModule, DatabaseModule, IntegrationModule, UsersModule, MediaModule, NotificationsModule, ClosedAccountSanctionsModule],
+  imports: [BrandingModule, DatabaseModule, IntegrationModule, UsersModule, MediaModule, NotificationsModule, ClosedAccountSanctionsModule,
+    BusinessClosureModule, KycExportModule],
   providers: [
     AccountExportRepository,
     AccountExportService,

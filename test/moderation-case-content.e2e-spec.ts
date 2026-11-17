@@ -81,9 +81,8 @@ describe('Moderation case content (e2e)', () => {
     expect((kase.body.data.content as { muscleGroups: string[] }).muscleGroups.length).toBeGreaterThan(0);
   });
 
-  it('gym staff is refused the case file, content included', async () => {
-    const gymAdmin = await e2e.register('case-content-gym-admin');
-    await e2e.promote(gymAdmin.id, 'ADMIN');
+  it("a member of the target's gym is refused the case file, content included", async () => {
+    const gymAdmin = await e2e.register('case-content-gym-member');
     await e2e.sql('UPDATE public.usuarios SET tenant_id = :gymB WHERE id = :id', { gymB, id: gymAdmin.id });
     const refused = await caseOf(gymAdmin, 'ROUTINE', routineId, 403);
     expect(refused.body.data?.content).toBeUndefined();

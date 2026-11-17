@@ -30,7 +30,7 @@ export class AuditInterceptor implements NestInterceptor {
       context.getClass(),
     ]);
 
-    // Sin decorador no hay auditoría: igual que `RolesGuard` y `PermissionGuard`,
+    // Sin decorador no hay auditoría: igual que `RolesGuard`,
     // esto sólo actúa sobre las rutas que se apuntan explícitamente.
     if (!metadata) return next.handle();
 

@@ -10,18 +10,21 @@ import { RolesGuard } from './roles.guard';
 
 /**
  * Franja 7a (ADR-0019): REPP operates the platform and the gym has no staff.
- * Every `admin/*` route declares platform roles only, so a legacy gym
- * `ADMIN`/`FRONT_DESK`/`COACH` is refused by the guard itself, and the next
- * route someone writes is checked here without being listed by hand.
+ * Every `admin/*` route declares platform roles only, so a member or a
+ * business is refused by the guard itself, and the next route someone writes
+ * is checked here without being listed by hand. Since franja 7d (ADR-0029)
+ * the staff roles no longer exist and no route of any controller may name one.
  *
  * There is no exception any more: the owner-gated `admin/directory` console
  * was removed in franja 8d (ADR-0024), and a business manages its listing and
  * its orders under `business/me/*`.
  */
 const PLATFORM_ROLES = new Set<UserRole>([UserRole.SYSTEM_ADMIN, UserRole.MODERATOR]);
-const LEGACY_STAFF = [UserRole.ADMIN, UserRole.FRONT_DESK, UserRole.COACH, UserRole.EXTERNAL_TRAINER];
+/** Franja 7d (ADR-0029): the staff roles are gone; no route may name them again, even as a raw string. */
+const REMOVED_ROLES = ['ADMIN', 'FRONT_DESK', 'COACH', 'ENTRENADOR_EXTERNO'];
+const ROLES_IN_USE = new Set<string>(Object.values(UserRole));
 
-type AdminRoute = { name: string; controller: Type; handler: (...args: unknown[]) => unknown };
+type AdminRoute = { name: string; path: string; controller: Type; handler: (...args: unknown[]) => unknown };
 
 function controllerFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -31,7 +34,7 @@ function controllerFiles(directory: string): string[] {
   });
 }
 
-async function collectAdminRoutes(): Promise<AdminRoute[]> {
+async function collectRoutes(): Promise<AdminRoute[]> {
   const routes: AdminRoute[] = [];
   for (const file of controllerFiles(join(__dirname, '..', '..', 'modules'))) {
     const exported = (await import(file)) as Record<string, unknown>;
@@ -39,13 +42,13 @@ async function collectAdminRoutes(): Promise<AdminRoute[]> {
       if (typeof candidate !== 'function') continue;
       const controller = candidate as Type;
       const path: unknown = Reflect.getMetadata(PATH_METADATA, controller);
-      if (typeof path !== 'string' || !path.startsWith('admin/')) continue;
+      if (typeof path !== 'string') continue;
       const prototype = controller.prototype as Record<string, unknown>;
       for (const key of Object.getOwnPropertyNames(prototype)) {
         const handler = prototype[key];
         if (key === 'constructor' || typeof handler !== 'function') continue;
         if (Reflect.getMetadata(METHOD_METADATA, handler) === undefined) continue;
-        routes.push({ name: `${path} ${key}`, controller, handler: handler as AdminRoute['handler'] });
+        routes.push({ name: `${path} ${key}`, path, controller, handler: handler as AdminRoute['handler'] });
       }
     }
   }
@@ -74,10 +77,23 @@ function contextFor(route: AdminRoute, user: AuthenticatedUser): ExecutionContex
 describe('RolesGuard — admin/* is platform only (franja 7a)', () => {
   const reflector = new Reflector();
   const guard = new RolesGuard(reflector);
+  let everyRoute: AdminRoute[];
   let routes: AdminRoute[];
+  const rolesOf = (route: AdminRoute) =>
+    reflector.getAllAndOverride<string[] | undefined>(ROLES_KEY, [route.handler, route.controller]) ?? [];
 
   beforeAll(async () => {
-    routes = await collectAdminRoutes();
+    everyRoute = await collectRoutes();
+    routes = everyRoute.filter((route) => route.path.startsWith('admin/'));
+  });
+
+  it('no route of any controller declares a removed staff role or an unknown one (franja 7d)', () => {
+    expect(everyRoute.length).toBeGreaterThan(routes.length);
+    const offending = everyRoute
+      .map((route) => ({ name: route.name, roles: rolesOf(route) }))
+      .filter(({ roles }) => roles.some((role) => REMOVED_ROLES.includes(role) || !ROLES_IN_USE.has(role)));
+    expect(offending).toEqual([]);
+    expect(REMOVED_ROLES.filter((role) => ROLES_IN_USE.has(role))).toEqual([]);
   });
 
   it('finds the admin routes it is meant to guard', () => {
@@ -96,7 +112,7 @@ describe('RolesGuard — admin/* is platform only (franja 7a)', () => {
     expect(offending).toEqual([]);
   });
 
-  it.each(LEGACY_STAFF)('a legacy gym %s is refused on every admin/* route', (role) => {
+  it.each([UserRole.CLIENT, UserRole.BUSINESS])('a %s account is refused on every admin/* route', (role) => {
     const admitted = routes.filter((route) => {
       try {
         return guard.canActivate(contextFor(route, principal(role)));

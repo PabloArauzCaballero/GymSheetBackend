@@ -1,3 +1,4 @@
+import { env } from '../../config/env';
 import { NotFoundException } from '@nestjs/common';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { UserRole } from '../../common/enums/domain.enums';
@@ -28,7 +29,7 @@ const listing = (patch: Record<string, unknown> = {}) => ({
   ...patch,
 });
 
-function build(options: { listing?: Record<string, unknown> | null; entityStatus?: string; entityType?: string; config?: Record<string, unknown> | null; open?: { id: string; planId: string }[] } = {}) {
+function build(options: { listing?: Record<string, unknown> | null; entityStatus?: string; entityType?: string; config?: Record<string, unknown> | null; open?: { id: string; planId: string }[]; verified?: boolean; sellerOpen?: number } = {}) {
   const created: Record<string, unknown>[] = [];
   const repository = {
     transaction: jest.fn((work: (t: unknown) => Promise<unknown>) => work({})),
@@ -45,7 +46,8 @@ function build(options: { listing?: Record<string, unknown> | null; entityStatus
     history: jest.fn().mockResolvedValue([]),
   };
   const sellers = {
-    findSeller: jest.fn().mockResolvedValue({ entityId: 'entity-1', entityType: options.entityType ?? 'COACH', entityStatus: options.entityStatus ?? 'ACTIVE', ownerUserId: 'biz-1', accountStatus: 'ACTIVE' }),
+    findSeller: jest.fn().mockResolvedValue({ entityId: 'entity-1', entityType: options.entityType ?? 'COACH', entityStatus: options.entityStatus ?? 'ACTIVE', ownerUserId: 'biz-1', accountStatus: 'ACTIVE', isVerified: options.verified ?? false }),
+    lockAndCountOpenOrders: jest.fn().mockResolvedValue(options.sellerOpen ?? 0),
     findConfig: jest.fn().mockResolvedValue(options.config === null ? null : { isActive: true, qrPrivateKey: 'business/x/payment/y.bin', acceptsCash: false, ...options.config }),
   };
   const lifecycle = { reserve: jest.fn().mockResolvedValue(0) };
@@ -58,8 +60,27 @@ function build(options: { listing?: Record<string, unknown> | null; entityStatus
     notices as unknown as OrderNotices,
     affiliation as unknown as CheckoutAffiliation,
   );
-  return { service, repository, created, lifecycle, affiliation };
+  return { service, repository, created, lifecycle, affiliation, sellers };
 }
+
+describe('BuyerOrdersService.create: open orders of a business not verified yet (ADR-0028)', () => {
+  it('refuses a new order with 409 ORDER_SELLER_OPEN_LIMIT once the unverified seller holds the cap', async () => {
+    const { service, repository, sellers } = build({ sellerOpen: env.ORDER_OPEN_MAX_UNVERIFIED_SELLER });
+    await expect(service.create(buyer, { listingId: 'listing-1', quantity: 1, method: 'QR' })).rejects.toMatchObject({ status: 409, code: 'ORDER_SELLER_OPEN_LIMIT' });
+    expect(sellers.lockAndCountOpenOrders).toHaveBeenCalledWith('entity-1', expect.anything());
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it('lets the unverified seller take orders below the cap and never counts for a verified one', async () => {
+    const below = build({ sellerOpen: env.ORDER_OPEN_MAX_UNVERIFIED_SELLER - 1 });
+    await below.service.create(buyer, { listingId: 'listing-1', quantity: 1, method: 'QR' }).catch(() => undefined);
+    expect(below.repository.create).toHaveBeenCalled();
+    const verified = build({ verified: true, sellerOpen: 1000 });
+    await verified.service.create(buyer, { listingId: 'listing-1', quantity: 1, method: 'QR' }).catch(() => undefined);
+    expect(verified.sellers.lockAndCountOpenOrders).not.toHaveBeenCalled();
+    expect(verified.repository.create).toHaveBeenCalled();
+  });
+});
 
 describe('BuyerOrdersService.create (ADR-0024)', () => {
   it('takes the price from the listing and freezes what was offered', async () => {

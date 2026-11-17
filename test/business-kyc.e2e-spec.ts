@@ -165,8 +165,10 @@ describe('business KYC: wizard, automatic approval and retention (e2e, franja 8b
     expect(bytes.subarray(0, 5).toString('ascii')).toBe('GSKY1');
     expect(bytes.includes(h.photo.subarray(0, 64))).toBe(false);
 
-    // The logo is moderated asynchronously (Noop provider: left to the post-review).
-    await h.e2e.app.get(ImageModerationService).drainOnce();
+    // The logo is moderated asynchronously (Noop provider: left to the post-review). The queue is shared
+    // with every suite that uploads a logo, so it is drained until it is empty, not once.
+    const moderation = h.e2e.app.get(ImageModerationService);
+    for (let pass = 0; pass < 20 && (await moderation.drainOnce(200)) > 0; pass += 1);
     expect((await checksOf(state.submission.id)).find((check) => check.code === 'IMAGE_MODERATION')).toEqual({ code: 'IMAGE_MODERATION', outcome: 'WARN' });
   }, 120000);
 

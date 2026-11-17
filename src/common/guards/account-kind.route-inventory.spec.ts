@@ -112,6 +112,15 @@ const BUSINESS_REACHABLE: string[] = [
   'POST me/conversations/:id/read',
   'PUT me/conversations/:id/disappearing',
   'PUT me/conversations/:id/messages/:messageId/reaction',
+  // Closing and exporting the business account (ADR-0028, franja 8f). Renaming is not here: the name goes through the KYC.
+  'DELETE me/account',
+  'GET me/account/closure-preview',
+  'POST me/account/closure-pin',
+  'GET me/export/:id',
+  'GET me/export/:id/download',
+  'GET me/export/latest',
+  'POST me/export',
+  'POST business/me/kyc/erase',
 ];
 
 type Route = { method: string; path: string; controller: Type; handler: object };

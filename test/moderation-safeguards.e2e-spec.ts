@@ -86,11 +86,11 @@ describe('Moderation safeguards (e2e)', () => {
       expect(jobs).toEqual([{ payload: { schemaVersion: 1, userId: reported.id } }]);
     });
 
-    it('never suspends a staff account (a member cannot lock out the gym)', async () => {
+    it('never suspends a platform account (a member cannot lock out REPP moderation)', async () => {
       const reporter = await e2e.register('minor-staff-reporter');
       const coach = await e2e.register('minor-staff-coach');
       const second = await e2e.register('minor-staff-reporter-2');
-      await e2e.promote(coach.id, 'COACH');
+      await e2e.promote(coach.id, 'MODERATOR');
       await report(reporter.token, 'USER', coach.id, 'MENOR_DE_EDAD').expect(201);
       await report(second.token, 'USER', coach.id, 'MENOR_DE_EDAD').expect(201);
       expect(await suspendedUntil(coach.id)).toBeNull();

@@ -273,23 +273,8 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
       { replacements: { tenantB, authorId: author.userId, viewerId: viewer.userId } },
     );
     await sequelize.query(
-      `UPDATE public.usuarios SET rol = 'ADMIN' WHERE id = :userId`,
-      { replacements: { userId: gymAAdmin.userId } },
-    );
-    await sequelize.query(
       `UPDATE public.usuarios SET rol = 'SYSTEM_ADMIN' WHERE id = :userId`,
       { replacements: { userId: central.userId } },
-    );
-    // The retired gym-level grant (ADR-0018): it must open nothing.
-    await sequelize.query(
-      `INSERT INTO admin.permissions (key, label, description, domain)
-       VALUES ('moderation:read', 'legacy', 'e2e', 'moderation') ON CONFLICT (key) DO NOTHING`,
-    );
-    await sequelize.query(
-      `INSERT INTO admin.user_permissions
-         (id, user_id, permission_key, granted_by_user_id, granted_at)
-       VALUES (gen_random_uuid(), :userId, 'moderation:read', :userId, now())`,
-      { replacements: { userId: gymAAdmin.userId } },
     );
 
     const connection = await request(application.getHttpServer())
@@ -319,7 +304,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
       .expect(201);
     const casePath = url(`/admin/moderation/cases/CHAT_MESSAGE/${sent.body.data.id}`);
 
-    // ADR-0018: gym staff no longer moderates, not even with the old grant.
+    // ADR-0018: only REPP moderates; a gym account (a member since ADR-0029) does not.
     await request(application.getHttpServer())
       .get(casePath)
       .set("Authorization", `Bearer ${gymAAdmin.accessToken}`)

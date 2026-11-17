@@ -10,9 +10,10 @@ import { AccountKind, AuthenticatedUser, accountKindOf } from '../types/auth-con
  * discovery, training, community, chat and the admin consoles.
  *
  * Chat with persons (`me/conversations`, ADR-0023) is open to a business: it
- * reads and answers the conversations persons opened with it. The socket
- * ticket and closing or exporting the account (`me/account`, `me/export`)
- * stay refused until they are decided for businesses.
+ * reads and answers the conversations persons opened with it. Closing and
+ * exporting the account (`me/account`, `me/export`) are open since ADR-0028;
+ * renaming through `PATCH me/account` is not (the commercial name is
+ * material and changes through the KYC). The socket ticket stays refused.
  */
 const BUSINESS_ALLOWED_PREFIXES = [
   'auth/',
@@ -22,6 +23,8 @@ const BUSINESS_ALLOWED_PREFIXES = [
   'health/',
   'business/',
   'me/conversations/',
+  'me/account/',
+  'me/export/',
   'public/',
   'notifications/me/',
   'notifications/preferences/me/',
@@ -35,8 +38,11 @@ const BUSINESS_ALLOWED_PATTERNS = [/^notifications\/[^/]+\/read\/$/u] as const;
 /** Under an allowed prefix but still a person's surface (matches pending replies of social matches too). */
 const BUSINESS_DENIED_UNDER_ALLOWED = ['auth/socket-ticket/', 'me/conversations/pending-replies/'] as const;
 
-/** Exact `METHOD path/` refusals: a business only answers, it never opens a conversation (ADR-0023). */
-const BUSINESS_DENIED_ROUTES = ['POST me/conversations/'] as const;
+/**
+ * Exact `METHOD path/` refusals: a business only answers, it never opens a
+ * conversation (ADR-0023); its name is not renamed outside the KYC (ADR-0028).
+ */
+const BUSINESS_DENIED_ROUTES = ['POST me/conversations/', 'PATCH me/account/'] as const;
 
 /** Only business accounts enter here; `business/signup` is public and never reaches the guard with a user. */
 const BUSINESS_ONLY_PREFIX = 'business/';

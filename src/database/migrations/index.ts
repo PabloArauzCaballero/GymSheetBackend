@@ -150,6 +150,11 @@ import { affiliationsClosedRowsMigration } from "./202611200901-affiliations-clo
 import { subscriptionLedgerMigration } from "./202611201001-subscription-ledger";
 import { retireMembershipMachineryMigration } from "./202611201002-retire-membership-machinery";
 import { gymMembershipVisibilityMigration } from "./202611201101-gym-membership-visibility";
+import { businessClosureMigration } from "./202611201201-business-closure";
+import { contractPaymentReceiptUrlMigration } from "./202611201202-contract-payment-receipt-url";
+import { staffRolesToMembersMigration } from "./202611201301-staff-roles-to-members";
+import { retireStaffAndAccessControlMigration } from "./202611201302-retire-staff-and-access-control";
+import { retireTenantAdminChatsMigration } from "./202611201303-retire-tenant-admin-chats";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
 export const databaseMigrations: DatabaseMigration[] = [
@@ -306,4 +311,9 @@ export const databaseMigrations: DatabaseMigration[] = [
   subscriptionLedgerMigration,
   retireMembershipMachineryMigration,
   gymMembershipVisibilityMigration,
+  businessClosureMigration,
+  contractPaymentReceiptUrlMigration,
+  staffRolesToMembersMigration,
+  retireStaffAndAccessControlMigration,
+  retireTenantAdminChatsMigration,
 ];

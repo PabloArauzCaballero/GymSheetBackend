@@ -45,17 +45,17 @@ describe('JwtStrategy', () => {
     const strategy = strategyFor({
       id: payload.sub,
       email: payload.email,
-      role: UserRole.ADMIN,
+      role: UserRole.CLIENT,
       tenantId: 'topfitness',
     });
 
     await expect(strategy.validate(payload)).resolves.toEqual({
       id: payload.sub,
       email: payload.email,
-      role: UserRole.ADMIN,
+      role: UserRole.CLIENT,
       tenantId: 'topfitness',
-      // Un ADMIN queda atado a su propio gimnasio: su alcance administrativo
-      // es exactamente ese, nunca «todos».
+      // Una cuenta que no es de plataforma queda atada a su propio gimnasio,
+      // nunca a «todos».
       tenantScope: 'topfitness',
       impersonating: false,
       emailVerified: false,
@@ -180,7 +180,7 @@ describe('JwtStrategy', () => {
       const strategy = strategyFor({
         id: payload.sub,
         email: payload.email,
-        role: UserRole.ADMIN,
+        role: UserRole.MODERATOR,
         tenantId: 'topfitness',
       });
 

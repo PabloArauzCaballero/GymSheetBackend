@@ -7,6 +7,8 @@ const readRequests = Number(process.env.LOAD_READ_REQUESTS ?? 60);
 const exportRequests = Number(process.env.LOAD_EXPORT_REQUESTS ?? 15);
 const writeRequests = Number(process.env.LOAD_WRITE_REQUESTS ?? 20);
 const concurrency = Number(process.env.LOAD_CONCURRENCY ?? 10);
+// Public marketplace (ADR-0022/0028): anonymous search and the profile of a business by @handle.
+const marketplaceRequests = Number(process.env.LOAD_MARKETPLACE_REQUESTS ?? 60);
 
 const budgets = {
   readP95Ms: Number(process.env.BUDGET_READ_P95_MS ?? 800),
@@ -102,10 +104,13 @@ const password = 'LoadTestPassword123!';
 // Signup must echo the current terms version; read it instead of hardcoding it.
 const legal = await requestData('/legal/current');
 const termsVersion = legal.documents.find((entry) => entry.document === 'TERMS').version;
+// The anti-bot layer (ADR-0013) wants the form ticket of the real client; run with SIGNUP_MIN_FILL_MS=0.
+const { ticket } = await requestData('/auth/register/ticket');
 const registration = await requestData('/auth/register', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
+    ticket,
     email: `load-${uniqueSuffix}@load.test`,
     password,
     nombreCompleto: 'Load Test User',
@@ -186,6 +191,15 @@ const writeResult = await runBoundedRequests(writeRequests, (requestIndex) =>
 const exportResult = await runBoundedRequests(exportRequests, () =>
   requestData('/export/workout-history', { headers: authorizationHeaders }),
 );
+// Anonymous reads of the public marketplace: a search page and the profile of a seller in it.
+const firstPage = await requestData('/public/directory/listings?limit=20');
+const marketplaceHandle = process.env.LOAD_MARKETPLACE_HANDLE ?? firstPage.items?.find((item) => item.seller?.handle)?.seller.handle ?? null;
+const marketplaceSearch = await runBoundedRequests(marketplaceRequests, (requestIndex) =>
+  requestData(requestIndex % 2 === 0 ? '/public/directory/listings?limit=20' : '/public/directory/listings?sort=price_asc&limit=20'),
+);
+const marketplaceProfile = marketplaceHandle
+  ? await runBoundedRequests(marketplaceRequests, () => requestData(`/public/directory/profiles/${marketplaceHandle}`))
+  : null;
 const rssAfter = await readResidentMemoryBytes();
 
 const oversizedPayload = await request('/auth/register', {
@@ -219,6 +233,8 @@ for (const [operation, result] of Object.entries({
   readExercises: readResult,
   createSets: writeResult,
   exportHistory: exportResult,
+  publicListings: marketplaceSearch,
+  ...(marketplaceProfile ? { publicProfile: marketplaceProfile } : {}),
 })) {
   assertBudget(result.errors.length === 0, `${operation} returned errors: ${result.errors.join('; ')}`);
 }
@@ -230,6 +246,11 @@ assertBudget(
   readResult.p99Ms <= budgets.readP99Ms,
   `Read p99 ${readResult.p99Ms.toFixed(1)} ms exceeded ${budgets.readP99Ms} ms`,
 );
+for (const [operation, result] of Object.entries({ publicListings: marketplaceSearch, publicProfile: marketplaceProfile })) {
+  if (!result) continue;
+  assertBudget(result.p95Ms <= budgets.readP95Ms, `${operation} p95 ${result.p95Ms.toFixed(1)} ms exceeded ${budgets.readP95Ms} ms`);
+  assertBudget(result.p99Ms <= budgets.readP99Ms, `${operation} p99 ${result.p99Ms.toFixed(1)} ms exceeded ${budgets.readP99Ms} ms`);
+}
 assertBudget(
   writeResult.p95Ms <= budgets.writeP95Ms,
   `Write p95 ${writeResult.p95Ms.toFixed(1)} ms exceeded ${budgets.writeP95Ms} ms`,
@@ -256,6 +277,8 @@ console.log(
         readExercises: readResult,
         createSets: writeResult,
         exportHistory: exportResult,
+        publicListings: { ...marketplaceSearch, listingsOnFirstPage: firstPage.items?.length ?? 0 },
+        publicProfile: marketplaceProfile ? { ...marketplaceProfile, handle: marketplaceHandle } : null,
         rssBefore,
         rssAfter,
         rssGrowthBytes,

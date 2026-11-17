@@ -6,6 +6,16 @@ import { ClosedAccountSanctionsRepository, SanctionSnapshot } from "./closed-acc
 type Account = { id: string; email: string; tenantId: string | null };
 
 /**
+ * What a closing business adds (ADR-0028): the HMACs of the NITs and CIs of
+ * its KYC (its identity fingerprints) and whether REPP had it suspended. A new
+ * business with any of them goes to REPP review (`CLOSED_ACCOUNT_SANCTION`).
+ */
+export type BusinessSanctionTrace = { nitHmacs: string[]; ciHmacs: string[]; suspended: boolean };
+
+/** How long a REPP suspension of a closed business keeps counting: the 5 years of the KYC records (plan §2.14). */
+export const BUSINESS_SUSPENSION_TRACE_DAYS = 5 * 365;
+
+/**
  * Ban evasion through account closure (ADR-0015). Closing an account wipes
  * the email and the suspension; without this, a sanctioned person could close
  * and sign up again with the same address, strikes gone. At closure the
@@ -20,16 +30,19 @@ export class ClosedAccountSanctionsService {
   constructor(private readonly repository: ClosedAccountSanctionsRepository) {}
 
   /** Inside the closure transaction, BEFORE the account row is anonymized. */
-  async recordAtClosure(account: Account, transaction: Transaction, now: Date = new Date()): Promise<boolean> {
+  async recordAtClosure(account: Account, transaction: Transaction, now: Date = new Date(), business?: BusinessSanctionTrace): Promise<boolean> {
     const snapshot = await this.repository.activeSanction(account.id, now, transaction);
-    if (!snapshot.suspendedUntil && snapshot.strikes.length === 0) return false;
+    const suspended = business?.suspended === true;
+    if (!snapshot.suspendedUntil && snapshot.strikes.length === 0 && !suspended) return false;
     const emailHmac = hashEmail(account.email);
     if (!emailHmac) {
       // Without the privacy pepper the email cannot be kept even as a hash; the deployment must set it.
       this.logger.warn({ event: "moderation.closed_sanction_not_recorded", userId: account.id, reason: "privacy_pepper_unset" });
       return false;
     }
-    await this.repository.insert(emailHmac, snapshot, expiryOf(snapshot), transaction);
+    const traceUntil = suspended ? new Date(now.getTime() + BUSINESS_SUSPENSION_TRACE_DAYS * 86_400_000) : null;
+    const trace = business && { nitHmacs: business.nitHmacs, ciHmacs: business.ciHmacs, suspended };
+    await this.repository.insert(emailHmac, snapshot, latest([expiryOf(snapshot), traceUntil]) ?? now, transaction, trace);
     this.logger.log({ event: "moderation.closed_sanction_recorded", userId: account.id, strikeCount: snapshot.strikes.length });
     return true;
   }

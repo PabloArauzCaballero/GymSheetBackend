@@ -1,3 +1,4 @@
+import { env } from "../../config/env";
 import { LegalKind } from "../business-accounts/business-accounts.schemas";
 
 /** Status of one KYC attempt (`business.kyc_submissions.status`), plan §2.5. */
@@ -93,20 +94,25 @@ export const KYC_RULES = {
 } as const;
 
 /**
- * Retention of KYC data (plan §2.14). Proposed values, PENDING the lawyer's
- * review (Q5): named here so the change is one line.
+ * Retention of KYC data (plan §2.14), read from the environment
+ * (`KYC_RETENTION_*_DAYS`, ADR-0028): proposed values PENDING the lawyer's
+ * review (Q5), so changing one is a deploy setting, not a code change.
  */
-export const KYC_RETENTION = {
-  /** A DRAFT nobody touched for this long loses its documents. */
-  ABANDONED_DRAFT_DAYS: 30,
-  /** Documents and encrypted data of a rejected attempt. */
-  REJECTED_DAYS: 30,
-  /** The selfie of a decided attempt (as the person verification). */
-  SELFIE_AFTER_DECISION_DAYS: 30,
-  /** Documents of an approved attempt that a newer approved version replaced. */
-  SUPERSEDED_DAYS: 30,
-  /** CI documents of a closed business: fraud investigation window. */
-  CLOSED_ACCOUNT_DAYS: 180,
-  /** Unverified phone codes. */
-  PHONE_CODE_DAYS: 1,
-} as const;
+export function kycRetention() {
+  return {
+    /** A DRAFT nobody touched for this long loses its documents. */
+    ABANDONED_DRAFT_DAYS: env.KYC_RETENTION_ABANDONED_DRAFT_DAYS,
+    /** Documents and encrypted data of a rejected attempt. */
+    REJECTED_DAYS: env.KYC_RETENTION_REJECTED_DAYS,
+    /** The selfie of a decided attempt (as the person verification). */
+    SELFIE_AFTER_DECISION_DAYS: env.KYC_RETENTION_SELFIE_DAYS,
+    /** Documents of an approved attempt that a newer approved version replaced. */
+    SUPERSEDED_DAYS: env.KYC_RETENTION_SUPERSEDED_DAYS,
+    /** Documents and identity data of a closed business: fraud investigation window. */
+    CLOSED_ACCOUNT_DAYS: env.KYC_RETENTION_CLOSED_ACCOUNT_DAYS,
+    /** Unverified phone codes. */
+    PHONE_CODE_DAYS: env.KYC_RETENTION_PHONE_CODE_DAYS,
+    /** Decisions, checks, history and fingerprints of a closed business (no image, no datum in clear). */
+    RECORDS_DAYS: env.KYC_RETENTION_RECORDS_DAYS,
+  };
+}

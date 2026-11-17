@@ -58,6 +58,7 @@ export class BuyerOrdersService {
       this.assertQuantity(listing, input.quantity);
       await this.assertMethod(seller, input.method, transaction);
       await this.assertOpenOrders(actor.id, listing.id, transaction);
+      await this.assertSellerCapacity(seller, transaction);
       if (listing.offerKind === 'MEMBERSHIP' && seller.entityType === 'GYM') await this.affiliations.ensureSocio(actor, seller.entityId, input.affiliation, transaction);
       const price = await this.repository.findCurrentPrice(listing.id, transaction);
       if (!price) throw listingNotFound();
@@ -143,6 +144,12 @@ export class BuyerOrdersService {
     }
   }
 
+  private async assertSellerCapacity(seller: SellerRow, transaction: Transaction): Promise<void> {
+    if (seller.isVerified) return;
+    const open = await this.sellers.lockAndCountOpenOrders(seller.entityId, transaction);
+    if (open >= env.ORDER_OPEN_MAX_UNVERIFIED_SELLER) throw sellerOpenLimitError();
+  }
+
   /** Counted under the buyer's advisory lock: a double tap or parallel requests open one order, not two. */
   private async assertOpenOrders(userId: string, listingId: string, transaction: Transaction): Promise<void> {
     const open = await this.repository.openOrders(userId, transaction);
@@ -154,6 +161,21 @@ export class BuyerOrdersService {
       });
     }
   }
+}
+
+/**
+ * Plan §6.1 (ADR-0028): a business only approved automatically («Nuevo»)
+ * holds a bounded number of open orders until REPP verifies it, so a fake
+ * one cannot collect many payments before the post-review. Checked last, after
+ * every buyer-side rule, so it reveals nothing about a listing the buyer
+ * could not order anyway.
+ */
+export function sellerOpenLimitError(): DomainException {
+  return new DomainException(
+    HttpStatus.CONFLICT,
+    'ORDER_SELLER_OPEN_LIMIT',
+    'Este negocio es nuevo en REPP y ya tiene muchos pedidos por confirmar. Inténtalo más tarde o escríbele por el chat.',
+  );
 }
 
 /** What was offered at this exact moment: the order keeps it even if the listing changes later. */

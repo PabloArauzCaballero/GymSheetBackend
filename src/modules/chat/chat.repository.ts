@@ -17,9 +17,9 @@ import { assertBusinessDisappearingAllowed, assertBusinessMessageAllowed, busine
 export const REPLY_UNAVAILABLE_MESSAGE = "El mensaje al que respondes ya no está disponible.";
 
 /**
- * The only system chat left is REPP's support (`CORPORATE`). The gym admin one
- * (`TENANT_ADMIN`) is neither created nor listed since franja 7a (ADR-0019);
- * the value stays allowed by the column CHECK until franja 7d.
+ * The only system chat is REPP's support (`CORPORATE`). The gym admin one
+ * (`TENANT_ADMIN`) went to `retired` in franja 7d and its CHECK value with it
+ * (ADR-0029).
  */
 export type SystemConversationKind = "CORPORATE";
 
@@ -61,6 +61,8 @@ export interface ConversationSummaryRow {
   business_entity_id: string | null;
   /** The viewer is the business and the other side is its customer: only name and avatar of the person. */
   viewer_is_business: boolean;
+  /** A BUSINESS conversation whose business closed its account (ADR-0028): read-only for the person. */
+  business_closed: boolean;
   /** Apodo que YO le puse a esta conversación, o `null` si no le puse ninguno. */
   nickname: string | null;
   /** Cursores del OTRO participante — con qué comparar el `createdAt` de mis propios mensajes para pintar el check. */
@@ -793,6 +795,7 @@ export class ChatRepository {
               c.kind AS kind,
               c.business_entity_id AS business_entity_id,
               (c.kind = 'BUSINESS' AND other.user_id = c.person_user_id) AS viewer_is_business,
+              COALESCE(c.kind = 'BUSINESS' AND be.status = 'CLOSED', false) AS business_closed,
               CASE WHEN last_msg.deleted_at IS NOT NULL THEN 'Mensaje eliminado' ELSE CASE
                 -- A view-once caption would leak the content the sender meant to show only once.
                 WHEN last_msg.view_once AND last_msg.type = 'image' THEN 'Foto de una vista'
@@ -868,7 +871,6 @@ export class ChatRepository {
             ORDER BY item.created_at DESC, item.id DESC LIMIT 1
          ) last_msg ON true
         WHERE c.revoked_at IS NULL
-          AND c.system_kind IS DISTINCT FROM 'TENANT_ADMIN'
         ORDER BY (c.system_kind IS NULL) ASC,
                  COALESCE(last_msg.created_at, c.created_at) DESC`,
       { type: QueryTypes.SELECT, replacements: { userId } },

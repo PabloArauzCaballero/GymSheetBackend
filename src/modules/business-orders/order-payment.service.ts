@@ -91,6 +91,8 @@ export class OrderPaymentService {
       await this.repository.transaction(async (transaction) => {
         const order = await this.buyers.lockOwn(actor, orderId, transaction);
         if (!buyerMayUploadReceipt(order)) throw invalidTransition(order.status);
+        // A seller that stopped being public (suspended, paused, closed) receives no payment (ADR-0028 hardening).
+        if ((await this.sellers.findSeller(order.entityId, transaction))?.entityStatus !== 'ACTIVE') throw businessUnavailable();
         if (order.receiptAttempts >= env.ORDER_RECEIPT_MAX_ATTEMPTS) throw receiptLimit();
         let reserved = order.stockReservedUnits;
         if (order.status === 'REJECTED') {
@@ -151,13 +153,15 @@ export class OrderPaymentService {
     if (!order || order.athleteUserId !== actor.id) throw new NotFoundException('Pedido no encontrado.');
     if (!OPEN_STATUSES.includes(order.status) && order.status !== 'REJECTED') throw invalidTransition(order.status);
     const seller = await this.sellers.findSeller(order.entityId);
-    if (seller?.entityStatus !== 'ACTIVE') {
-      throw new DomainException(HttpStatus.CONFLICT, 'ORDER_BUSINESS_UNAVAILABLE', 'Este negocio no está disponible: no hagas ningún pago.');
-    }
+    if (seller?.entityStatus !== 'ACTIVE') throw businessUnavailable();
     const config = await this.sellers.findConfig(order.entityId);
     if (!config?.isActive) {
       throw new DomainException(HttpStatus.CONFLICT, 'ORDER_PAYMENT_METHOD_UNAVAILABLE', 'Este negocio no recibe pagos ahora.', { method: order.method });
     }
     return { order, config };
   }
+}
+
+function businessUnavailable(): DomainException {
+  return new DomainException(HttpStatus.CONFLICT, 'ORDER_BUSINESS_UNAVAILABLE', 'Este negocio no está disponible: no hagas ningún pago.');
 }

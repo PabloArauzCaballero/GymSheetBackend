@@ -67,9 +67,9 @@ describe('Progression prizes (e2e)', () => {
       await api.post('/admin/progression/prizes').send({ targetKind: 'BADGE', targetCode: 'RACHA_30', title: 'X', stock: -1 }).expect(400);
       // Operar un gimnasio no escribe en el catálogo global: hay que salir de la suplantación.
       await api.post('/admin/progression/prizes').send({ alcance: 'GLOBAL', targetKind: 'PERFECT_WEEK', title: 'Global' }).expect(400);
-      // Y el ADMIN heredado del gimnasio ni siquiera entra (franja 7a, ADR-0019).
-      const gymAdmin = await e2e.register('premios-admin-heredado');
-      await e2e.promote(gymAdmin.id, 'ADMIN');
+      // Y un moderador de REPP ni siquiera entra: la senda es de SYSTEM_ADMIN (ADR-0019).
+      const gymAdmin = await e2e.register('premios-moderador');
+      await e2e.promote(gymAdmin.id, 'MODERATOR');
       await e2e.as(gymAdmin.token).post('/admin/progression/prizes').send({ alcance: 'GLOBAL', targetKind: 'PERFECT_WEEK', title: 'Global' }).expect(403);
       await e2e.as(gymAdmin.token).post('/admin/progression/prizes').send({ targetKind: 'BADGE', targetCode: 'RACHA_30', title: 'Del gimnasio' }).expect(403);
     });

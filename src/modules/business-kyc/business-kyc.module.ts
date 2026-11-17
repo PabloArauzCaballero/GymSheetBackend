@@ -17,6 +17,7 @@ import { ImageModerationService } from "./image-moderation/image-moderation.serv
 import { KycCheckQueriesRepository } from "./kyc-check-queries.repository";
 import { KycCipher } from "./kyc-cipher";
 import { KycDraftsService } from "./kyc-drafts.service";
+import { KycErasureService } from "./kyc-erasure.service";
 import { KycEffectsRepository } from "./kyc-effects.repository";
 import { KycNotices } from "./kyc-notices";
 import { KYC_CHECK_QUERIES, KYC_CLOCK, KYC_PIPELINE_CONFIG, KycPipelineService, defaultKycPipelineConfig } from "./kyc-pipeline.service";
@@ -75,6 +76,7 @@ export function phoneOtpSenderFactory(fetcher: PhoneOtpFetch): PhoneOtpSender {
     ImageModerationService,
     KycNotices,
     KycDraftsService,
+    KycErasureService,
     KycSubmitService,
     KycStatusService,
     KycReviewService,

@@ -7,7 +7,7 @@ import { TenantsService } from "./tenants.service";
  * Catálogo de gimnasios para la consola de sistema.
  *
  * Sólo `SYSTEM_ADMIN`: la lista de gimnasios es la lista de clientes del
- * negocio, y un `ADMIN` —que administra uno solo— no tiene por qué verla.
+ * negocio (el gimnasio no tiene personal, ADR-0019 y ADR-0029).
  */
 @Roles(UserRole.SYSTEM_ADMIN)
 @Controller("admin/tenants")

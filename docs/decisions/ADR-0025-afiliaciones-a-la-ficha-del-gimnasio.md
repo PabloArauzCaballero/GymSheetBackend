@@ -112,3 +112,7 @@ sirve para varios gimnasios, ni para un coach negocio, ni para fichas GYM nacida
 - Rollback: el down de `202611200901-affiliations-closed-rows` quita el CHECK; los dígitos que borró no
   vuelven (se borraron a propósito). El de `202611200901-affiliations` borra las dos tablas (sus datos se pierden: nada anterior los lee), el
   disparador y los dos índices de apoyo. El down de las migraciones de 8a y 8c en sus e2e baja primero esta.
+
+## Continuación en 8f (cierre del negocio)
+
+[ADR-0028](./ADR-0028-cierre-exportacion-y-retencion-del-negocio.md) abre `me/account/*` (salvo `PATCH`) y `me/export/*` al negocio y define su cierre, su exportación, la retención del KYC por entorno (con los 5 años de los registros), el borrado del KYC a pedido, la contracción de `payment_orders.receipt_url`, el tope de pedidos abiertos de un negocio no verificado y el fin de las afiliaciones cuando cierra un gimnasio o un coach (`BUSINESS_CLOSED`).

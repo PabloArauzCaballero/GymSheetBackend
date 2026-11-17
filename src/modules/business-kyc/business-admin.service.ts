@@ -8,6 +8,7 @@ import { HandlesRepository } from "../business-accounts/handles.repository";
 import { KycCipher, assertKycAvailable, kycFingerprint } from "./kyc-cipher";
 import { ciFingerprintValue, normalizeBolivianMobile, normalizeNit, parseCi } from "./kyc-formats";
 import { KycEffectsRepository } from "./kyc-effects.repository";
+import { KYC_MISSING } from "./kyc-erasure.service";
 import { KycNotices } from "./kyc-notices";
 import { KycReviewRepository } from "./kyc-review.repository";
 import { assertNotOwnBusiness } from "./kyc-review.service";
@@ -89,6 +90,10 @@ export class BusinessAdminService {
       const { account, submission, entity } = await this.loadAccount(actor, accountId, transaction);
       assertKycTransition(submission.status, "APPROVED");
       if (submission.status !== "SUSPENDED") throw new DomainException(HttpStatus.CONFLICT, "KYC_INVALID_TRANSITION", "El negocio no está suspendido.");
+      // The business erased its own KYC (ADR-0028): there is nothing left to approve.
+      if (account.suspensionReasonCode === KYC_MISSING) {
+        throw new DomainException(HttpStatus.CONFLICT, "KYC_INVALID_TRANSITION", "El negocio borró su verificación: necesita enviar una nueva.", { reason: KYC_MISSING });
+      }
       const decisionId = await this.record(account.userId, submission.id, "SUSPENDED", "APPROVED", "REINSTATE", actor, input, transaction);
       await this.effects.publish(entity, true, transaction);
       await this.effects.updateAccount(

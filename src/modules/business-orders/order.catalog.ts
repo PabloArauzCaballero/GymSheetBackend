@@ -13,7 +13,7 @@ export const REJECTION_TEXT: Record<RejectionCode, string> = {
   OTHER: 'El negocio observó el pago.',
 };
 
-export type CancelReason = 'BUYER' | 'BUSINESS_UNAVAILABLE' | 'EXPIRED';
+export type CancelReason = 'BUYER' | 'BUSINESS_UNAVAILABLE' | 'EXPIRED' | 'BUSINESS_CLOSED';
 
 export const ORDER_METHODS = ['QR', 'CASH'] as const satisfies readonly PaymentOrderMethod[];
 

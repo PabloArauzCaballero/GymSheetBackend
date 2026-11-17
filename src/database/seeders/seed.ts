@@ -12,7 +12,6 @@ import {
   type SnapshotSeedResult,
 } from "./exercises-snapshot.seed";
 import { databaseModels } from "../models";
-import { seedAdminPermissions } from "./admin-permissions.seed";
 import { seedCustomerExperience } from "./customer-experience.seed";
 import { seedFacilities } from "./facilities.seed";
 import { seedExerciseSearchAliases } from "./exercise-search-aliases.seed";
@@ -266,12 +265,6 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
       inserted: 0,
       skipped: 0,
     };
-    let adminPermissions = {
-      permissionsCreated: 0,
-      permissionsUpdated: 0,
-      permissionsUnchanged: 0,
-      grantsCreated: 0,
-    };
     await sequelize.transaction(async (transaction) => {
       await sequelize.query(
         "SELECT pg_advisory_xact_lock(hashtext(:lockName))",
@@ -283,14 +276,6 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
       for (const user of users) {
         counters[await upsertUser(sequelize, user, transaction)] += 1;
       }
-      // El catálogo de permisos es infraestructura, no datos de prueba: se
-      // siembra en todos los modos junto con el otorgamiento al admin de
-      // arranque, para que nunca quede sin acceso a las superficies que
-      // este catálogo protege.
-      adminPermissions = await seedAdminPermissions(
-        transaction,
-        env.SEED_ADMIN_EMAIL,
-      );
       // El catálogo de equipamiento va en la siembra base porque no es
       // contenido de demostración: es el punto de partida de cualquier
       // instalación real, y sin él el panel de equipamiento abre vacío.
@@ -325,7 +310,6 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
       exercisesSkipped: exercisesSnapshot.skipped,
       ...searchAliases,
       ...counters,
-      ...adminPermissions,
       ...progression,
       ...facilities,
     });

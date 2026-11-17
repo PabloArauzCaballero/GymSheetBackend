@@ -13,7 +13,8 @@ export type OrderNotice =
   | { kind: 'CONFIRMED'; period?: { startsOn: string; endsOn: string | null } | null }
   | { kind: 'REJECTED'; code: RejectionCode; note: string | null; attempt: number }
   | { kind: 'EXPIRED' }
-  | { kind: 'BUSINESS_UNAVAILABLE' };
+  | { kind: 'BUSINESS_UNAVAILABLE' }
+  | { kind: 'BUSINESS_CLOSED' };
 
 /** The period a confirmed order opened, in the buyer's words. */
 function periodText(period: { startsOn: string; endsOn: string | null } | null): string {
@@ -46,6 +47,8 @@ function render(order: OrderRef, notice: OrderNotice): { subject: string; body: 
       return { subject: `Pedido vencido · ${order.orderNumber}`, body: `Tu pedido de ${what} venció sin pago. Si todavía lo quieres, haz un pedido nuevo.`, dedup: 'expired' };
     case 'BUSINESS_UNAVAILABLE':
       return { subject: `Pedido cancelado · ${order.orderNumber}`, body: `El negocio ya no está disponible en REPP y cancelamos tu pedido de ${what}. No hagas ningún pago.`, dedup: 'unavailable' };
+    case 'BUSINESS_CLOSED':
+      return { subject: `Pedido cancelado · ${order.orderNumber}`, body: `El negocio cerró su cuenta en REPP y cancelamos tu pedido de ${what}. No hagas ningún pago.`, dedup: 'business-closed' };
   }
 }
 

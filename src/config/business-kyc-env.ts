@@ -39,6 +39,21 @@ export const businessKycEnvironmentShape = {
   WHATSAPP_CLOUD_OTP_TEMPLATE: z.preprocess(emptyAsUndefined, z.string().trim().regex(/^[a-z0-9_]{1,512}$/u).optional()),
   WHATSAPP_CLOUD_TEMPLATE_LANGUAGE: z.string().trim().regex(/^[a-z]{2}(_[A-Z]{2})?$/u).default("es"),
   WHATSAPP_CLOUD_API_VERSION: z.string().trim().regex(/^v\d{1,3}\.\d$/u).default("v21.0"),
+  /**
+   * KYC retention, in days (plan §2.14, ADR-0028). Proposed values PENDING the
+   * lawyer (Q5): an abandoned DRAFT and a REJECTED attempt lose documents and
+   * encrypted data after 30; the selfie of a decided attempt after 30; an
+   * approved version replaced by a newer one after 30; a closed business its
+   * documents and identity data after 180; decisions, checks, history and
+   * fingerprints (no image, no datum in clear) live 5 years after closure.
+   */
+  KYC_RETENTION_ABANDONED_DRAFT_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+  KYC_RETENTION_REJECTED_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+  KYC_RETENTION_SELFIE_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+  KYC_RETENTION_SUPERSEDED_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+  KYC_RETENTION_CLOSED_ACCOUNT_DAYS: z.coerce.number().int().min(1).max(3650).default(180),
+  KYC_RETENTION_PHONE_CODE_DAYS: z.coerce.number().int().min(1).max(365).default(1),
+  KYC_RETENTION_RECORDS_DAYS: z.coerce.number().int().min(365).max(7300).default(1825),
 };
 
 type BusinessKycEnvironment = {

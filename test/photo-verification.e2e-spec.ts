@@ -60,22 +60,12 @@ describe('Photo verification (e2e)', () => {
     return account;
   }
 
-  /** Gym staff of `tenantId`, optionally with the retired `moderation:*` grants (which open nothing now). */
-  async function gymStaff(label: string, role: 'ADMIN' | 'FRONT_DESK', tenantId: string, keys: string[] = []): Promise<Account> {
+  /** A member of `tenantId`: the gym has no staff (ADR-0019, ADR-0029), so this is all a gym account can be. */
+  async function gymMember(label: string, tenantId: string): Promise<Account> {
     const account = await e2e.register(label);
-    await e2e.promote(account.id, role);
     await e2e.sql('UPDATE public.usuarios SET tenant_id = :tenantId WHERE id = :id', { tenantId, id: account.id });
-    for (const key of keys) {
-      await e2e.sql(
-        `INSERT INTO admin.permissions (key, label, description, domain) VALUES (:key, :key, 'e2e', 'moderation')
-         ON CONFLICT (key) DO NOTHING`, { key });
-      await e2e.sql(
-        `INSERT INTO admin.user_permissions (id, user_id, permission_key) VALUES (gen_random_uuid(), :id, :key)`,
-        { id: account.id, key });
-    }
     return account;
   }
-  const legacyGrants = ['moderation:read', 'moderation:act'];
 
   async function one<T extends object>(statement: string, replacements: Record<string, unknown>): Promise<T> {
     const [row] = await sequelize.query<T>(statement, { type: QueryTypes.SELECT, replacements });
@@ -118,7 +108,7 @@ describe('Photo verification (e2e)', () => {
     // The REPP moderator belongs to the default gym and reviews the members of every gym.
     const mod = await registerModerator(e2e, 'v-mod');
     const otherModerator = await registerModerator(e2e, 'v-mod-other');
-    const gymAdmin = await gymStaff('v-gym-admin', 'ADMIN', tenant, legacyGrants);
+    const gymAdmin = await gymMember('v-gym-member', tenant);
     const anaApi = e2e.as(ana.token);
 
     expect((await anaApi.get('/me/verification').expect(200)).body.data).toMatchObject({ status: 'NONE', verifiedAt: null });
@@ -317,21 +307,8 @@ describe('Photo verification (e2e)', () => {
     const blocked = await e2e.as(unverified.token).post('/me/verification/challenge').expect(403);
     expect(blocked.body.code).toBe('EMAIL_VERIFICATION_REQUIRED');
 
-    const staff = await gymStaff('v-staff', 'ADMIN', tenant);
-    await e2e.as(staff.token).post('/me/verification/challenge').expect(403);
-    await e2e.as(staff.token).get('/me/verification').expect(403);
-    await e2e.as(staff.token).get('/admin/verifications').expect(403);
-    await e2e.as(staff.token).post(`/admin/verifications/${randomUUID()}/decide`).send({ decision: 'APPROVE' }).expect(403);
-
-    // The grants that used to open the queue to gym staff open nothing now (ADR-0018).
-    for (const role of ['ADMIN', 'FRONT_DESK'] as const) {
-      const legacy = await gymStaff(`v-legacy-${role.toLowerCase()}`, role, tenant, legacyGrants);
-      await e2e.as(legacy.token).get('/admin/verifications').expect(403);
-      await e2e.as(legacy.token).get(`/admin/verifications/${randomUUID()}/selfie?expires=1&signature=${'A'.repeat(43)}`).expect(403);
-      await e2e.as(legacy.token).post(`/admin/verifications/${randomUUID()}/decide`).send({ decision: 'REJECT', reason: 'OTHER' }).expect(403);
-    }
-
     await e2e.as(lone.token).get('/admin/verifications').expect(403);
+    await e2e.as(lone.token).get(`/admin/verifications/${randomUUID()}/selfie?expires=1&signature=${'A'.repeat(43)}`).expect(403);
     await e2e.as(lone.token).post(`/admin/verifications/${randomUUID()}/decide`).send({ decision: 'APPROVE' }).expect(403);
     await e2e.as(lone.token).post('/me/verification/not-a-uuid/selfie').expect(400);
     await e2e.as(lone.token).post(`/me/verification/${randomUUID()}/selfie`).expect(404);

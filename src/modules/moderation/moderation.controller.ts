@@ -49,9 +49,8 @@ export class ReportsController {
  * The moderation console of the central REPP team (ADR-0018).
  *
  * Only platform roles enter: `MODERATOR` (every gym) and `SYSTEM_ADMIN` (every
- * gym, or the impersonated one). Gym staff (`ADMIN`, `FRONT_DESK`, `COACH`)
- * gets 403 whatever permissions it was granted: moderating the social content
- * is not a gym operation, and no grant can turn it into one.
+ * gym, or the impersonated one). Members and businesses get 403: moderating
+ * the social content is not a gym operation (the gym has no staff, ADR-0029).
  */
 @Roles(...PLATFORM_MODERATION_ROLES)
 @Controller('admin/moderation')
