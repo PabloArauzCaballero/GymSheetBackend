@@ -146,4 +146,40 @@ describe('affiliations to a gym: request, confirm, and what the gym sees (e2e, f
     }
     await h.e2e.as(gym.token).get(`/business/me/affiliations/${pending}`).expect(200);
   });
+
+  it('a closed row keeps no CI digits and the gym cannot read it by id any more, nor see who it was', async () => {
+    const rejectedPerson = await h.e2e.register('aff-closed-a');
+    const rejected = await socioAt(h, rejectedPerson.token, rival, { ciLast3: '555' });
+    const echo = (await h.e2e.as(rival.token).post(`/business/me/affiliations/${rejected}/reject`).send({ reasonCode: 'CI_MISMATCH' }).expect(200)).body.data;
+    expect(echo).toMatchObject({ id: rejected, status: 'REJECTED', subject: null });
+    await h.e2e.as(rival.token).get(`/business/me/affiliations/${rejected}`).expect(404);
+    expect(await statusOf(h, rejected)).toMatchObject({ status: 'REJECTED', ciLast3: null });
+    expect((await h.e2e.as(rejectedPerson.token).get(`/me/affiliations/${rejected}`).expect(200)).body.data).toMatchObject({ status: 'REJECTED', ciLast3: null });
+
+    const cancelled = (await requestAt(h, rejectedPerson.token, { gymEntityId: rival.entityId, kind: 'ENTRENADOR', ciLast3: '556' }).expect(201)).body.data.id as string;
+    await h.e2e.as(rejectedPerson.token).post(`/me/affiliations/${cancelled}/cancel`).expect(200);
+    expect(await statusOf(h, cancelled)).toMatchObject({ status: 'CANCELLED', ciLast3: null });
+    await h.e2e.as(rival.token).get(`/business/me/affiliations/${cancelled}`).expect(404);
+
+    const member = await h.e2e.register('aff-closed-b');
+    const ended = await socioAt(h, member.token, rival, { ciLast3: '557' });
+    await confirm(h, rival, ended).expect(200);
+    expect((await h.e2e.as(rival.token).get(`/business/me/affiliations/${ended}`).expect(200)).body.data.subject).toMatchObject({ ciLast3: '557' });
+    const endEcho = (await h.e2e.as(rival.token).post(`/business/me/affiliations/${ended}/end`).send({ reasonCode: 'NO_LONGER_MEMBER' }).expect(200)).body.data;
+    expect(endEcho).toMatchObject({ status: 'ENDED', subject: null });
+    await h.e2e.as(rival.token).get(`/business/me/affiliations/${ended}`).expect(404);
+    expect(await statusOf(h, ended)).toMatchObject({ status: 'ENDED', ciLast3: null });
+
+    // Neither while the gym is not public.
+    await h.e2e.sql(`UPDATE directory.entities SET status = 'SUSPENDED' WHERE id = :id`, { id: rival.entityId });
+    try {
+      for (const id of [rejected, cancelled, ended]) await h.e2e.as(rival.token).get(`/business/me/affiliations/${id}`).expect(404);
+    } finally {
+      await h.e2e.sql(`UPDATE directory.entities SET status = 'ACTIVE' WHERE id = :id`, { id: rival.entityId });
+    }
+    // The database refuses digits on a closed row.
+    await expect(h.e2e.sql(`UPDATE directory.affiliations SET ci_last3 = '123' WHERE id = :id`, { id: rejected })).rejects.toThrow();
+    const [check] = await h.select<{ name: string }>(`SELECT conname AS name FROM pg_constraint WHERE conname = 'ck_affiliations_ci_closed'`);
+    expect(check?.name).toBe('ck_affiliations_ci_closed');
+  });
 });

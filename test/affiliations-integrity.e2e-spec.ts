@@ -1,5 +1,6 @@
 import { QueryTypes } from 'sequelize';
 import { affiliationsMigration } from '../src/database/migrations/202611200901-affiliations';
+import { affiliationsClosedRowsMigration } from '../src/database/migrations/202611200901-affiliations-closed-rows';
 import { KycHarness, bootKycHarness } from './support/kyc-e2e';
 import { Gym, confirm, gymWithLocations, historyOf, noticeKeys, requestAt, socioAt, statusOf } from './support/affiliations-e2e';
 
@@ -146,9 +147,11 @@ describe('affiliations: one gym per SOCIO, the gym switch, concurrency and the c
         )
       )[0];
     try {
+      await affiliationsClosedRowsMigration.down(queryInterface, transaction);
       await affiliationsMigration.down(queryInterface, transaction);
       expect(await tables()).toEqual({ affiliations: null, history: null });
       await affiliationsMigration.up(queryInterface, transaction);
+      await affiliationsClosedRowsMigration.up(queryInterface, transaction);
       expect(await tables()).toEqual({ affiliations: 'directory.affiliations', history: 'directory.affiliation_history' });
     } finally {
       await transaction.rollback();

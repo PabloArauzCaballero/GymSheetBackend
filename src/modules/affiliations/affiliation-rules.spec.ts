@@ -45,6 +45,7 @@ describe('affiliation rules (ADR-0025)', () => {
       requestedAt: new Date(),
       confirmedAt: null,
       subjectType: 'PERSON',
+      live: true,
       personName: 'Ana',
       personPhotoUrl: 'https://cdn.example/p.jpg',
       ciLast3: '123',
@@ -58,5 +59,15 @@ describe('affiliation rules (ADR-0025)', () => {
     });
     expect(Object.keys(dto).sort()).toEqual(['confirmedAt', 'id', 'kind', 'location', 'requestedAt', 'status', 'subject']);
     expect(dto.subject).toEqual({ type: 'PERSON', displayName: 'Ana', photoUrl: 'https://cdn.example/p.jpg', ciLast3: '123' });
+  });
+
+  it('a closed row carries no subject to the gym: not the person, not the coach', () => {
+    const base = { id: 'a', kind: 'SOCIO' as const, requestedAt: new Date(), confirmedAt: null, personName: null, personPhotoUrl: null, ciLast3: null,
+      coachName: null, coachHandle: null, coachLogoUrl: null, coachVerified: null, locationId: null, locationName: null, cursorKey: 'k' };
+    for (const status of ['REJECTED', 'CANCELLED', 'ENDED'] as const) {
+      for (const subjectType of ['PERSON', 'BUSINESS'] as const) {
+        expect(mapGymAffiliation({ ...base, status, subjectType, live: false }).subject).toBeNull();
+      }
+    }
   });
 });

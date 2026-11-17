@@ -767,7 +767,9 @@ time. After the gym rejects or ends, the same gym and kind wait 7 days; after a 
 
 `GymAffiliation` = `{ id, kind, status, subject, location: { id, name } | null, requestedAt, confirmedAt }`;
 `subject` = `{ type: PERSON, displayName, photoUrl, ciLast3 }` or `{ type: BUSINESS, name, handle, logoUrl,
-badge: VERIFIED|NEW }`. Nothing else about a person (no id, email, age, social profile or full CI).
+badge: VERIFIED|NEW }`, and `null` on a closed row (the echo of `reject` and `end`). Nothing else about a
+person (no id, email, age, social profile or full CI). A closed row (REJECTED, CANCELLED, ENDED) is `404` by
+id and never listed; its CI digits are erased (also in the person's own view).
 Pending requests are read and decided only while the gym is public: otherwise `409 GYM_NOT_ACTIVE` (and a
 pending one is `404` by id); members, coaches and `end` keep working.
 
@@ -776,10 +778,10 @@ pending one is `404` by id); members, coaches and `end` keep working.
 | GET | `/business/me/affiliations/requests` | `?kind&locationId&cursor&limit` → `{ items: GymAffiliation[], nextCursor, pendingCount }`, oldest first | `200`, `400`, `403`, `409 GYM_NOT_ACTIVE` |
 | GET | `/business/me/affiliations/members` | `?locationId&cursor&limit` → confirmed SOCIO, newest first | `200`, `400`, `403` |
 | GET | `/business/me/affiliations/coaches` | `?cursor&limit` → confirmed ENTRENADOR (persons and coach businesses) | `200`, `400`, `403` |
-| GET | `/business/me/affiliations/:id` | `GymAffiliation` | `200`, `403`, `404` |
+| GET | `/business/me/affiliations/:id` | `GymAffiliation` of a live row: a member or coach, or a request while the gym is public | `200`, `403`, `404` (another gym's, closed, or pending with the gym not public) |
 | POST | `/business/me/affiliations/:id/confirm` | `REQUESTED` → `CONFIRMED`; a gym switch ends the person's SOCIO elsewhere in the same transaction. Of two at once, one is `200` and the other `409` | `200`, `403`, `404`, `409 AFFILIATION_INVALID_TRANSITION`, `409 GYM_NOT_ACTIVE`, `409 SOCIO_OF_ANOTHER_GYM` |
-| POST | `/business/me/affiliations/:id/reject` | strict `{ reasonCode (rejection chips), note? (3–500; required with OTHER) }` | `200`, `400`, `403`, `404`, `409`, `422 AFFILIATION_NOTE_REQUIRED` |
-| POST | `/business/me/affiliations/:id/end` | strict `{ reasonCode (end chips), note? }`: `CONFIRMED` → `ENDED` | `200`, `400`, `403`, `404`, `409`, `422 AFFILIATION_NOTE_REQUIRED` |
+| POST | `/business/me/affiliations/:id/reject` | strict `{ reasonCode (rejection chips), note? (3–500; required with OTHER) }` → `GymAffiliation` with `subject: null` | `200`, `400`, `403`, `404`, `409`, `422 AFFILIATION_NOTE_REQUIRED` |
+| POST | `/business/me/affiliations/:id/end` | strict `{ reasonCode (end chips), note? }`: `CONFIRMED` → `ENDED`, → `GymAffiliation` with `subject: null` | `200`, `400`, `403`, `404`, `409`, `422 AFFILIATION_NOTE_REQUIRED` |
 
 Notices (in-app, key `affiliation:{id}:{event}`): `requested` to the gym (it never names the person);
 `confirmed`, `rejected`, `ended` to the person or the coach. To report a gym's handling, use

@@ -31,7 +31,7 @@ function build(options: { request?: AffiliationRow | null; previous?: Affiliatio
     transition: jest.fn().mockResolvedValue(undefined),
     recipientOf: jest.fn().mockResolvedValue('person-1'),
   };
-  const views = { listRequests: jest.fn().mockResolvedValue([]), countRequests: jest.fn().mockResolvedValue(0), findForGym: jest.fn().mockResolvedValue({ id: 'new-1', kind: 'SOCIO', status: 'CONFIRMED', requestedAt: new Date(), confirmedAt: new Date(), subjectType: 'PERSON' }) };
+  const views = { listRequests: jest.fn().mockResolvedValue([]), countRequests: jest.fn().mockResolvedValue(0), findForGym: jest.fn().mockResolvedValue({ id: 'new-1', kind: 'SOCIO', status: 'CONFIRMED', requestedAt: new Date(), confirmedAt: new Date(), subjectType: 'PERSON', live: true }) };
   const accounts = { findByUserId: jest.fn().mockResolvedValue({ entityId: 'gym-b', entityType: options.entityType ?? 'GYM' }) };
   const notices = { send: jest.fn() };
   const service = new GymAffiliationsService(
@@ -92,5 +92,16 @@ describe('GymAffiliationsService (ADR-0025)', () => {
     expect(await codeOf(service.reject(actor, 'new-1', { reasonCode: 'CI_MISMATCH' }))).toBe('GYM_NOT_ACTIVE');
     expect(repository.transition).not.toHaveBeenCalled();
     expect(await codeOf(build({ gymStatus: 'ACTIVE' }).service.listRequests(actor, { limit: 20 }))).toBe('resolved');
+  });
+
+  it('a closed row is 404 by id to the gym, public or not', async () => {
+    for (const gymStatus of ['ACTIVE', 'SUSPENDED']) {
+      const { service } = build({ gymStatus });
+      const views = (service as unknown as { views: { findForGym: jest.Mock } }).views;
+      for (const status of ['REJECTED', 'CANCELLED', 'ENDED']) {
+        views.findForGym.mockResolvedValueOnce({ id: 'new-1', kind: 'SOCIO', status, requestedAt: new Date(), confirmedAt: null, subjectType: 'PERSON', live: false });
+        expect(await codeOf(service.get(actor, 'new-1'))).toBe(404);
+      }
+    }
   });
 });

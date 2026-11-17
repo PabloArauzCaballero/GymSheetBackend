@@ -144,6 +144,7 @@ import { businessListingsMigration } from "./202611200601-business-listings";
 import { listingVersionStampMigration } from "./202611200602-listing-version-stamp";
 import { businessOrdersMigration } from "./202611200801-business-orders";
 import { affiliationsMigration } from "./202611200901-affiliations";
+import { affiliationsClosedRowsMigration } from "./202611200901-affiliations-closed-rows";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
 export const databaseMigrations: DatabaseMigration[] = [
@@ -294,4 +295,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   listingVersionStampMigration,
   businessOrdersMigration,
   affiliationsMigration,
+  affiliationsClosedRowsMigration,
 ];

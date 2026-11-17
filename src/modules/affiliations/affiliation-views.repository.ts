@@ -31,7 +31,9 @@ export type OwnViewRow = {
  * A row as the gym reads it. Exactly what the owner allowed (16/11/2026): for
  * a person the display name, the main photo, the declared location, the dates
  * and the three CI digits; for a coach business its public card. No user id,
- * email, birth date, social profile or full CI is ever selected.
+ * email, birth date, social profile or full CI is ever selected, and for a
+ * closed row (rejected, cancelled, ended) not even the subject: `live` is
+ * false and every subject column comes back null from the database itself.
  */
 export type GymViewRow = {
   id: string;
@@ -40,6 +42,7 @@ export type GymViewRow = {
   requestedAt: Date;
   confirmedAt: Date | null;
   subjectType: 'PERSON' | 'BUSINESS';
+  live: boolean;
   personName: string | null;
   personPhotoUrl: string | null;
   ciLast3: string | null;
@@ -65,17 +68,20 @@ const OWN_SELECT = `
     LEFT JOIN directory.handles gh ON gh.owner_entity_id = g.id AND gh.status = 'ACTIVE'
     LEFT JOIN directory.entity_locations l ON l.id = a.location_id`;
 
+const LIVE = `a.status IN ('REQUESTED', 'CONFIRMED')`;
+
 const GYM_SELECT = (sortColumn: string) => `
   SELECT a.id, a.kind, a.status, a.requested_at AS "requestedAt", a.confirmed_at AS "confirmedAt",
          CASE WHEN a.user_id IS NOT NULL THEN 'PERSON' ELSE 'BUSINESS' END AS "subjectType",
-         u.nombre_completo AS "personName", ph.url AS "personPhotoUrl", a.ci_last3 AS "ciLast3",
+         (a.status IN ('REQUESTED', 'CONFIRMED')) AS live,
+         u.nombre_completo AS "personName", ph.url AS "personPhotoUrl", CASE WHEN ${LIVE} THEN a.ci_last3 END AS "ciLast3",
          c.name AS "coachName", ch.handle AS "coachHandle", c.logo_url AS "coachLogoUrl", c.is_verified AS "coachVerified",
          l.id AS "locationId", l.name AS "locationName", ${KEY(sortColumn)} AS "cursorKey"
     FROM directory.affiliations a
-    LEFT JOIN public.usuarios u ON u.id = a.user_id
-    LEFT JOIN LATERAL (SELECT p.url FROM profile.photos p WHERE p.user_id = a.user_id AND p.hidden_at IS NULL
+    LEFT JOIN public.usuarios u ON u.id = a.user_id AND ${LIVE}
+    LEFT JOIN LATERAL (SELECT p.url FROM profile.photos p WHERE p.user_id = a.user_id AND p.hidden_at IS NULL AND ${LIVE}
                         ORDER BY p.position ASC LIMIT 1) ph ON true
-    LEFT JOIN directory.entities c ON c.id = a.coach_entity_id
+    LEFT JOIN directory.entities c ON c.id = a.coach_entity_id AND ${LIVE}
     LEFT JOIN directory.handles ch ON ch.owner_entity_id = c.id AND ch.status = 'ACTIVE'
     LEFT JOIN directory.entity_locations l ON l.id = a.location_id`;
 

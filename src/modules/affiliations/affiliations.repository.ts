@@ -186,6 +186,8 @@ export class AffiliationsRepository {
           SET status = :status, changed_by_user_id = :changedByUserId, reason_code = :reasonCode, reason_note = :reasonNote,
               confirmed_at = CASE WHEN :status = 'CONFIRMED' THEN now() ELSE confirmed_at END,
               closed_at = CASE WHEN :status IN ('REJECTED', 'ENDED', 'CANCELLED') THEN now() ELSE NULL END,
+              -- The gym compares the digits only while it decides or keeps the member (ck_affiliations_ci_closed).
+              ci_last3 = CASE WHEN :status IN ('REJECTED', 'ENDED', 'CANCELLED') THEN NULL ELSE ci_last3 END,
               updated_at = now()
         WHERE id = :affiliationId`,
       { affiliationId, reasonCode: null, reasonNote: null, ...change },

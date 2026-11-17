@@ -29,7 +29,9 @@ sirve para varios gimnasios, ni para un coach negocio, ni para fichas GYM nacida
      negocio solo es `ENTRENADOR`;
    - `kind SOCIO|ENTRENADOR`; `location_id` obligatorio para un SOCIO vivo, opcional para ENTRENADOR;
    - `ci_last3`: exactamente 3 dígitos tal como los escribió la persona (lo que el gimnasio compara); solo
-     personas; se borra al cerrar la cuenta;
+     personas; existe **solo mientras la fila está viva** (REQUESTED o CONFIRMED): al rechazar, cancelar o
+     terminar se borra, y el CHECK `ck_affiliations_ci_closed` (migración `202611200901-affiliations-closed-rows`)
+     lo garantiza;
    - estado `REQUESTED → CONFIRMED | REJECTED | CANCELLED`, `CONFIRMED → ENDED`; `reason_code` y
      `reason_note`; `changed_by_user_id` (quién hizo el último cambio; nulo = sistema); `requested_at`,
      `confirmed_at`, `closed_at` atados al estado por CHECK; `replaces_affiliation_id` marca el «cambio de
@@ -73,13 +75,20 @@ sirve para varios gimnasios, ni para un coach negocio, ni para fichas GYM nacida
     (`nombre_completo`, primera foto no oculta de `profile.photos`); de coach negocio = `{type: BUSINESS,
     name, handle, logoUrl, badge VERIFIED|NEW}`. Nunca id de usuario, correo, fecha de nacimiento, perfil
     social ni CI completo. Los avisos al gimnasio no nombran a la persona.
+    **Minimización de lo cerrado** (revisión de seguridad de a3c0a5f): el gimnasio lee por id solo lo vivo,
+    es decir sus socios y entrenadores (CONFIRMED) y las solicitudes (REQUESTED) mientras es público. Una
+    fila cerrada (REJECTED, CANCELLED, ENDED) es `404` por id, sea público o no, y ninguna lista la devuelve.
+    La respuesta del propio `reject` o `end` trae `subject: null`: la consulta del gimnasio no selecciona
+    nombre, foto, dígitos ni tarjeta de coach de una fila cerrada. Lo que el gimnasio necesita de verdad (la
+    bandeja, las listas de socios y entrenadores y terminar a uno de ellos) solo toca filas vivas. La persona
+    conserva su propia fila cerrada (estado, motivo, fechas), sin los dígitos.
 11. **Avisos** in-app (clave `affiliation:{id}:{evento}`): solicitud al gimnasio (de persona o de coach);
     confirmada, rechazada (con motivo) y terminada (también por cambio de gimnasio) a la persona o al coach.
 12. **Sedes.** Eliminar una sede que declaró un SOCIO vivo choca con el CHECK de la afiliación y responde `409
     LOCATION_IN_USE`; si ya no hay socios vivos, la afiliación cerrada queda sin sede.
 13. **Cierre y exportación.** Cerrar la cuenta de la persona termina lo vivo (`CANCELLED`/`ENDED`,
-    `ACCOUNT_CLOSED`), borra los dígitos del CI y anonimiza al actor del historial; el gimnasio ve «Cuenta
-    cerrada». La exportación incluye sus afiliaciones y su historial, sin el id de quien decidió.
+    `ACCOUNT_CLOSED`), borra los dígitos del CI y anonimiza al actor del historial; como toda fila cerrada,
+    deja de ser legible para el gimnasio. La exportación incluye sus afiliaciones y su historial, sin el id de quien decidió.
 14. **Moderación.** Para denunciar cómo un gimnasio maneja su afiliación alcanza la denuncia existente
     `BUSINESS_PROFILE` sobre la ficha del gimnasio; no se agrega un tipo nuevo.
 
@@ -100,5 +109,6 @@ sirve para varios gimnasios, ni para un coach negocio, ni para fichas GYM nacida
 - Riesgos aceptados: `ci_last3` es lo que la persona escribe (nadie lo verifica: el gimnasio compara); el
   nombre visible es `nombre_completo`; un gimnasio pausado no recibe ni decide solicitudes hasta volver.
   Lo que pasa con las afiliaciones cuando **cierra el gimnasio** llega con el cierre de negocios (8f).
-- Rollback: `yarn migration:down` borra las dos tablas (sus datos se pierden: nada anterior los lee), el
+- Rollback: el down de `202611200901-affiliations-closed-rows` quita el CHECK; los dígitos que borró no
+  vuelven (se borraron a propósito). El de `202611200901-affiliations` borra las dos tablas (sus datos se pierden: nada anterior los lee), el
   disparador y los dos índices de apoyo. El down de las migraciones de 8a y 8c en sus e2e baja primero esta.

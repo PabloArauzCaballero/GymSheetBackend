@@ -50,15 +50,17 @@ export type GymAffiliationDto = {
   id: string;
   kind: AffiliationKind;
   status: AffiliationStatus;
-  subject: GymPersonSubjectDto | GymBusinessSubjectDto;
+  /** Null once the row is closed: the gym keeps the fact and the dates, never who it was. */
+  subject: GymPersonSubjectDto | GymBusinessSubjectDto | null;
   location: { id: string; name: string } | null;
   requestedAt: string;
   confirmedAt: string | null;
 };
 
 export function mapGymAffiliation(row: GymViewRow): GymAffiliationDto {
-  const subject: GymAffiliationDto['subject'] =
-    row.subjectType === 'PERSON'
+  const subject: GymAffiliationDto['subject'] = !row.live
+    ? null
+    : row.subjectType === 'PERSON'
       ? { type: 'PERSON', displayName: row.personName ?? '', photoUrl: resolveMediaUrl(row.personPhotoUrl), ciLast3: row.ciLast3 }
       : { type: 'BUSINESS', name: row.coachName ?? '', handle: row.coachHandle, logoUrl: resolveMediaUrl(row.coachLogoUrl), badge: row.coachVerified ? 'VERIFIED' : 'NEW' };
   return {

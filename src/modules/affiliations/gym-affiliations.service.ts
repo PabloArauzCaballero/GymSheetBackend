@@ -67,7 +67,9 @@ export class GymAffiliationsService {
   async get(actor: AuthenticatedUser, affiliationId: string): Promise<GymAffiliationDto> {
     const gymId = await this.gymOf(actor);
     const row = await this.views.findForGym(gymId, affiliationId);
-    if (!row || (row.status === 'REQUESTED' && !(await this.isPublic(gymId)))) throw notFound();
+    // Readable by id: a member or coach (CONFIRMED), or a request while the gym is public. A row that
+    // is closed (rejected, cancelled, ended) is not the gym's to look at any more.
+    if (!row || !row.live || (row.status === 'REQUESTED' && !(await this.isPublic(gymId)))) throw notFound();
     return mapGymAffiliation(row);
   }
 
@@ -125,7 +127,10 @@ export class GymAffiliationsService {
         await this.notices.send(recipient, row, { event: to, gymName: gym.name, reason: input.reasonCode, note: input.note ?? null }, transaction);
       }
     });
-    return this.get(actor, affiliationId);
+    // The decision's echo: the row is closed now, so it carries no subject (see `mapGymAffiliation`).
+    const row = await this.views.findForGym(gymId, affiliationId);
+    if (!row) throw notFound();
+    return mapGymAffiliation(row);
   }
 
   /** Subject lock first, then the row (the order every affiliation write uses), scoped to this gym. */

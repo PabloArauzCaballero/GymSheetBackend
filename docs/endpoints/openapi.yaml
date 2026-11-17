@@ -3762,12 +3762,12 @@ paths:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
         "200":
-          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge }, location: { id, name } | null, requestedAt, confirmedAt }"
+          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge } | null (fila cerrada), location: { id, name } | null, requestedAt, confirmedAt }"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SuccessEnvelope" }
         "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "404": { description: "De otro gimnasio, inexistente o pendiente con el gimnasio no público", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "De otro gimnasio, inexistente, cerrada (REJECTED, CANCELLED, ENDED) o pendiente con el gimnasio no público", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
   /business/me/affiliations/{id}/confirm:
     post:
       tags: [Affiliations]
@@ -3776,7 +3776,7 @@ paths:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
         "200":
-          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge }, location: { id, name } | null, requestedAt, confirmedAt }"
+          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge } | null (fila cerrada), location: { id, name } | null, requestedAt, confirmedAt }"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SuccessEnvelope" }
@@ -3796,7 +3796,7 @@ paths:
             schema: { type: object, additionalProperties: false, required: [reasonCode], properties: { reasonCode: { type: string, enum: [UNKNOWN_PERSON, CI_MISMATCH, WRONG_LOCATION, NOT_A_COACH_HERE, OTHER] }, note: { type: string, minLength: 3, maxLength: 500 } } }
       responses:
         "200":
-          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge }, location: { id, name } | null, requestedAt, confirmedAt }"
+          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge } | null (fila cerrada), location: { id, name } | null, requestedAt, confirmedAt }"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SuccessEnvelope" }
@@ -3818,7 +3818,7 @@ paths:
             schema: { type: object, additionalProperties: false, required: [reasonCode], properties: { reasonCode: { type: string, enum: [NO_LONGER_MEMBER, NO_LONGER_COACH, CONDUCT, OTHER] }, note: { type: string, minLength: 3, maxLength: 500 } } }
       responses:
         "200":
-          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge }, location: { id, name } | null, requestedAt, confirmedAt }"
+          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge } | null (fila cerrada), location: { id, name } | null, requestedAt, confirmedAt }"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SuccessEnvelope" }
