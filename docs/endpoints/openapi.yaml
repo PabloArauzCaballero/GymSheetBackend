@@ -37,6 +37,8 @@ tags:
     description: Publicaciones, sedes y marketplace público con post-moderación (ADR-0022)
   - name: Orders
     description: Pedidos pagados por QR o en efectivo y confirmados por el negocio (ADR-0024)
+  - name: BusinessChat
+    description: Chat de una persona con un negocio; el negocio solo responde (ADR-0023)
 paths:
   /auth/register:
     post:
@@ -3558,6 +3560,57 @@ paths:
               schema: { type: string, format: binary }
         "403": { description: "Rol no permitido o MODERATION_SELF_CASE / MODERATION_PEER_CASE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "404": { description: "Sin caso para ese pedido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/business-conversations:
+    post:
+      tags: [BusinessChat]
+      summary: Una persona abre (o recupera) su chat con una ficha pública
+      description: >
+        Sin conexión social. Solo fichas ACTIVE con cuenta de negocio ACTIVE; cualquier otra
+        responde 404 con el mismo cuerpo. 201 si se abrió ahora, 200 si ya existía la
+        conversación viva. Un negocio recibe 403 ACCOUNT_KIND_NOT_ALLOWED. Después se lee y se
+        escribe por /me/conversations/:id/*.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entityId]
+              properties:
+                entityId: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/BusinessConversationOpened" }
+        "201": { $ref: "#/components/responses/BusinessConversationOpened" }
+        "400": { $ref: "#/components/responses/Problem400" }
+        "401": { $ref: "#/components/responses/Problem401" }
+        "403": { description: "ACCOUNT_KIND_NOT_ALLOWED (negocio) | EMAIL_VERIFICATION_REQUIRED | BUSINESS_CHAT_BLOCKED (el negocio bloqueó a esta persona)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { $ref: "#/components/responses/Problem404" }
+        "429": { description: "BUSINESS_CHAT_LIMIT (10 chats nuevos con negocios en 24 h)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/conversations/{id}/block:
+    post:
+      tags: [BusinessChat]
+      summary: El negocio bloquea a la persona de una de sus conversaciones
+      description: Revoca la conversación; la persona no puede volver a abrirla (403 BUSINESS_CHAT_BLOCKED). Idempotente.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdParam" }]
+      responses:
+        "200":
+          description: Bloqueada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          conversationId: { type: string, format: uuid }
+                          blocked: { type: boolean, enum: [true] }
+        "403": { $ref: "#/components/responses/Problem403" }
+        "404": { $ref: "#/components/responses/Problem404" }
 components:
   securitySchemes:
     bearerAuth:
@@ -3583,6 +3636,19 @@ components:
       in: query
       schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
   responses:
+    BusinessConversationOpened:
+      description: Conversación de la persona con el negocio
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/SuccessEnvelope"
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      conversationId: { type: string, format: uuid }
     Problem400:
       description: Solicitud inválida
       content:

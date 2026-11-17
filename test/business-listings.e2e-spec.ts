@@ -2,6 +2,8 @@ import { QueryTypes } from 'sequelize';
 import request from 'supertest';
 import { businessListingsMigration } from '../src/database/migrations/202611200601-business-listings';
 import { listingVersionStampMigration } from '../src/database/migrations/202611200602-listing-version-stamp';
+import { businessConversationsMigration } from '../src/database/migrations/202611200701-business-conversations';
+import { businessOrdersMigration } from '../src/database/migrations/202611200801-business-orders';
 import { KycBusiness, KycHarness, bootKycHarness, letters } from './support/kyc-e2e';
 import { createListing, membership, publicGet, publicIds, publishedBusiness } from './support/listings-e2e';
 
@@ -211,6 +213,9 @@ describe('business listings, locations and the public marketplace (e2e, franja 8
     const statusOf = async (id: string) =>
       (await h.sequelize.query<{ status: string }>('SELECT status FROM directory.entity_plans WHERE id = :id', { type: QueryTypes.SELECT, replacements: { id }, transaction }))[0]?.status;
     try {
+      // Reverse id order: the orders (202611200801) and the business chats (202611200701) go first.
+      await businessOrdersMigration.down(queryInterface, transaction);
+      await businessConversationsMigration.down(queryInterface, transaction);
       await listingVersionStampMigration.down(queryInterface, transaction);
       await businessListingsMigration.down(queryInterface, transaction);
       expect([await statusOf(live.id), await statusOf(held.id)]).toEqual(['ACTIVE', 'INACTIVE']);
@@ -222,6 +227,8 @@ describe('business listings, locations and the public marketplace (e2e, franja 8
       expect(gone).toEqual({ locations: null, column: 0 });
       await businessListingsMigration.up(queryInterface, transaction);
       await listingVersionStampMigration.up(queryInterface, transaction);
+      await businessConversationsMigration.up(queryInterface, transaction);
+      await businessOrdersMigration.up(queryInterface, transaction);
       const [back] = await h.sequelize.query<{ offerKind: string; moderationStatus: string }>(
         'SELECT offer_kind AS "offerKind", moderation_status AS "moderationStatus" FROM directory.entity_plans WHERE id = :id',
         { type: QueryTypes.SELECT, replacements: { id: live.id }, transaction },

@@ -8,6 +8,9 @@ import { LegalModule } from "../legal/legal.module";
 import { UsersModule } from "../users/users.module";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatController } from "./chat.controller";
+import { BusinessChatController, PersonBusinessChatController } from "./business-chat.controller";
+import { BusinessChatRepository } from "./business-chat.repository";
+import { BusinessChatService } from "./business-chat.service";
 import { ChatGateway } from "./chat.gateway";
 import { ChatRepository } from "./chat.repository";
 import { ChatService } from "./chat.service";
@@ -35,7 +38,7 @@ import { env } from "../../config/env";
     NotificationsModule,
     SequelizeModule.forFeature([ConversationModel, ConversationParticipantModel, MessageModel, MessageVisibilityModel, MessageReactionModel]),
   ],
-  controllers: [ChatController, ReadReceiptSettingsController],
+  controllers: [ChatController, ReadReceiptSettingsController, PersonBusinessChatController, BusinessChatController],
   providers: [
     ChatRepository,
     ChatService,
@@ -47,6 +50,8 @@ import { env } from "../../config/env";
     SystemChatService,
     ReadReceiptSettingsService,
     ChatDisappearingPurgeService,
+    BusinessChatRepository,
+    BusinessChatService,
   ],
   exports: [ChatService, ChatRepository],
 })

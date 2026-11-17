@@ -189,6 +189,7 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
   del("chat.message_reactions", "Reacciones en el chat", OWN),
   del("chat.message_visibility", "Mensajes que ocultaste", OWN),
   del("chat.read_receipt_settings", "Ajuste de confirmación de lectura", OWN),
+  del("chat.business_blocks", "Negocios que bloquearon tu chat", "t.person_user_id = :userId"),
   del("chat.messages", "Mensajes de tus chats con REPP y con tu gimnasio", IN_SYSTEM_CONVERSATION, "t.media_key"),
   del("chat.conversations", "Chats con REPP y con tu gimnasio", systemConversation("t")),
   anonymize("chat.messages", "Tus mensajes, fotos, audios y ubicaciones",

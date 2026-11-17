@@ -1044,6 +1044,34 @@ por el disparador) y paró con `worker.shutdown_requested` (salida 0); sin base 
 
 Fuera de 8d: registro de pago en efectivo por el negocio (necesita la afiliación de 8e), suscripciones (8e), «Escribir» al negocio desde el pedido y cierre/exportación del negocio (8f), contracción de `receipt_url`/`verified_*` (8f), tope de pedidos por negocio no verificado (§6 del plan).
 
+### Franja 8f (chat): una persona escribe a un negocio, el negocio solo responde (ADR-0023)
+
+| Cambio / riesgo | Corrección | Prueba |
+|---|---|---|
+| Sin canal entre persona y negocio (el chat exigía conexión social) | `chat.conversations.kind` `DIRECT\|SYSTEM\|BUSINESS`, `business_entity_id`, `person_user_id`, índice único parcial por par vivo y `chat.business_blocks` (migración reversible `202611200701-business-conversations`); `POST /me/business-conversations` 201/200, idempotente bajo concurrencia (lock consultivo por persona + índice) | `business-chat.service.spec.ts`, `test/business-chat.e2e-spec.ts` (6 aperturas simultáneas → una conversación; down/up de la migración) |
+| Spam en frío desde fichas aprobadas en segundos | `AccountKindGuard` por método: el negocio alcanza `me/conversations/*` salvo `POST me/conversations` y `pending-replies`; inventario de rutas con la lista exacta | `account-kind.guard.spec.ts`, `account-kind.route-inventory.spec.ts`, e2e |
+| Sondeo del estado de fichas | Ficha no `ACTIVE` (o cuenta no `ACTIVE`) → el mismo `404`; el límite se evalúa después | e2e (borrador, pausada, inexistente) |
+| Abuso de aperturas | `429 BUSINESS_CHAT_LIMIT`: 10 nuevas por persona en 24 h, revocadas incluidas | e2e (la 11.ª) |
+| Evidencia de disputas | Sin temporales (`422 BUSINESS_CHAT_NO_DISAPPEARING` + CHECK) ni ubicación (`422 BUSINESS_CHAT_NO_LOCATION`), bajo el lock de la conversación | e2e, `business-chat.service.spec.ts` |
+| Negocio suspendido por fraude seguía escribiendo (hallazgo de la revisión de seguridad) | Una cuenta de negocio no `ACTIVE` no envía en sus chats (`409 BUSINESS_ACCOUNT_LOCKED`, antes de subir archivos); el cliente sí | e2e, `chat.service.spec.ts` |
+| Datos de la persona ante el negocio | Solo nombre visible y primera foto; sin presencia ni última conexión; perfil social en `403` | e2e (claves exactas del ítem) |
+| Denuncia de un mensaje de negocio daba `404` si la persona era de un gimnasio (la cuenta de negocio no tiene) | `CHAT_MESSAGE` deja de exigir el mismo gimnasio: ser participante es la prueba de acceso | `moderation.service.spec.ts`, e2e (cola de REPP y evidencia del caso) |
+| Bloqueo por el negocio | `POST /business/me/conversations/:id/block`: revoca y la persona no reabre (`403 BUSINESS_CHAT_BLOCKED`); ajeno → `404` | e2e |
+| BOLA | Otro negocio u otra persona: `404` en historial, envío y bloqueo; no aparece en su lista | e2e |
+
+Evidencia (17/11/2026, base `gym_sheet_f8f_e2e` nueva: schema + migraciones + 2 down + up + semilla
+base): `yarn lint` y `yarn type-check` limpios; `yarn build` OK; unitarias 255 suites / 2356 pruebas en
+verde; `test/business-chat.e2e-spec.ts` 12/12; sobre fd80569 las 11 pruebas de reglas fallan (la de
+down/up ni compila: la migración no existe) y cada
+regla quitada a mano (ubicación, temporales, guard, última conexión, límite, bloqueo, gimnasio en la
+denuncia, negocio suspendido, ficha no pública) rompe su prueba. e2e completa: 70 suites en verde y las
+47 pruebas en rojo de la línea base de 8b (mismos nombres); las dos de `business-accounts` que cambió
+este contrato (el negocio ya entra a `/me/conversations`; el down de 401 baja antes 701) se ajustaron y
+pasan. Arranque real de `dist/main.js`: readiness `migrations: up-to-date`, rutas nuevas sin token → `401`.
+
+Fuera de 8f (chat): cierre, exportación y retención del negocio, contracción de `receipt_url`,
+socket del negocio, desbloqueo y denuncias hechas por un negocio.
+
 
 ---
 
