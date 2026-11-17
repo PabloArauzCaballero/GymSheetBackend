@@ -12,6 +12,8 @@ import { listingVersionStampMigration } from '../src/database/migrations/2026112
 import { businessOrdersMigration } from '../src/database/migrations/202611200801-business-orders';
 import { affiliationsMigration } from '../src/database/migrations/202611200901-affiliations';
 import { affiliationsClosedRowsMigration } from '../src/database/migrations/202611200901-affiliations-closed-rows';
+import { subscriptionLedgerMigration } from '../src/database/migrations/202611201001-subscription-ledger';
+import { retireMembershipMachineryMigration } from '../src/database/migrations/202611201002-retire-membership-machinery';
 import { businessNameSkeleton, handleSkeleton } from '../src/modules/business-accounts/handle-rules';
 import { E2eApp, bootE2eApp, markEmailVerified } from './support/e2e-app';
 
@@ -440,6 +442,8 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
     try {
       // Migrations roll back in reverse order: the affiliations (202611200901), the orders (202611200801), the listings (202611200601)
       // and the KYC tables (202611200501) come after business.accounts.
+      await retireMembershipMachineryMigration.down(queryInterface, transaction);
+      await subscriptionLedgerMigration.down(queryInterface, transaction);
       await affiliationsClosedRowsMigration.down(queryInterface, transaction);
       await affiliationsMigration.down(queryInterface, transaction);
       await businessOrdersMigration.down(queryInterface, transaction);
@@ -464,6 +468,8 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
       await businessOrdersMigration.up(queryInterface, transaction);
       await affiliationsMigration.up(queryInterface, transaction);
       await affiliationsClosedRowsMigration.up(queryInterface, transaction);
+      await subscriptionLedgerMigration.up(queryInterface, transaction);
+      await retireMembershipMachineryMigration.up(queryInterface, transaction);
       const [again] = await sequelize.query<{ accounts: string | null }>(
         `SELECT to_regclass('business.accounts')::text AS accounts`,
         { type: QueryTypes.SELECT, transaction },

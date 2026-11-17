@@ -137,7 +137,10 @@ export type DomainErrorCode =
   | 'GYM_NOT_ACTIVE'
   | 'COACH_NOT_PUBLIC'
   | 'BUSINESS_TYPE_NOT_ALLOWED'
-  | 'LOCATION_IN_USE';
+  | 'LOCATION_IN_USE'
+  | 'AFFILIATION_REQUIRED'
+  | 'SUBSCRIPTION_INVALID_TRANSITION'
+  | 'SUBSCRIPTION_NOTE_REQUIRED';
 
 /**
  * Error de dominio con `code` estable y `details` opcional (por ejemplo

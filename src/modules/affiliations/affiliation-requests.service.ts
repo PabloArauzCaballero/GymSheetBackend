@@ -62,25 +62,32 @@ export class AffiliationRequestsService {
   }
 
   async request(subject: Subject, input: SubjectRequest): Promise<OwnAffiliationDto> {
-    const id = await this.repository.transaction(async (transaction) => {
-      await this.repository.lockSubject(subject, transaction);
-      if (subject.type === 'COACH') await this.assertCoachPublic(subject.entityId);
-      const gym = await this.publicGym(input, transaction);
-      if (input.locationId && !(await this.repository.locationOfGym(gym.entityId, input.locationId, transaction))) {
-        throw new DomainException(HttpStatus.BAD_REQUEST, 'AFFILIATION_LOCATION_INVALID', 'Esa sede no es de este gimnasio.');
-      }
-      const replacesId = await this.assertMayRequest(subject, gym, input, transaction);
-      const affiliationId = await this.repository
-        .insert({ subject, gymEntityId: gym.entityId, kind: input.kind, locationId: input.locationId ?? null, ciLast3: input.ciLast3, replacesId }, transaction)
-        .catch((error: unknown) => {
-          // The unique indexes are the last word under concurrency: a parallel request lost the race.
-          if (error instanceof AffiliationUniqueError) throw conflict('AFFILIATION_ALREADY_LIVE', 'Ya tienes una solicitud o afiliación así.', {});
-          throw error;
-        });
-      await this.notices.send(gym.ownerUserId, { id: affiliationId, kind: input.kind }, { event: 'REQUESTED', subject: subject.type }, transaction);
-      return affiliationId;
-    });
+    const id = await this.repository.transaction((transaction) => this.requestInTransaction(subject, input, transaction));
     return this.get(subject, id);
+  }
+
+  /**
+   * The request inside the caller's transaction (the hook 8e uses to create
+   * the REQUESTED SOCIO together with the order of a gym membership): every
+   * rule of a direct request applies, and a failure undoes the caller's work.
+   */
+  async requestInTransaction(subject: Subject, input: SubjectRequest, transaction: Transaction): Promise<string> {
+    await this.repository.lockSubject(subject, transaction);
+    if (subject.type === 'COACH') await this.assertCoachPublic(subject.entityId);
+    const gym = await this.publicGym(input, transaction);
+    if (input.locationId && !(await this.repository.locationOfGym(gym.entityId, input.locationId, transaction))) {
+      throw new DomainException(HttpStatus.BAD_REQUEST, 'AFFILIATION_LOCATION_INVALID', 'Esa sede no es de este gimnasio.');
+    }
+    const replacesId = await this.assertMayRequest(subject, gym, input, transaction);
+    const affiliationId = await this.repository
+      .insert({ subject, gymEntityId: gym.entityId, kind: input.kind, locationId: input.locationId ?? null, ciLast3: input.ciLast3, replacesId }, transaction)
+      .catch((error: unknown) => {
+        // The unique indexes are the last word under concurrency: a parallel request lost the race.
+        if (error instanceof AffiliationUniqueError) throw conflict('AFFILIATION_ALREADY_LIVE', 'Ya tienes una solicitud o afiliación así.', {});
+        throw error;
+      });
+    await this.notices.send(gym.ownerUserId, { id: affiliationId, kind: input.kind }, { event: 'REQUESTED', subject: subject.type }, transaction);
+    return affiliationId;
   }
 
   async list(subject: Subject, query: OwnListQuery): Promise<{ items: OwnAffiliationDto[]; nextCursor: string | null }> {

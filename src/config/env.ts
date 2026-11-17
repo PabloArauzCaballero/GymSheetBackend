@@ -108,17 +108,6 @@ export const environmentSchema = z
       (value) => (value === "" ? undefined : value),
       z.string().trim().min(2).max(40).optional(),
     ),
-    ACCESS_POLICY_VERSION: z
-      .string()
-      .trim()
-      .min(1)
-      .max(80)
-      .default("2026-07-19"),
-    ACCESS_MOCK_ENABLED: environmentBooleanSchema.default(false),
-    WHATSAPP_MEMBERSHIP_PHONE: z
-      .string()
-      .trim()
-      .regex(/^\d{8,15}$/),
     /**
      * Optional bearer token required by GET /health/metrics. When unset the
      * endpoint stays open, preserving existing scrape configurations; the
@@ -397,16 +386,6 @@ export const environmentSchema = z
     GMAIL_FROM_EMAIL: optionalEmailSchema,
 
     /**
-     * Dónde vive el portal web, para componer enlaces que se envían fuera de la
-     * aplicación. Un enlace de activación viaja por WhatsApp y tiene que abrir
-     * el portal del gimnasio, no la API.
-     */
-    PORTAL_PUBLIC_URL: z.string().trim().url().default("http://localhost:3000"),
-
-    /** Vida del enlace de activación por pago en efectivo. */
-    ACTIVATION_LINK_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(48),
-
-    /**
      * Vida del PIN de recuperación. Corta a propósito: es el único intervalo en
      * el que una credencial de seis cifras vale para entrar en una cuenta.
      */
@@ -678,15 +657,6 @@ export const environmentSchema = z
         code: z.ZodIssueCode.custom,
         path: ["JWT_REFRESH_SECRET"],
         message: "Access and refresh secrets must be different.",
-      });
-    if (
-      configuration.NODE_ENV === "production" &&
-      configuration.ACCESS_MOCK_ENABLED
-    )
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["ACCESS_MOCK_ENABLED"],
-        message: "Access mock endpoints are forbidden in production.",
       });
     if (
       configuration.NODE_ENV === "production" &&

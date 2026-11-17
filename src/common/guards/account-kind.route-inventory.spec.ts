@@ -78,6 +78,12 @@ const BUSINESS_REACHABLE: string[] = [
   'GET business/me/payment-config/qr',
   'PUT business/me/payment-config',
   'PUT business/me/payment-config/qr',
+  // «Suscriptores» of the business (ADR-0026, franja 8e).
+  'GET business/me/subscriptions',
+  'GET business/me/subscriptions/:id',
+  'POST business/me/subscriptions/:id/cancel',
+  'POST business/me/subscriptions/:id/reactivate',
+  'POST business/me/subscriptions/:id/suspend',
   // Affiliations: the gym's «Socios» and a coach's «Mis gimnasios» (ADR-0025, franja 7b).
   'GET business/me/affiliations/:id',
   'GET business/me/affiliations/coaches',

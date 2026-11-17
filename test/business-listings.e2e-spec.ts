@@ -4,6 +4,8 @@ import { businessListingsMigration } from '../src/database/migrations/2026112006
 import { listingVersionStampMigration } from '../src/database/migrations/202611200602-listing-version-stamp';
 import { affiliationsMigration } from '../src/database/migrations/202611200901-affiliations';
 import { affiliationsClosedRowsMigration } from '../src/database/migrations/202611200901-affiliations-closed-rows';
+import { subscriptionLedgerMigration } from '../src/database/migrations/202611201001-subscription-ledger';
+import { retireMembershipMachineryMigration } from '../src/database/migrations/202611201002-retire-membership-machinery';
 import { KycBusiness, KycHarness, bootKycHarness, letters } from './support/kyc-e2e';
 import { createListing, membership, publicGet, publicIds, publishedBusiness } from './support/listings-e2e';
 
@@ -214,6 +216,8 @@ describe('business listings, locations and the public marketplace (e2e, franja 8
       (await h.sequelize.query<{ status: string }>('SELECT status FROM directory.entity_plans WHERE id = :id', { type: QueryTypes.SELECT, replacements: { id }, transaction }))[0]?.status;
     try {
       // The affiliations (202611200901) reference the locations: they roll back first.
+      await retireMembershipMachineryMigration.down(queryInterface, transaction);
+      await subscriptionLedgerMigration.down(queryInterface, transaction);
       await affiliationsClosedRowsMigration.down(queryInterface, transaction);
       await affiliationsMigration.down(queryInterface, transaction);
       await listingVersionStampMigration.down(queryInterface, transaction);
@@ -229,6 +233,8 @@ describe('business listings, locations and the public marketplace (e2e, franja 8
       await listingVersionStampMigration.up(queryInterface, transaction);
       await affiliationsMigration.up(queryInterface, transaction);
       await affiliationsClosedRowsMigration.up(queryInterface, transaction);
+      await subscriptionLedgerMigration.up(queryInterface, transaction);
+      await retireMembershipMachineryMigration.up(queryInterface, transaction);
       const [back] = await h.sequelize.query<{ offerKind: string; moderationStatus: string }>(
         'SELECT offer_kind AS "offerKind", moderation_status AS "moderationStatus" FROM directory.entity_plans WHERE id = :id',
         { type: QueryTypes.SELECT, replacements: { id: live.id }, transaction },

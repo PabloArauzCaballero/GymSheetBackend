@@ -4,11 +4,12 @@ import { DomainException } from '../../common/errors/domain.exception';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { BusinessAccountsRepository } from '../business-accounts/business-accounts.repository';
 import { PaymentOrderModel } from '../directory/models/payment-order.model';
-import { OrderListQuery, RejectOrderInput } from './business-orders.schemas';
+import { SubscriptionLedgerService } from '../subscriptions/subscription-ledger.service';
+import { ConfirmOrderInput, OrderListQuery, RejectOrderInput } from './business-orders.schemas';
+import { CheckoutAffiliation } from './checkout-affiliation';
 import { invalidTransition } from './order.catalog';
 import { decodeOrderCursor, encodeOrderCursor } from './order-cursor';
 import { OrderLifecycle } from './order-lifecycle.service';
-import { OrderMembershipBridge } from './order-membership-bridge';
 import { OrderNotices, orderRef } from './order-notices';
 import { OrderPaymentService } from './order-payment.service';
 import { BusinessOrderDto, TimelineEntryDto, mapBusinessOrder, mapTimeline } from './orders.mapper';
@@ -26,7 +27,8 @@ export class BusinessOrdersService {
     private readonly accounts: BusinessAccountsRepository,
     private readonly repository: OrdersRepository,
     private readonly lifecycle: OrderLifecycle,
-    private readonly bridge: OrderMembershipBridge,
+    private readonly ledger: SubscriptionLedgerService,
+    private readonly affiliation: CheckoutAffiliation,
     private readonly notices: OrderNotices,
     private readonly payment: OrderPaymentService,
   ) {}
@@ -54,15 +56,25 @@ export class BusinessOrdersService {
     return this.payment.readReceipt(order);
   }
 
-  /** Row-locked: of two confirmations at once, one wins and the other is 409; a replay is 409 too. */
-  async confirm(actor: AuthenticatedUser, orderId: string): Promise<BusinessOrderDto> {
-    const entityId = await this.entityOf(actor);
+  /**
+   * Row-locked: of two confirmations at once, one wins and the other is 409;
+   * a replay is 409 too. One transaction (ADR-0026): the order, the period it
+   * pays and, for a gym membership, the buyer's REQUESTED SOCIO (unless the
+   * business unchecks «también confirmo que es socio»). If any of them fails,
+   * none of them changes.
+   */
+  async confirm(actor: AuthenticatedUser, orderId: string, input: ConfirmOrderInput): Promise<BusinessOrderDto> {
+    const seller = await this.sellerOf(actor);
     await this.repository.transaction(async (transaction) => {
-      const order = await this.lockOwn(entityId, orderId, transaction);
+      const seen = await this.repository.findOrder(orderId, transaction);
+      if (!seen || seen.entityId !== seller.entityId) throw new NotFoundException('Pedido no encontrado.');
+      // The buyer's lock before the order's row, the order every affiliation and period write uses.
+      await this.affiliation.lockPerson(seen.athleteUserId, transaction);
+      const order = await this.lockOwn(seller.entityId, orderId, transaction);
       if (order.status !== 'PENDING_VERIFICATION') throw invalidTransition(order.status);
-      const membershipId = await this.bridge.activate(order, actor.id, transaction);
-      await this.lifecycle.confirm(order, actor.id, membershipId, transaction);
-      await this.notices.send(order.athleteUserId, orderRef(order), { kind: 'CONFIRMED' }, transaction);
+      const period = await this.ledger.openForOrder(order, seller, { actorUserId: actor.id, confirmAffiliation: input.alsoConfirmAffiliation }, transaction);
+      await this.lifecycle.confirm(order, actor.id, period?.id ?? null, transaction);
+      await this.notices.send(order.athleteUserId, orderRef(order), { kind: 'CONFIRMED', period }, transaction);
     });
     return this.get(actor, orderId);
   }
@@ -96,9 +108,13 @@ export class BusinessOrdersService {
   }
 
   private async entityOf(actor: AuthenticatedUser): Promise<string> {
+    return (await this.sellerOf(actor)).entityId;
+  }
+
+  private async sellerOf(actor: AuthenticatedUser): Promise<{ entityId: string; entityType: string }> {
     const account = await this.accounts.findByUserId(actor.id);
     if (!account) throw new NotFoundException('Cuenta de negocio no encontrada.');
-    return account.entityId;
+    return { entityId: account.entityId, entityType: account.entityType };
   }
 
   private async lockOwn(entityId: string, orderId: string, transaction: Transaction): Promise<PaymentOrderModel> {

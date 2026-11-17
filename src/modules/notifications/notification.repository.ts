@@ -18,6 +18,7 @@ export type ExpiringMembershipCandidate = {
   membershipId: string;
   userId: string;
   planName: string;
+  sellerName: string | null;
   endsOn: string;
   daysRemaining: number;
   channel: NotificationChannel.IN_APP | NotificationChannel.HTTP_GATEWAY;
@@ -121,11 +122,17 @@ export class NotificationRepository {
     return this.preferences.create({ userId, ...input });
   }
 
-  findExpiringMemberships(today: string, limit: number) {
+  /**
+   * Periods of the subscription ledger (ADR-0026) ending in exactly one of
+   * `reminderDays` days. A period already renewed (a later ACTIVE period of
+   * the same listing chained after it) is not reminded.
+   */
+  findExpiringMemberships(today: string, reminderDays: readonly number[], limit: number) {
     return this.sequelize.query<ExpiringMembershipCandidate>(
       `SELECT m.id AS "membershipId",
               m.user_id AS "userId",
-              p.name AS "planName",
+              m.plan_name AS "planName",
+              e.name AS "sellerName",
               m.ends_on::text AS "endsOn",
               (m.ends_on - CAST(:today AS date))::integer AS "daysRemaining",
               CASE
@@ -138,23 +145,22 @@ export class NotificationRepository {
               pref.quiet_hours_start::text AS "quietHoursStart",
               pref.quiet_hours_end::text AS "quietHoursEnd"
        FROM membership.memberships m
-       JOIN membership.plans p ON p.id = m.plan_id
+       LEFT JOIN directory.entities e ON e.id = m.entity_id
        LEFT JOIN notifications.preferences pref ON pref.user_id = m.user_id
        WHERE m.status = 'ACTIVE'
-         AND p.status = 'ACTIVE'
          AND m.starts_on <= CAST(:today AS date)
          AND m.ends_on >= CAST(:today AS date)
+         AND (m.ends_on - CAST(:today AS date)) IN (:reminderDays)
          AND COALESCE(pref.membership_expiry_enabled, true) = true
-         AND EXISTS (
-           SELECT 1
-           FROM jsonb_array_elements_text(p.reminder_days) AS reminder(day)
-           WHERE reminder.day::integer =
-             (m.ends_on - CAST(:today AS date))
+         AND NOT EXISTS (
+           SELECT 1 FROM membership.memberships next
+            WHERE next.user_id = m.user_id AND next.entity_plan_id = m.entity_plan_id
+              AND next.status = 'ACTIVE' AND next.starts_on > m.ends_on
          )
        ORDER BY m.ends_on ASC, m.id ASC
        LIMIT :limit`,
       {
-        replacements: { today, limit },
+        replacements: { today, reminderDays: [...reminderDays], limit },
         type: QueryTypes.SELECT,
       },
     );

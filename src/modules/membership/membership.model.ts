@@ -12,8 +12,15 @@ import {
 } from "sequelize-typescript";
 import { MembershipStatus } from "../../common/enums/domain.enums";
 import { UserModel } from "../users/user.model";
-import { MembershipPlanModel } from "./membership-plan.model";
 
+export type PeriodOrigin = "MARKETPLACE" | "LEGACY";
+
+/**
+ * One subscription period (ADR-0026): a confirmed marketplace order of a
+ * listing, or a LEGACY row of the gym-operated memberships that came before.
+ * `retired_plan_id` points at the retired global catalogue and is only kept
+ * for the history of legacy rows.
+ */
 @Table({
   tableName: "memberships",
   schema: "membership",
@@ -30,15 +37,43 @@ export class MembershipModel extends Model {
   @Column({ type: DataType.UUID, allowNull: false, field: "user_id" })
   declare userId: string;
 
-  @ForeignKey(() => MembershipPlanModel)
-  @Column({ type: DataType.UUID, allowNull: false, field: "plan_id" })
-  declare planId: string;
+  @Column({ type: DataType.UUID, allowNull: true, field: "retired_plan_id" })
+  declare retiredPlanId: string | null;
+
+  @Column({ type: DataType.UUID, allowNull: true, field: "entity_id" })
+  declare entityId: string | null;
+
+  @Column({ type: DataType.UUID, allowNull: true, field: "entity_plan_id" })
+  declare entityPlanId: string | null;
+
+  @Column({ type: DataType.UUID, allowNull: true, field: "payment_order_id" })
+  declare paymentOrderId: string | null;
+
+  @Column({ type: DataType.UUID, allowNull: true, field: "affiliation_id" })
+  declare affiliationId: string | null;
+
+  @Column({ type: DataType.STRING(20), allowNull: false, field: "offer_kind" })
+  declare offerKind: string;
+
+  @Column({ type: DataType.STRING(180), allowNull: false, field: "plan_name" })
+  declare planName: string;
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: "sessions_total" })
+  declare sessionsTotal: number | null;
+
+  @Default(0)
+  @Column({ type: DataType.INTEGER, allowNull: false, field: "sessions_used" })
+  declare sessionsUsed: number;
+
+  @Default("LEGACY")
+  @Column({ type: DataType.STRING(12), allowNull: false })
+  declare origin: PeriodOrigin;
 
   @Column({ type: DataType.DATEONLY, allowNull: false, field: "starts_on" })
   declare startsOn: string;
 
-  @Column({ type: DataType.DATEONLY, allowNull: false, field: "ends_on" })
-  declare endsOn: string;
+  @Column({ type: DataType.DATEONLY, allowNull: true, field: "ends_on" })
+  declare endsOn: string | null;
 
   @Default(MembershipStatus.ACTIVE)
   @Column({ type: DataType.STRING(30), allowNull: false })
@@ -70,9 +105,6 @@ export class MembershipModel extends Model {
 
   @BelongsTo(() => UserModel, "userId")
   declare user?: UserModel;
-
-  @BelongsTo(() => MembershipPlanModel)
-  declare plan?: MembershipPlanModel;
 
   @BelongsTo(() => UserModel, "createdByUserId")
   declare createdByUser?: UserModel | null;

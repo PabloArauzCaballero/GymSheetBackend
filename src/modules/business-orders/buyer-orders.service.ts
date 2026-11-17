@@ -10,6 +10,7 @@ import { CreateOrderInput, OrderListQuery } from './business-orders.schemas';
 import { buyerMayCancel, invalidTransition, orderNumber } from './order.catalog';
 import { decodeOrderCursor, encodeOrderCursor } from './order-cursor';
 import { OrderLifecycle } from './order-lifecycle.service';
+import { CheckoutAffiliation } from './checkout-affiliation';
 import { OrderNotices, orderRef } from './order-notices';
 import { BuyerOrderDto, TimelineEntryDto, mapBuyerOrder, mapTimeline } from './orders.mapper';
 import { OrdersRepository } from './orders.repository';
@@ -40,11 +41,14 @@ export class BuyerOrdersService {
     private readonly sellers: SellersRepository,
     private readonly lifecycle: OrderLifecycle,
     private readonly notices: OrderNotices,
+    private readonly affiliations: CheckoutAffiliation,
   ) {}
 
   async create(actor: AuthenticatedUser, input: CreateOrderInput): Promise<BuyerOrderDto> {
     const orderId = await this.repository.transaction(async (transaction) => {
       await this.repository.lockBuyer(actor.id, transaction);
+      // The person's lock before any row lock, the order every affiliation and period write uses.
+      await this.affiliations.lockPerson(actor.id, transaction);
       const listing = await this.repository.lockListing(input.listingId, transaction);
       const seller = listing ? await this.sellers.findSeller(listing.entityId, transaction) : null;
       // Only what is public is sold (ADR-0022): anything else answers as if it did not exist.
@@ -54,6 +58,7 @@ export class BuyerOrdersService {
       this.assertQuantity(listing, input.quantity);
       await this.assertMethod(seller, input.method, transaction);
       await this.assertOpenOrders(actor.id, listing.id, transaction);
+      if (listing.offerKind === 'MEMBERSHIP' && seller.entityType === 'GYM') await this.affiliations.ensureSocio(actor, seller.entityId, input.affiliation, transaction);
       const price = await this.repository.findCurrentPrice(listing.id, transaction);
       if (!price) throw listingNotFound();
       const reserved = await this.lifecycle.reserve(listing, input.quantity, transaction);

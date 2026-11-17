@@ -3,6 +3,7 @@ import { getModelToken } from '@nestjs/sequelize';
 import { Test } from '@nestjs/testing';
 import { json, urlencoded } from 'express';
 import request from 'supertest';
+import { QueryTypes } from 'sequelize';
 import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { ResponseInterceptor } from '../src/common/interceptors/response.interceptor';
@@ -274,67 +275,39 @@ describe('Progression streaks (e2e)', () => {
     });
   });
 
+  /**
+   * Las recompensas por racha (`STREAK_REWARD_*`) las sustituyen los premios
+   * del gimnasio (P1, 2026-10-18) y «Accesos» salió del producto con la
+   * franja 8e (ADR-0026): llegar a una racha no concede nada en el libro
+   * retirado de beneficios.
+   */
   describe('streak rewards', () => {
+    const rewards = async (userId: string) => {
+      const [row] = await sessionModel.sequelize!.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM retired.membership_entitlements WHERE user_id = :userId AND source_type = 'STREAK_REWARD'`,
+        { replacements: { userId }, type: QueryTypes.SELECT },
+      );
+      return row.count;
+    };
+
     it('grants no reward before the first threshold', async () => {
       const { accessToken, userId } = await registerUser('reward-none');
       await seedFinishedSession(userId, 0);
-
-      await request(httpServer)
-        .get(url('/me/progression'))
-        .set('Authorization', `Bearer ${accessToken}`)
-        .expect(200);
-
-      const accesses = await request(httpServer)
-        .get(url('/me/accesses'))
-        .set('Authorization', `Bearer ${accessToken}`)
-        .expect(200);
-      expect(accesses.body.data.some((access: { code: string }) => access.code === 'STREAK_REWARD_7')).toBe(
-        false,
-      );
+      await request(httpServer).get(url('/me/progression')).set('Authorization', `Bearer ${accessToken}`).expect(200);
+      expect(await rewards(userId)).toBe(0);
     });
 
-    /**
-     * Las recompensas por racha (`STREAK_REWARD_*`) las sustituyen los premios
-     * del gimnasio (P1, 2026-10-18): ya no se otorgan nuevas, pero las que
-     * alguien ya tenía siguen en «Accesos».
-     */
-    it('no longer grants the 7-day reward, but keeps one granted before', async () => {
+    it('no longer grants the 7-day reward', async () => {
       const { accessToken, userId } = await registerUser('reward-seven');
       for (let offset = -6; offset <= 0; offset += 1) {
         await seedFinishedSession(userId, offset);
       }
-
       const progression = await request(httpServer)
         .get(url('/me/progression'))
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
       expect(progression.body.data.stats.longestStreakDays).toBe(7);
-
-      const accessCodes = async () =>
-        (
-          (
-            await request(httpServer)
-              .get(url('/me/accesses'))
-              .set('Authorization', `Bearer ${accessToken}`)
-              .expect(200)
-          ).body.data as Array<{ code: string; source: string }>
-        ).filter((access) => access.code === 'STREAK_REWARD_7');
-      expect(await accessCodes()).toHaveLength(0);
-
-      // Una recompensa otorgada antes del cambio, tal como la dejaba el código anterior.
-      await sessionModel.sequelize!.query(
-        `INSERT INTO membership.entitlements (user_id, feature_id, source_type, source_id, status, starts_at, metadata)
-         SELECT :userId, f.id, 'STREAK_REWARD', :userId, 'ACTIVE', now(), '{"thresholdDays":7}'::jsonb
-           FROM membership.features f WHERE f.code = 'STREAK_REWARD_7'`,
-        { replacements: { userId } },
-      );
-      await request(httpServer)
-        .get(url('/me/progression'))
-        .set('Authorization', `Bearer ${accessToken}`)
-        .expect(200);
-      const kept = await accessCodes();
-      expect(kept).toHaveLength(1);
-      expect(kept[0].source).toBe('STREAK_REWARD');
+      expect(await rewards(userId)).toBe(0);
     });
   });
 });

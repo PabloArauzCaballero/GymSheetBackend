@@ -4,10 +4,6 @@ import { AdminUserPermissionModel } from "../../modules/admin-access/admin-user-
 import { AdminAuditLogModel } from "../../modules/admin-access/audit-log.model";
 import { ModerationReportModel } from "../../modules/moderation/report.model";
 import { UserStrikeModel } from "../../modules/moderation/user-strike.model";
-import { AccessCredentialModel } from "../../modules/access-control/access-credential.model";
-import { AccessDecisionModel } from "../../modules/access-control/access-decision.model";
-import { AccessDeviceEventModel } from "../../modules/access-control/access-device-event.model";
-import { AccessDeviceModel } from "../../modules/access-control/access-device.model";
 import { PasswordResetTokenModel } from "../../modules/auth/password-reset-token.model";
 import { RefreshTokenModel } from "../../modules/auth/refresh-token.model";
 import { EquipmentModel } from "../../modules/equipment/equipment.model";
@@ -29,13 +25,8 @@ import { DomainEventModel } from "../../modules/integration/domain-event.model";
 import { LegacyImportBatchModel } from "../../modules/integration/legacy-import-batch.model";
 import { LegacyImportRecordModel } from "../../modules/integration/legacy-import-record.model";
 import { OutboxJobModel } from "../../modules/integration/outbox-job.model";
-import { CustomerProfileModel } from "../../modules/membership/customer-profile.model";
-import { MembershipPlanModel } from "../../modules/membership/membership-plan.model";
 import { MembershipStatusHistoryModel } from "../../modules/membership/membership-status-history.model";
 import { MembershipModel } from "../../modules/membership/membership.model";
-import { PlanAccessScopeModel } from "../../modules/membership/plan-access-scope.model";
-import { StaffBranchScopeModel } from "../../modules/membership/staff-branch-scope.model";
-import { StaffProfileModel } from "../../modules/membership/staff-profile.model";
 import { DeliveryAttemptModel } from "../../modules/notifications/delivery-attempt.model";
 import { NotificationPreferenceModel } from "../../modules/notifications/notification-preference.model";
 import { NotificationModel } from "../../modules/notifications/notification.model";
@@ -81,13 +72,7 @@ import { CardioPlanModel } from "../../modules/programs/cardio-plan.model";
 import { ContentRatingModel } from "../../modules/community/content-rating.model";
 import { ContentCommentModel } from "../../modules/community/content-comment.model";
 import { ExerciseLikeModel } from "../../modules/community/exercise-like.model";
-import { EntitlementModel } from "../../modules/membership/entitlement.model";
 import { MediaFileModel } from "../../modules/membership/media-file.model";
-import { MembershipExtensionModel } from "../../modules/membership/membership-extension.model";
-import { MembershipFeatureModel } from "../../modules/membership/membership-feature.model";
-import { MembershipIntentModel } from "../../modules/membership/membership-intent.model";
-import { PlanFeatureModel } from "../../modules/membership/plan-feature.model";
-import { MembershipActivationRequestModel } from "../../modules/membership/membership-activation-request.model";
 import { ProgressionLevelModel } from "../../modules/progression/progression-level.model";
 import { ProgressionBadgeModel } from "../../modules/progression/progression-badge.model";
 import { UserBadgeModel } from "../../modules/progression/user-badge.model";
@@ -117,7 +102,6 @@ export const databaseModels = [
   UserModel,
   RefreshTokenModel,
   PasswordResetTokenModel,
-  MembershipActivationRequestModel,
   AnthropometricProfileModel,
   OnboardingModel,
   BodyMeasurementModel,
@@ -176,23 +160,9 @@ export const databaseModels = [
   AccessPointModel,
   EquipmentAssignmentModel,
   MaintenanceEventModel,
-  MembershipPlanModel,
   MediaFileModel,
-  MembershipFeatureModel,
-  PlanFeatureModel,
-  EntitlementModel,
-  MembershipIntentModel,
-  MembershipExtensionModel,
-  PlanAccessScopeModel,
   MembershipModel,
   MembershipStatusHistoryModel,
-  CustomerProfileModel,
-  StaffProfileModel,
-  StaffBranchScopeModel,
-  AccessCredentialModel,
-  AccessDeviceModel,
-  AccessDeviceEventModel,
-  AccessDecisionModel,
   NotificationModel,
   NotificationPreferenceModel,
   DeviceTokenModel,

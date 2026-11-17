@@ -34,7 +34,6 @@ jobs:
       REQUEST_BODY_LIMIT: 1mb
       LOG_LEVEL: error
       BUSINESS_TIME_ZONE: America/La_Paz
-      ACCESS_POLICY_VERSION: ci-policy
       DB_HOST: localhost
       DB_PORT: 5432
       DB_NAME: gym_sheet_ci
@@ -50,7 +49,6 @@ jobs:
       JWT_ISSUER: gym-sheet-api-ci
       JWT_AUDIENCE: gym-sheet-ci
       BCRYPT_SALT_ROUNDS: 10
-      WHATSAPP_MEMBERSHIP_PHONE: "59170000000"
       GATEWAY_ENABLED: "false"
       NOTIFICATION_DELIVERY_PROVIDER: IN_APP
       EXERCISES_DATASET_ENABLED: "false"

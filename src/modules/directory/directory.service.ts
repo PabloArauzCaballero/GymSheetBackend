@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize-typescript';
-import { AccessDecisionModel } from '../access-control/access-decision.model';
 import { MembershipModel } from '../membership/membership.model';
 import { NotificationChannel, UserRole } from '../../common/enums/domain.enums';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
@@ -40,8 +39,6 @@ export class DirectoryService {
     private readonly repository: DirectoryRepository,
     @InjectModel(MembershipModel)
     private readonly membershipModel: typeof MembershipModel,
-    @InjectModel(AccessDecisionModel)
-    private readonly accessDecisionModel: typeof AccessDecisionModel,
     private readonly sequelize: Sequelize,
     @Optional()
     private readonly notificationService?: NotificationService,
@@ -315,8 +312,8 @@ export class DirectoryService {
 
   /**
    * A gym listing's "verified athlete" seal: the author belongs to that gym
-   * and has a membership or a granted entry there. Memberships and access
-   * decisions carry no tenant column; the gym is the author's own (D3: the
+   * and has a subscription period. The ledger carries no tenant column for
+   * legacy rows; the gym is the author's own (D3: the
    * old query filtered by `tenantId`/`customerId`, which those tables do not
    * have, and every review of a gym listing failed with a 500).
    */
@@ -330,13 +327,8 @@ export class DirectoryService {
     }
     if (author.tenantId !== tenantId) return false;
 
+    // Physical access left the product (ADR-0026): a period of the ledger is the proof.
     const membership = await this.membershipModel.findOne({ where: { userId: author.id }, attributes: ['id'] });
-    if (membership) return true;
-
-    const access = await this.accessDecisionModel.findOne({
-      where: { userId: author.id, outcome: 'GRANTED' },
-      attributes: ['id'],
-    });
-    return Boolean(access);
+    return Boolean(membership);
   }
 }

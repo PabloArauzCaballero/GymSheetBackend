@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { ProductEvents } from '../../common/tracking/product-events';
-import { AccessDecisionModel } from '../access-control/access-decision.model';
 import { MembershipModel } from '../membership/membership.model';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { CategoryModel } from './category.model';
@@ -31,7 +30,6 @@ import { PublicDirectoryPaymentsController } from './public-directory-payments.c
       DirectoryReviewHelpfulModel,
       EntityPlanModel,
       MembershipModel,
-      AccessDecisionModel,
     ]),
   ],
   controllers: [

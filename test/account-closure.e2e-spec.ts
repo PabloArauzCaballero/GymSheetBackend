@@ -146,7 +146,7 @@ describe('Account closure (e2e)', () => {
         { id: seeded.paymentOrderId });
       expect(order).toMatchObject({ amount: '150.00', athlete_notes: null, receipt_reference: 'BANCO-123', athlete_user_id: closer.id });
       const customer = await selectOne<Record<string, unknown>>(sequelize,
-        'SELECT phone_number, notes, customer_number FROM membership.customer_profiles WHERE user_id = :id', { id: closer.id });
+        'SELECT phone_number, notes, customer_number FROM retired.membership_customer_profiles WHERE user_id = :id', { id: closer.id });
       expect(customer).toMatchObject({ phone_number: null, notes: null });
       expect(customer?.customer_number).toMatch(/^C-/);
       expect(await countRows(sequelize, 'membership.memberships', 't.user_id = :userId AND t.notes IS NULL', closer.id)).toBe(1);

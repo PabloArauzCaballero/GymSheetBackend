@@ -19,7 +19,6 @@ RUN yarn build \
     # `src/` shifts the inferred root and moves the entrypoint to dist/src/.
     && test -f dist/main.js \
     && test -f dist/database/migrate.js \
-    && test -f dist/workers/access-event.worker.js \
     && test -f dist/workers/membership-reminder.worker.js \
     && test -f dist/workers/notification-delivery.worker.js \
     && test -f dist/workers/exercises-dataset-refresh.worker.js \

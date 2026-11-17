@@ -18,6 +18,6 @@ import { MeAffiliationsController } from './me-affiliations.controller';
   imports: [BusinessAccountsModule, NotificationsModule],
   controllers: [MeAffiliationsController, GymAffiliationsController, CoachGymLinksController],
   providers: [AffiliationsRepository, AffiliationViewsRepository, AffiliationNotices, AffiliationRequestsService, GymAffiliationsService],
-  exports: [AffiliationsRepository, GymAffiliationsService],
+  exports: [AffiliationsRepository, AffiliationRequestsService, GymAffiliationsService],
 })
 export class AffiliationsModule {}

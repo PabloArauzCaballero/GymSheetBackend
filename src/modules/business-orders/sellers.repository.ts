@@ -5,7 +5,7 @@ import { Sequelize } from 'sequelize-typescript';
 import { EntityPaymentConfigModel } from '../directory/models/entity-payment-config.model';
 
 /** A seller as the orders see it: only an entity with a business account sells (ADR-0024). */
-export type SellerRow = { entityId: string; entityStatus: string; ownerUserId: string; accountStatus: string };
+export type SellerRow = { entityId: string; entityType: string; entityStatus: string; ownerUserId: string; accountStatus: string };
 
 /** Sellers and their payment configuration (`directory.entity_payment_configs`). */
 @Injectable()
@@ -17,7 +17,7 @@ export class SellersRepository {
 
   async findSeller(entityId: string, transaction?: Transaction): Promise<SellerRow | null> {
     const [row] = await this.sequelize.query<SellerRow>(
-      `SELECT e.id AS "entityId", e.status AS "entityStatus", a.user_id AS "ownerUserId", a.status AS "accountStatus"
+      `SELECT e.id AS "entityId", e.entity_type AS "entityType", e.status AS "entityStatus", a.user_id AS "ownerUserId", a.status AS "accountStatus"
          FROM directory.entities e JOIN business.accounts a ON a.entity_id = e.id
         WHERE e.id = :entityId`,
       { type: QueryTypes.SELECT, replacements: { entityId }, transaction },

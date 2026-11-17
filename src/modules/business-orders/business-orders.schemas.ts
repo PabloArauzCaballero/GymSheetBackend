@@ -12,9 +12,27 @@ export const createOrderSchema = z
     quantity: z.number().int().min(1).max(1000).default(1),
     method: z.enum(ORDER_METHODS).default('QR'),
     note: z.string().trim().max(500).optional(),
+    /**
+     * A gym membership needs the buyer's SOCIO affiliation at that gym (ADR-0026):
+     * without one, the checkout asks the location and the last three CI digits
+     * and the order creates the REQUESTED affiliation in the same transaction.
+     * `switchGym` confirms a «cambio de gimnasio» (ADR-0025 §7).
+     */
+    affiliation: z
+      .object({
+        locationId: z.string().uuid(),
+        ciLast3: z.string().regex(/^[0-9]{3}$/u, 'Escribe los últimos 3 dígitos de tu CI.'),
+        switchGym: z.boolean().default(false),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
+
+/** «También confirmo que es socio» is checked by default: the business unchecks it to confirm only the payment. */
+export const confirmOrderSchema = z.object({ alsoConfirmAffiliation: z.boolean().default(true) }).strict().default({});
+export type ConfirmOrderInput = z.infer<typeof confirmOrderSchema>;
 
 /** Optional text sent with the receipt (multipart field), e.g. the bank's operation number. */
 export const receiptFieldsSchema = z

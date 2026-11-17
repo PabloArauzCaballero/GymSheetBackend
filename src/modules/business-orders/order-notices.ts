@@ -10,10 +10,16 @@ export type OrderNotice =
   | { kind: 'NEW_CASH_ORDER' }
   | { kind: 'RECEIPT_RECEIVED'; attempt: number }
   | { kind: 'VERIFICATION_REMINDER'; level: number; attempt: number }
-  | { kind: 'CONFIRMED' }
+  | { kind: 'CONFIRMED'; period?: { startsOn: string; endsOn: string | null } | null }
   | { kind: 'REJECTED'; code: RejectionCode; note: string | null; attempt: number }
   | { kind: 'EXPIRED' }
   | { kind: 'BUSINESS_UNAVAILABLE' };
+
+/** The period a confirmed order opened, in the buyer's words. */
+function periodText(period: { startsOn: string; endsOn: string | null } | null): string {
+  if (!period) return '';
+  return period.endsOn ? ` Tu suscripción va del ${period.startsOn} al ${period.endsOn}.` : ` Tu suscripción empieza el ${period.startsOn}.`;
+}
 
 function render(order: OrderRef, notice: OrderNotice): { subject: string; body: string; dedup: string } {
   const what = `«${order.listingName}» (${order.amount} ${order.currency.trim()})`;
@@ -25,7 +31,11 @@ function render(order: OrderRef, notice: OrderNotice): { subject: string; body: 
     case 'VERIFICATION_REMINDER':
       return { subject: `Pedido por confirmar · ${order.orderNumber}`, body: `Un comprobante de ${what} espera tu decisión. Quien pagó está esperando: confírmalo o recházalo.`, dedup: `reminder:${notice.attempt}:${notice.level}` };
     case 'CONFIRMED':
-      return { subject: `Pedido confirmado · ${order.orderNumber}`, body: `El negocio confirmó tu pago de ${what}.`, dedup: 'confirmed' };
+      return {
+        subject: `Pedido confirmado · ${order.orderNumber}`,
+        body: `El negocio confirmó tu pago de ${what}.${periodText(notice.period ?? null)}`,
+        dedup: 'confirmed',
+      };
     case 'REJECTED':
       return {
         subject: `Pedido observado · ${order.orderNumber}`,

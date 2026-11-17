@@ -1071,6 +1071,42 @@ código de 92af562 las suites nuevas no compilan (módulo inexistente) y el inve
 Fuera de 7b: lectores de «Mi gimnasio», sello «Socio de X» y Conocer sobre la afiliación (7c); suscripciones
 (8e, gancho `confirmInTransaction`); qué pasa con las afiliaciones al cerrar un gimnasio (8f).
 
+### Franja 8e: suscripciones = afiliación SOCIO + compra en el marketplace (ADR-0026)
+
+| Cambio / riesgo | Corrección | Prueba |
+|---|---|---|
+| Dos vías de alta (catálogo global del gimnasio con intenciones, enlaces de activación y extensión en el sitio sin alcance de tenant; puente `dir_…` del marketplace) | Un solo libro de periodos (`membership.memberships`): un pedido confirmado = un periodo nuevo (`uq_memberships_payment_order`), encadenado tras el último ACTIVE de la misma publicación; se elimina el puente | `subscription.catalog.spec.ts`, `test/subscriptions-checkout.e2e-spec.ts` (renovación encadenada, el primer periodo intacto) |
+| Membresía de gimnasio sin afiliación | El pedido del `MEMBERSHIP` de una ficha GYM exige la SOCIO: sin ella, `422 AFFILIATION_REQUIRED`; con sede y CI, la solicitud nace en la misma transacción (reglas de ADR-0025: correo verificado, sede del gimnasio, `409 SOCIO_OF_ANOTHER_GYM` con la acción de cambio) | `checkout-affiliation.spec.ts`, `buyer-orders.service.spec.ts`, e2e (ningún pedido creado ante el `409`) |
+| Confirmación a medias | Persona → pedido → SOCIO → periodo → pedido `CONFIRMED` en una transacción; un gimnasio no público (`409 GYM_NOT_ACTIVE`) o un periodo que falla dejan pedido y afiliación como estaban; un aviso que falla no deshace nada | e2e «nothing is half-done» (suspensión real, fallo inyectado del libro y de los avisos), `business-orders.service.spec.ts` |
+| Manipulación de precio o vigencia | Cuerpos estrictos (`validityDays`, `startsOn`, `amount` → `400`); la vigencia y las sesiones salen de la copia del pedido, no de la publicación editada después | e2e «what was sold is what is opened» |
+| BOLA: una persona lee periodos ajenos | Toda lectura acotada a `user_id`; ajeno `404`, lista vacía | e2e |
+| BOLA: un negocio lee o cancela suscriptores de otro, o filas heredadas | Lecturas y escrituras acotadas a `entity_id` de la cuenta y a `origin = MARKETPLACE`; ajeno o LEGACY `404` | e2e (otro gimnasio y fila LEGACY atribuida al gimnasio: `404` al ver, cancelar, pausar) |
+| BFLA | `business/me/subscriptions*` solo `NEGOCIO` (persona y `SYSTEM_ADMIN` `403`); `me/subscriptions*` solo personas | e2e, `account-kind.route-inventory.spec.ts` (falla contra a3c0a5f) |
+| Datos personales que ve el negocio | Nombre visible, afiliación con sede, plan, fechas y último pago; nunca correo, id de usuario ni CI | e2e (el JSON no contiene correo ni id) |
+| Integridad del libro | FK compuestas (publicación del vendedor; afiliación de esa persona en ese gimnasio), CHECK de origen, tipo, fin opcional solo para packs y sesiones | migración `202611201001`, e2e |
+| Maquinaria retirada con datos personales | Tablas al esquema `retired` (reversible); el catálogo de cierre y la exportación las siguen cubriendo; inventario de FK a `usuarios` | `account-closure.e2e-spec.ts`, `account-export-email.e2e-spec.ts`, `subscriptions-retirement.e2e-spec.ts` (rutas retiradas `404`, migraciones down → up con filas LEGACY y MARKETPLACE idénticas) |
+| Control de acceso físico fuera del producto | Módulo `access-control`, `worker:access`, variables y rutas retiradas; las tablas `access_control.*` quedan para la clasificación de Conocer (7c) | e2e de rutas retiradas, arranque real de la API y de los workers sin las variables |
+
+Evidencia (17/11/2026, sobre 368d2fe = 7b con su corrección; base `gym_sheet_f8e_e2e` nueva con schema +
+migraciones up → down → up + semilla base): `yarn lint` y `yarn type-check` limpios; `yarn build` OK (sin
+`dist/workers/access-event.worker.js`); unitarias 261 suites / 2387 pruebas en verde (se borraron 7 suites de lo
+retirado y se sumaron 2); e2e nuevas `subscriptions-checkout` 7, `subscriptions-views` 7 y
+`subscriptions-retirement` 2 en verde; e2e completa: 79 suites en verde y en rojo las 47 de la línea base
+(mismos nombres) más una de `minor-reports-closure` por el límite de 5 s con la máquina cargada (aislada pasa
+5/5 con límite de 20 s; la más lenta tarda 4,7 s). Contra a3c0a5f las suites nuevas no compilan y las
+unitarias cambiadas fallan (5 suites). Migraciones por CLI en la base de desarrollo con una fila LEGACY y un
+pack MARKETPLACE sin fin: down → down → up deja las filas idénticas (salvo la referencia al plan espejo en
+`retired_plan_id`). Arranque real del artefacto compilado **sin** `WHATSAPP_MEMBERSHIP_PHONE`,
+`ACTIVATION_LINK_TTL_HOURS`, `ACCESS_*` ni `PORTAL_PUBLIC_URL`: `/health/ready` 200 con migraciones al día,
+rutas retiradas 404, `/me/subscriptions` 401 sin token; `membership-reminder` (escaneó el libro),
+`notification-delivery`, `orders-maintenance`, `stories-purge`, `privacy-retention`, `account-data` y
+`program-week-close` emiten su arranque y `worker.shutdown_requested` y salen con 0 ante SIGTERM.
+`yarn audit:prod`: 14 avisos (1 bajo, 9 moderados, 4 altos), sin cambios de dependencias en esta franja.
+
+Fuera de 8e: consumo de sesiones (`sessions_used`) sin ruta todavía; «Mi gimnasio» por afiliación (7c); registro
+del pago en efectivo por el negocio (`orders/cash`); cierre del negocio y sus suscriptores (8f); `DROP` de
+`retired.*` (franja posterior, ≥ 30 días); contracción de `access_control.*` y de las tablas de personal (7d).
+
 ---
 
 ## 5. Matriz de alcance funcional (dominio real: gimnasio)

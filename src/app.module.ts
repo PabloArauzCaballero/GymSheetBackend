@@ -10,6 +10,7 @@ import { BusinessAccountsModule } from './modules/business-accounts/business-acc
 import { BusinessKycModule } from './modules/business-kyc/business-kyc.module';
 import { BusinessListingsModule } from './modules/business-listings/business-listings.module';
 import { BusinessOrdersModule } from './modules/business-orders/business-orders.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { AccountKindGuard } from './common/guards/account-kind.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { EmailVerificationGuard } from './common/guards/email-verification.guard';
@@ -21,7 +22,6 @@ import { RealtimeModule } from './common/realtime/realtime.module';
 import { env } from './config/env';
 import { DatabaseModule } from './database/database.module';
 import { GatewayModule } from './gateway/gateway.module';
-import { AccessControlModule } from './modules/access-control/access-control.module';
 import { AdminAccessModule } from './modules/admin-access/admin-access.module';
 import { AntibotModule } from './modules/antibot/antibot.module';
 import { AuditInterceptor } from './modules/admin-access/audit.interceptor';
@@ -34,7 +34,6 @@ import { ExportModule } from './modules/export/export.module';
 import { FacilitiesModule } from './modules/facilities/facilities.module';
 import { HealthModule } from './modules/health/health.module';
 import { MediaModule } from './modules/media/media.module';
-import { MembershipModule } from './modules/membership/membership.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
 import { MusicModule } from './modules/music/music.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -121,9 +120,7 @@ import { ConsentsModule } from './modules/consents/consents.module';
     ProfilesModule,
     EquipmentModule,
     FacilitiesModule,
-    MembershipModule,
     ModerationModule,
-    AccessControlModule,
     NotificationsModule,
     ExercisesModule,
     WorkoutsModule,
@@ -149,6 +146,7 @@ import { ConsentsModule } from './modules/consents/consents.module';
     BusinessListingsModule,
     BusinessOrdersModule,
     AffiliationsModule,
+    SubscriptionsModule,
     VerificationModule,
   ],
   providers: [

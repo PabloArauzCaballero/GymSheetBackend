@@ -82,7 +82,8 @@ describe('RolesGuard — admin/* is platform only (franja 7a)', () => {
 
   it('finds the admin routes it is meant to guard', () => {
     // Without this a renamed directory would leave the checks below passing on an empty list.
-    expect(routes.length).toBeGreaterThan(100);
+    // `admin/membership/*` and `admin/access/*` left the product with franja 8e (ADR-0026).
+    expect(routes.length).toBeGreaterThan(80);
   });
 
   it('every admin/* route declares only platform roles', () => {

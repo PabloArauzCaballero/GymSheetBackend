@@ -9,9 +9,11 @@ import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
 import { UploadedSelfie } from '../verification/selfie-image';
 import {
+  ConfirmOrderInput,
   OrderListQuery,
   PaymentConfigInput,
   RejectOrderInput,
+  confirmOrderSchema,
   orderListQuerySchema,
   paymentConfigSchema,
   rejectOrderSchema,
@@ -51,8 +53,12 @@ export class BusinessOrdersController {
 
   @Post(':id/confirm')
   @HttpCode(HttpStatus.OK)
-  confirm(@CurrentUser() actor: AuthenticatedUser, @Param('id', UuidParamPipe) id: string) {
-    return this.orders.confirm(actor, id);
+  confirm(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id', UuidParamPipe) id: string,
+    @Body(new ZodValidationPipe(confirmOrderSchema)) input: ConfirmOrderInput,
+  ) {
+    return this.orders.confirm(actor, id, input);
   }
 
   @Post(':id/reject')

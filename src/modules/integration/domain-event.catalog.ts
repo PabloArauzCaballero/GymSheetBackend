@@ -1,5 +1,4 @@
 import {
-  AccessDecisionOutcome,
   EmploymentStatus,
   MaintenanceStatus,
   MembershipStatus,
@@ -11,11 +10,11 @@ export const GymDomainEvent = {
   STAFF_STATUS_CHANGED: "staff.employment-status-changed.v1",
   MEMBERSHIP_ACTIVATED: "membership.activated.v1",
   MEMBERSHIP_STATUS_CHANGED: "membership.status-changed.v1",
+  SUBSCRIPTION_PERIOD_OPENED: "subscription.period-opened.v1",
   EQUIPMENT_ASSIGNED: "equipment.assigned-to-room.v1",
   MAINTENANCE_SCHEDULED: "equipment.maintenance-scheduled.v1",
   MAINTENANCE_STARTED: "equipment.maintenance-started.v1",
   MAINTENANCE_COMPLETED: "equipment.maintenance-completed.v1",
-  ACCESS_DECISION_RECORDED: "access.decision-recorded.v1",
   NOTIFICATION_DELIVERY_REQUESTED: "notification.delivery-requested.v1",
   SOCIAL_PROFILE_UPDATED: "social.profile.updated.v1",
   SOCIAL_PROFILE_DELETED: "social.profile.deleted.v1",
@@ -61,6 +60,17 @@ export type GymDomainEventPayloadMap = {
     toStatus: MembershipStatus;
     reason: string | null;
   };
+  /** A confirmed marketplace order opened a period of the ledger (ADR-0026). */
+  [GymDomainEvent.SUBSCRIPTION_PERIOD_OPENED]: {
+    membershipId: string;
+    userId: string;
+    entityId: string;
+    entityPlanId: string;
+    paymentOrderId: string;
+    affiliationId: string | null;
+    startsOn: string;
+    endsOn: string | null;
+  };
   [GymDomainEvent.EQUIPMENT_ASSIGNED]: {
     equipmentId: string;
     assignmentId: string;
@@ -82,14 +92,6 @@ export type GymDomainEventPayloadMap = {
     maintenanceEventId: string;
     status: MaintenanceStatus.COMPLETED;
     nextServiceOn: string | null;
-  };
-  [GymDomainEvent.ACCESS_DECISION_RECORDED]: {
-    deviceEventId: string;
-    decisionId: string;
-    userId: string;
-    direction: "ENTRY" | "EXIT";
-    outcome: AccessDecisionOutcome;
-    reasonCode: string;
   };
   [GymDomainEvent.NOTIFICATION_DELIVERY_REQUESTED]: {
     notificationId: string;

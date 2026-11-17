@@ -219,20 +219,22 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
   keep("moderation.auto_hide_reviews", "Revisiones de contenido ocultado por denuncias", "t.author_user_id = :userId",
     "Registro de la revisión de moderación del contenido ocultado; no lleva tu nombre ni tu correo."),
 
-  // The gym's records (the gym is responsible; REPP only processes them).
+  // The gym's records (the gym is responsible; REPP only processes them). The `retired.*` tables
+  // hold the gym-operated membership machinery retired by ADR-0026 until their final DROP: their
+  // personal data is still erased here.
   anonymize("membership.staff_profiles", "Ficha de personal del gimnasio", OWN,
     `employment_status = 'TERMINATED', terminated_on = GREATEST(t.hired_on, COALESCE(t.terminated_on, CURRENT_DATE)),
      unlimited_access = false, metadata = '{}'::jsonb, updated_at = now()`,
     "El gimnasio conserva el puesto y las fechas de la relación laboral; la ficha queda dada de baja."),
-  anonymize("membership.customer_profiles", "Ficha de socio del gimnasio", OWN,
+  anonymize("retired.membership_customer_profiles", "Ficha de socio del gimnasio (registro retirado)", OWN,
     "phone_number = NULL, notes = NULL, metadata = '{}'::jsonb, updated_at = now()", GYM_RECORD),
-  anonymize("membership.memberships", "Membresías", OWN, "notes = NULL, updated_at = now()", GYM_RECORD),
-  keep("membership.status_history", "Historial de tus membresías",
+  anonymize("membership.memberships", "Suscripciones y membresías", OWN, "notes = NULL, updated_at = now()", GYM_RECORD),
+  keep("membership.status_history", "Historial de tus suscripciones",
     "t.membership_id IN (SELECT m.id FROM membership.memberships m WHERE m.user_id = :userId)", GYM_RECORD),
-  keep("membership.extensions", "Extensiones de membresía",
+  keep("retired.membership_extensions", "Extensiones de membresía (registro retirado)",
     "t.membership_id IN (SELECT m.id FROM membership.memberships m WHERE m.user_id = :userId)", GYM_RECORD),
-  keep("membership.intents", "Compras de membresía", OWN, GYM_RECORD),
-  keep("membership.entitlements", "Beneficios de membresía", OWN, GYM_RECORD),
+  keep("retired.membership_intents", "Compras de membresía (registro retirado)", OWN, GYM_RECORD),
+  keep("retired.membership_entitlements", "Beneficios de membresía (registro retirado)", OWN, GYM_RECORD),
   anonymize("directory.payment_orders", "Órdenes de pago y comprobantes", "t.athlete_user_id = :userId",
     "athlete_notes = NULL, updated_at = now()", GYM_RECORD),
   // The order's history stays for the business without the buyer's name on its own steps (ADR-0024).
@@ -246,7 +248,7 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
     "Las vigentes terminan y se borran los dígitos del CI; el gimnasio ve «Cuenta cerrada» con las fechas."),
   anonymize("directory.affiliation_history", "Historial de tus afiliaciones", "t.actor_user_id = :userId",
     "actor_user_id = NULL", "Los cambios quedan sin tu cuenta como autor."),
-  anonymize("public.membership_activation_requests", "Activaciones de membresía", OWN_ES,
+  anonymize("retired.membership_activation_requests", "Activaciones de membresía (registro retirado)", OWN_ES,
     "nota = NULL, updated_at = now()", GYM_RECORD),
   anonymize("access_control.credentials", "Credenciales de acceso al gimnasio", OWN,
     `status = 'REVOKED', revoked_at = COALESCE(t.revoked_at, now()), revocation_reason = 'Cuenta cerrada',
