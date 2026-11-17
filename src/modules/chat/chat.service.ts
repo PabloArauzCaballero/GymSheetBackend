@@ -320,6 +320,7 @@ export class ChatService {
     if (!participant.canWrite) {
       throw new ForbiddenException("Esta conversación es de solo lectura.");
     }
+    await this.repository.assertBusinessSenderActive(conversationId, senderId);
 
     const plainBuffer = mimeType.startsWith("image/")
       ? await stripChatImageMetadata(file.buffer, mimeType)
@@ -372,6 +373,7 @@ export class ChatService {
     if (source.viewOnce) throw new BadRequestException("Los mensajes de vista única no se pueden reenviar.");
     const target = await this.assertParticipant(targetConversationId, userId);
     if (!target.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
+    await this.repository.assertBusinessSenderActive(targetConversationId, userId);
 
     if (source.type === "image" || source.type === "video" || source.type === "audio") {
       if (!source.mediaKey || !source.mediaMimeType || source.mediaProvider !== this.mediaStorage.name) {

@@ -267,6 +267,21 @@ describe('ModerationService', () => {
       expect(evidence.captureChatMessage).toHaveBeenCalledWith('message-1', expect.anything());
     });
 
+    it('a chat message from a business (no gym) is reportable by the participant, and only by them (ADR-0023)', async () => {
+      const chatInput = { ...reportInput, targetKind: ModerationTargetKind.CHAT_MESSAGE, targetId: 'message-1' };
+      const fromBusiness = { findContentOwner: jest.fn().mockResolvedValue({ userId: 'business-1', tenantId: 'default-tenant' }) };
+      const participant = build({ ...fromBusiness, canReporterViewChatMessage: jest.fn().mockResolvedValue(true) });
+      await expect(participant.service.report(reporter, chatInput)).resolves.toMatchObject({ id: 'report-1' });
+      expect(participant.repository.createReport).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'default-tenant', reportedUserId: 'business-1', targetKind: 'CHAT_MESSAGE' }),
+        expect.anything(),
+      );
+
+      const outsider = build({ ...fromBusiness, canReporterViewChatMessage: jest.fn().mockResolvedValue(false) });
+      await expect(outsider.service.report(reporter, chatInput)).rejects.toBeInstanceOf(NotFoundException);
+      expect(outsider.repository.createReport).not.toHaveBeenCalled();
+    });
+
     it('al ocultar por umbral abre un caso de revisión y avisa a la autora con el motivo', async () => {
       const { service, safeguards, notifications } = build({ countDistinctReporters: jest.fn().mockResolvedValue(3) });
       await service.report(reporter, reportInput);

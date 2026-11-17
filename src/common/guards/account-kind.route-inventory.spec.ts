@@ -97,6 +97,21 @@ const BUSINESS_REACHABLE: string[] = [
   'POST business/me/gym-links',
   'POST business/me/gym-links/:id/cancel',
   'POST business/me/gym-links/:id/end',
+  // Chat with the persons who wrote to the business (ADR-0023, franja 8f). It never opens one.
+  'DELETE me/conversations/:id/messages/:messageId',
+  'GET me/conversations',
+  'GET me/conversations/:id/messages',
+  'GET me/conversations/:id/messages/:messageId/media',
+  'PATCH me/conversations/:id/messages/:messageId',
+  'PATCH me/conversations/:id/nickname',
+  'POST business/me/conversations/:id/block',
+  'POST me/conversations/:id/messages',
+  'POST me/conversations/:id/messages/:messageId/view',
+  'POST me/conversations/:id/messages/forward',
+  'POST me/conversations/:id/messages/media',
+  'POST me/conversations/:id/read',
+  'PUT me/conversations/:id/disappearing',
+  'PUT me/conversations/:id/messages/:messageId/reaction',
 ];
 
 type Route = { method: string; path: string; controller: Type; handler: object };
@@ -159,7 +174,7 @@ describe('route inventory: what a business account can reach (ADR-0020)', () => 
   it('a business reaches exactly the decided routes', () => {
     const reachable = routes
       .filter((route) => !isPublic(route))
-      .filter((route) => accountKindMayReach('BUSINESS', `${route.path}/`))
+      .filter((route) => accountKindMayReach('BUSINESS', `${route.path}/`, route.method))
       .filter((route) => !roles(route)?.length || roles(route)?.includes(UserRole.BUSINESS))
       .map((route) => `${route.method} ${route.path}`)
       .sort();
@@ -177,7 +192,7 @@ describe('route inventory: what a business account can reach (ADR-0020)', () => 
   it('a person is refused on every business/* route', () => {
     const open = routes
       .filter((route) => route.path.startsWith('business/') && !isPublic(route))
-      .filter((route) => accountKindMayReach('PERSON', `${route.path}/`));
+      .filter((route) => accountKindMayReach('PERSON', `${route.path}/`, route.method));
     expect(open).toEqual([]);
   });
 });

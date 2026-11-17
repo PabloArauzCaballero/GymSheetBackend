@@ -117,6 +117,7 @@ import { workoutExerciseSwapsMigration } from "./202610220001-workout-exercise-s
 import { branchLocationMigration } from "./202611080001-branch-location";
 import { tutorialProgressInitialMigration } from "./202611080001-tutorial-progress";
 import { tutorialProgressMigration } from "./202611120001-tutorial-progress";
+import { messagePreviewsOnByDefaultMigration } from "./202611160001-message-previews-on-by-default";
 import { progressionStrikesAndCoachCardsMigration } from "./202610190002-progression-strikes-and-coach-cards";
 import { socialProfileDetailsMigration } from "./202611160101-social-profile-details";
 import { userBirthDateAndLegalAcceptancesMigration } from "./202611160201-user-birth-date-and-legal-acceptances";
@@ -142,6 +143,7 @@ import { storedNameSkeletonMigration } from "./202611200403-stored-name-skeleton
 import { businessKycMigration } from "./202611200501-business-kyc";
 import { businessListingsMigration } from "./202611200601-business-listings";
 import { listingVersionStampMigration } from "./202611200602-listing-version-stamp";
+import { businessConversationsMigration } from "./202611200701-business-conversations";
 import { businessOrdersMigration } from "./202611200801-business-orders";
 import { affiliationsMigration } from "./202611200901-affiliations";
 import { affiliationsClosedRowsMigration } from "./202611200901-affiliations-closed-rows";
@@ -273,6 +275,7 @@ export const databaseMigrations: DatabaseMigration[] = [
   // porque TEST pudo aplicar ya el primero.
   tutorialProgressInitialMigration,
   tutorialProgressMigration,
+  messagePreviewsOnByDefaultMigration,
   socialProfileDetailsMigration,
   userBirthDateAndLegalAcceptancesMigration,
   emailVerificationDevicesIdentitiesMigration,
@@ -296,6 +299,7 @@ export const databaseMigrations: DatabaseMigration[] = [
   businessKycMigration,
   businessListingsMigration,
   listingVersionStampMigration,
+  businessConversationsMigration,
   businessOrdersMigration,
   affiliationsMigration,
   affiliationsClosedRowsMigration,

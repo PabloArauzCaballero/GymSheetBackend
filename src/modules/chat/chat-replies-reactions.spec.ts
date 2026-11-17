@@ -247,6 +247,7 @@ describe("ChatService.forwardMessage", () => {
       publishMessageIfVisible: jest.fn(async (_c: string, _m: string, publish: () => void) => { publish(); return true; }),
       refreshMessageForResponse: jest.fn(async (created: MessageModel) => created),
       listOtherParticipants: jest.fn().mockResolvedValue([]),
+      assertBusinessSenderActive: jest.fn().mockResolvedValue(undefined),
     };
     const storage = {
       name: "local",

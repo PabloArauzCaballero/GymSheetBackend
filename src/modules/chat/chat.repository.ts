@@ -5,13 +5,14 @@ import { hasOpenReportSql } from "../../common/moderation/open-report.sql";
 import { literal, Op, QueryTypes, Transaction, type WhereOptions } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { ConversationParticipantModel } from "./conversation-participant.model";
-import { ConversationModel } from "./conversation.model";
+import { ConversationModel, type ConversationKind } from "./conversation.model";
 import { MessageVisibilityModel } from "./message-visibility.model";
 import { lockSocialPairUsers } from "../social/social-pair-lock";
 import { MessageModel, MessageType } from "./message.model";
 import { expiryFor } from "./chat-disappearing";
 import { MessageReactionModel } from "./message-reaction.model";
 import { replyPreviewOf, type MessageExtras, type MessageReaction } from "./chat.mapper";
+import { assertBusinessDisappearingAllowed, assertBusinessMessageAllowed, businessSenderLocked } from "./business-chat.rules";
 
 export const REPLY_UNAVAILABLE_MESSAGE = "El mensaje al que respondes ya no está disponible.";
 
@@ -40,6 +41,9 @@ export type MessageCreateFields = {
   forwarded?: boolean;
 };
 
+/** What the last item of a conversation is, so clients can pick an icon for its preview. */
+export type ConversationPreviewType = MessageType | "system" | "deleted";
+
 export interface ConversationSummaryRow {
   conversation_id: string;
   other_user_id: string;
@@ -47,9 +51,16 @@ export interface ConversationSummaryRow {
   other_user_photo_url: string | null;
   other_user_last_seen_at: string | null;
   last_message_body: string | null;
+  last_message_type: ConversationPreviewType | null;
+  last_message_from_me: boolean | null;
   last_message_at: string | null;
   can_write: boolean;
   system_kind: SystemConversationKind | null;
+  kind: ConversationKind;
+  /** The listing of a BUSINESS conversation; `null` otherwise. */
+  business_entity_id: string | null;
+  /** The viewer is the business and the other side is its customer: only name and avatar of the person. */
+  viewer_is_business: boolean;
   /** Apodo que YO le puse a esta conversación, o `null` si no le puse ninguno. */
   nickname: string | null;
   /** Cursores del OTRO participante — con qué comparar el `createdAt` de mis propios mensajes para pintar el check. */
@@ -271,6 +282,7 @@ export class ChatRepository {
          FROM chat.participants p1
          JOIN chat.participants p2 ON p2.conversation_id = p1.conversation_id
          JOIN chat.conversations c ON c.id = p1.conversation_id AND c.revoked_at IS NULL
+          AND c.kind <> 'BUSINESS'
         WHERE p1.user_id = :userA AND p2.user_id = :userB
           AND (SELECT COUNT(*) FROM chat.participants p3 WHERE p3.conversation_id = p1.conversation_id) = 2
         LIMIT 1`,
@@ -337,7 +349,7 @@ export class ChatRepository {
          FROM chat.participants p1
          JOIN chat.participants p2 ON p2.conversation_id = p1.conversation_id
          JOIN chat.conversations c ON c.id = p1.conversation_id
-          AND c.revoked_at IS NULL AND c.system_kind IS NULL
+          AND c.revoked_at IS NULL AND c.system_kind IS NULL AND c.kind = 'DIRECT'
         WHERE p1.user_id = :userA AND p2.user_id = :userB
           AND (SELECT COUNT(*) FROM chat.participants p3 WHERE p3.conversation_id = p1.conversation_id) = 2
         ORDER BY c.created_at DESC
@@ -372,7 +384,7 @@ export class ChatRepository {
   ): Promise<string> {
     return this.sequelize.transaction(async (transaction) => {
       const conversation = await this.conversations.create(
-        { systemKind },
+        { systemKind, kind: "SYSTEM" },
         { transaction },
       );
       await this.participants.bulkCreate(
@@ -550,6 +562,8 @@ export class ChatRepository {
       });
       if (!participant) throw new NotFoundException("Conversación no encontrada.");
       if (!participant.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
+      assertBusinessMessageAllowed(conversation.kind, fields.type);
+      await this.assertBusinessSenderActive(conversationId, senderId, transaction);
       // El modo temporal se lee bajo el mismo bloqueo que lo cambia: un mensaje
       // enviado justo después de activarlo ya nace con caducidad.
       await this.assertReplyTarget(conversationId, senderId, fields.replyToId, transaction);
@@ -577,6 +591,8 @@ export class ChatRepository {
       });
       if (!participant) throw new NotFoundException("Conversación no encontrada.");
       if (!participant.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
+      assertBusinessMessageAllowed(conversation.kind, fields.type);
+      await this.assertBusinessSenderActive(conversationId, senderId, transaction);
 
       const existing = await this.messages.findOne({
         where: { conversationId, senderId, clientRequestId }, transaction,
@@ -614,6 +630,20 @@ export class ChatRepository {
       }, { transaction });
       return { message, created: true };
     });
+  }
+
+  /**
+   * A business that REPP suspended (or that closed) stops sending in its
+   * conversations; its customers can still write to it (ADR-0023).
+   */
+  async assertBusinessSenderActive(conversationId: string, senderId: string, transaction?: Transaction): Promise<void> {
+    const [locked] = await this.sequelize.query<{ status: string }>(
+      `SELECT a.status FROM chat.conversations c
+         JOIN business.accounts a ON a.entity_id = c.business_entity_id AND a.user_id = :senderId
+        WHERE c.id = :conversationId AND c.kind = 'BUSINESS' AND a.status <> 'ACTIVE'`,
+      { type: QueryTypes.SELECT, replacements: { conversationId, senderId }, ...(transaction ? { transaction } : {}) },
+    );
+    if (locked) throw businessSenderLocked();
   }
 
   getMessage(conversationId: string, messageId: string, userId: string): Promise<MessageModel | null> {
@@ -756,16 +786,27 @@ export class ChatRepository {
     return this.sequelize.query<ConversationSummaryRow>(
       `SELECT c.id AS conversation_id,
               other.user_id AS other_user_id,
-              u.nombre_completo AS other_user_name,
-              other_photo.url AS other_user_photo_url,
-              u.last_seen_at AS other_user_last_seen_at,
-              CASE WHEN last_msg.deleted_at IS NOT NULL THEN 'Mensaje eliminado' ELSE CASE last_msg.type
-                WHEN 'image' THEN COALESCE(last_msg.body, 'Foto')
-                WHEN 'video' THEN COALESCE(last_msg.body, 'Video')
-                WHEN 'location' THEN 'Ubicación'
-                WHEN 'sticker' THEN 'Sticker'
+              -- In a BUSINESS conversation the person sees the listing; the business sees only the person's name and avatar.
+              CASE WHEN c.kind = 'BUSINESS' AND other.user_id <> c.person_user_id THEN be.name ELSE u.nombre_completo END AS other_user_name,
+              CASE WHEN c.kind = 'BUSINESS' AND other.user_id <> c.person_user_id THEN be.logo_url ELSE other_photo.url END AS other_user_photo_url,
+              CASE WHEN c.kind = 'BUSINESS' AND other.user_id = c.person_user_id THEN NULL ELSE u.last_seen_at END AS other_user_last_seen_at,
+              c.kind AS kind,
+              c.business_entity_id AS business_entity_id,
+              (c.kind = 'BUSINESS' AND other.user_id = c.person_user_id) AS viewer_is_business,
+              CASE WHEN last_msg.deleted_at IS NOT NULL THEN 'Mensaje eliminado' ELSE CASE
+                -- A view-once caption would leak the content the sender meant to show only once.
+                WHEN last_msg.view_once AND last_msg.type = 'image' THEN 'Foto de una vista'
+                WHEN last_msg.view_once AND last_msg.type = 'video' THEN 'Video de una vista'
+                WHEN last_msg.view_once AND last_msg.type = 'audio' THEN 'Nota de voz de escucha única'
+                WHEN last_msg.type = 'image' THEN COALESCE(NULLIF(last_msg.body, ''), 'Foto')
+                WHEN last_msg.type = 'video' THEN COALESCE(NULLIF(last_msg.body, ''), 'Video')
+                WHEN last_msg.type = 'audio' THEN 'Nota de voz'
+                WHEN last_msg.type = 'location' THEN COALESCE(last_msg.location_label, 'Ubicación')
+                WHEN last_msg.type = 'sticker' THEN 'Sticker'
                 ELSE last_msg.body
               END END AS last_message_body,
+              CASE WHEN last_msg.deleted_at IS NOT NULL THEN 'deleted' ELSE last_msg.type END AS last_message_type,
+              (last_msg.sender_id IS NOT NULL AND last_msg.sender_id = :userId) AS last_message_from_me,
               last_msg.created_at AS last_message_at,
               mine.can_write AS can_write,
               c.system_kind AS system_kind,
@@ -792,6 +833,7 @@ export class ChatRepository {
          LEFT JOIN chat.read_receipt_settings mine_receipts ON mine_receipts.user_id = mine.user_id
          LEFT JOIN chat.read_receipt_settings other_receipts ON other_receipts.user_id = other.user_id
          JOIN public.usuarios u ON u.id = other.user_id
+         LEFT JOIN directory.entities be ON be.id = c.business_entity_id
          LEFT JOIN LATERAL (
            SELECT url FROM profile.photos p
             WHERE p.user_id = other.user_id
@@ -799,9 +841,11 @@ export class ChatRepository {
             ORDER BY p.position ASC LIMIT 1
          ) other_photo ON true
          LEFT JOIN LATERAL (
-           SELECT item.body, item.type, item.created_at, item.deleted_at
+           SELECT item.body, item.type, item.created_at, item.deleted_at,
+                  item.view_once, item.location_label, item.sender_id
              FROM (
-               SELECT m.id, m.body, m.type, m.created_at, m.deleted_at
+               SELECT m.id, m.body, m.type, m.created_at, m.deleted_at,
+                      m.view_once, m.location_label, m.sender_id
                  FROM chat.messages m
                 WHERE m.conversation_id = c.id
                   AND (m.expires_at IS NULL OR m.expires_at > now())
@@ -809,13 +853,15 @@ export class ChatRepository {
                UNION ALL
                SELECT e.id,
                       CASE WHEN e.cancelled_at IS NULL THEN 'Entrenamiento acordado' ELSE 'Entrenamiento cancelado' END AS body,
-                      'system'::text AS type, e.created_at, NULL::timestamptz AS deleted_at
+                      'system'::text AS type, e.created_at, NULL::timestamptz AS deleted_at,
+                      false AS view_once, NULL::text AS location_label, NULL::uuid AS sender_id
                  FROM chat.conversation_events e
                 WHERE e.conversation_id = c.id
                UNION ALL
                SELECT t.id,
                       CASE WHEN t.seconds IS NULL THEN 'Mensajes temporales desactivados' ELSE 'Mensajes temporales activados' END AS body,
-                      'system'::text AS type, t.created_at, NULL::timestamptz AS deleted_at
+                      'system'::text AS type, t.created_at, NULL::timestamptz AS deleted_at,
+                      false AS view_once, NULL::text AS location_label, NULL::uuid AS sender_id
                  FROM chat.conversation_timer_events t
                 WHERE t.conversation_id = c.id
              ) item
@@ -857,7 +903,7 @@ export class ChatRepository {
              FROM chat.conversations c
              JOIN chat.participants mine ON mine.conversation_id = c.id AND mine.user_id = :userId
              JOIN chat.participants other ON other.conversation_id = c.id AND other.user_id = m.other_id
-            WHERE c.system_kind IS NULL
+            WHERE c.system_kind IS NULL AND c.kind = 'DIRECT'
             ORDER BY c.created_at DESC
             LIMIT 1
          ) conv ON true
@@ -902,6 +948,7 @@ export class ChatRepository {
       const participant = await this.participants.findOne({ where: { conversationId, userId }, transaction });
       if (!participant) throw new NotFoundException("Conversación no encontrada.");
       if (!participant.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
+      assertBusinessDisappearingAllowed(conversation.kind, seconds);
       if ((conversation.disappearingSeconds ?? null) === seconds) return { seconds, event: null };
       await conversation.update({ disappearingSeconds: seconds }, { transaction });
       const [row] = await this.sequelize.query<DisappearingTimerEvent>(

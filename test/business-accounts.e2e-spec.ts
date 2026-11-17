@@ -9,6 +9,7 @@ import { storedNameSkeletonMigration } from '../src/database/migrations/20261120
 import { businessKycMigration } from '../src/database/migrations/202611200501-business-kyc';
 import { businessListingsMigration } from '../src/database/migrations/202611200601-business-listings';
 import { listingVersionStampMigration } from '../src/database/migrations/202611200602-listing-version-stamp';
+import { businessConversationsMigration } from '../src/database/migrations/202611200701-business-conversations';
 import { businessOrdersMigration } from '../src/database/migrations/202611200801-business-orders';
 import { affiliationsMigration } from '../src/database/migrations/202611200901-affiliations';
 import { affiliationsClosedRowsMigration } from '../src/database/migrations/202611200901-affiliations-closed-rows';
@@ -186,11 +187,14 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
   it('a business token gets 403 ACCOUNT_KIND_NOT_ALLOWED on person surfaces; a person gets 403 on business/*', async () => {
     const owner = await business('kind');
     for (const path of ['/profile', '/me/onboarding', '/me/social-profile', '/social/catalog/interests', '/me/gym-directory',
-      '/me/discovery/deck', '/me/conversations', '/workouts', '/me/progression/leaderboard']) {
+      '/me/discovery/deck', '/me/conversations/pending-replies', '/workouts', '/me/progression/leaderboard']) {
       const response = await e2e.as(owner.token).get(path);
       expect({ path, status: response.status, code: response.body.code }).toEqual({ path, status: 403, code: 'ACCOUNT_KIND_NOT_ALLOWED' });
     }
     await e2e.as(owner.token).post('/auth/socket-ticket').expect(403);
+    // Since 8f (ADR-0023) a business reads and answers chats, but never opens one.
+    const opening = await e2e.as(owner.token).post('/me/conversations').send({ otherUserId: owner.id });
+    expect([opening.status, opening.body.code]).toEqual([403, 'ACCOUNT_KIND_NOT_ALLOWED']);
     const person = await e2e.register('kind-person');
     const refused = await e2e.as(person.token).get('/business/me');
     expect(refused.status).toBe(403);
@@ -444,7 +448,9 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
     const queryInterface = sequelize.getQueryInterface();
     const transaction = await sequelize.transaction();
     try {
-      // Migrations roll back in reverse order: the affiliations (202611200901), the orders (202611200801), the listings (202611200601)
+      // Migrations roll back in reverse id order: the gym visibility (202611201101), the retired membership
+      // tables (202611201002), the subscription ledger (202611201001), the affiliations (202611200901), the
+      // orders (202611200801), the business chats (202611200701), the listings (202611200602, 202611200601)
       // and the KYC tables (202611200501) come after business.accounts.
       await gymMembershipVisibilityMigration.down(queryInterface, transaction);
       await retireMembershipMachineryMigration.down(queryInterface, transaction);
@@ -452,6 +458,7 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
       await affiliationsClosedRowsMigration.down(queryInterface, transaction);
       await affiliationsMigration.down(queryInterface, transaction);
       await businessOrdersMigration.down(queryInterface, transaction);
+      await businessConversationsMigration.down(queryInterface, transaction);
       await listingVersionStampMigration.down(queryInterface, transaction);
       await businessListingsMigration.down(queryInterface, transaction);
       await businessKycMigration.down(queryInterface, transaction);
@@ -470,6 +477,7 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
       await businessKycMigration.up(queryInterface, transaction);
       await businessListingsMigration.up(queryInterface, transaction);
       await listingVersionStampMigration.up(queryInterface, transaction);
+      await businessConversationsMigration.up(queryInterface, transaction);
       await businessOrdersMigration.up(queryInterface, transaction);
       await affiliationsMigration.up(queryInterface, transaction);
       await affiliationsClosedRowsMigration.up(queryInterface, transaction);

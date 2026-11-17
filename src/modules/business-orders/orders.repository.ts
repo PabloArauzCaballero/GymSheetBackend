@@ -48,7 +48,8 @@ type Scope = { buyerId: string } | { entityId: string };
  * "Mis compras" is newest first. Ascending everywhere, so one keyset works.
  */
 function order(scope: Scope): { bucket: string; sort: string } {
-  if ('buyerId' in scope) return { bucket: '0', sort: '-extract(epoch FROM o.created_at)' };
+  // A bare `0` in ORDER BY is a column position for PostgreSQL; the cast makes it a constant expression.
+  if ('buyerId' in scope) return { bucket: 'CAST(0 AS int)', sort: '-extract(epoch FROM o.created_at)' };
   return {
     bucket: `CASE WHEN o.status = 'PENDING_VERIFICATION' THEN 0 ELSE 1 END`,
     sort: `CASE WHEN o.status = 'PENDING_VERIFICATION' THEN extract(epoch FROM COALESCE(o.submitted_at, o.created_at))
