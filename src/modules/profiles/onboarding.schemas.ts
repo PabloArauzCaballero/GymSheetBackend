@@ -20,12 +20,24 @@ export const onboardingPreferencesSchema = z.object({
   trainingLocation: z.enum(["GYM", "HOME", "OUTDOORS", "MIXED"]),
   trainingPreferences: z.array(z.string().trim().min(1).max(80)).max(20),
   physicalConsiderations: z.string().trim().max(2000).nullable().optional(),
+  /** Separate health consent: only needed when `physicalConsiderations` is sent. */
   consentHealth: z.boolean(),
+  /** Version of the health consent text shown; defaults to the current one. */
+  consentHealthVersion: z.string().trim().min(1).max(20).optional(),
   consentData: z.boolean(),
 });
 
 export const onboardingEquipmentSchema = z.object({
   availableEquipment: z.array(z.string().trim().min(1).max(80)).max(50),
+});
+
+/** Optional "Conocer" step: never blocks completing onboarding. */
+export const ONBOARDING_SOCIAL_STEP_STATES = ["PENDING", "DONE", "SKIPPED"] as const;
+export type OnboardingSocialStepState =
+  (typeof ONBOARDING_SOCIAL_STEP_STATES)[number];
+
+export const onboardingSocialStepSchema = z.object({
+  action: z.enum(["DONE", "SKIP"]),
 });
 
 export const bodyMeasurementSchema = z.object({
@@ -42,5 +54,8 @@ export type OnboardingPreferencesInput = z.infer<
 >;
 export type OnboardingEquipmentInput = z.infer<
   typeof onboardingEquipmentSchema
+>;
+export type OnboardingSocialStepInput = z.infer<
+  typeof onboardingSocialStepSchema
 >;
 export type BodyMeasurementInput = z.infer<typeof bodyMeasurementSchema>;

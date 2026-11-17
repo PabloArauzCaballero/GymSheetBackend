@@ -14,7 +14,10 @@ import { BusinessDateService } from '../../../common/time/business-date.service'
 import { AuthenticatedUser } from '../../../common/types/auth-context.types';
 import { env } from '../../../config/env';
 import { AuthService } from '../../../modules/auth/auth.service';
+import { SEED_SIGNUP_META } from './seed-signup-meta';
 import { registerSchema } from '../../../modules/auth/auth.schemas';
+import { LEGAL_DOCUMENTS } from '../../../modules/legal/legal-documents';
+import { SEED_USER_DEMOGRAPHICS } from '../seed-user-legal';
 import { CommunityService } from '../../../modules/community/community.service';
 import { ContentCommentModel } from '../../../modules/community/content-comment.model';
 import { ExerciseCommunityService } from '../../../modules/exercises/exercise-community.service';
@@ -232,13 +235,25 @@ export class RoutinesShowcaseSeeder {
   private async ensureUser(email: string, fullName: string, gender: 'MALE' | 'FEMALE' | null, password: string): Promise<UserModel> {
     let user = await UserModel.findOne({ where: { email } });
     if (!user) {
+      // Signup now requires sex, an adult birth date and the current terms version.
       await this.get(AuthService).register(
-        registerSchema.parse({ email, password, nombreCompleto: fullName, acceptedTerms: true, ...(gender ? { genero: gender } : {}) }),
+        registerSchema.parse({
+          email,
+          password,
+          nombreCompleto: fullName,
+          acceptedTerms: true,
+          genero: gender ?? SEED_USER_DEMOGRAPHICS.gender,
+          fechaNacimiento: SEED_USER_DEMOGRAPHICS.birthDate,
+          termsVersion: LEGAL_DOCUMENTS.TERMS,
+        }),
+        SEED_SIGNUP_META,
       );
       user = await UserModel.findOne({ where: { email }, rejectOnEmpty: true });
       this.count('usuarios_creados');
     }
     if (user.status !== UserStatus.ACTIVE) await user.update({ status: UserStatus.ACTIVE });
+    // Showcase accounts demo the social features, which need a verified email.
+    if (!user.emailVerifiedAt) await user.update({ emailVerifiedAt: new Date() });
     return user;
   }
 
@@ -278,7 +293,8 @@ export class RoutinesShowcaseSeeder {
   private async ensureDemoUser(demo: DemoUser): Promise<void> {
     const user = await this.ensureUser(demo.email, demo.fullName, demo.gender, this.password);
     await this.ensureAvatar(user.id, demo.key);
-    if (demo.coach && user.role !== UserRole.COACH) await user.update({ role: UserRole.COACH });
+    // Demo users are members: a run before franja 7a promoted the trainer demo to COACH (ADR-0019).
+    if (user.role === UserRole.COACH) await user.update({ role: UserRole.CLIENT });
     this.users.set(demo.key, { user, actor: this.actorOf(user) });
     await this.ensureOnboarding(user.id, demo);
   }
@@ -304,7 +320,7 @@ export class RoutinesShowcaseSeeder {
       physicalConsiderations: null,
       consentHealth: true,
       consentData: true,
-    });
+    }, 'UNKNOWN');
     await onboarding.saveEquipment(userId, { availableEquipment: demo.equipment });
     await onboarding.complete(userId);
     this.count('onboardings_completados');
@@ -501,6 +517,7 @@ export class RoutinesShowcaseSeeder {
     await moderation.resolve(asAuthenticated(moderator, null), 'COMMENT', commentId, {
       hideContent: true,
       sanction: false,
+      confirmMinor: false,
       note: 'Spam comercial (datos de demostración).',
     });
     this.count('comentarios_moderados');

@@ -907,6 +907,112 @@ Aflorados por F-001 y resueltos sin cambio de comportamiento:
 | `src/workers/worker-loop.ts` | `prefer-const` sobre binding con referencia circular legítima | Excepción documentada en línea |
 | `.gitignore` | `graphify-out/` sin ignorar | Añadido |
 
+### Revisión legal 2 (franja 4): lo que los textos prometen, en código
+
+| Hallazgo | Corrección | Prueba |
+|---|---|---|
+| B1 · la persona sancionada no leía el motivo | `ACCOUNT_SUSPENDED` lleva `details.reason { code, label, text }` (login, alta y cada petición); la expulsión responde `403 ACCOUNT_BANNED` con el motivo sólo tras la contraseña o Google/Apple (`SanctionStatusService`, marcador: falta `EXPULSION` + `INACTIVO` sin `closed_at`); suspensión, expulsión y el flujo de menor se envían además por correo (`NoticeEmailService`, trabajo autocontenido en `notifications.delivery`; el del cierre de un menor sobrevive al cierre) | `test/sanction-notices.e2e-spec.ts`, `test/minor-reports-closure.e2e-spec.ts` |
+| B6 · la copia de datos lista no se avisaba | `READY` y `FAILED` avisan una vez por exportación, en la app (con `downloadPath`) y por correo, en la transacción del cambio de estado | `test/account-export-email.e2e-spec.ts` |
+| I2 · borrar contenido denunciado destruía la evidencia | foto, historia y comentario con denuncia abierta se ocultan para todos y se conservan (migración `202611190101`, `author_deleted_at`); la retención de contenido denunciado (180 días) o la purga de historias los borran después; misma regla SQL de «denuncia abierta» (`hasOpenReportSql`) | `test/reported-content-lifecycle.e2e-spec.ts` |
+| I9 · el personal no tenía vía de cierre | `POST /admin/users/:id/close` (ADMIN del mismo gimnasio; desde la franja 7a, `SYSTEM_ADMIN`, ADR-0019, auditado; 404 ajeno, 403 propio o último ADMIN); el cierre conserva rutinas asignadas a socios y sus chats con el gimnasio | `test/staff-closure.e2e-spec.ts` |
+| I1 · retención de una cuenta expulsada | sin purga ni plazo en código: documentado en ADR-0014 §6 (R-007) | — |
+
+### Revisión legal 3 (franja 4): quién modera, versiones y cola muerta
+
+| Hallazgo | Corrección | Prueba |
+|---|---|---|
+| N1 · moderaba el personal del gimnasio | ADR-0018: rol de plataforma `MODERATOR` (más `SYSTEM_ADMIN`) para `admin/moderation/*`, `GET /admin/signups` y `GET /admin/routines`; `ADMIN`/`FRONT_DESK` reciben `403`; `moderation:*` retirados (migración `202611200101`, reversible); cola de todos los gimnasios con `tenant_id`/`tenant_name`; veredicto auditado con el id del moderador y el gimnasio; altas y bajas sólo por `SYSTEM_ADMIN` (`/admin/platform/moderators`); los avisos nombran al equipo de moderación de REPP | `test/platform-moderation.e2e-spec.ts`, `src/modules/moderation/platform-moderation.spec.ts`, `test/antibot-signup.e2e-spec.ts` |
+| N2 · `CONSENT_VERSIONS` sin subir | los cuatro tipos pasan a `2026-12-02`; lo aceptado con `2026-12-01` responde `upToDate: false` | `test/privacy-consents.e2e-spec.ts`, `consents.service.spec.ts` |
+| N1 · la selfie de verificación la revisaba el gimnasio | `GET/POST /admin/verifications*` pasan a `PLATFORM_MODERATION_ROLES` con `platformScopeOf` (cola de todos los gimnasios con `tenantId`/`tenantName`; `ADMIN`/`FRONT_DESK` reciben `403` con o sin `moderation:*`); la decisión se audita `verification/decide` con `metadata { tenantId, decision, reason }` y `tenant_scope` nulo para un `MODERATOR`; los avisos nombran al equipo de REPP | `test/photo-verification.e2e-spec.ts`, `verification.controller.spec.ts`, `verification-review.service.spec.ts`, `platform-moderation.spec.ts` |
+| I-5 · una selfie en revisión no tenía plazo | `VERIFICATION_REVIEW_DEADLINE_DAYS = 30`: la retención diaria pasa a `EXPIRED` lo que espera revisión más de 30 días desde `submitted_at`, avisa a la persona en la misma transacción y borra la selfie por `media.release` (ADR-0014 §2) | `test/photo-verification.e2e-spec.ts`, `test/privacy-retention.e2e-spec.ts`, `verification-revocation-retention.spec.ts` |
+| I-2 · dead-letter de `media.release` invisible | gauge `gym_sheet_outbox_dead_letter_jobs{queue="media.release"}` siempre presente en `/health/metrics`; alerta y responsable en el runbook de ADR-0017 (paso 6, condición de despliegue) | `test/user-media-release.e2e-spec.ts`, `outbox-metrics.service.spec.ts` |
+
+### Franja 7a: REPP opera la plataforma; el gimnasio deja de tener personal (ADR-0019)
+
+| Cambio | Corrección | Prueba |
+|---|---|---|
+| El personal del gimnasio operaba `admin/*` | Todo `admin/*` declara `@Roles(SYSTEM_ADMIN)` (o los roles de moderación); `ADMIN`/`FRONT_DESK`/`COACH` heredados reciben `403` con cualquier concesión de permisos. `admin/directory` queda en dueño de la ficha o `SYSTEM_ADMIN` (`404` al resto) | `src/common/guards/roles.guard.admin-routes.spec.ts`, `test/platform-operation.e2e-spec.ts` |
+| Asignación de rutinas por coach | `POST /routines/:id/assign` y `GET /routines/assignments/coach` eliminadas (`404`); las asignaciones previas siguen en `assignments/me`. La política de rutinas pierde la rama «ADMIN de su gimnasio» | `routine-access.policy.spec.ts`, `test/platform-operation.e2e-spec.ts` |
+| Dominio con poder de `ADMIN` | medios de ejercicio global, cobros y respuestas del directorio y el worker `exercise-media-command` exigen `SYSTEM_ADMIN` o propiedad | `exercise-media-reupload.spec.ts`, `directory-payments.service.spec.ts` |
+| Chat fijo `TENANT_ADMIN` | ni se crea ni se lista; los existentes se revocan con la migración reversible `202611200301-revoke-tenant-admin-chats` (libro `chat.tenant_admin_chat_revocations`); queda `CORPORATE` | `system-chat.service.spec.ts`, `chat.service.spec.ts`, `test/platform-operation.e2e-spec.ts` |
+| Siembras | `SEED_ADMIN_*` crea el `SYSTEM_ADMIN`; ninguna siembra crea `ADMIN` ni `COACH` | `seed.spec.ts` |
+
+### Franja 8a: cuentas de negocio, @handle, legal de negocios y agujeros del directorio (ADR-0020)
+
+| Cambio / defecto | Corrección | Prueba |
+|---|---|---|
+| No existía cuenta de negocio | Rol `NEGOCIO` sin datos de persona (CHECK), `business.accounts` 1:1 con una ficha `DRAFT`, `POST /business/signup` con antibot, legal de negocio, PIN, sanciones heredadas y sesión, tras `BUSINESS_SIGNUP_ENABLED=false` (`404 BUSINESS_SIGNUP_DISABLED`; cerrada en producción mientras los textos sean borradores); migración reversible `202611200401-business-accounts` | `test/business-accounts.e2e-spec.ts` (incluye down/up de la migración), `business-signup.service.spec.ts` |
+| `RolesGuard` deja pasar a cualquier autenticado en rutas sin `@Roles` | `AccountKindGuard` global, deny-by-default para `BUSINESS` (`403 ACCOUNT_KIND_NOT_ALLOWED`); persona → `403` en `business/*`; inventario de rutas que falla ante una ruta nueva alcanzable por un negocio | `account-kind.guard.spec.ts`, `account-kind.route-inventory.spec.ts`, `test/business-accounts.e2e-spec.ts` |
+| Un negocio aparecería entre personas | `rol <> 'NEGOCIO'` en directorio del gimnasio, pool de Conocer y clasificación; conexión o perfil de un negocio → `404` | `test/business-accounts.e2e-spec.ts` |
+| Legal único para todo tipo de cuenta | Conjuntos por tipo; `BUSINESS_TERMS`/`BUSINESS_DPA` versionados con SHA-256 del archivo (borradores); `422 LEGAL_DOCUMENT_NOT_APPLICABLE` | `legal.service.spec.ts`, `legal-documents.spec.ts`, e2e 428 |
+| @handle público | Normalización, skeleton anti-confundibles, reservadas, reserva `PENDING` hasta el KYC (8b), renombre limitado con redirección y bloqueo | `handle-rules.spec.ts`, `test/business-accounts.e2e-spec.ts` |
+| D1 · cualquiera creaba fichas `ACTIVE` con `is_verified`/`tenant_id` propios | `POST /directory/entities` solo `SYSTEM_ADMIN`, cuerpo estricto sin `is_verified`/`tenant_id`/dueño; además respondía `500` tras crear la fila (leía fuera de la transacción) | `test/directory-defects.e2e-spec.ts` (falla en 061c220) |
+| D2 · `ADMIN` de cualquier gimnasio respondía reseñas | Ya cerrado en 7a (solo dueño o `SYSTEM_ADMIN`, `403`); prueba fijada | `test/directory-defects.e2e-spec.ts` |
+| D3 · reseñar una ficha con gimnasio daba `500` | El sello «atleta verificado» consulta columnas que existen (`userId`) y el gimnasio del autor | `test/directory-defects.e2e-spec.ts` (falla en 061c220), `directory.service.spec.ts` |
+| D4 · planes públicos devolvían el modelo ORM | `mapPublicPlan`; `404` si plan o ficha no están activos | `test/directory-defects.e2e-spec.ts` |
+| D5 · cobro público con NIT y modelo ORM | DTO sin `taxId`/ids/fechas, `null` si inactivo, `404` si la ficha no es pública; también en la respuesta de crear orden. El número de cuenta se mantiene (el pago lo necesita) hasta que 8d lo pase a la orden | `test/directory-defects.e2e-spec.ts`, `directory-payments.service.spec.ts` |
+| D7 · fichas suspendidas seguían vendiendo | Listados con `INNER JOIN` a fichas `ACTIVE`; crear orden de un plan de ficha no pública → `404` | idem |
+| D8 · moneda por defecto USD | `BOB` en la base y en los esquemas | idem |
+| D12 · reseña ajena → `403` | `404` al editar o borrar | idem, `directory.service.spec.ts` |
+| Reseña de ficha no pública | `404` (una ficha `DRAFT` no existe para las personas) | `directory.service.spec.ts` |
+| El cierre administrativo de personal aceptaba una cuenta de negocio | `POST /admin/users/:id/close` la rechaza (`400 STAFF_CLOSURE_NOT_STAFF`); su cierre es de 8f | `account-closure.service.spec.ts`, `test/account-closure.e2e-spec.ts` (catálogo) |
+
+Pendiente por franja: KYC y activación (8b), sedes `directory.entity_locations` y publicaciones (8c), pedidos y D6/D9/D10 (8d), afiliación (8e), chat, cierre y exportación del negocio (8f).
+
+### Franja 8b: KYC de negocios, aprobación en segundos y consola de REPP (ADR-0021)
+
+| Cambio / riesgo | Corrección | Prueba |
+|---|---|---|
+| Ningún negocio podía publicarse (todo quedaba `DRAFT`) | KYC versionado (`business.kyc_*`, migración reversible `202611200501-business-kyc`); envío síncrono con 11 comprobaciones, presupuesto `KYC_PIPELINE_BUDGET_MS` y `statement_timeout` por consulta; todo PASS → `AUTO_APPROVED` (ficha y handle `ACTIVE`, insignia «Nuevo»); si no, `IN_REVIEW` con SLA | `kyc-checks.spec.ts`, `kyc-pipeline.service.spec.ts` (vencimiento con reloj falso y check lento → `IN_REVIEW`), `test/business-kyc.e2e-spec.ts` |
+| Dos envíos simultáneos con el mismo NIT | `pg_advisory_xact_lock` por cada HMAC antes del timeout; resultado en una sola transacción | `test/business-kyc.e2e-spec.ts` (uno AUTO, otro IN_REVIEW) |
+| Datos y documentos de identidad | `KycCipher` con clave propia `KYC_ENCRYPTION_KEY` obligatoria en producción, sin respaldo; HMAC con el pepper; ruta privada `business/{accountId}/kyc/…` (404 estático, borrable ADR-0017, fuera de la lectura anónima) | `kyc-cipher.spec.ts` (ida y vuelta, bytes ≠ texto), `media-storage.port.spec.ts`, `private-media-path.spec.ts`, e2e (bytes `GSKY1`, 404 estático) |
+| Estados del KYC | Tabla de transiciones; lo demás `409 KYC_INVALID_TRANSITION` | `kyc-state-machine.spec.ts` (49 pares) |
+| Teléfono sin verificar | Puerto `PhoneOtpSender`: `disabled` (→ revisión, nunca autoaprobación) y `whatsapp-cloud` (Graph API, host fijo, `fetch` inyectado) | `whatsapp-cloud-otp.sender.spec.ts` (transporte falso, sin llamada real), e2e |
+| Selfie biométrica del representante | Gesto del catálogo de verificación y consentimiento separado `KYC_SELFIE` (`400 CONSENT_REQUIRED`); revocarlo borra las selfies | e2e |
+| Consola REPP | Colas REVIEW/POST_REVIEW con SLA (24 h hábiles / 72 h), claim/release, decisión con motivos, visor descifrado `no-store` con auditoría por vista, suspensión, reservas y renombre forzado, lista negra por HMAC, términos prohibidos, métricas; nadie revisa su propio negocio (`403 MODERATION_SELF_CASE`) | `test/business-kyc-console.e2e-spec.ts` |
+| Reenvíos y cambios materiales | Máx. 3 intentos, 24 h; cambio material = versión nueva que nunca se autoaprueba (acepta el `409 BUSINESS_MATERIAL_CHANGE_REQUIRES_REVIEW` de 8a) | e2e |
+| Retención del KYC | Paso KYC en `privacy-retention` (constantes `KYC_RETENTION`, pendientes del abogado) con borrado por `media.release` | `privacy-retention.service.spec.ts`, e2e (purga y archivo borrado) |
+
+| Revisión de seguridad de 90e3d8f | `decide`/`claim` solo sobre la versión abierta o vigente (`409 KYC_SUBMISSION_SUPERSEDED`; cuenta suspendida o cerrada `409 BUSINESS_ACCOUNT_LOCKED`; la versión reemplazada pasa a `SUPERSEDED`); HMAC del CI solo del número (el complemento ya no esquiva lista negra ni duplicado); renombre forzado con la regla de ADR-0018 §8 | tres e2e en `test/business-kyc-console.e2e-spec.ts`, que fallan en a36e545 |
+
+Evidencia (16/11/2026, base `gym_sheet_f8b` nueva: schema + migraciones + semilla base): `yarn lint` y
+`yarn type-check` limpios; `yarn build` OK; unitarias 254 suites / 2341 pruebas en verde; e2e KYC
+(`business-kyc` 13, `business-kyc-console` 14) en verde, envío medido en 5 negocios: 23–56 ms, p95 56 ms
+(límite de la prueba 3 s); e2e completa: 70 suites en verde y exactamente las 47 pruebas en rojo de la
+línea base de 8a (mismas 10 suites, mismos nombres). Arranque con `NODE_ENV=production` sin
+`KYC_ENCRYPTION_KEY`: el esquema de entorno lo rechaza con el mensaje de la variable. Sin llamada real a
+WhatsApp (adaptador probado con transporte falso).
+
+Fuera de 8b: cancelar órdenes al suspender (8d), prioridad por afiliaciones (8e), cierre y exportación del negocio (8f), verificación externa SIN/SEGIP/SEPREC, cotejo facial automático y rotación de la clave KYC.
+
+### Franja 8c: publicaciones, sedes y marketplace con post-moderación (ADR-0022)
+
+| Cambio / riesgo | Corrección | Prueba |
+|---|---|---|
+| Los negocios no podían publicar y `entity_plans` no tenía estado de moderación | Migración reversible `202611200601-business-listings`: `offer_kind` (relleno desde `type`, que queda derivado y comprobado; un disparador lo completa para quien no lo manda), sesiones, stock, categoría de producto y `moderation_status LIVE\|HELD\|HIDDEN\|REJECTED` (nace `HELD`); CHECK de forma y de `BOB` sobre toda fila `LIVE`; filas viejas no conformes quedan `HELD` con su código | `listing-checks.spec.ts`, e2e (CHECK en base, down/up con datos en transacción revertida) |
+| Publicar en segundos sin revisión previa | Comprobaciones síncronas (banda de precio BOB, desvío 5× sobre la mediana del tipo, términos prohibidos de REPP con la regla del KYC); todo pasa → `LIVE`, si no `HELD`; en `LIVE` solo se re-comprueba lo editado; `HIDDEN`/`REJECTED` no los levanta el negocio | `listing-checks.spec.ts`, `listing-publication.service.spec.ts`, `test/business-listings.e2e-spec.ts` |
+| Qué es público | Una sola condición (`LIVE` + `ACTIVE` + negocio `ACTIVE`) en búsqueda, detalle, perfil por @handle, rutas viejas `/public/directory/plans*`, órdenes y denuncias; lo demás `404` (sin enumeración) | e2e: HELD no público ni denunciable ni comprable; negocio `SUSPENDED` → desaparecen todas (D7); pausada/archivada fuera |
+| BOLA/BFLA en las rutas nuevas | `business/me/*` solo `NEGOCIO` (inventario de rutas actualizado), todo acotado a la ficha de la cuenta → lo ajeno `404`; `admin/business/listings*` solo `PLATFORM_MODERATION_ROLES`, auditado y nunca sobre el propio negocio | `account-kind.route-inventory.spec.ts`, e2e (7 rutas ajenas → 404, persona → 403, negocio → 403 en la consola) |
+| Mass assignment y búsqueda | Esquemas estrictos (moneda, moderación, `type`, stock reservado → `400`); texto normalizado por `repp_normalize` en la base (sin comodines), `category_path` por expresión regular, cursor keyset validado (`400 INVALID_CURSOR`), filtros como parámetros | `keyset-cursor.spec.ts`, e2e (`%`, comillas, cursor alterado) |
+| Inundación de publicaciones (revisión de seguridad de esta franja) | Tope de 500 sin archivar por negocio, contado bajo el candado de la ficha (`409 LISTING_LIMIT`) | e2e (falla sin el tope) |
+| Cursor que repetía páginas (hallado en esta franja) | Las claves de tiempo del cursor viajan con microsegundos (texto de la base), no como `Date` de JS: filas creadas en el mismo milisegundo ya no se repiten página tras página | e2e (499 filas con el mismo instante: 500 únicas; con milisegundos devuelve 51) |
+| Revisión de seguridad de 0ab2073: un vendedor movía el precio de referencia | Mediana de las medianas de cada otro vendedor (una por negocio, nunca el propio), con al menos 5 vendedores distintos (`LISTING_PRICE_MEDIAN_MIN_SELLERS`) | `test/business-listings-price.e2e-spec.ts` (falla en 0ab2073), `listing-publication.service.spec.ts` |
+| Revisión de seguridad de 0ab2073: contenido cambiado bajo una decisión de REPP | Contenido congelado mientras REPP la tiene `HIDDEN`/`REJECTED` (`409 LISTING_LOCKED_BY_REPP`); los códigos de cada comprobación se guardan siempre y restaurar una oculta vuelve a `HELD` si sus códigos no están limpios | `test/business-listings-moderation.e2e-spec.ts` (falla en 0ab2073), `listing-publication.service.spec.ts` |
+| Liberar una publicación `HELD` editada después de la revisión | `release` exige `seenUpdatedAt` (el sello de la lista, microsegundos); si cambió, `409 LISTING_CHANGED_SINCE_REVIEW {currentUpdatedAt}` y nada se publica; migración `202611200602-listing-version-stamp`: un disparador mueve `updated_at` en toda actualización | `test/business-listings-moderation.e2e-spec.ts` (falla en 6a19e65) |
+| Cerrar la cuenta de un moderador | `entity_plans.moderated_by_user_id` entra al catálogo de cierre (anonimizado) | `test/account-closure.e2e-spec.ts` (catálogo completo) |
+| Moderación del marketplace | Denuncias `BUSINESS_LISTING`/`BUSINESS_PROFILE`, copia en el expediente, ocultar (también por 3 denunciantes), `suspendBusiness` por la máquina del KYC en la misma transacción (`NEGOCIO_SUSPENDIDO`); escalera de personas y menores no aplican (`422`); el buzón canónico del moderador cuenta como propio | `moderation-business.service.spec.ts`, `moderation.policy.spec.ts`, `test/business-listings-moderation.e2e-spec.ts` |
+| Medios | Fotos de publicación y galería del perfil solo por multipart (bytes JPEG/PNG), públicas bajo `business/{entityId}/public/`, en el recuento de referencias de ADR-0017 | e2e |
+
+Evidencia (17/11/2026, base `gym_sheet_f8c_e2e` nueva: schema + migraciones + semilla base): `yarn lint` y
+`yarn type-check` limpios; `yarn build` OK; unitarias 259 suites / 2372 pruebas en verde; migración
+up → down → up en base nueva y con datos (filas USD de `seed-marketplace-test.sql` quedan `HELD
+CURRENCY_NOT_BOB`; el down las deja `INACTIVE`); e2e nuevas `business-listings` 12 y
+`business-listings-moderation` 5 en verde; e2e completa: 72 suites en verde y exactamente las 47
+pruebas en rojo de la línea base (mismas 10 suites, mismos nombres).
+
+Fuera de 8c: pedidos y reserva de stock (8d), moderación de imagen de las fotos (puerto `Noop`), orden por relevancia, filtros «cerca» y «abierto ahora» de publicaciones, servir tras una puerta los archivos de una publicación oculta.
+
+
 ---
 
 ## 5. Matriz de alcance funcional (dominio real: gimnasio)
@@ -1039,6 +1145,15 @@ ciclo de vida completo (`revoked_at`). El recorrido dato → evento → job → 
 | **Solución definitiva** | Implementar refresh + revocación, o retirar las variables no utilizadas. |
 | **Responsable** | Propietario |
 | **Dependencia externa** | Ninguna |
+
+### R-007 · Cuenta expulsada sin plazo de borrado
+
+| Campo | Valor |
+|---|---|
+| **Descripción** | La expulsión deja la cuenta `INACTIVO` con todos sus datos; ningún proceso la cierra ni la purga (ADR-0014 §6). |
+| **Impacto** | **Medio (legal).** Los textos no pueden fijar un plazo de retención; los derechos de esas cuentas se atienden a mano por el contacto de privacidad. |
+| **Solución definitiva** | Decidir el plazo y añadir la purga (cierre por moderación tras el plazo, conservando las faltas como hoy hace `closed_account_sanctions`). |
+| **Responsable** | Propietario |
 
 ### R-006 · ~~Readiness no verifica el estado de migraciones~~ — **CERRADO**
 
@@ -1546,7 +1661,12 @@ docker run -d --name gymsheet_redis -p 6379:6379 redis:7-alpine
 ```bash
 # Requiere un fichero de entorno con, como mínimo:
 #   DB_NAME, DB_USER, DB_PASSWORD, JWT_ACCESS_SECRET, JWT_REFRESH_SECRET
+#   y, con NODE_ENV=production (el valor por defecto de la pila), IP_HASH_SECRET
+#   y REGISTRATION_TICKET_SECRET (>= 32 caracteres cada uno).
 # El arranque falla de inmediato si falta cualquiera de ellas.
+# Los workers de privacidad (stories-purge, account-data, privacy-retention)
+# corren siempre: privacy-retention ejecuta db:privacy:retention cada 24 h
+# (incluye la retención de selfies de verificación; db:verification:retention es un alias).
 cp .env.example .env.deploy   # y completar los valores
 
 docker compose --env-file .env.deploy up -d --build
@@ -1587,6 +1707,7 @@ node dist/main.js                   # API en producción
 yarn worker:access:prod             # worker de eventos de acceso
 yarn worker:reminders:prod          # worker de recordatorios
 yarn worker:notifications:prod      # worker de notificaciones
+yarn worker:privacy-retention:prod  # retención diaria de datos personales (24 h + jitter)
 ```
 
 ## 14. Variables de entorno

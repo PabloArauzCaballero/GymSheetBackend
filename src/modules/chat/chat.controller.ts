@@ -31,6 +31,7 @@ import {
   setNicknameSchema,
   startConversationSchema,
 } from "./chat.schemas";
+import { RequiresVerifiedEmail } from "../../common/decorators/requires-verified-email.decorator";
 
 /**
  * REST además del gateway de sockets: historial (paginado hacia atrás) y
@@ -55,6 +56,7 @@ export class ChatController {
     return this.service.pendingReplies(user.id);
   }
 
+  @RequiresVerifiedEmail()
   @Post()
   start(
     @CurrentUser() user: AuthenticatedUser,
@@ -74,6 +76,7 @@ export class ChatController {
     return this.service.listMessages(conversationId, user.id, query.limit, query.before, query.beforeId);
   }
 
+  @RequiresVerifiedEmail()
   @Post(":id/messages")
   sendMessage(
     @CurrentUser() user: AuthenticatedUser,
@@ -95,6 +98,7 @@ export class ChatController {
   }
 
   /** Reenvía a `:id` un mensaje de `fromConversationId` (quien llama participa en ambas). */
+  @RequiresVerifiedEmail()
   @Post(":id/messages/forward")
   forwardMessage(
     @CurrentUser() user: AuthenticatedUser,
@@ -105,6 +109,7 @@ export class ChatController {
   }
 
   /** Una reacción por persona: otro emoji la reemplaza, `null` la quita. */
+  @RequiresVerifiedEmail()
   @Put(":id/messages/:messageId/reaction")
   setReaction(
     @CurrentUser() user: AuthenticatedUser,
@@ -125,6 +130,7 @@ export class ChatController {
     return this.mutations.deleteMessage(conversationId, messageId, user.id, input);
   }
 
+  @RequiresVerifiedEmail()
   @Patch(":id/messages/:messageId")
   editMessage(
     @CurrentUser() user: AuthenticatedUser,
@@ -135,6 +141,7 @@ export class ChatController {
     return this.mutations.editMessage(conversationId, messageId, user.id, input);
   }
 
+  @RequiresVerifiedEmail()
   @Post(":id/messages/media")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: env.CHAT_MEDIA_MAX_BYTES, files: 1 } }))
   sendMediaMessage(

@@ -65,3 +65,7 @@ Record request rate, error rate, p50/p95/p99, RSS, heap, event-loop delay, pool 
 ## Interpretation
 
 A flat heap with rising RSS can indicate native buffers or client-library pressure. Rising heap after repeated stable workloads can indicate retained JavaScript references. Pool `waiting > 0` indicates requests are queueing for database connections and should be investigated before increasing the pool.
+
+## Conocer deck
+
+`test/load/discovery-deck-load.mjs` mide `GET /me/discovery/deck` sobre 10.000 miembros sembrados (presupuesto p95 300 ms, `BUDGET_DECK_P95_MS`). Resultados y EXPLAIN: [discovery-ranking.md](discovery-ranking.md).

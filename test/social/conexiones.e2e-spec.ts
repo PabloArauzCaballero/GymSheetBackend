@@ -10,6 +10,7 @@ import { HttpExceptionFilter } from '../../src/common/filters/http-exception.fil
 import { ResponseInterceptor } from '../../src/common/interceptors/response.interceptor';
 import { requestIdMiddleware } from '../../src/common/middleware/request-id.middleware';
 import { env } from '../../src/config/env';
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from '../support/e2e-app';
 
 describe('cross-gym connections (e2e)', () => {
   let application: INestApplication;
@@ -121,9 +122,10 @@ describe('cross-gym connections (e2e)', () => {
           email,
           password: 'connections-e2e-password',
           nombreCompleto: `Connections ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       return {
         accessToken: response.body.data.accessToken as string,
         userId: response.body.data.user.id as string,
@@ -200,8 +202,9 @@ describe('cross-gym connections (e2e)', () => {
       const password = 'connections-private-password';
       const response = await request(httpServer)
         .post(url('/auth/register'))
-        .send({ email, password, nombreCompleto: `Connections ${label} ${suffix}`, acceptedTerms: true })
+        .send({ email, password, nombreCompleto: `Connections ${label} ${suffix}`, ...E2E_SIGNUP_FIELDS })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const member = {
         accessToken: response.body.data.accessToken as string,
         userId: response.body.data.user.id as string,
@@ -212,15 +215,19 @@ describe('cross-gym connections (e2e)', () => {
       return member;
     };
 
+    // Two connected members of different gyms. Each gym is operated by REPP's
+    // platform admin impersonating it (franja 7a, ADR-0019): operating gym A
+    // must not reveal what gym B knows about its member.
     const adminA = await register('admin-a');
     const adminB = await register('admin-b');
+    const operator = await register('operator');
     await sequelize.query(
-      'UPDATE public.usuarios SET tenant_id = :tenantId, rol = \'ADMIN\' WHERE id = :userId',
+      'UPDATE public.usuarios SET tenant_id = :tenantId WHERE id = :userId',
       { replacements: { tenantId: temporaryTenantId, userId: adminB.userId } },
     );
     await sequelize.query(
-      "UPDATE public.usuarios SET rol = 'ADMIN' WHERE id = :userId",
-      { replacements: { userId: adminA.userId } },
+      "UPDATE public.usuarios SET rol = 'SYSTEM_ADMIN' WHERE id = :userId",
+      { replacements: { userId: operator.userId } },
     );
     const [connection] = await sequelize.query<{ id: string }>(
       `INSERT INTO social.connections (requester_id, addressee_id, status, responded_at)
@@ -236,7 +243,16 @@ describe('cross-gym connections (e2e)', () => {
         .expect(201);
       return response.body.data.accessToken as string;
     };
-    const [tokenA, tokenB] = await Promise.all([login(adminA), login(adminB)]);
+    const operatorToken = await login(operator);
+    const impersonate = async (tenantId: string) => {
+      const response = await request(httpServer)
+        .post(url('/auth/impersonate-tenant'))
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .send({ tenantId })
+        .expect(201);
+      return response.body.data.accessToken as string;
+    };
+    const [tokenA, tokenB] = await Promise.all([impersonate(env.DEFAULT_TENANT_ID), impersonate(temporaryTenantId)]);
 
     const credential = await request(httpServer)
       .post(url('/admin/access/credentials/pin'))
@@ -340,9 +356,10 @@ describe('cross-gym connections (e2e)', () => {
           email: `connections-race-${label}-${suffix}@example.test`,
           password: 'connections-race-password',
           nombreCompleto: `Connections race ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const member = {
         accessToken: response.body.data.accessToken as string,
         userId: response.body.data.user.id as string,
@@ -399,9 +416,10 @@ describe('cross-gym connections (e2e)', () => {
           email: `connections-owner-${label}-${suffix}@example.test`,
           password: 'connections-owner-password',
           nombreCompleto: `Connections owner ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const member = {
         accessToken: response.body.data.accessToken as string,
         userId: response.body.data.user.id as string,
@@ -448,9 +466,10 @@ describe('cross-gym connections (e2e)', () => {
           email: `connections-pass-${label}-${suffix}@example.test`,
           password: 'connections-pass-password',
           nombreCompleto: `Connections pass ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const member = {
         accessToken: response.body.data.accessToken as string,
         userId: response.body.data.user.id as string,

@@ -7,6 +7,7 @@ import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter
 import { ResponseInterceptor } from '../src/common/interceptors/response.interceptor';
 import { requestIdMiddleware } from '../src/common/middleware/request-id.middleware';
 import { env } from '../src/config/env';
+import { E2E_SIGNUP_FIELDS } from './support/e2e-app';
 
 /** Punto 3 del audit: el incremento de peso de los chips deja de estar fijo en 2.5kg. */
 describe('User preferences: weight increment (e2e)', () => {
@@ -45,7 +46,7 @@ describe('User preferences: weight increment (e2e)', () => {
         email: `weight-pref-${label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.test`,
         password,
         nombreCompleto: `Peso ${label}`,
-        acceptedTerms: true,
+        ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
     return response.body.data.accessToken as string;

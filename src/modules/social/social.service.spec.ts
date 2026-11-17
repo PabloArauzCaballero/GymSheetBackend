@@ -28,6 +28,8 @@ function createService(
       canInteractAcrossTenants: jest.fn().mockResolvedValue(false),
       isBlockedEitherWay: jest.fn().mockResolvedValue(false),
       lockSocialPair: jest.fn(),
+      // A like clears an earlier pass on the same person (single match model).
+      deletePass: jest.fn().mockResolvedValue(0),
       runInTransaction: jest.fn(
         (work: (transaction: never) => Promise<unknown>) => work({} as never),
       ),
@@ -295,10 +297,7 @@ describe("SocialService.blockUser", () => {
       blocked: true,
     });
     expect(repository.blockUser).toHaveBeenCalledWith(userA, userB);
-    expect(events.emitConversationRevoked).toHaveBeenCalledWith(
-      "conversation-1",
-      userA,
-    );
+    expect(events.emitConversationRevoked).toHaveBeenCalledWith("conversation-1");
   });
 });
 
@@ -437,7 +436,7 @@ describe("SocialService.withdrawConnection", () => {
     await expect(service.withdrawConnection("conn-1", userA)).resolves.toEqual({
       deleted: true,
     });
-    expect(emitConversationRevoked).toHaveBeenCalledWith("conv-1", userA);
+    expect(emitConversationRevoked).toHaveBeenCalledWith("conv-1");
   });
 });
 

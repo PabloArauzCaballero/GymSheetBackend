@@ -34,6 +34,7 @@ import { SocialRepository } from "../../src/modules/social/social.repository";
 import { runMigrations } from "../../src/database/migrate";
 import { chatMessageGlobalDeleteMigration } from "../../src/database/migrations/202610090015-chat-message-global-delete";
 import { databaseMigrations } from "../../src/database/migrations";
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from "../support/e2e-app";
 
 describe("H7 chat persistence", () => {
   let app: INestApplication;
@@ -78,8 +79,9 @@ describe("H7 chat persistence", () => {
       email: `h7-${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`,
       password: "e2e-strong-password",
       nombreCompleto: `H7 ${label}`,
-      acceptedTerms: true,
+      ...E2E_SIGNUP_FIELDS,
     }).expect(201);
+    await markEmailVerified(app, response.body.data.user.id as string);
     return { token: response.body.data.accessToken as string, id: response.body.data.user.id as string };
   }
 
@@ -898,7 +900,7 @@ describe("H7 chat persistence", () => {
 
       await request(server).delete(url(`/me/connections/${connectionId}`))
         .set("Authorization", `Bearer ${a.token}`).expect(200);
-      expect(revokedEvents).toHaveBeenCalledWith(conversationId, a.id);
+      expect(revokedEvents).toHaveBeenCalledWith(conversationId);
 
       for (const token of [a.token, b.token]) {
         const summaries = await request(server).get(url("/me/conversations"))
@@ -963,7 +965,7 @@ describe("H7 chat persistence", () => {
         `UPDATE chat.conversations SET revoked_at = NOW()
           WHERE id = :conversationId AND revoked_at IS NULL`,
         { replacements: { conversationId } },
-      ).then(() => events.emitConversationRevoked(conversationId, a.id));
+      ).then(() => events.emitConversationRevoked(conversationId));
       if (probeAcquiredConversationLock) {
         await revoking;
         finishPolicy();
@@ -975,7 +977,7 @@ describe("H7 chat persistence", () => {
 
       expect(order).toEqual(["read", "revoked"]);
       expect(probeAcquiredConversationLock).toBe(false);
-      expect(revokedEvent).toHaveBeenCalledWith(conversationId, a.id);
+      expect(revokedEvent).toHaveBeenCalledWith(conversationId);
     } finally {
       finishPolicy();
       await marking;
@@ -1041,7 +1043,7 @@ describe("H7 chat persistence", () => {
       await expect(joining).resolves.toEqual({ joined: true });
       expect(order.indexOf("join-complete")).toBeLessThan(order.indexOf("revoked"));
       expect(probeAcquiredConversationLock).toBe(false);
-      expect(revokedEvent).toHaveBeenCalledWith(conversationId, a.id);
+      expect(revokedEvent).toHaveBeenCalledWith(conversationId);
     } finally {
       finishJoin();
       await joining;

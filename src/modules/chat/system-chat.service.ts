@@ -1,15 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import { env } from "../../config/env";
 import { UsersRepository } from "../users/users.repository";
-import { ChatRepository, SystemConversationKind } from "./chat.repository";
+import { ChatRepository } from "./chat.repository";
 
 /**
- * Resuelve y garantiza los chats de sistema fijos de cada usuario: soporte
- * corporativo (una cuenta global) y el admin de su tenant (una cuenta real,
- * resuelta dinámicamente — no hay una fila "el admin" por tenant en el
- * esquema). Ninguno de los dos es obligatorio: sin cuenta corporativa
- * sembrada, o sin un `ADMIN` activo en el tenant, ese chat simplemente no se
- * crea para nadie.
+ * Ensures each member's fixed system chat: REPP's corporate support (one
+ * global account). It is optional: without a seeded corporate account it is
+ * simply not created. The gym admin chat is gone (ADR-0019): REPP operates the
+ * platform and the gym has no staff to talk to.
  */
 @Injectable()
 export class SystemChatService {
@@ -24,34 +22,15 @@ export class SystemChatService {
     return account?.id ?? null;
   }
 
-  private async resolveTenantAdminUserId(tenantId: string): Promise<string | null> {
-    const admin = await this.usersRepository.findAdminForTenant(tenantId);
-    return admin?.id ?? null;
-  }
-
   /**
-   * Idempotente: si la conversación con esa cuenta de sistema ya existe (es
-   * un chat 1:1 normal a nivel de esquema), no crea una segunda.
+   * Idempotent: if the conversation with the corporate account already exists
+   * (a regular 1:1 chat at schema level), no second one is created.
    */
-  private async ensureConversationWith(
-    userId: string,
-    systemUserId: string | null,
-    systemKind: SystemConversationKind,
-  ): Promise<void> {
-    if (!systemUserId || systemUserId === userId) return;
-    const existing = await this.chatRepository.findDirectConversation(userId, systemUserId);
+  async ensureSystemConversations(userId: string): Promise<void> {
+    const corporateUserId = await this.resolveCorporateUserId();
+    if (!corporateUserId || corporateUserId === userId) return;
+    const existing = await this.chatRepository.findDirectConversation(userId, corporateUserId);
     if (existing) return;
-    await this.chatRepository.createSystemConversation(userId, systemUserId, systemKind);
-  }
-
-  async ensureSystemConversations(userId: string, tenantId: string): Promise<void> {
-    const [corporateUserId, tenantAdminUserId] = await Promise.all([
-      this.resolveCorporateUserId(),
-      this.resolveTenantAdminUserId(tenantId),
-    ]);
-    await Promise.all([
-      this.ensureConversationWith(userId, corporateUserId, "CORPORATE"),
-      this.ensureConversationWith(userId, tenantAdminUserId, "TENANT_ADMIN"),
-    ]);
+    await this.chatRepository.createSystemConversation(userId, corporateUserId, "CORPORATE");
   }
 }

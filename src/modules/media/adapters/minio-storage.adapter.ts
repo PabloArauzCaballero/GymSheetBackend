@@ -2,13 +2,13 @@ import { Logger } from "@nestjs/common";
 import { createHash } from "crypto";
 import { Client } from "minio";
 import {
+  isDeletableContentKey,
   MediaStorageProvider,
   MediaUploadInput,
   MediaUploadTarget,
-  mediaTargetPrefix,
+  mediaObjectKey,
   StoredAsset,
 } from "../media-storage.port";
-import { resolveMediaExtension } from "./mime-extension";
 
 export interface MinioStorageConfig {
   /** Host del servidor MinIO (sin esquema ni puerto). */
@@ -21,24 +21,37 @@ export interface MinioStorageConfig {
   readonly region: string;
   /** Base URL pública bajo la que se sirve el bucket (sin barra final). */
   readonly publicBaseUrl: string;
+  /**
+   * The deployment declares that the API user may delete every version under
+   * `users/*` (`MEDIA_USER_CONTENT_DELETABLE`, ADR-0017). When false, a
+   * person's content is kept as under ADR-0010.
+   */
+  readonly userContentDeletable: boolean;
+}
+
+/** One stored version of an object, or a delete marker, as the SDK lists it. */
+interface ObjectVersion {
+  readonly name: string;
+  readonly versionId: string;
 }
 
 /**
  * Adaptador de almacenamiento sobre MinIO (S3-compatible). Ver
- * [ADR-0010](../../../../docs/decisions/ADR-0010-minio-immutable-media.md).
+ * [ADR-0010](../../../../docs/decisions/ADR-0010-minio-immutable-media.md) y
+ * [ADR-0017](../../../../docs/decisions/ADR-0017-borrado-real-del-contenido-de-las-personas.md).
  *
- * ## Los objetos no se borran nunca
+ * ## What is deleted and what is not
  *
- * Es un requisito de producto, no una propiedad del adaptador: lo que sube un
- * socio se conserva aunque el producto deje de mostrarlo. Por eso `remove()` es
- * un no-op y `immutable` lo declara al puerto, para que
- * `MediaRetentionService` no anuncie un borrado que no ocurrió.
+ * A person's content (`users/{userId}/…`) is really deletable: `remove` erases
+ * EVERY version of the key, delete markers included, because the bucket is
+ * versioned and a plain DELETE would only stack a delete marker on top of a
+ * recoverable object. The administered catalog (`catalog/`, `ejercicios/`)
+ * keeps the immutability of ADR-0010: `remove` refuses it with a logged
+ * no-op, and the API user has no delete permission outside `users/*`.
  *
- * El no-op es la capa más débil de las tres que sostienen la garantía, y la
- * única que un cambio de código puede tumbar sin querer: las otras dos viven en
- * el servidor (las credenciales de la API no tienen `s3:DeleteObject`, y el
- * bucket está versionado). Si alguien quita este no-op, MinIO sigue diciendo
- * que no.
+ * A removal the server rejects (AccessDenied while operations has not applied
+ * the ADR-0017 policy, network failure) propagates: the `media.release` job
+ * retries and dead-letters instead of completing over a file that survived.
  *
  * ## Idempotencia
  *
@@ -49,12 +62,12 @@ export interface MinioStorageConfig {
  */
 export class MinioStorageAdapter implements MediaStorageProvider {
   readonly name = "minio" as const;
-  readonly immutable = true;
 
   private readonly logger = new Logger(MinioStorageAdapter.name);
   private readonly client: Client;
   private readonly bucket: string;
   private readonly publicBaseUrl: string;
+  private readonly userContentDeletable: boolean;
 
   constructor(config: MinioStorageConfig) {
     this.client = new Client({
@@ -67,6 +80,7 @@ export class MinioStorageAdapter implements MediaStorageProvider {
     });
     this.bucket = config.bucket;
     this.publicBaseUrl = config.publicBaseUrl.replace(/\/+$/, "");
+    this.userContentDeletable = config.userContentDeletable;
   }
 
   async upload(
@@ -76,8 +90,7 @@ export class MinioStorageAdapter implements MediaStorageProvider {
     const checksumSha256 = createHash("sha256")
       .update(input.buffer)
       .digest("hex");
-    const extension = resolveMediaExtension(input.mimeType);
-    const key = `${mediaTargetPrefix(target)}/${checksumSha256}${extension}`;
+    const key = mediaObjectKey(target, checksumSha256, input.mimeType);
 
     const reused = await this.objectExists(key);
     if (!reused) {
@@ -110,18 +123,39 @@ export class MinioStorageAdapter implements MediaStorageProvider {
     };
   }
 
+  canRemove(key: string): boolean {
+    return this.userContentDeletable && isDeletableContentKey(key);
+  }
+
   /**
-   * No borra: el almacén es inmutable por decisión de producto (ADR-0010).
-   * Se deja trazado para poder auditar qué se habría borrado.
+   * Erases every version of a person's object; refuses any other key.
+   *
+   * Listing uses `prefix = key` and then keeps only the exact name, so a
+   * sibling such as `<key>.bak` is never touched. Versions are removed one by
+   * one with their `versionId`; the first failure stops and propagates, and the
+   * retry lists again, so a partial pass converges. Nothing listed means the
+   * object is already gone: the call is idempotent.
    */
   async remove(key: string): Promise<void> {
+    if (!this.canRemove(key)) {
+      this.logger.log({
+        event: "media.remove.immutable_key",
+        provider: this.name,
+        reason: isDeletableContentKey(key) ? "user_content_not_deletable" : "catalog_key",
+        key,
+      });
+      return;
+    }
+    const versions = await this.listVersions(key);
+    for (const version of versions) {
+      await this.client.removeObject(this.bucket, key, { versionId: version.versionId });
+    }
     this.logger.log({
-      event: "media.storage.remove_skipped",
-      reason: "immutable_storage",
+      event: "media.remove.completed",
       provider: this.name,
       key,
+      versionsRemoved: versions.length,
     });
-    return Promise.resolve();
   }
 
   async download(key: string): Promise<Buffer> {
@@ -133,6 +167,16 @@ export class MinioStorageAdapter implements MediaStorageProvider {
       else throw new Error("MinIO devolvió un fragmento de archivo inválido.");
     }
     return Buffer.concat(chunks);
+  }
+
+  private async listVersions(key: string): Promise<ObjectVersion[]> {
+    const stream = this.client.listObjects(this.bucket, key, true, { IncludeVersion: true });
+    const versions: ObjectVersion[] = [];
+    for await (const item of stream as AsyncIterable<unknown>) {
+      const version = asObjectVersion(item);
+      if (version?.name === key) versions.push(version);
+    }
+    return versions;
   }
 
   /**
@@ -150,6 +194,18 @@ export class MinioStorageAdapter implements MediaStorageProvider {
       throw error;
     }
   }
+}
+
+/**
+ * The SDK types list items without `versionId`, although a versioned listing
+ * carries it (and delete markers too). An unversioned bucket reports "null",
+ * which S3 accepts as the id of the single, unversioned object.
+ */
+function asObjectVersion(item: unknown): ObjectVersion | null {
+  if (typeof item !== "object" || item === null) return null;
+  const { name, versionId } = item as { name?: unknown; versionId?: unknown };
+  if (typeof name !== "string") return null;
+  return { name, versionId: typeof versionId === "string" && versionId !== "" ? versionId : "null" };
 }
 
 function isNotFoundError(error: unknown): boolean {

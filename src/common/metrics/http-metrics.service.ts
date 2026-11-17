@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Sequelize } from 'sequelize-typescript';
+import { CounterRegistry } from './counter-registry';
 
 const durationBucketsSeconds = [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5] as const;
 const maximumHttpSeries = 250;
@@ -29,7 +30,10 @@ export class HttpMetricsService {
   private readonly httpSeries = new Map<string, HttpMetricSeries>();
   private droppedSeries = 0;
 
-  constructor(private readonly sequelize: Sequelize) {}
+  constructor(
+    private readonly sequelize: Sequelize,
+    @Optional() private readonly counters?: CounterRegistry,
+  ) {}
 
   recordHttpRequest(
     method: string,
@@ -119,6 +123,7 @@ export class HttpMetricsService {
       lines.push(`gym_sheet_http_request_duration_seconds_count{${labels}} ${series.count}`);
     }
 
+    lines.push(...(this.counters?.render() ?? []));
     return `${lines.join('\n')}\n`;
   }
 

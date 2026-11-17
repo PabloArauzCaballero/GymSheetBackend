@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Ip, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Ip, Post, Req } from '@nestjs/common';
+import { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
@@ -23,7 +24,9 @@ import {
   refreshTokenSchema,
   registerSchema,
 } from './auth.schemas';
+import { clientDeviceContext } from './client-device-context';
 import { PasswordResetService } from './password-reset.service';
+import { signupRequestMeta } from './signup-context';
 
 const authThrottleOptions = {
   default: {
@@ -43,22 +46,28 @@ export class AuthController {
   @Public()
   @Throttle(authThrottleOptions)
   @Post('register')
-  register(@Body(new ZodValidationPipe(registerSchema)) input: RegisterInput) {
-    return this.authService.register(input);
+  register(
+    @Body(new ZodValidationPipe(registerSchema)) input: RegisterInput,
+    @Req() request: Request,
+  ) {
+    return this.authService.register(input, signupRequestMeta(request));
   }
 
   @Public()
   @Throttle(authThrottleOptions)
   @Post('login')
-  login(@Body(new ZodValidationPipe(loginSchema)) input: LoginInput) {
-    return this.authService.login(input);
+  login(@Body(new ZodValidationPipe(loginSchema)) input: LoginInput, @Req() request: Request) {
+    return this.authService.login(input, clientDeviceContext(request));
   }
 
   @Public()
   @Throttle(authThrottleOptions)
   @Post('refresh')
-  refresh(@Body(new ZodValidationPipe(refreshTokenSchema)) input: RefreshTokenInput) {
-    return this.authService.refresh(input.refreshToken);
+  refresh(
+    @Body(new ZodValidationPipe(refreshTokenSchema)) input: RefreshTokenInput,
+    @Req() request: Request,
+  ) {
+    return this.authService.refresh(input.refreshToken, clientDeviceContext(request));
   }
 
   // Public because a refresh token, not the (possibly already expired) access

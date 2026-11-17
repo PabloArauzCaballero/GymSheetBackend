@@ -17,6 +17,8 @@ export type UserResponse = {
   pesoIncrementoKg: number;
   /** Sede habitual. Nula = todavía no la ha elegido. */
   sedeId: string | null;
+  /** Person verification (gesture selfie) approved by moderation and still valid. */
+  verified: boolean;
 };
 
 /**
@@ -37,5 +39,6 @@ export function mapUserToResponse(user: UserModel): UserResponse {
     genero: user.gender,
     pesoIncrementoKg: Number(user.weightIncrementKg),
     sedeId: user.branchId,
+    verified: user.verifiedAt != null,
   };
 }

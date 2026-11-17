@@ -22,6 +22,7 @@ import { env } from "../../config/env";
 import { parseByteRange } from "../chat/chat-media-range";
 import { StoriesService, StoryUploadOptions, UploadedStoryMedia } from "./stories.service";
 import { StoryReactionsService } from "./story-reactions.service";
+import { RequiresVerifiedEmail } from "../../common/decorators/requires-verified-email.decorator";
 
 /** Stories: foto/video que expira a las 24h, visible solo para el autor y sus matches. */
 @Controller("me/stories")
@@ -36,6 +37,7 @@ export class StoriesController {
     return this.service.feed(user.id);
   }
 
+  @RequiresVerifiedEmail()
   @Post()
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: env.CHAT_MEDIA_MAX_BYTES, files: 1 } }))
   upload(
@@ -118,6 +120,7 @@ export class StoriesController {
     return this.service.view(storyId, user.id);
   }
 
+  @RequiresVerifiedEmail()
   @Post(":id/reactions")
   react(
     @CurrentUser() user: AuthenticatedUser,
@@ -127,6 +130,7 @@ export class StoriesController {
     return this.reactions.reactToStory(storyId, user.id, user.tenantId, body);
   }
 
+  @RequiresVerifiedEmail()
   @Post(":id/replies")
   reply(
     @CurrentUser() user: AuthenticatedUser,

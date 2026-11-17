@@ -9,6 +9,7 @@ import { ResponseInterceptor } from '../src/common/interceptors/response.interce
 import { requestIdMiddleware } from '../src/common/middleware/request-id.middleware';
 import { env } from '../src/config/env';
 import { BranchModel } from '../src/modules/facilities/branch.model';
+import { E2E_SIGNUP_FIELDS } from './support/e2e-app';
 
 /**
  * Verificación de racha por geolocalización (punto 7 del audit): al finalizar
@@ -54,7 +55,7 @@ describe('Workout geo-verification (e2e)', () => {
         email: `geo-${label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.test`,
         password,
         nombreCompleto: `Geo ${label}`,
-        acceptedTerms: true,
+        ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
     return response.body.data.accessToken as string;

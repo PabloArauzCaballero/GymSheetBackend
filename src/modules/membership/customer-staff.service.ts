@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
@@ -9,8 +10,10 @@ import { randomBytes } from "node:crypto";
 import { randomUUID } from "node:crypto";
 import { UniqueConstraintError } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
+import { BrandNameService } from "../../common/branding/brand-name.service";
 import { EmploymentStatus, UserRole } from "../../common/enums/domain.enums";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
+import { DomainException } from "../../common/errors/domain.exception";
 import { env } from "../../config/env";
 import { AccessCredentialRepository } from "../access-control/access-credential.repository";
 import { FacilitiesRepository } from "../facilities/facilities.repository";
@@ -58,9 +61,22 @@ export class CustomerStaffService {
     private readonly facilitiesRepository: FacilitiesRepository,
     private readonly events: DomainEventPublisher,
     private readonly sequelize: Sequelize,
+    private readonly brands: BrandNameService,
   ) {}
 
-  async createCustomer(input: CreateCustomerInput, actorUserId: string) {
+  async createCustomer(input: CreateCustomerInput, actor: AuthenticatedUser) {
+    // A person belongs to one gym. The platform operator registers one only
+    // while operating a gym (impersonation); without it the account had no gym
+    // and the insert failed on usuarios.tenant_id NOT NULL (500).
+    const tenantId = actor.tenantScope;
+    if (!tenantId) {
+      throw new DomainException(
+        HttpStatus.CONFLICT,
+        "TENANT_SCOPE_REQUIRED",
+        "Elige el gimnasio que estás operando antes de registrar a una persona.",
+      );
+    }
+    const actorUserId = actor.id;
     // La contraseña se genera aquí cuando el alta no trae una, y sólo existe en
     // memoria el tiempo que tarda en enviarse por correo: no se devuelve en la
     // respuesta ni se registra. Que la vea recepción en pantalla sería peor que
@@ -82,6 +98,7 @@ export class CustomerStaffService {
             email: input.email,
             passwordHash,
             fullName: input.fullName,
+            tenantId,
           },
           transaction,
         );
@@ -138,7 +155,7 @@ export class CustomerStaffService {
       await this.notifications.enqueueDirectMessage({
         recipientUserId: userId,
         channel: NotificationChannel.EMAIL,
-        subject: "Tu cuenta de GymSheet ya está lista",
+        subject: `Tu cuenta de ${await this.brands.forUser(userId)} ya está lista`,
         body: [
           `Hola ${input.fullName},`,
           "",

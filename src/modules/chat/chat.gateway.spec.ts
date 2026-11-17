@@ -1,9 +1,12 @@
 import type { Socket } from "socket.io";
 import { ChatGateway } from "./chat.gateway";
 
+/** Legal acceptance double: `pending` true means the account still has documents to accept. */
+const legal = (pending = false) => ({ hasPending: jest.fn().mockResolvedValue(pending) }) as never;
+
 describe("ChatGateway conversation:leave", () => {
   function gateway() {
-    return new ChatGateway({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    return new ChatGateway({} as never, {} as never, {} as never, {} as never, {} as never, {} as never, legal());
   }
 
   it("leaves only the requested conversation room for an authenticated socket", async () => {
@@ -47,7 +50,7 @@ describe("ChatGateway authentication gate", () => {
     const chatService = { markDelivered: jest.fn().mockResolvedValue(undefined) };
     const presence = { markConnected: jest.fn().mockReturnValue(false) };
     const chatGateway = new ChatGateway(
-      tickets as never, users as never, repository as never, chatService as never, {} as never, presence as never,
+      tickets as never, users as never, repository as never, chatService as never, {} as never, presence as never, legal(),
     );
     const client = {
       id: "socket-1",
@@ -71,8 +74,9 @@ describe("ChatGateway message:send", () => {
     const clientRequestId = "00000000-0000-4000-8000-0000000000aa";
     const stored = { id: "00000000-0000-4000-8000-000000000010", conversationId, clientRequestId, body: "hola", type: "text" };
     const chatService = { sendMessage: jest.fn().mockResolvedValue(stored) };
+    const users = { findActiveById: jest.fn().mockResolvedValue({ id: "user-1", emailVerifiedAt: new Date() }) };
     const chatGateway = new ChatGateway(
-      {} as never, {} as never, {} as never, chatService as never, {} as never, {} as never,
+      {} as never, users as never, {} as never, chatService as never, {} as never, {} as never, legal(),
     );
     const client = { data: { userId: "user-1", authenticated: Promise.resolve() } } as unknown as Socket;
 
@@ -83,5 +87,51 @@ describe("ChatGateway message:send", () => {
       message: stored,
     });
     expect(chatService.sendMessage).toHaveBeenCalledWith(conversationId, "user-1", "hola", clientRequestId, undefined);
+  });
+
+  it("refuses to send for an account whose email is not verified", async () => {
+    const chatService = { sendMessage: jest.fn() };
+    const users = { findActiveById: jest.fn().mockResolvedValue({ id: "user-1", emailVerifiedAt: null }) };
+    const chatGateway = new ChatGateway(
+      {} as never, users as never, {} as never, chatService as never, {} as never, {} as never, legal(),
+    );
+    const client = { data: { userId: "user-1", authenticated: Promise.resolve() } } as unknown as Socket;
+
+    await expect(
+      chatGateway.handleMessage(client, { conversationId: "00000000-0000-4000-8000-000000000001", body: "hola" }),
+    ).resolves.toEqual({ ok: false, error: "email_verification_required" });
+    expect(chatService.sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("ChatGateway legal acceptance", () => {
+  const conversationId = "00000000-0000-4000-8000-000000000001";
+  const client = () => ({ data: { userId: "user-1", authenticated: Promise.resolve() }, join: jest.fn() }) as unknown as Socket;
+
+  it("refuses message:send while the account has documents to accept, before touching the chat", async () => {
+    const chatService = { sendMessage: jest.fn() };
+    const users = { findActiveById: jest.fn().mockResolvedValue({ id: "user-1", emailVerifiedAt: new Date() }) };
+    const chatGateway = new ChatGateway(
+      {} as never, users as never, {} as never, chatService as never, {} as never, {} as never, legal(true),
+    );
+    await expect(chatGateway.handleMessage(client(), { conversationId, body: "hola" })).resolves.toEqual({
+      ok: false,
+      error: "legal_acceptance_required",
+    });
+    expect(chatService.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("refuses conversation:join while the account has documents to accept", async () => {
+    const repository = { withActiveConversationLock: jest.fn() };
+    const chatGateway = new ChatGateway(
+      {} as never, {} as never, repository as never, {} as never, {} as never, {} as never, legal(true),
+    );
+    const socket = client();
+    await expect(chatGateway.joinConversation(socket, { conversationId })).resolves.toEqual({
+      joined: false,
+      error: "legal_acceptance_required",
+    });
+    expect(repository.withActiveConversationLock).not.toHaveBeenCalled();
+    expect(socket.join).not.toHaveBeenCalled();
   });
 });

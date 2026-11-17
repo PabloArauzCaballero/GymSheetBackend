@@ -17,12 +17,12 @@ export class PublicDirectoryPaymentsController {
 
   @Get('entities/:entityId/plans')
   listPlans(@Param('entityId', UuidParamPipe) entityId: string) {
-    return this.paymentsService.listPlans(entityId, true);
+    return this.paymentsService.listPublicPlans(entityId);
   }
 
   @Get('plans/:planId')
   getPlan(@Param('planId', UuidParamPipe) planId: string) {
-    return this.paymentsService.getPlanById(planId);
+    return this.paymentsService.getPublicPlan(planId);
   }
 
   @Get('entities/:entityId/payment-config')

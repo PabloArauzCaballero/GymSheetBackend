@@ -57,6 +57,7 @@ Invócalas por nombre para procedimientos especializados:
 | Revisión de Clean Code | `clean-code-review` |
 | Elegir/añadir una librería | `library-selection` |
 | Preguntar sobre el grafo de conocimiento ya construido (bajo coste en tokens) | `graphify-ask` |
+| Escribir o cambiar un texto legal o un consentimiento (Bolivia) | `legal-bolivia` (revisa el agente `legal-reviewer`) |
 
 ## Documentación
 

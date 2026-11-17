@@ -120,7 +120,7 @@ export class MembershipStoreController {
   }
 }
 
-@Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller("admin/membership")
 export class AdminMembershipController {
   constructor(
@@ -135,7 +135,6 @@ export class AdminMembershipController {
   }
 
   @Post("plans")
-  @Roles(UserRole.ADMIN)
   createPlan(
     @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(createPlanSchema)) input: CreatePlanInput,
@@ -144,7 +143,6 @@ export class AdminMembershipController {
   }
 
   @Patch("plans/:id")
-  @Roles(UserRole.ADMIN)
   updatePlan(
     @Param("id", UuidParamPipe) id: string,
     @Body(new ZodValidationPipe(updatePlanSchema)) input: UpdatePlanInput,
@@ -158,14 +156,12 @@ export class AdminMembershipController {
    * decide sigue teniendo que ser un administrador con sesión.
    */
   @Get("activation/:token")
-  @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
   describeActivation(@Param("token") token: string) {
     return this.activation.describe(token);
   }
 
   /** Confirma la activación con el plan elegido. */
   @Post("activation/:token")
-  @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
   confirmActivation(
     @Param("token") token: string,
     @Body(new ZodValidationPipe(activationConfirmSchema))
@@ -181,7 +177,6 @@ export class AdminMembershipController {
    * o el trimestre.
    */
   @Get("insights/equipment-usage")
-  @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
   equipmentUsage(
     @CurrentUser() actor: AuthenticatedUser,
     @Query("days") days?: string,
@@ -191,7 +186,6 @@ export class AdminMembershipController {
 
   /** Actividad en la app y entradas físicas, día a día. */
   @Get("insights/people-flow")
-  @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
   peopleFlow(
     @CurrentUser() actor: AuthenticatedUser,
     @Query("days") days?: string,
@@ -206,7 +200,6 @@ export class AdminMembershipController {
    * TODOS los gimnasios a cualquier `ADMIN`, con su correo y su teléfono.
    */
   @Get("users")
-  @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
   listUsers(
     @Query(new ZodValidationPipe(portalUserListSchema)) query: PortalUserListInput,
     @CurrentUser() actor: AuthenticatedUser,
@@ -224,7 +217,6 @@ export class AdminMembershipController {
 
   /** Personas cuya membresía venció o que nunca tuvieron una. */
   @Get("insights/lapsed")
-  @Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
   lapsed(
     @CurrentUser() actor: AuthenticatedUser,
     @Query("limit") limit?: string,
@@ -240,7 +232,6 @@ export class AdminMembershipController {
   }
 
   @Post("features")
-  @Roles(UserRole.ADMIN)
   createFeature(
     @Body(new ZodValidationPipe(createFeatureSchema))
     input: CreateFeatureInput,
@@ -249,7 +240,6 @@ export class AdminMembershipController {
   }
 
   @Patch("features/:id")
-  @Roles(UserRole.ADMIN)
   updateFeature(
     @Param("id", UuidParamPipe) id: string,
     @Body(new ZodValidationPipe(updateFeatureSchema))
@@ -259,13 +249,11 @@ export class AdminMembershipController {
   }
 
   @Delete("features/:id")
-  @Roles(UserRole.ADMIN)
   deactivateFeature(@Param("id", UuidParamPipe) id: string) {
     return this.service.deactivateFeature(id);
   }
 
   @Post("plans/:planId/features/:featureId")
-  @Roles(UserRole.ADMIN)
   attachFeature(
     @Param("planId", UuidParamPipe) planId: string,
     @Param("featureId", UuidParamPipe) featureId: string,
@@ -274,7 +262,6 @@ export class AdminMembershipController {
   }
 
   @Delete("plans/:planId/features/:featureId")
-  @Roles(UserRole.ADMIN)
   detachFeature(
     @Param("planId", UuidParamPipe) planId: string,
     @Param("featureId", UuidParamPipe) featureId: string,
@@ -283,7 +270,6 @@ export class AdminMembershipController {
   }
 
   @Patch("plans/:id/scopes")
-  @Roles(UserRole.ADMIN)
   replaceScopes(
     @CurrentUser() actor: AuthenticatedUser,
     @Param("id", UuidParamPipe) id: string,
@@ -299,7 +285,7 @@ export class AdminMembershipController {
     @Body(new ZodValidationPipe(createCustomerSchema))
     input: CreateCustomerInput,
   ) {
-    return this.service.createCustomer(input, actor.id);
+    return this.service.createCustomer(input, actor);
   }
 
   @Get("customers")
@@ -340,7 +326,6 @@ export class AdminMembershipController {
   }
 
   @Post("staff")
-  @Roles(UserRole.ADMIN)
   createStaff(
     @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(createStaffSchema)) input: CreateStaffInput,
@@ -350,7 +335,6 @@ export class AdminMembershipController {
 
   /** Alta de cuenta y perfil laboral en un solo paso (entrenadores, recepción). */
   @Post("staff-users")
-  @Roles(UserRole.ADMIN)
   createStaffUser(
     @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(createStaffUserSchema))
@@ -360,7 +344,6 @@ export class AdminMembershipController {
   }
 
   @Get("staff")
-  @Roles(UserRole.ADMIN)
   listStaff(
     @CurrentUser() actor: AuthenticatedUser,
     @Query(new ZodValidationPipe(staffListSchema)) query: StaffListInput,
@@ -369,7 +352,6 @@ export class AdminMembershipController {
   }
 
   @Patch("staff/:userId/status")
-  @Roles(UserRole.ADMIN)
   updateStaffStatus(
     @CurrentUser() actor: AuthenticatedUser,
     @Param("userId", UuidParamPipe) userId: string,
@@ -380,7 +362,6 @@ export class AdminMembershipController {
   }
 
   @Post("intents/:id/confirm")
-  @Roles(UserRole.ADMIN)
   confirmIntent(
     @CurrentUser() actor: AuthenticatedUser,
     @Param("id", UuidParamPipe) id: string,

@@ -21,9 +21,16 @@ import { Sequelize } from "sequelize-typescript";
  * | `profile.stories`        | `storage_key`                     | clave      |
  * | `profile.photos`         | `storage_key`                     | clave      |
  * | `chat.messages`          | `media_key`                       | clave      |
+ * | `moderation.chat_message_evidence` | `media_key`             | clave      |
+ * | `social.reels`           | `storage_key`                     | clave      |
+ * | `social.photo_verifications` | `selfie_storage_key`          | clave      |
+ * | `community.content_comments` | `adjunto_url`                 | URL        |
  * | `media.files`            | `storage_url`                     | URL        |
  * | `training.exercise_media`| `url`, `thumbnail_url`            | URL        |
  * | `facilities.branches`    | `cover_image_url`, `gallery_image_urls` | URL  |
+ * | `directory.entities`     | `logo_url`, `cover_url`, `gallery` | URL       |
+ * | `directory.entity_plans` | `media_urls`                      | URL        |
+ * | `business.kyc_documents` | `storage_key`                     | clave      |
  *
  * Las tablas que solo guardan la URL pública (no la clave) se comparan por
  * sufijo exacto `"/<clave>"` con `right()`, nunca con `LIKE`: la clave viaja
@@ -70,6 +77,16 @@ export class MediaReferencesRepository {
                  UNION ALL
                 SELECT 1 FROM chat.messages WHERE media_key = :storageKey
                  UNION ALL
+                SELECT 1 FROM moderation.chat_message_evidence WHERE media_key = :storageKey
+                 UNION ALL
+                SELECT 1 FROM social.reels WHERE storage_key = :storageKey
+                 UNION ALL
+                SELECT 1 FROM social.photo_verifications WHERE selfie_storage_key = :storageKey
+                 UNION ALL
+                SELECT 1 FROM community.content_comments
+                 WHERE adjunto_url IS NOT NULL
+                   AND right(adjunto_url, :suffixLength) = :urlSuffix
+                 UNION ALL
                 SELECT 1 FROM media.files
                  WHERE storage_url IS NOT NULL
                    AND right(storage_url, :suffixLength) = :urlSuffix
@@ -86,6 +103,20 @@ export class MediaReferencesRepository {
                          SELECT 1 FROM unnest(gallery_image_urls) AS gallery(image_url)
                           WHERE right(gallery.image_url, :suffixLength) = :urlSuffix
                        )
+                 UNION ALL
+                SELECT 1 FROM directory.entities
+                 WHERE (logo_url IS NOT NULL AND right(logo_url, :suffixLength) = :urlSuffix)
+                    OR (cover_url IS NOT NULL AND right(cover_url, :suffixLength) = :urlSuffix)
+                    OR EXISTS (
+                         SELECT 1 FROM jsonb_array_elements_text(gallery) AS gallery(image_url)
+                          WHERE right(gallery.image_url, :suffixLength) = :urlSuffix
+                       )
+                 UNION ALL
+                SELECT 1 FROM directory.entity_plans
+                 WHERE EXISTS (
+                         SELECT 1 FROM jsonb_array_elements_text(media_urls) AS media(url)
+                          WHERE right(media.url, :suffixLength) = :urlSuffix
+                       )
               ) AS referenced`,
       {
         type: QueryTypes.SELECT,
@@ -98,6 +129,25 @@ export class MediaReferencesRepository {
       },
     );
 
-    return rows[0]?.referenced === true;
+    if (rows[0]?.referenced === true) return true;
+    return this.isKycDocumentReferenced(storageKey, transaction);
+  }
+
+  /**
+   * KYC documents (ADR-0021), probed apart and only while the table exists:
+   * rolling back its migration queues the remaining files on `media.release`,
+   * and those jobs must drain after the table is gone.
+   */
+  private async isKycDocumentReferenced(storageKey: string, transaction?: Transaction): Promise<boolean> {
+    const [table] = await this.sequelize.query<{ present: boolean }>(
+      "SELECT to_regclass('business.kyc_documents') IS NOT NULL AS present",
+      { type: QueryTypes.SELECT, transaction },
+    );
+    if (table?.present !== true) return false;
+    const [row] = await this.sequelize.query<{ referenced: boolean }>(
+      "SELECT EXISTS (SELECT 1 FROM business.kyc_documents WHERE storage_key = :storageKey) AS referenced",
+      { type: QueryTypes.SELECT, replacements: { storageKey }, transaction },
+    );
+    return row?.referenced === true;
   }
 }

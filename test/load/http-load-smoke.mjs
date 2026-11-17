@@ -99,6 +99,9 @@ function assertBudget(condition, message) {
 
 const uniqueSuffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const password = 'LoadTestPassword123!';
+// Signup must echo the current terms version; read it instead of hardcoding it.
+const legal = await requestData('/legal/current');
+const termsVersion = legal.documents.find((entry) => entry.document === 'TERMS').version;
 const registration = await requestData('/auth/register', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -107,6 +110,9 @@ const registration = await requestData('/auth/register', {
     password,
     nombreCompleto: 'Load Test User',
     acceptedTerms: true,
+    genero: 'MALE',
+    fechaNacimiento: '1995-05-15',
+    termsVersion,
   }),
 });
 const authorizationHeaders = {

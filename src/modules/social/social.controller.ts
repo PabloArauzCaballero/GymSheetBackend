@@ -38,6 +38,7 @@ import {
   discoveryPreferencesInputSchema,
 } from "./social.schemas";
 import { SocialService } from "./social.service";
+import { RequiresVerifiedEmail } from "../../common/decorators/requires-verified-email.decorator";
 
 @Controller()
 export class SocialController {
@@ -74,6 +75,7 @@ export class SocialController {
     return this.service.unblockUser(user.id, targetUserId);
   }
 
+  @RequiresVerifiedEmail()
   @Post("me/connections")
   send(
     @CurrentUser() user: AuthenticatedUser,
@@ -87,6 +89,7 @@ export class SocialController {
     );
   }
 
+  @RequiresVerifiedEmail()
   @Patch("me/connections/:id")
   respond(
     @CurrentUser() user: AuthenticatedUser,
@@ -147,6 +150,7 @@ export class SocialController {
     return this.service.updateDiscoveryPreferences(user.id, input);
   }
 
+  @RequiresVerifiedEmail()
   @Get("me/gym-directory")
   directory(
     @CurrentUser() user: AuthenticatedUser,
@@ -157,6 +161,7 @@ export class SocialController {
 
   // La baraja se declara antes que `me/gym-directory/:userId` por claridad de
   // lectura; son rutas distintas, no compiten entre sí.
+  @RequiresVerifiedEmail()
   @Get("me/discovery/deck")
   async discoveryDeck(
     @CurrentUser() user: AuthenticatedUser,
@@ -170,9 +175,12 @@ export class SocialController {
       query,
     );
     if (page.nextCursor) response.setHeader("X-Next-Cursor", page.nextCursor);
+    // Ranking config version that ordered this page (A/B analysis).
+    if (page.rankingVersion) response.setHeader("X-Ranking-Config", page.rankingVersion);
     return page.items;
   }
 
+  @RequiresVerifiedEmail()
   @Post("me/discovery/swipes")
   swipe(
     @CurrentUser() user: AuthenticatedUser,
@@ -181,6 +189,7 @@ export class SocialController {
     return this.service.swipe(user.id, user.tenantId, input);
   }
 
+  @RequiresVerifiedEmail()
   @Post("me/discovery/impressions")
   observeDiscoveryImpression(
     @CurrentUser() user: AuthenticatedUser,
@@ -194,11 +203,13 @@ export class SocialController {
     );
   }
 
+  @RequiresVerifiedEmail()
   @Post("me/discovery/swipes/undo")
   undoSwipe(@CurrentUser() user: AuthenticatedUser) {
     return this.service.undoLastSwipe(user.id);
   }
 
+  @RequiresVerifiedEmail()
   @Get("me/gym-directory/:userId")
   memberProfile(
     @CurrentUser() user: AuthenticatedUser,

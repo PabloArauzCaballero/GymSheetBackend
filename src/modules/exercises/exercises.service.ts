@@ -32,6 +32,7 @@ import {
   Vocabulary,
 } from './exercise-search';
 import { ExercisePageResult, ExercisesRepository } from './exercises.repository';
+import { PersonalExerciseMediaRelease } from './personal-exercise-media-release';
 import {
   CreateGlobalExerciseInput,
   CreatePersonalExerciseInput,
@@ -67,6 +68,7 @@ export class ExercisesService {
     private readonly equipmentInference: EquipmentInferenceService,
     private readonly sequelize: Sequelize,
     private readonly community: ExerciseCommunityService,
+    private readonly personalMedia: PersonalExerciseMediaRelease,
   ) {}
 
   /** Qué máquina corresponde a un músculo, según el catálogo. */
@@ -366,8 +368,12 @@ export class ExercisesService {
     exerciseId: string,
   ): Promise<ExerciseResponse> {
     const exercise = await this.findPersonalOwnedExerciseOrFail(userId, exerciseId);
-    const inactiveExercise = await this.exercisesRepository.markInactive(exercise);
-    return mapExerciseToResponse(inactiveExercise);
+    // The exercise row stays (routines may still point to it), but what its
+    // owner uploaded to it is deleted with it, file included (ADR-0017).
+    await this.personalMedia.removeAllOf(exercise, async (transaction) => {
+      await this.exercisesRepository.markInactive(exercise, transaction);
+    });
+    return mapExerciseToResponse(exercise);
   }
 
   async inactivateGlobalExercise(exerciseId: string): Promise<ExerciseResponse> {

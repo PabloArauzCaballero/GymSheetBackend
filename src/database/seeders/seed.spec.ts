@@ -1,3 +1,4 @@
+import { UserRole } from '../../common/enums/domain.enums';
 import { resolveSeedUsers } from './seed';
 
 describe('database seeds', () => {
@@ -42,5 +43,32 @@ describe('database seeds', () => {
     });
 
     expect(administrator.email).toBe('admin@example.com');
+  });
+
+  it('seeds the base administrator as the platform SYSTEM_ADMIN, never as gym staff (ADR-0019)', () => {
+    const users = resolveSeedUsers('all', {
+      ...emptyTestEnvironment,
+      SEED_ADMIN_EMAIL: 'admin@example.com',
+      SEED_ADMIN_PASSWORD: 'safe-test-password',
+      SEED_MOCK_PASSWORD: 'safe-mock-password',
+    });
+
+    expect(users[0].role).toBe(UserRole.SYSTEM_ADMIN);
+    const gymStaff = users.filter((user) => [UserRole.ADMIN, UserRole.FRONT_DESK, UserRole.COACH].includes(user.role));
+    expect(gymStaff).toEqual([]);
+  });
+
+  it('seeds scenario accounts with a verified email and leaves platform accounts as declared', () => {
+    const users = resolveSeedUsers('all', {
+      ...emptyTestEnvironment,
+      SEED_ADMIN_EMAIL: 'admin@example.com',
+      SEED_ADMIN_PASSWORD: 'safe-test-password',
+      SEED_MOCK_PASSWORD: 'safe-mock-password',
+    });
+
+    const scenarios = users.filter((user) => user.email.endsWith('.mock@gymsheet.local'));
+    expect(scenarios.length).toBeGreaterThan(0);
+    expect(scenarios.every((user) => user.emailVerified === true)).toBe(true);
+    expect(users.find((user) => user.email === 'admin@example.com')?.emailVerified).toBeUndefined();
   });
 });

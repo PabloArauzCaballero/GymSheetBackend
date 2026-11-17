@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UserRole } from '../../common/enums/domain.enums';
 import { buildCategoryTree, mapDirectoryEntityDetail, mapDirectoryEntitySummary, mapReviewItem } from './directory.mapper';
 import { DirectoryService } from './directory.service';
@@ -166,16 +166,46 @@ describe('Directory Module - Logic & Service Tests', () => {
     });
 
     it('rejects duplicate review creation for the same entity by the same user', async () => {
-      mockRepo.findEntityById.mockResolvedValue({ id: 'ent-1', tenantId: null });
+      mockRepo.findEntityById.mockResolvedValue({ id: 'ent-1', tenantId: null, status: 'ACTIVE' });
       mockRepo.findUserReviewForEntity.mockResolvedValue({ id: 'existing-rev' });
 
       await expect(
-        service.createReview('ent-1', 'user-1', {
+        service.createReview('ent-1', { id: 'user-1', tenantId: 'gym-a' }, {
           rating: 5,
           title: 'Genial',
           body: 'Muy buen lugar para entrenar hoy.',
         })
       ).rejects.toThrow(ConflictException);
+    });
+
+    it('a listing that is not public takes no review (404)', async () => {
+      mockRepo.findEntityById.mockResolvedValue({ id: 'ent-1', tenantId: null, status: 'DRAFT' });
+      await expect(
+        service.createReview('ent-1', { id: 'user-1', tenantId: 'gym-a' }, { rating: 5, title: 'Genial', body: 'Muy buen lugar para entrenar hoy.' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('D3: the verified-athlete seal of a gym listing queries columns that exist, scoped to the author', async () => {
+      mockRepo.findEntityById.mockResolvedValue({ id: 'ent-1', tenantId: 'gym-a', status: 'ACTIVE' });
+      mockRepo.findUserReviewForEntity.mockResolvedValue(null);
+      mockRepo.createReview = jest.fn().mockResolvedValue({ id: 'rev-9' });
+      mockRepo.findReviewById.mockResolvedValue({ id: 'rev-9', entityId: 'ent-1', userId: 'user-1', createdAt: new Date(), reply: null });
+      mockMembershipModel.findOne.mockResolvedValue({ id: 'm-1' });
+      await service.createReview('ent-1', { id: 'user-1', tenantId: 'gym-a' }, { rating: 5, title: 'Genial', body: 'Muy buen lugar para entrenar hoy.' });
+      expect(mockMembershipModel.findOne).toHaveBeenCalledWith({ where: { userId: 'user-1' }, attributes: ['id'] });
+      expect(mockRepo.createReview).toHaveBeenCalledWith('ent-1', 'user-1', expect.anything(), true);
+
+      // A member of another gym gets no seal and no membership lookup.
+      mockMembershipModel.findOne.mockClear();
+      await service.createReview('ent-1', { id: 'user-2', tenantId: 'gym-b' }, { rating: 4, title: 'Bien', body: 'Buen lugar para entrenar hoy.' });
+      expect(mockMembershipModel.findOne).not.toHaveBeenCalled();
+      expect(mockRepo.createReview).toHaveBeenLastCalledWith('ent-1', 'user-2', expect.anything(), false);
+    });
+
+    it('D12: editing or deleting someone else\'s review answers 404, not 403', async () => {
+      mockRepo.findReviewById.mockResolvedValue({ id: 'rev-1', userId: 'author-1' });
+      await expect(service.updateReview('rev-1', 'stranger', { rating: 1 })).rejects.toThrow(NotFoundException);
+      await expect(service.deleteReview('rev-1', 'stranger', UserRole.CLIENT)).rejects.toThrow(NotFoundException);
     });
 
     it('prevents user from voting helpful on their own review', async () => {

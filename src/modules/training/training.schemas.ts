@@ -178,24 +178,6 @@ function durationChange(value: { duracionSeg?: number | null; repsMin?: number |
   return {};
 }
 
-export const assignRoutineSchema = z
-  .object({
-    clienteUsuarioId: z.string().uuid(),
-    fechaProgramada: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/u, 'Fecha inválida (YYYY-MM-DD).')
-      .nullable()
-      .optional(),
-    diasSemana: z.array(z.number().int().min(0).max(6)).max(7).default([]),
-    nota: nullableNote.optional(),
-  })
-  .transform((value) => ({
-    clientUserId: value.clienteUsuarioId,
-    scheduledFor: value.fechaProgramada ?? null,
-    weekdays: Array.from(new Set(value.diasSemana)).sort((a, b) => a - b),
-    note: value.nota ?? null,
-  }));
-
 /** Bulk import of one or more full routines (each with its prescribed exercises). */
 export const importRoutinesSchema = z
   .object({
@@ -238,9 +220,9 @@ export type UpdateRoutineExerciseInput = z.infer<typeof updateRoutineExerciseSch
 /**
  * Auto-programación de una rutina por el propio cliente.
  *
- * A diferencia de `assignRoutineSchema`, aquí no hay `clienteUsuarioId`: el
- * destinatario es siempre quien llama, y aceptarlo por cuerpo permitiría que un
- * cliente programase rutinas en la agenda de otro.
+ * There is no `clienteUsuarioId`: the target is always the caller, and taking
+ * it from the body would let a member schedule routines on someone else's
+ * calendar.
  *
  * La ventana es lo que convierte "esta rutina me interesa" en un mesociclo:
  * sin `repiteHasta` el plan es indefinido, que sigue siendo válido.
@@ -274,6 +256,5 @@ export const selfScheduleRoutineSchema = z
 
 export type SelfScheduleRoutineInput = z.infer<typeof selfScheduleRoutineSchema>;
 
-export type AssignRoutineInput = z.infer<typeof assignRoutineSchema>;
 export type ImportRoutinesInput = z.infer<typeof importRoutinesSchema>;
 export type ListRoutinesInput = z.infer<typeof listRoutinesSchema>;

@@ -1,26 +1,41 @@
 import {
   ConflictException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
   Optional,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
-import { Op, QueryTypes } from "sequelize";
+import { Op, QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import {
   ConnectionStatus,
   NotificationChannel,
+  UserRole,
 } from "../../common/enums/domain.enums";
+import { DISCOVERY_PASS_ORIGIN } from "../social/discovery-pass.model";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
+import { DomainException } from "../../common/errors/domain.exception";
+import { platformScopeOf } from "../../common/tenancy/tenant-scope";
 import { ConnectionModel } from "../social/connection.model";
 import { DiscoveryPassModel } from "../social/discovery-pass.model";
 import { SocialRecommendationOutboxService } from "../social/social-recommendation-outbox.service";
 import { NotificationService } from "../notifications/notification.service";
+import { NoticeEmailService } from "../notifications/notice-email.service";
 import { ModerationRepository } from "./moderation.repository";
+import { ModerationAutoHideService } from "./moderation-auto-hide.service";
+import { ModerationEvidenceService } from "./moderation-evidence.service";
+import { ModerationMinorService } from "./moderation-minor.service";
+import { emailModerationNotice, ModerationNotice, sanctionNotice } from "./moderation-notices";
+import { CaseContentSnapshot, ModerationCaseContentService } from "./moderation-case-content.service";
+import { BUSINESS_TARGET_HIDDEN_SQL } from "./moderation-business-targets";
 import {
-  AUTO_HIDE_DISTINCT_REPORTERS,
+  caseRefusalFor,
+  CaseRefusalCode,
+  isBusinessTarget,
   isHideableTarget,
+  ModerationReason,
   ModerationReasonValue,
   ModerationResolution,
   ModerationResolutionValue,
@@ -28,26 +43,39 @@ import {
   ModerationTargetKindValue,
   nextSanction,
   Sanction,
+  severityOf,
   strikeExpiryFrom,
   StrikeKind,
 } from "./moderation.policy";
 import { CreateReportInput, ResolveCaseInput } from "./moderation.schemas";
 import { ReelSocialService } from "../reels/reel-social.service";
 import { ChatEventsService } from "../chat/chat-events.service";
+import { BusinessAdminService } from "../business-kyc/business-admin.service";
+import { businessSuspensionReasonFor } from "./moderation-business-resolution";
 
 /**
  * Contenido que se ve entre gimnasios (reels y playlists públicas): quien lo ve
  * puede denunciarlo aunque el autor sea de otro gimnasio.
  */
+const CASE_REFUSAL_MESSAGES: Record<CaseRefusalCode, string> = {
+  MODERATION_SELF_CASE: "No puedes revisar un caso sobre tu propia cuenta.",
+  MODERATION_PEER_CASE: "Un caso sobre una cuenta del equipo de REPP solo lo revisa la administración de la plataforma.",
+};
+
 const CROSS_TENANT_TARGETS: ReadonlySet<ModerationTargetKindValue> = new Set([
   ModerationTargetKind.REEL,
   ModerationTargetKind.MUSIC_PLAYLIST,
+  // The marketplace is public: anyone who sees a listing or a profile can report it.
+  ModerationTargetKind.BUSINESS_LISTING,
+  ModerationTargetKind.BUSINESS_PROFILE,
 ]);
 
 /** Lo que se le enseña al moderador antes de que decida. */
 export interface CasePreview {
   targetKind: ModerationTargetKindValue;
   targetId: string;
+  /** Gym of the reported content: the platform queue mixes every gym. */
+  tenantId: string;
   reportedUser: { id: string; name: string; suspendedUntil: string | null };
   reports: {
     id: string;
@@ -61,6 +89,10 @@ export interface CasePreview {
   /** Qué sanción tocaría, calculada antes de aplicarla. */
   pendingSanction: { kind: string; days: number | null };
   contentHidden: boolean;
+  /** What was reported (`content`, or `evidence` for a chat message), hidden or not. */
+  content: CaseContentSnapshot["content"];
+  contentUnavailableReason: CaseContentSnapshot["contentUnavailableReason"];
+  evidence: CaseContentSnapshot["evidence"];
 }
 
 @Injectable()
@@ -75,10 +107,16 @@ export class ModerationService {
     private readonly connections: typeof ConnectionModel,
     @InjectModel(DiscoveryPassModel)
     private readonly passes: typeof DiscoveryPassModel,
+    private readonly minors: ModerationMinorService,
+    private readonly evidence: ModerationEvidenceService,
+    private readonly autoHide: ModerationAutoHideService,
+    private readonly noticeEmails: NoticeEmailService,
+    private readonly caseContent: ModerationCaseContentService,
     @Optional()
     private readonly recommendationOutbox?: SocialRecommendationOutboxService,
     @Optional() private readonly reelSocial?: ReelSocialService,
     @Optional() private readonly chatEvents?: ChatEventsService,
+    @Optional() private readonly businessAdmin?: BusinessAdminService,
   ) {}
 
   /**
@@ -139,8 +177,8 @@ export class ModerationService {
     }
 
     const report = await this.sequelize
-      .transaction(async (transaction) =>
-        this.repository.createReport(
+      .transaction(async (transaction) => {
+        const created = await this.repository.createReport(
           {
             tenantId: owner.tenantId,
             reporterUserId: reporter.id,
@@ -151,8 +189,17 @@ export class ModerationService {
             details: input.details,
           },
           transaction,
-        ),
-      )
+        );
+        // Evidence and the minor suspension commit with the report or not at all.
+        if (input.targetKind === ModerationTargetKind.CHAT_MESSAGE) {
+          await this.evidence.captureChatMessage(input.targetId, transaction);
+        }
+        // A business account is not a person: the minor flow does not apply to marketplace targets.
+        if (input.reason === ModerationReason.MENOR_DE_EDAD && !isBusinessTarget(input.targetKind)) {
+          await this.minors.suspendIfCorroborated({ reportedUserId: owner.userId, tenantId: owner.tenantId, targetKind: input.targetKind }, transaction);
+        }
+        return created;
+      })
       .catch((error: unknown) => {
         if (
           error instanceof Error &&
@@ -165,10 +212,10 @@ export class ModerationService {
         throw error;
       });
 
-    await this.distanceFromReportedUser(reporter.id, owner.userId);
-    const autoHidden = await this.autoHideIfThresholdReached(
-      input.targetKind,
-      input.targetId,
+    if (!isBusinessTarget(input.targetKind)) await this.distanceFromReportedUser(reporter.id, owner.userId);
+    const autoHidden = await this.autoHide.hideIfThresholdReached(
+      { kind: input.targetKind, id: input.targetId },
+      owner,
       input.reason,
     );
 
@@ -193,8 +240,9 @@ export class ModerationService {
   ): Promise<void> {
     try {
       const revokedConversationIds = await this.sequelize.transaction(async (transaction) => {
+        // REPORT origin: never listed in the reported person's passes-received.
         await this.passes.bulkCreate(
-          [{ viewerId: reporterId, targetId: reportedUserId }] as never,
+          [{ viewerId: reporterId, targetId: reportedUserId, origin: DISCOVERY_PASS_ORIGIN.REPORT }] as never,
           { ignoreDuplicates: true, transaction },
         );
         const conversations = await this.sequelize.query<{ id: string }>(
@@ -244,7 +292,7 @@ export class ModerationService {
         return conversationIds;
       });
       for (const conversationId of revokedConversationIds) {
-        this.chatEvents?.emitConversationRevoked(conversationId, reporterId);
+        this.chatEvents?.emitConversationRevoked(conversationId);
       }
     } catch (error) {
       this.logger.warn(
@@ -259,46 +307,11 @@ export class ModerationService {
     }
   }
 
-  /** Cortina automática por acumulación de denunciantes distintos. */
-  private async autoHideIfThresholdReached(
-    targetKind: ModerationTargetKindValue,
-    targetId: string,
-    reason: ModerationReasonValue,
-  ): Promise<boolean> {
-    if (!isHideableTarget(targetKind)) return false;
-
-    const reporters = await this.repository.countDistinctReporters(
-      targetKind,
-      targetId,
-    );
-    if (reporters < AUTO_HIDE_DISTINCT_REPORTERS) return false;
-
-    await this.sequelize.transaction((transaction) =>
-      this.repository.setContentHidden(
-        {
-          targetKind,
-          targetId,
-          hidden: true,
-          // Lo oculta el sistema, no una persona: se deja SIN moderador. Un
-          // identificador inventado violaría la clave foránea contra
-          // `usuarios`, y uno real atribuiría a alguien una decisión que no
-          // tomó.
-          moderatorUserId: null,
-          reason,
-        },
-        transaction,
-      ),
-    );
-    this.logger.log(
-      { event: "moderation.auto_hidden", targetKind, targetId, reporters },
-      ModerationService.name,
-    );
-    return true;
-  }
-
   listQueue(actor: AuthenticatedUser, page: number, pageSize: number) {
     return this.repository.findQueue({
-      tenantScope: actor.tenantScope,
+      tenantScope: platformScopeOf(actor),
+      viewerUserId: actor.id,
+      includePlatformAccounts: actor.role === UserRole.SYSTEM_ADMIN,
       limit: pageSize,
       offset: (page - 1) * pageSize,
     });
@@ -320,23 +333,27 @@ export class ModerationService {
     const reports = await this.repository.findReportsForTarget(
       targetKind,
       targetId,
-      actor.tenantScope,
+      platformScopeOf(actor),
     );
     if (reports.length === 0) {
       throw new NotFoundException("No encontramos ese caso.");
     }
 
     const reportedUserId = reports[0].reportedUserId;
-    const [activeStrikes, person, contentHidden] = await Promise.all([
+    // The dossier names the reporters: it is refused where the verdict is.
+    await this.assertMayDecide(actor, reportedUserId);
+    const [activeStrikes, person, contentHidden, snapshot] = await Promise.all([
       this.repository.countActiveStrikes(reportedUserId, new Date()),
       this.loadReportedPerson(reportedUserId),
       this.isContentHidden(targetKind, targetId),
+      this.caseContent.snapshot(targetKind, targetId),
     ]);
     const sanction = nextSanction(activeStrikes);
 
     return {
       targetKind,
       targetId,
+      tenantId: reports[0].tenantId,
       reportedUser: {
         id: reportedUserId,
         name: person.name,
@@ -353,6 +370,7 @@ export class ModerationService {
       activeStrikes,
       pendingSanction: { kind: sanction.kind, days: sanction.days },
       contentHidden,
+      ...snapshot,
     };
   }
 
@@ -374,6 +392,13 @@ export class ModerationService {
     targetKind: ModerationTargetKindValue,
     targetId: string,
   ): Promise<boolean> {
+    if (targetKind === ModerationTargetKind.BUSINESS_LISTING || targetKind === ModerationTargetKind.BUSINESS_PROFILE) {
+      const [row] = await this.sequelize.query<{ hidden: boolean }>(BUSINESS_TARGET_HIDDEN_SQL[targetKind], {
+        type: QueryTypes.SELECT,
+        replacements: { targetId },
+      });
+      return row?.hidden ?? false;
+    }
     if (!isHideableTarget(targetKind)) return false;
     const queries: Partial<Record<ModerationTargetKindValue, string>> = {
       STORY: "SELECT (hidden_at IS NOT NULL) AS hidden FROM profile.stories WHERE id = :targetId",
@@ -398,11 +423,13 @@ export class ModerationService {
     targetKind: ModerationTargetKindValue,
     targetId: string,
   ) {
+    const [open] = await this.repository.findOpenReportsForTarget(targetKind, targetId, platformScopeOf(actor));
+    if (open) await this.assertMayDecide(actor, open.reportedUserId);
     const affected = await this.repository.claim(
       targetKind,
       targetId,
       actor.id,
-      actor.tenantScope,
+      platformScopeOf(actor),
     );
     if (affected === 0) {
       throw new ConflictException(
@@ -421,7 +448,7 @@ export class ModerationService {
       targetKind,
       targetId,
       actor.id,
-      actor.tenantScope,
+      platformScopeOf(actor),
     );
     if (affected === 0) {
       throw new ConflictException("Este caso no estaba asignado a ti.");
@@ -449,21 +476,39 @@ export class ModerationService {
     const openReports = await this.repository.findOpenReportsForTarget(
       targetKind,
       targetId,
-      actor.tenantScope,
+      platformScopeOf(actor),
     );
     if (openReports.length === 0) {
       throw new NotFoundException("Este caso ya no está abierto.");
     }
+    assertResolutionApplies(targetKind, input);
 
     const first = openReports[0];
     const reportedUserId = first.reportedUserId;
     const tenantId = first.tenantId;
+    // The notice and the strike name the most serious reason of the case.
+    const reason = openReports.reduce((worst, report) =>
+      severityOf(report.reason) > severityOf(worst) ? report.reason : worst, first.reason);
     const now = new Date();
 
     let sanction: Sanction | null = null;
+    let strikeId: string | null = null;
+    let authorNotice: ModerationNotice | null = null;
 
     await this.sequelize.transaction(async (transaction) => {
-      if (input.sanction) {
+      // Checked under a share lock on the reported account, before anything is
+      // applied: no strike, expulsion, minor closure or hide on a refused case.
+      await this.assertMayDecide(actor, reportedUserId, transaction);
+      // A confirmed minor is not punished: the account is closed because the
+      // service is for adults. Dismissing a minor report ends its suspension.
+      if (input.confirmMinor) {
+        await this.minors.confirm(reportedUserId, transaction);
+      } else if (openReports.some((report) => report.reason === ModerationReason.MENOR_DE_EDAD)) {
+        await this.minors.liftIfCleared(reportedUserId, { kind: targetKind, id: targetId }, transaction, {
+          sanctionFollows: Boolean(input.sanction),
+        });
+      }
+      if (input.sanction && !input.confirmMinor) {
         const previous = await this.repository.countActiveStrikes(
           reportedUserId,
           now,
@@ -471,12 +516,12 @@ export class ModerationService {
         );
         sanction = nextSanction(previous, now);
 
-        await this.repository.createStrike(
+        const strike = await this.repository.createStrike(
           {
             userId: reportedUserId,
             tenantId,
             kind: sanction.kind,
-            reason: first.reason,
+            reason,
             note: input.note,
             targetKind,
             targetId,
@@ -486,6 +531,7 @@ export class ModerationService {
           },
           transaction,
         );
+        strikeId = strike.id;
 
         if (sanction.kind === StrikeKind.SUSPENSION) {
           await this.repository.setSuspension(
@@ -513,6 +559,7 @@ export class ModerationService {
         }
       }
 
+      if (input.suspendBusiness) await this.suspendBusinessOf(actor, targetKind, targetId, reason, input.note, transaction);
       if (isHideableTarget(targetKind)) {
         await this.repository.setContentHidden(
           {
@@ -520,11 +567,16 @@ export class ModerationService {
             targetId,
             hidden: input.hideContent,
             moderatorUserId: actor.id,
-            reason: first.reason,
+            reason,
           },
           transaction,
         );
       }
+      authorNotice = await this.autoHide.closeReview(
+        { kind: targetKind, id: targetId },
+        { moderatorUserId: actor.id, hidden: input.hideContent, sanctioned: sanction !== null || input.confirmMinor, reason },
+        transaction,
+      );
 
       await this.repository.resolveTarget(
         {
@@ -533,17 +585,25 @@ export class ModerationService {
           resolution: this.resolutionFor(input, sanction),
           note: input.note,
           moderatorUserId: actor.id,
-          discarded: !input.sanction && !input.hideContent,
-          tenantScope: actor.tenantScope,
+          discarded: !input.sanction && !input.hideContent && !input.confirmMinor && input.suspendBusiness !== true,
+          tenantScope: platformScopeOf(actor),
         },
         transaction,
       );
     });
 
-    await this.notifyOutcome(openReports, reportedUserId, sanction, input);
+    await this.notifyOutcome(openReports, reportedUserId, sanction, input, {
+      strikeId,
+      reason,
+      target: { kind: targetKind, id: targetId },
+      authorNotice,
+    });
 
     return {
       resolved: true,
+      /** Gym of the reported content: the platform queue mixes every gym. */
+      tenantId,
+      resolution: this.resolutionFor(input, sanction),
       reportsClosed: openReports.length,
       sanction: sanction
         ? {
@@ -552,14 +612,59 @@ export class ModerationService {
           }
         : null,
       contentHidden: isHideableTarget(targetKind) ? input.hideContent : false,
+      minorConfirmed: input.confirmMinor,
+      businessSuspended: input.suspendBusiness === true,
     };
+  }
+
+  /** The business behind a listing or profile is suspended in the verdict's transaction (ADR-0022). */
+  private async suspendBusinessOf(
+    actor: AuthenticatedUser,
+    targetKind: ModerationTargetKindValue,
+    targetId: string,
+    reason: ModerationReasonValue,
+    note: string | null,
+    transaction: Transaction,
+  ): Promise<void> {
+    const entityId = await this.repository.findBusinessEntityOf(targetKind, targetId, transaction);
+    if (!entityId || !this.businessAdmin) throw new NotFoundException("No encontramos ese negocio.");
+    await this.businessAdmin.suspendEntityFromCase(
+      actor,
+      entityId,
+      { reasonCode: businessSuspensionReasonFor(reason), ...(note ? { note } : {}) },
+      transaction,
+    );
+  }
+
+  /**
+   * ADR-0018 §8: nobody decides on a case about their own account, and only a
+   * SYSTEM_ADMIN decides on a case about a platform account. Releasing a claim
+   * stays open: it only hands the case back to the queue.
+   */
+  private async assertMayDecide(
+    actor: AuthenticatedUser,
+    reportedUserId: string,
+    transaction?: Transaction,
+  ): Promise<void> {
+    const role = await this.repository.findAccountRole(reportedUserId, transaction);
+    // Only a business needs its mailbox compared (ADR-0021 §8); persons are told apart by id.
+    const email = role === UserRole.BUSINESS ? await this.repository.findAccountEmail(reportedUserId, transaction) : null;
+    const refusal = caseRefusalFor(actor, { id: reportedUserId, role, email });
+    if (!refusal) return;
+    this.logger.warn(
+      { event: "moderation.case_refused", code: refusal, actorUserId: actor.id, actorRole: actor.role, reportedUserId },
+      ModerationService.name,
+    );
+    throw new DomainException(HttpStatus.FORBIDDEN, refusal, CASE_REFUSAL_MESSAGES[refusal]);
   }
 
   private resolutionFor(
     input: ResolveCaseInput,
     sanction: Sanction | null,
   ): ModerationResolutionValue {
+    if (input.confirmMinor) return ModerationResolution.MENOR_CONFIRMADO;
     if (sanction) return sanction.resolution;
+    if (input.suspendBusiness) return ModerationResolution.NEGOCIO_SUSPENDIDO;
     if (input.hideContent) return ModerationResolution.CONTENIDO_OCULTO;
     return ModerationResolution.SIN_ACCION;
   }
@@ -582,28 +687,43 @@ export class ModerationService {
     reportedUserId: string,
     sanction: Sanction | null,
     input: ResolveCaseInput,
+    context: {
+      strikeId: string | null;
+      reason: ModerationReasonValue;
+      target: { kind: ModerationTargetKindValue; id: string };
+      authorNotice: ModerationNotice | null;
+    },
   ): Promise<void> {
     const tasks: Promise<unknown>[] = reports.map((report) =>
       this.notifications.enqueueDirectMessage({
         recipientUserId: report.reporterUserId,
         channel: NotificationChannel.IN_APP,
         subject: "Revisamos tu reporte",
-        body: input.hideContent
-          ? "Gracias por avisar. Revisamos el contenido que reportaste y lo retiramos."
-          : "Gracias por avisar. Revisamos el contenido que reportaste.",
+        body: input.hideContent || input.suspendBusiness
+          ? "Gracias por avisar. El equipo de moderación de REPP revisó el contenido que reportaste y lo retiró."
+          : "Gracias por avisar. El equipo de moderación de REPP revisó el contenido que reportaste.",
         deduplicationKey: `moderation.report-reviewed:${report.id}`,
       }),
     );
 
-    if (sanction) {
+    const notice = sanction ? sanctionNotice(sanction, context.reason, context.target) : context.authorNotice;
+    if (notice) {
       tasks.push(
         this.notifications.enqueueDirectMessage({
           recipientUserId: reportedUserId,
           channel: NotificationChannel.IN_APP,
-          subject: this.sanctionSubject(sanction),
-          body: this.sanctionBody(sanction),
-          deduplicationKey: `moderation.sanction:${reportedUserId}:${Date.now()}`,
+          subject: notice.subject,
+          body: notice.body,
+          deduplicationKey: `moderation.${sanction ? "sanction" : "content"}:${reportedUserId}:${Date.now()}`,
+          metadata: notice.metadata,
         }),
+      );
+    }
+    // A suspension or an expulsion locks the person out of the inbox where
+    // that notice waits: it also goes to the address on file, once per strike.
+    if (notice && sanction && sanction.kind !== StrikeKind.ADVERTENCIA && context.strikeId) {
+      tasks.push(
+        emailModerationNotice(this.noticeEmails, reportedUserId, notice, `moderation.sanction:${context.strikeId}`),
       );
     }
 
@@ -619,32 +739,14 @@ export class ModerationService {
     }
   }
 
-  private sanctionSubject(sanction: Sanction): string {
-    if (sanction.kind === StrikeKind.ADVERTENCIA)
-      return "Aviso sobre tu contenido";
-    if (sanction.kind === StrikeKind.EXPULSION)
-      return "Tu cuenta ha sido cerrada";
-    return "Tu cuenta ha sido suspendida";
-  }
-
-  private sanctionBody(sanction: Sanction): string {
-    if (sanction.kind === StrikeKind.ADVERTENCIA) {
-      return "Retiramos contenido tuyo por incumplir las normas de la comunidad. Es un aviso: si vuelve a ocurrir, tu cuenta puede quedar suspendida.";
-    }
-    if (sanction.kind === StrikeKind.EXPULSION) {
-      return "Cerramos tu cuenta por incumplimientos repetidos de las normas de la comunidad.";
-    }
-    const days = sanction.days ?? 0;
-    return `Suspendimos tu cuenta ${days === 1 ? "un día" : `${days} días`} por incumplir las normas de la comunidad. Podrás volver a entrar cuando termine.`;
-  }
-
   /** Historial de una persona, para la ficha y para decidir con contexto. */
   async historyFor(actor: AuthenticatedUser, userId: string) {
     const owner = await this.repository.findContentOwner(
       ModerationTargetKind.USER,
       userId,
     );
-    if (!owner || (actor.tenantScope && owner.tenantId !== actor.tenantScope)) {
+    const scope = platformScopeOf(actor);
+    if (!owner || (scope && owner.tenantId !== scope)) {
       throw new NotFoundException("Usuario no encontrado.");
     }
     const [strikes, activeStrikes] = await Promise.all([
@@ -666,5 +768,23 @@ export class ModerationService {
         expired: strike.expiresAt.getTime() <= Date.now(),
       })),
     };
+  }
+}
+
+/**
+ * The person ladder (strikes, minors) does not apply to a business account,
+ * and suspending a business is only for marketplace cases (ADR-0022). Refused
+ * before anything is applied.
+ */
+function assertResolutionApplies(targetKind: ModerationTargetKindValue, input: ResolveCaseInput): void {
+  const business = isBusinessTarget(targetKind);
+  if ((business && (input.sanction || input.confirmMinor)) || (!business && input.suspendBusiness)) {
+    throw new DomainException(
+      HttpStatus.UNPROCESSABLE_ENTITY,
+      "MODERATION_RESOLUTION_NOT_APPLICABLE",
+      business
+        ? "En un caso del marketplace se oculta la publicación o se suspende el negocio; no se sanciona a una persona."
+        : "Suspender un negocio solo se decide en un caso de una publicación o de un perfil de negocio.",
+    );
   }
 }

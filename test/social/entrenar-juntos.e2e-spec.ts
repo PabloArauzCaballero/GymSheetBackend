@@ -10,6 +10,7 @@ import { HttpExceptionFilter } from "../../src/common/filters/http-exception.fil
 import { ResponseInterceptor } from "../../src/common/interceptors/response.interceptor";
 import { requestIdMiddleware } from "../../src/common/middleware/request-id.middleware";
 import { env } from "../../src/config/env";
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from "../support/e2e-app";
 import "./entrenar-juntos-migrations.e2e";
 
 describe("H10 training invitations (PostgreSQL e2e)", () => {
@@ -205,9 +206,10 @@ describe("H10 training invitations (PostgreSQL e2e)", () => {
           email: `h10-invite-${label}-${suffix}@example.test`,
           password: "h10-invite-qa-password",
           nombreCompleto: `H10 Invite ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const userId = response.body.data.user.id as string;
       userIds.push(userId);
       return { userId, accessToken: response.body.data.accessToken as string };
@@ -705,9 +707,10 @@ describe("H10 training invitations (PostgreSQL e2e)", () => {
           email: `h10-m4-${label}-${suffix}@example.test`,
           password: "h10-m4-qa-password",
           nombreCompleto: `H10 M4 ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const userId = response.body.data.user.id as string;
       userIds.push(userId);
       return { userId, accessToken: response.body.data.accessToken as string };
@@ -856,9 +859,10 @@ describe("H10 training invitations (PostgreSQL e2e)", () => {
           email: `h10-m5-${label}-${suffix}@example.test`,
           password: "h10-m5-qa-password",
           nombreCompleto: `H10 M5 ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const userId = response.body.data.user.id as string;
       userIds.push(userId);
       return { userId, accessToken: response.body.data.accessToken as string };
@@ -968,9 +972,10 @@ describe("H10 training invitations (PostgreSQL e2e)", () => {
           email: `h10-m7-${label}-${suffix}@example.test`,
           password: "h10-m7-qa-password",
           nombreCompleto: `H10 M7 ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const userId = response.body.data.user.id as string;
       userIds.push(userId);
       return { userId, accessToken: response.body.data.accessToken as string };
@@ -1074,9 +1079,10 @@ describe("H10 training invitations (PostgreSQL e2e)", () => {
           email: `h10-m6-${label}-${suffix}@example.test`,
           password: "h10-m6-qa-password",
           nombreCompleto: `H10 M6 ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const userId = response.body.data.user.id as string;
       userIds.push(userId);
       return { userId, accessToken: response.body.data.accessToken as string };
@@ -1278,9 +1284,10 @@ describe("H10 training invitations (PostgreSQL e2e)", () => {
           email: `h10-shared-${label}-${suffix}@example.test`,
           password: "h10-invite-qa-password",
           nombreCompleto: `H10 Shared ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const userId = response.body.data.user.id as string;
       userIds.push(userId);
       return { userId, accessToken: response.body.data.accessToken as string };
@@ -1450,9 +1457,10 @@ describe("H10 training invitations (PostgreSQL e2e)", () => {
           email: `h10-own-routines-${label}-${suffix}@example.test`,
           password: "h10-own-routines-qa-password",
           nombreCompleto: `H10 Own Routines ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application, response.body.data.user.id as string);
       const userId = response.body.data.user.id as string;
       userIds.push(userId);
       return { userId, accessToken: response.body.data.accessToken as string };

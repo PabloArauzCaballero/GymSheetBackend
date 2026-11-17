@@ -50,6 +50,11 @@ export const createReviewReplyBodySchema = z.object({
 });
 export type CreateReviewReplyBody = z.infer<typeof createReviewReplyBodySchema>;
 
+/**
+ * `POST /directory/entities`: REPP's seeding of listings (SYSTEM_ADMIN only).
+ * Businesses sign up with `POST /business/signup` (ADR-0020). The body cannot
+ * set `is_verified`, `tenant_id` or the owner (D1); unknown keys are refused.
+ */
 export const createEntityBodySchema = z.object({
   name: z.string().trim().min(2).max(180),
   entity_type: entityTypeEnum,
@@ -57,8 +62,6 @@ export const createEntityBodySchema = z.object({
   description: z.string().trim().min(10),
   primary_category_id: z.string().uuid(),
   secondary_category_ids: z.array(z.string().uuid()).optional(),
-  tenant_id: z.string().trim().max(60).optional(),
-  user_id: z.string().uuid().optional(),
   branch_id: z.string().uuid().optional(),
   logo_url: z.string().url().optional(),
   cover_url: z.string().url().optional(),
@@ -71,6 +74,5 @@ export const createEntityBodySchema = z.object({
   longitude: z.number().optional(),
   contact_info: z.record(z.string(), z.string()).optional(),
   business_hours: z.record(z.string(), z.object({ open: z.string(), close: z.string() })).optional(),
-  is_verified: z.boolean().default(false),
-});
+}).strict();
 export type CreateEntityBody = z.infer<typeof createEntityBodySchema>;

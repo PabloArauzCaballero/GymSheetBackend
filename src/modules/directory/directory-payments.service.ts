@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   Optional,
@@ -30,7 +31,9 @@ import { EntityPaymentConfigModel } from './models/entity-payment-config.model';
 import { EntityPlanModel } from './models/entity-plan.model';
 import { PaymentOrderModel } from './models/payment-order.model';
 import { PlanPriceHistoryModel } from './models/plan-price-history.model';
-import { mapDirectoryEntitySummary } from './directory.mapper';
+import { PublicPaymentConfigDto, PublicPlanDto, mapPublicPaymentConfig, mapPublicPlan } from './directory-payments.mapper';
+import { legacyListingState, shapeViolations } from '../business-listings/listing-checks';
+import { DomainException } from '../../common/errors/domain.exception';
 
 @Injectable()
 export class DirectoryPaymentsService {
@@ -66,27 +69,21 @@ export class DirectoryPaymentsService {
   }
 
   /**
-   * Quién administra un ente del directorio: su dueño, un administrador de su
-   * gimnasio o un administrador del sistema. Un socio del mismo gimnasio NO.
+   * Who manages a directory listing: its owner or REPP's `SYSTEM_ADMIN`. The
+   * gym's staff no longer does (ADR-0019), whatever its legacy role.
    */
-  private canManageEntity(
-    actor: AuthenticatedUser,
-    entityUserId: string | null | undefined,
-    entityTenantId: string | null | undefined,
-  ): boolean {
+  private canManageEntity(actor: AuthenticatedUser, entityUserId: string | null | undefined): boolean {
     if (actor.role === UserRole.SYSTEM_ADMIN) return true;
-    if (entityUserId && entityUserId === actor.id) return true;
-    return Boolean(entityTenantId && actor.tenantId === entityTenantId && actor.role === UserRole.ADMIN);
+    return Boolean(entityUserId && entityUserId === actor.id);
   }
 
   /** Acceso ajeno → 404, no 403: no se confirma que el recurso existe. */
   private assertEntityOwnership(
     actor: AuthenticatedUser,
     entityUserId: string | null | undefined,
-    entityTenantId: string | null | undefined,
     notFoundMessage = 'Entidad del directorio no encontrada.',
   ) {
-    if (!this.canManageEntity(actor, entityUserId, entityTenantId)) {
+    if (!this.canManageEntity(actor, entityUserId)) {
       throw new NotFoundException(notFoundMessage);
     }
   }
@@ -115,10 +112,11 @@ export class DirectoryPaymentsService {
   // 1. CONFIGURACIÓN DE PAGO BANCARIO Y QR
   // =========================================================================
 
-  async getPaymentConfig(entityId: string): Promise<EntityPaymentConfigModel | null> {
+  /** Public: only for a listing people can see, mapped without the tax id (D5). */
+  async getPaymentConfig(entityId: string): Promise<PublicPaymentConfigDto | null> {
     const entity = await this.repository.findEntityById(entityId);
-    if (!entity) throw new NotFoundException('Entidad del directorio no encontrada.');
-    return this.repository.findPaymentConfig(entityId);
+    if (!entity || entity.status !== 'ACTIVE') throw new NotFoundException('Entidad del directorio no encontrada.');
+    return mapPublicPaymentConfig(await this.repository.findPaymentConfig(entityId));
   }
 
   async upsertPaymentConfig(
@@ -128,7 +126,7 @@ export class DirectoryPaymentsService {
   ): Promise<EntityPaymentConfigModel> {
     const entity = await this.repository.findEntityById(entityId);
     if (!entity) throw new NotFoundException('Entidad del directorio no encontrada.');
-    this.assertEntityOwnership(actor, entity.userId, entity.tenantId);
+    this.assertEntityOwnership(actor, entity.userId);
 
     return this.repository.upsertPaymentConfig(entityId, input);
   }
@@ -137,38 +135,25 @@ export class DirectoryPaymentsService {
   // 2. CATÁLOGO DE PLANES Y PRODUCTOS EN MARKETPLACE
   // =========================================================================
 
-  async listPlans(entityId: string, onlyActive = true): Promise<EntityPlanModel[]> {
+  /** Public: the active plans of a listing people can see (D4, D7). */
+  async listPublicPlans(entityId: string): Promise<PublicPlanDto[]> {
     const entity = await this.repository.findEntityById(entityId);
-    if (!entity) throw new NotFoundException('Entidad del directorio no encontrada.');
-    return this.repository.listPlans(entityId, onlyActive);
+    if (!entity || entity.status !== 'ACTIVE') throw new NotFoundException('Entidad del directorio no encontrada.');
+    return (await this.repository.listPlans(entityId, true)).map(mapPublicPlan);
   }
 
-  async listAllMarketplacePlans(type?: string, limit = 50) {
-    const plans = await this.repository.listAllMarketplacePlans(type, limit);
-    return plans.map((plan) => ({
-      id: plan.id,
-      entityId: plan.entityId,
-      type: plan.type,
-      name: plan.name,
-      slug: plan.slug,
-      description: plan.description,
-      benefits: plan.benefits ?? [],
-      durationDays: plan.durationDays,
-      currentPrice: plan.currentPrice,
-      currency: plan.currency,
-      status: plan.status,
-      displayOrder: plan.displayOrder,
-      mediaUrls: plan.mediaUrls ?? [],
-      // Los metadatos internos del comercio no salen en el listado público.
-      metadata: {},
-      entity: plan.entity ? mapDirectoryEntitySummary(plan.entity) : undefined,
-    }));
+  /** Public marketplace: plans of listings that are ACTIVE only; a paused or suspended seller sells nothing (D7). */
+  async listAllMarketplacePlans(type?: string, limit = 50): Promise<PublicPlanDto[]> {
+    return (await this.repository.listAllMarketplacePlans(type, limit)).map(mapPublicPlan);
   }
 
-  async getPlanById(planId: string): Promise<EntityPlanModel> {
+  /** Public: an active plan of an active listing, mapped (D4); anything else is 404. */
+  async getPublicPlan(planId: string): Promise<PublicPlanDto> {
     const plan = await this.repository.findPlanById(planId);
-    if (!plan) throw new NotFoundException('Plan o producto no encontrado.');
-    return plan;
+    if (!plan || plan.status !== 'ACTIVE' || plan.moderationStatus !== 'LIVE' || plan.entity?.status !== 'ACTIVE') {
+      throw new NotFoundException('Plan o producto no encontrado.');
+    }
+    return mapPublicPlan(plan);
   }
 
   async createPlan(
@@ -178,7 +163,7 @@ export class DirectoryPaymentsService {
   ): Promise<EntityPlanModel> {
     const entity = await this.repository.findEntityById(entityId);
     if (!entity) throw new NotFoundException('Entidad del directorio no encontrada.');
-    this.assertEntityOwnership(actor, entity.userId, entity.tenantId);
+    this.assertEntityOwnership(actor, entity.userId);
 
     const slug = input.slug ? this.slugify(input.slug) : this.slugify(input.name);
     const existingSlug = await this.repository.findPlanBySlug(entityId, slug);
@@ -191,13 +176,14 @@ export class DirectoryPaymentsService {
         {
           entityId,
           type: input.type ?? 'MEMBERSHIP_PLAN',
+          ...legacyListingState(input.type ?? 'MEMBERSHIP_PLAN', input.durationDays ?? null),
           name: input.name,
           slug,
           description: input.description,
           benefits: input.benefits ?? [],
           durationDays: input.durationDays ?? null,
           currentPrice: input.price.toFixed(2),
-          currency: input.currency ?? 'USD',
+          currency: input.currency ?? 'BOB',
           status: 'ACTIVE',
           displayOrder: input.displayOrder ?? 0,
           mediaUrls: input.mediaUrls ?? [],
@@ -232,7 +218,15 @@ export class DirectoryPaymentsService {
   ): Promise<EntityPlanModel> {
     const plan = await this.repository.findPlanById(planId);
     if (!plan) throw new NotFoundException('Plan o producto no encontrado.');
-    this.assertEntityOwnership(actor, plan.entity?.userId ?? null, plan.entity?.tenantId ?? null);
+    this.assertEntityOwnership(actor, plan.entity?.userId ?? null);
+    if (input.durationDays !== undefined && plan.moderationStatus === 'LIVE') {
+      // A public listing keeps the shape of its kind (ck_entity_plan_live_validity), checked here as a 422, not a 500.
+      const validityDays = plan.offerKind === 'DAY_PASS' && input.durationDays === 1 ? null : input.durationDays;
+      const violations = shapeViolations({ offerKind: plan.offerKind, validityDays, sessionsCount: plan.sessionsCount, stockQuantity: plan.stockQuantity, productCategoryId: plan.productCategoryId });
+      if (violations.length > 0) {
+        throw new DomainException(HttpStatus.UNPROCESSABLE_ENTITY, 'LISTING_SHAPE_INVALID', 'Faltan o sobran datos para este tipo de publicación.', { violations });
+      }
+    }
 
     return this.repository.updatePlan(plan, input);
   }
@@ -248,7 +242,7 @@ export class DirectoryPaymentsService {
   ): Promise<{ plan: EntityPlanModel; newPriceHistory: PlanPriceHistoryModel }> {
     const plan = await this.repository.findPlanById(planId);
     if (!plan) throw new NotFoundException('Plan o producto no encontrado.');
-    this.assertEntityOwnership(actor, plan.entity?.userId ?? null, plan.entity?.tenantId ?? null);
+    this.assertEntityOwnership(actor, plan.entity?.userId ?? null);
 
     const newPriceStr = input.newPrice.toFixed(2);
     if (plan.currentPrice === newPriceStr) {
@@ -300,7 +294,7 @@ export class DirectoryPaymentsService {
   async getPriceHistory(actor: AuthenticatedUser, planId: string): Promise<PlanPriceHistoryModel[]> {
     const plan = await this.repository.findPlanById(planId);
     if (!plan) throw new NotFoundException('Plan o producto no encontrado.');
-    this.assertEntityOwnership(actor, plan.entity?.userId, plan.entity?.tenantId, 'Plan o producto no encontrado.');
+    this.assertEntityOwnership(actor, plan.entity?.userId, 'Plan o producto no encontrado.');
     return this.repository.listPriceHistory(planId);
   }
 
@@ -311,9 +305,11 @@ export class DirectoryPaymentsService {
   async createPaymentOrder(
     athlete: AuthenticatedUser,
     input: CreatePaymentOrderInput,
-  ): Promise<{ order: PaymentOrderModel; paymentConfig: EntityPaymentConfigModel | null }> {
+  ): Promise<{ order: PaymentOrderModel; paymentConfig: PublicPaymentConfigDto | null }> {
     const plan = await this.repository.findPlanById(input.planId);
-    if (!plan) throw new NotFoundException('Plan no encontrado.');
+    // A seller that is not public (DRAFT, paused, suspended, closed) sells nothing (D7).
+    // Nor does a listing REPP or the publication checks keep off the marketplace (ADR-0022): 404, it is not public.
+    if (!plan || plan.entity?.status !== 'ACTIVE' || plan.moderationStatus !== 'LIVE') throw new NotFoundException('Plan no encontrado.');
     if (plan.status !== 'ACTIVE') throw new BadRequestException('Este plan no se encuentra activo para compra.');
 
     const currentPriceHistory = await this.repository.findCurrentPriceHistory(plan.id);
@@ -359,7 +355,7 @@ export class DirectoryPaymentsService {
       amount: Number(plan.currentPrice) || 0,
     });
 
-    return { order, paymentConfig };
+    return { order, paymentConfig: mapPublicPaymentConfig(paymentConfig) };
   }
 
   async submitReceipt(
@@ -423,7 +419,7 @@ export class DirectoryPaymentsService {
     // Solo el atleta dueño o quien administra el ente. Antes bastaba con ser
     // del mismo gimnasio: cualquier socio podía leer el comprobante de otro.
     const isAthlete = order.athleteUserId === actor.id;
-    const isEntityStaff = this.canManageEntity(actor, order.entity?.userId, order.entity?.tenantId);
+    const isEntityStaff = this.canManageEntity(actor, order.entity?.userId);
     if (!isAthlete && !isEntityStaff) {
       throw new NotFoundException('Orden de pago no encontrada.');
     }
@@ -446,7 +442,7 @@ export class DirectoryPaymentsService {
   ): Promise<{ items: PaymentOrderModel[]; total: number }> {
     const entity = await this.repository.findEntityById(entityId);
     if (!entity) throw new NotFoundException('Entidad del directorio no encontrada.');
-    this.assertEntityOwnership(actor, entity.userId, entity.tenantId);
+    this.assertEntityOwnership(actor, entity.userId);
 
     const { rows, count } = await this.repository.listOrdersForEntity(entityId, query);
     return { items: rows, total: count };
@@ -455,7 +451,7 @@ export class DirectoryPaymentsService {
   async confirmOrder(actor: AuthenticatedUser, orderId: string): Promise<PaymentOrderModel> {
     const order = await this.repository.findOrderById(orderId);
     if (!order) throw new NotFoundException('Orden de pago no encontrada.');
-    this.assertEntityOwnership(actor, order.entity?.userId, order.entity?.tenantId, 'Orden de pago no encontrada.');
+    this.assertEntityOwnership(actor, order.entity?.userId, 'Orden de pago no encontrada.');
 
     /*
      * Todo en una sola transacción: la orden se bloquea (dos confirmaciones a la
@@ -563,7 +559,7 @@ export class DirectoryPaymentsService {
   ): Promise<PaymentOrderModel> {
     const order = await this.repository.findOrderById(orderId);
     if (!order) throw new NotFoundException('Orden de pago no encontrada.');
-    this.assertEntityOwnership(actor, order.entity?.userId, order.entity?.tenantId, 'Orden de pago no encontrada.');
+    this.assertEntityOwnership(actor, order.entity?.userId, 'Orden de pago no encontrada.');
 
     const updatedOrder = await this.sequelize.transaction(async (transaction) => {
       const locked = await this.repository.lockOrder(order.id, transaction);

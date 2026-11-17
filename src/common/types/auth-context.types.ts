@@ -1,5 +1,12 @@
 import { UserRole } from '../enums/domain.enums';
 
+/** Whether the account is a person or a business (ADR-0020). Derived from the role. */
+export type AccountKind = 'PERSON' | 'BUSINESS';
+
+export function accountKindOf(role: UserRole): AccountKind {
+  return role === UserRole.BUSINESS ? 'BUSINESS' : 'PERSON';
+}
+
 /** Authenticated request principal produced by the JWT strategy. */
 export type AuthenticatedUser = {
   id: string;
@@ -34,6 +41,20 @@ export type AuthenticatedUser = {
   tenantScope: string | null;
   /** `true` cuando un `SYSTEM_ADMIN` mira un gimnasio concreto vía suplantación. */
   impersonating: boolean;
+  /** Device of the session (from the token), when it is bound to one. */
+  deviceId?: string | null;
+  /**
+   * Whether the account proved its mailbox. Read from the database on every
+   * request; absent (e.g. in hand-built principals) counts as not verified.
+   */
+  emailVerified?: boolean;
+  /**
+   * Person or business, from the role read on every request. Absent in
+   * hand-built principals: `accountKindOf(role)` is the authority.
+   */
+  accountKind?: AccountKind;
+  /** The listing a business account owns (`business.accounts.entity_id`); null for a person. */
+  businessEntityId?: string | null;
 };
 
 /** Custom access-token claims controlled by this API. */
@@ -41,6 +62,12 @@ export type JwtPayload = {
   sub: string;
   email: string;
   role: UserRole;
+  /** Device the session is bound to; lets "sign out everywhere else" keep this one. */
+  did?: string;
+  /** Issued-at, seconds (set by the signer). */
+  iat?: number;
+  /** Issued-at in milliseconds, so a session cut can tell apart tokens minted in the same second. */
+  sat?: number;
   /**
    * Gimnasio suplantado. Presente SÓLO en los tokens que emite
    * `POST /auth/impersonate-tenant`, y honrado sólo si la cuenta sigue siendo

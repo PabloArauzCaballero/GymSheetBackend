@@ -13,7 +13,8 @@ yarn db:seed:all:development
 El seed base requiere `SEED_ADMIN_EMAIL` y `SEED_ADMIN_PASSWORD`. El seed mock
 requiere `SEED_MOCK_PASSWORD` y se niega a ejecutar con `NODE_ENV=production`.
 Las contraseñas se reciben por entorno, se almacenan como hash bcrypt y nunca se
-incluyen en logs. Los usuarios mock cubren entrenador, atleta y usuario inactivo.
+incluyen en logs. El seed base crea el `SYSTEM_ADMIN` de la plataforma (REPP opera la plataforma; el gimnasio no tiene
+personal, ADR-0019). Los usuarios mock son socios: activo, inactivo y los estados de membresía.
 
 Seeders opcionales para usuarios administradores y catálogo inicial.
 

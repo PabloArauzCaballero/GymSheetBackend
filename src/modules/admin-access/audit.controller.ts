@@ -10,15 +10,11 @@ import { AuditLogService } from './audit-log.service';
 import { AuditLogQueryInput, auditLogQuerySchema } from './audit.schemas';
 
 /**
- * Historial de acciones administrativas.
- *
- * Un solo endpoint para las dos consolas: el alcance sale de
- * `actor.tenantScope`, igual que en el resto de los módulos administrativos. Un
- * `SYSTEM_ADMIN` sin suplantar lo tiene nulo y ve la plataforma entera; un
- * `ADMIN` ve su gimnasio. Duplicarlo en `/admin/system/audit` sólo añadiría una
- * segunda ruta que mantener con la misma consulta detrás.
+ * Log of administrative actions. Only REPP operates the platform (ADR-0019):
+ * the scope comes from `actor.tenantScope`, null (every gym) for a
+ * `SYSTEM_ADMIN` that is not impersonating, one gym while it impersonates.
  */
-@Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller('admin/audit')
 export class AuditController {
   constructor(private readonly auditLog: AuditLogService) {}

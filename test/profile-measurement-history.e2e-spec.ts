@@ -7,6 +7,7 @@ import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter
 import { ResponseInterceptor } from '../src/common/interceptors/response.interceptor';
 import { requestIdMiddleware } from '../src/common/middleware/request-id.middleware';
 import { env } from '../src/config/env';
+import { E2E_SIGNUP_FIELDS } from './support/e2e-app';
 
 /**
  * Punto 1 del audit: editar el perfil (`PATCH /profile`) debe alimentar el
@@ -49,7 +50,7 @@ describe('Profile edits feed the body-measurement history (e2e)', () => {
         email: `profile-history-${label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.test`,
         password,
         nombreCompleto: `Historial ${label}`,
-        acceptedTerms: true,
+        ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
     return response.body.data.accessToken as string;

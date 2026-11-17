@@ -37,10 +37,21 @@ export class NotificationRepository {
     private readonly sequelize: Sequelize,
   ) {}
 
+  /** Address on file of an account that is not closed (a closed one only has a tombstone). */
+  async openAccountEmail(userId: string, transaction?: Transaction): Promise<string | null> {
+    const [row] = await this.sequelize.query<{ email: string }>(
+      `SELECT email FROM public.usuarios WHERE id = :userId AND closed_at IS NULL`,
+      { type: QueryTypes.SELECT, replacements: { userId }, transaction },
+    );
+    return row?.email ?? null;
+  }
+
   listForUser(userId: string, filters: NotificationListInput) {
     return this.messages.findAndCountAll({
       where: {
         recipientUserId: userId,
+        // Credential-carrying messages never reach the in-app inbox.
+        secret: false,
         ...(filters.estado ? { status: filters.estado } : {}),
       },
       limit: filters.pageSize,
@@ -51,13 +62,13 @@ export class NotificationRepository {
 
   countUnreadForUser(userId: string) {
     return this.messages.count({
-      where: { recipientUserId: userId, readAt: null },
+      where: { recipientUserId: userId, readAt: null, secret: false },
     });
   }
 
   findForUser(id: string, userId: string) {
     return this.messages.findOne({
-      where: { id, recipientUserId: userId },
+      where: { id, recipientUserId: userId, secret: false },
     });
   }
 

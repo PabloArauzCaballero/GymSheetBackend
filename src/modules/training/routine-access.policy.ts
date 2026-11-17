@@ -1,12 +1,11 @@
 import { RoutineVisibility, UserRole } from '../../common/enums/domain.enums';
 
-export type AccessUser = { id: string; role: UserRole; tenantId?: string | null };
+export type AccessUser = { id: string; role: UserRole };
 
 export type AccessRoutine = {
   createdByUserId: string;
   visibility: RoutineVisibility;
   moderationState: 'VISIBLE' | 'OCULTA_AUTO' | 'OCULTA_MODERACION';
-  authorTenantId?: string | null;
 };
 
 export type ShareState = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'REVOKED' | null;
@@ -29,14 +28,8 @@ export function canViewRoutine(
   hasCoachAssignment = false,
 ): RoutineView {
   if (routine.createdByUserId === user.id) return 'FULL';
+  // A gym has no staff powers (ADR-0019): only the author and REPP see past the rules below.
   if (user.role === UserRole.SYSTEM_ADMIN) return 'FULL';
-  if (
-    user.role === UserRole.ADMIN &&
-    routine.authorTenantId != null &&
-    routine.authorTenantId === user.tenantId
-  ) {
-    return 'FULL';
-  }
   const visible = routine.moderationState === 'VISIBLE';
   if (
     visible &&
@@ -50,17 +43,12 @@ export function canViewRoutine(
   return 'NONE';
 }
 
-/** Solo el autor (o un ADMIN de su gimnasio / SYSTEM_ADMIN) edita. Las oficiales: solo SYSTEM_ADMIN. */
+/** Only the author or a `SYSTEM_ADMIN` edits; official routines, only a `SYSTEM_ADMIN` (ADR-0019). */
 export function canEditRoutine(
   user: AccessUser,
   routine: AccessRoutine & { isOfficial?: boolean },
 ): boolean {
   if (user.role === UserRole.SYSTEM_ADMIN) return true;
   if (routine.isOfficial) return false;
-  if (routine.createdByUserId === user.id) return true;
-  return (
-    user.role === UserRole.ADMIN &&
-    routine.authorTenantId != null &&
-    routine.authorTenantId === user.tenantId
-  );
+  return routine.createdByUserId === user.id;
 }

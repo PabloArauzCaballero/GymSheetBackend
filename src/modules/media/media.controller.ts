@@ -20,7 +20,7 @@ import {
 } from "./media.schemas";
 import { MediaService, UploadedMultipartFile } from "./media.service";
 
-@Roles(UserRole.ADMIN)
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller("admin/media")
 export class MediaController {
   constructor(private readonly mediaService: MediaService) {}

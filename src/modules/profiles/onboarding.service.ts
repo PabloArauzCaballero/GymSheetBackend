@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  HttpStatus,
   Injectable,
   Logger,
   UnprocessableEntityException,
@@ -12,6 +13,10 @@ import {
   OnboardingStatus,
   TrainingGoal,
 } from "../../common/enums/domain.enums";
+import { DomainException } from "../../common/errors/domain.exception";
+import { ConsentsService } from "../consents/consents.service";
+import { CONSENT_VERSIONS } from "../legal/consent-versions";
+import type { LegalChannel } from "../legal/legal-client-context";
 import { OnboardingRepository } from "./onboarding.repository";
 import {
   BodyMeasurementInput,
@@ -19,6 +24,7 @@ import {
   OnboardingGoalsInput,
   OnboardingPreferencesInput,
   OnboardingProfileInput,
+  OnboardingSocialStepInput,
 } from "./onboarding.schemas";
 
 const legacyGoal: Record<FitnessGoal, TrainingGoal> = {
@@ -37,6 +43,7 @@ export class OnboardingService {
   constructor(
     private readonly repository: OnboardingRepository,
     private readonly sequelize: Sequelize,
+    private readonly consents: ConsentsService,
   ) {}
 
   async getState(userId: string) {
@@ -85,15 +92,36 @@ export class OnboardingService {
     return this.getState(userId);
   }
 
-  async savePreferences(userId: string, input: OnboardingPreferencesInput) {
-    const state = await this.repository.getOrCreate(userId);
-    await this.advance(state, 3, input);
+  /** Physical considerations are health data: kept only with the ledger HEALTH consent (ADR-0014). */
+  async savePreferences(userId: string, input: OnboardingPreferencesInput, channel: LegalChannel) {
+    const { consentHealthVersion, ...values } = input;
+    if (values.physicalConsiderations && !values.consentHealth) {
+      throw new DomainException(HttpStatus.BAD_REQUEST, "CONSENT_REQUIRED",
+        "Para guardar tus consideraciones físicas primero tienes que dar tu consentimiento de salud.", { kind: "HEALTH" });
+    }
+    await this.sequelize.transaction(async (transaction) => {
+      const state = await this.repository.getOrCreate(userId, transaction);
+      // Without consent an open grant is revoked, which also erases any stored text.
+      if (values.consentHealth) {
+        await this.consents.grant(userId, "HEALTH", consentHealthVersion ?? CONSENT_VERSIONS.HEALTH, channel, transaction);
+      } else await this.consents.revoke(userId, "HEALTH", transaction);
+      await this.advance(state, 3, values.consentHealth ? values : { ...values, physicalConsiderations: null }, transaction);
+    });
     return this.getState(userId);
   }
 
   async saveEquipment(userId: string, input: OnboardingEquipmentInput) {
     const state = await this.repository.getOrCreate(userId);
     await this.advance(state, 4, input);
+    return this.getState(userId);
+  }
+
+  /** Skippable and resumable: a later DONE replaces SKIPPED; SKIP never undoes DONE. */
+  async saveSocialStep(userId: string, input: OnboardingSocialStepInput) {
+    const state = await this.repository.getOrCreate(userId);
+    const socialStep =
+      input.action === "DONE" || state.socialStep === "DONE" ? "DONE" : "SKIPPED";
+    if (socialStep !== state.socialStep) await state.update({ socialStep });
     return this.getState(userId);
   }
 
@@ -214,7 +242,8 @@ export class OnboardingService {
       !state.experienceLevel && "experienceLevel",
       !state.weeklyFrequency && "weeklyFrequency",
       !state.trainingLocation && "trainingLocation",
-      !state.consentHealth && "consentHealth",
+      // Health consent is optional; it only blocks when health data was kept without it.
+      Boolean(state.physicalConsiderations) && !state.consentHealth && "consentHealth",
       !state.consentData && "consentData",
     ].filter((item): item is string => Boolean(item));
   }
@@ -242,6 +271,7 @@ export class OnboardingService {
       consentData: state.consentData,
       startedAt: state.startedAt,
       completedAt: state.completedAt,
+      socialStep: state.socialStep,
       missingFields,
       profileComplete:
         state.status === OnboardingStatus.COMPLETED &&

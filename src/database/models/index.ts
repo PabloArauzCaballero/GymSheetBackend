@@ -44,6 +44,7 @@ import { AnthropometricProfileModel } from "../../modules/profiles/anthropometri
 import { BodyMeasurementModel } from "../../modules/profiles/body-measurement.model";
 import { OnboardingModel } from "../../modules/profiles/onboarding.model";
 import { ProfilePhotoModel } from "../../modules/profiles/profile-photo.model";
+import { PhotoVerificationModel } from "../../modules/verification/photo-verification.model";
 import { ConnectionModel } from "../../modules/social/connection.model";
 import { DiscoveryPassModel } from "../../modules/social/discovery-pass.model";
 import { ProfileSocialSettingsModel } from "../../modules/social/profile-social-settings.model";
@@ -109,6 +110,8 @@ import { PlanPriceHistoryModel } from "../../modules/directory/models/plan-price
 import { PaymentOrderModel } from "../../modules/directory/models/payment-order.model";
 import { WorkoutSkippedSetModel } from "../../modules/workouts/workout-skipped-set.model";
 import { WorkoutExerciseSwapModel } from "../../modules/workouts/workout-exercise-swap.model";
+import { SignupAuditModel } from "../../modules/antibot/signup-audit.model";
+import { SignupTicketModel } from "../../modules/antibot/signup-ticket.model";
 
 export const databaseModels = [
   UserModel,
@@ -220,4 +223,7 @@ export const databaseModels = [
   EntityPlanModel,
   PlanPriceHistoryModel,
   PaymentOrderModel,
+  SignupTicketModel,
+  SignupAuditModel,
+  PhotoVerificationModel,
 ];

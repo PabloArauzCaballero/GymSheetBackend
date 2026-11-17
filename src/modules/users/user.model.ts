@@ -62,6 +62,14 @@ export class UserModel extends Model {
   @Column({ type: DataType.STRING(12), allowNull: true, field: 'genero' })
   declare gender: UserGender | null;
 
+  /**
+   * `YYYY-MM-DD`. Single source of the person's age (every age read uses this
+   * column). Required at signup; null only for staff accounts and accounts
+   * created before signup asked for it.
+   */
+  @Column({ type: DataType.DATEONLY, allowNull: true, field: 'fecha_nacimiento' })
+  declare birthDate: string | null;
+
   @Default(DataType.NOW)
   @Column({ type: DataType.DATE, allowNull: false, field: 'fecha_registro' })
   declare registeredAt: Date;
@@ -92,6 +100,30 @@ export class UserModel extends Model {
    */
   @Column({ type: DataType.DATE, allowNull: true, field: 'last_seen_at' })
   declare lastSeenAt: Date | null;
+
+  /** Last authenticated request, written at most every 5 minutes (discovery activity). */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'last_active_at' })
+  declare lastActiveAt: Date | null;
+
+  /** When moderation approved the gesture-selfie person verification. Null = not verified. */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'verified_at' })
+  declare verifiedAt: Date | null;
+
+  /** When the person proved the mailbox (PIN or a provider). Null = unverified. */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'email_verified_at' })
+  declare emailVerifiedAt: Date | null;
+
+  /** Anti-automation verdict at signup; null for accounts created before it existed. */
+  @Column({ type: DataType.STRING(6), allowNull: true, field: 'signup_risk' })
+  declare signupRisk: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+
+  /** When the person closed the account (row kept anonymized); null otherwise. */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'closed_at' })
+  declare closedAt: Date | null;
+
+  /** Access tokens issued before this instant are no longer accepted. */
+  @Column({ type: DataType.DATE, allowNull: true, field: 'sessions_valid_after' })
+  declare sessionsValidAfter: Date | null;
 
   @HasOne(() => AnthropometricProfileModel)
   declare anthropometricProfile?: AnthropometricProfileModel;

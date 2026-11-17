@@ -20,7 +20,9 @@ import {
   MEDIA_STORAGE_PROVIDER,
   MediaStorageProvider,
   MediaStorageProviderName,
+  MediaUploadTarget,
   StoredAsset,
+  mediaTargetPrefix,
 } from '../media/media-storage.port';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import {
@@ -36,6 +38,10 @@ import { ExerciseMediaModel } from './exercise-media.model';
 import { ExerciseMediaRepository } from './exercise-media.repository';
 import { ExerciseModel } from './exercise.model';
 import { ExercisesRepository } from './exercises.repository';
+import {
+  PersonalExerciseMediaRelease,
+  exerciseMediaTarget,
+} from './personal-exercise-media-release';
 import {
   CreateExerciseMediaInput,
   UploadExerciseMediaInput,
@@ -77,6 +83,7 @@ export class ExerciseMediaService {
     private readonly sequelize: Sequelize,
     @Inject(MEDIA_STORAGE_PROVIDER)
     private readonly storage: MediaStorageProvider,
+    private readonly personalMedia: PersonalExerciseMediaRelease,
   ) {}
 
   async listMedia(
@@ -122,6 +129,10 @@ export class ExerciseMediaService {
    * esté configurado) y la URL la produce el almacenamiento. Es lo que permite
    * servir las demostraciones desde el mismo sitio que el resto de la red
    * social, sin depender de que un origen externo siga en pie.
+   *
+   * A PERSONAL exercise's upload is its owner's content: it goes under
+   * `users/<owner>/ejercicios/<id>/` instead, where it can be deleted with the
+   * media row, the exercise and the account (ADR-0017).
    *
    * El almacenamiento es idempotente por contenido: subir dos veces el mismo
    * archivo reutiliza el objeto en vez de duplicarlo.
@@ -174,8 +185,9 @@ export class ExerciseMediaService {
         'El póster debe estar alojado en el almacenamiento propio.',
       );
     }
+    const target = exerciseMediaTarget(exercise);
     // Ambas URLs, la del archivo y la del póster, tienen que poder guardarse.
-    this.assertStorableUrl(this.predictableStorageUrl(exerciseId));
+    this.assertStorableUrl(this.predictableStorageUrl(target));
     if (input.thumbnailUrl) this.assertStorableUrl(input.thumbnailUrl);
 
     const stored = await this.storage.upload(
@@ -185,7 +197,7 @@ export class ExerciseMediaService {
         sizeBytes: file.size,
         buffer: file.buffer,
       },
-      { category: 'ejercicios', exerciseId },
+      target,
     );
 
     const provider = mediaProviderForStorage(stored.provider);
@@ -231,6 +243,7 @@ export class ExerciseMediaService {
       );
     }
     if (existing) {
+      const previousUrl = existing.url;
       const updated = await this.reactivate(
         existing,
         input,
@@ -238,6 +251,7 @@ export class ExerciseMediaService {
         stored,
         extraMetadata,
       );
+      await this.personalMedia.releaseReplaced(previousUrl, updated, exercise);
       return mapExerciseMediaToResponse(updated);
     }
 
@@ -337,11 +351,11 @@ export class ExerciseMediaService {
    * URL que va a producir el almacenamiento para este ejercicio. Sirve para
    * comprobar la restricción de la base ANTES de escribir el binario: el
    * adaptador compone `<base pública>/<clave>` y la clave empieza siempre por
-   * `ejercicios/<id>/`.
+   * el prefijo del destino (`mediaTargetPrefix`).
    */
-  private predictableStorageUrl(exerciseId: string): string {
+  private predictableStorageUrl(target: MediaUploadTarget): string {
     const base = env.MEDIA_STORAGE_PUBLIC_BASE_URL.replace(/\/+$/, '');
-    return `${base}/ejercicios/${exerciseId}/objeto`;
+    return `${base}/${mediaTargetPrefix(target)}/objeto`;
   }
 
   /**
@@ -430,6 +444,12 @@ export class ExerciseMediaService {
 
     this.assertCanManageMedia(authenticatedUser, media.exercise);
 
+    // A member's own upload is deleted for real, file included (ADR-0017);
+    // catalog media and registered external URLs are only deactivated.
+    if (await this.personalMedia.removeOne(media, media.exercise)) {
+      return { deleted: true };
+    }
+
     await this.sequelize.transaction(async (transaction) => {
       const wasPrimary = media.isPrimary;
       await this.mediaRepository.markInactive(media, transaction);
@@ -459,8 +479,9 @@ export class ExerciseMediaService {
     authenticatedUser: AuthenticatedUser,
     exercise: ExerciseModel,
   ): void {
+    // The global catalog is REPP's (ADR-0019): no gym role manages its media.
     const canManageGlobal =
-      exercise.type === ExerciseType.GLOBAL && authenticatedUser.role === UserRole.ADMIN;
+      exercise.type === ExerciseType.GLOBAL && authenticatedUser.role === UserRole.SYSTEM_ADMIN;
     const canManagePersonal =
       exercise.type === ExerciseType.PERSONAL &&
       exercise.createdByUserId === authenticatedUser.id;

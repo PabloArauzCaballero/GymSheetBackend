@@ -24,6 +24,9 @@ RUN yarn build \
     && test -f dist/workers/notification-delivery.worker.js \
     && test -f dist/workers/exercises-dataset-refresh.worker.js \
     && test -f dist/workers/stories-purge.worker.js \
+    && test -f dist/workers/privacy-retention.command.js \
+    # Without the list the disposable-email layer refuses to start.
+    && test -f dist/modules/antibot/data/disposable-domains.txt \
     && test ! -d dist/src
 
 ##

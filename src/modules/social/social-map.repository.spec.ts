@@ -61,8 +61,8 @@ describe("SocialMapRepository", () => {
     expect(sql).toContain("settings.profile_enabled = TRUE");
     expect(sql).toContain("settings.map_enabled = TRUE");
     expect(sql).toContain("user_account.estado = 'ACTIVO'");
-    expect(sql).toContain("profile.fecha_nacimiento");
-    expect(sql).not.toContain("user_account.fecha_nacimiento");
+    expect(sql).toContain("user_account.fecha_nacimiento");
+    expect(sql).not.toContain("profile.fecha_nacimiento");
     expect(sql).not.toMatch(/SELECT\s+location\.latitude/i);
   });
 

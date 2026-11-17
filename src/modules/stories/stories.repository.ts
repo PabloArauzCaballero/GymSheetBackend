@@ -3,6 +3,7 @@ import { InjectModel } from "@nestjs/sequelize";
 import { QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { ConnectionStatus } from "../../common/enums/domain.enums";
+import { hasOpenReportSql } from "../../common/moderation/open-report.sql";
 import type { StoredAsset } from "../media/media-storage.port";
 import { StoryModel, StoryMediaType } from "./story.model";
 import { StoryViewModel } from "./story-view.model";
@@ -45,6 +46,7 @@ export interface StoryViewerRow {
  */
 export interface ExpiredStoryReference {
   readonly id: string;
+  readonly storageProvider: string;
   readonly storageKey: string;
 }
 
@@ -117,8 +119,24 @@ export class StoriesRepository {
     return this.stories.findOne({ where: { userId, uploadRequestId: requestId } });
   }
 
+  /** For its owner, a story held as evidence is already deleted. */
   findByIdForUser(id: string, userId: string): Promise<StoryModel | null> {
-    return this.stories.findOne({ where: { id, userId } });
+    return this.stories.findOne({ where: { id, userId, authorDeletedAt: null } });
+  }
+
+  /**
+   * The author deletes a story under an OPEN report: it is marked and hidden
+   * instead of deleted, keeping row and file as evidence. It expires within
+   * 24 h, and the stories purge removes it, file included, once no report on
+   * it is open. Returns whether it was held.
+   */
+  async holdIfReported(id: string, transaction: Transaction): Promise<boolean> {
+    const [, affected] = await this.sequelize.query(
+      `UPDATE profile.stories t SET author_deleted_at = now(), hidden_at = COALESCE(t.hidden_at, now())
+        WHERE t.id = :id AND t.author_deleted_at IS NULL AND ${hasOpenReportSql("STORY", "t.id")}`,
+      { type: QueryTypes.UPDATE, replacements: { id }, transaction },
+    );
+    return Number(affected) > 0;
   }
 
   findById(id: string): Promise<StoryModel | null> {
@@ -134,16 +152,20 @@ export class StoriesRepository {
    * El índice `ix_profile_stories_feed (tenant_id, expires_at)` no sirve aquí
    * (no filtramos por tenant), pero la tabla se mantiene pequeña justamente
    * porque esta purga corre.
+   * A story under an OPEN report is kept, with its file, for moderation to
+   * review; once every report on it is closed it is purged like any other
+   * (same rule as the disappearing chat purge).
    */
   async findExpired(
     now: Date,
     limit: number,
   ): Promise<ExpiredStoryReference[]> {
     return this.sequelize.query<ExpiredStoryReference>(
-      `SELECT id, storage_key AS "storageKey"
-         FROM profile.stories
-        WHERE expires_at <= :now
-        ORDER BY expires_at ASC
+      `SELECT s.id, s.storage_provider AS "storageProvider", s.storage_key AS "storageKey"
+         FROM profile.stories s
+        WHERE s.expires_at <= :now
+          AND NOT ${hasOpenReportSql("STORY", "s.id")}
+        ORDER BY s.expires_at ASC
         LIMIT :limit`,
       { type: QueryTypes.SELECT, replacements: { now, limit } },
     );
@@ -279,7 +301,7 @@ export class StoriesRepository {
               WHERE st.user_id = a.user_id
                 AND st.expires_at > now()
                 -- Moderación: una story retirada deja de servirse al instante,
-                -- aunque su binario siga en el almacén (ADR-0010).
+                -- aunque su binario siga en el almacén como evidencia (ADR-0017).
                 AND st.hidden_at IS NULL
                 AND (
                   st.user_id = CAST(:viewerId AS uuid)

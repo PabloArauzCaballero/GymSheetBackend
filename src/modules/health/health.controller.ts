@@ -2,6 +2,7 @@ import { Controller, Get, Header, UseGuards } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
 import { HttpMetricsService } from '../../common/metrics/http-metrics.service';
+import { KycMetricsService } from '../business-kyc/kyc-metrics.service';
 import { OutboxMetricsService } from '../integration/outbox-metrics.service';
 import { HealthService, LivenessResponse, ReadinessResponse } from './health.service';
 import { MetricsScrapeGuard } from './metrics-scrape.guard';
@@ -20,6 +21,7 @@ export class HealthController {
     private readonly healthService: HealthService,
     private readonly metricsService: HttpMetricsService,
     private readonly outboxMetricsService: OutboxMetricsService,
+    private readonly kycMetricsService: KycMetricsService,
   ) {}
 
   @Get('live')
@@ -36,10 +38,11 @@ export class HealthController {
   @UseGuards(MetricsScrapeGuard)
   @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
   async getMetrics(): Promise<string> {
-    const [httpMetrics, outboxMetrics] = await Promise.all([
+    const [httpMetrics, outboxMetrics, kycMetrics] = await Promise.all([
       Promise.resolve(this.metricsService.renderPrometheus()),
       this.outboxMetricsService.renderPrometheus(),
+      this.kycMetricsService.renderPrometheus(),
     ]);
-    return `${httpMetrics}${outboxMetrics}`;
+    return `${httpMetrics}${outboxMetrics}${kycMetrics}`;
   }
 }

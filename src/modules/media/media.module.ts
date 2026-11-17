@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { SequelizeModule } from "@nestjs/sequelize";
 import { env } from "../../config/env";
+import { IntegrationModule } from "../integration/integration.module";
 import { MediaFileModel } from "../membership/media-file.model";
 import { MediaController } from "./media.controller";
 import { MediaRepository } from "./media.repository";
@@ -10,18 +11,22 @@ import {
   MediaUploadConfig,
 } from "./media.service";
 import { MediaReferencesRepository } from "./media-references.repository";
+import { MediaReferenceReleaseService } from "./media-reference-release.service";
+import { MediaReleaseService } from "./media-release.service";
 import { MediaRetentionService } from "./media-retention.service";
 import { createMediaStorageProvider } from "./media-storage.factory";
 import { MEDIA_STORAGE_PROVIDER } from "./media-storage.port";
 
 @Module({
-  imports: [SequelizeModule.forFeature([MediaFileModel])],
+  imports: [IntegrationModule, SequelizeModule.forFeature([MediaFileModel])],
   controllers: [MediaController],
   providers: [
     MediaRepository,
     MediaService,
     MediaReferencesRepository,
     MediaRetentionService,
+    MediaReleaseService,
+    MediaReferenceReleaseService,
     {
       provide: MEDIA_STORAGE_PROVIDER,
       useFactory: () =>
@@ -37,6 +42,7 @@ import { MEDIA_STORAGE_PROVIDER } from "./media-storage.port";
             secretKey: env.MINIO_SECRET_KEY,
             bucket: env.MINIO_BUCKET,
             region: env.MINIO_REGION,
+            userContentDeletable: env.MEDIA_USER_CONTENT_DELETABLE,
           },
         }),
     },
@@ -50,6 +56,13 @@ import { MEDIA_STORAGE_PROVIDER } from "./media-storage.port";
       } satisfies MediaUploadConfig,
     },
   ],
-  exports: [MediaService, MediaRetentionService, MEDIA_STORAGE_PROVIDER],
+  exports: [
+    MediaService,
+    MediaRetentionService,
+    MediaReleaseService,
+    MediaReferenceReleaseService,
+    MediaReferencesRepository,
+    MEDIA_STORAGE_PROVIDER,
+  ],
 })
 export class MediaModule {}

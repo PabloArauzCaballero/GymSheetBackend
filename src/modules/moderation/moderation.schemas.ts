@@ -56,6 +56,17 @@ export const resolveCaseSchema = z.object({
   hideContent: z.boolean().default(false),
   /** Emitir la sanción que toque por historial. */
   sanction: z.boolean().default(false),
+  /**
+   * The account belongs to a minor: it stays suspended and is closed with data
+   * erasure. Replaces the ladder (a minor is not sanctioned, just not allowed).
+   */
+  confirmMinor: z.boolean().default(false),
+  /**
+   * Marketplace cases only (BUSINESS_LISTING, BUSINESS_PROFILE; ADR-0022):
+   * suspend the business through its KYC state machine; every listing of it
+   * leaves the marketplace with it.
+   */
+  suspendBusiness: z.boolean().default(false),
   note: z
     .string()
     .trim()
@@ -64,4 +75,5 @@ export const resolveCaseSchema = z.object({
     .transform((value) => (value && value.length > 0 ? value : null)),
 });
 
-export type ResolveCaseInput = z.infer<typeof resolveCaseSchema>;
+/** `suspendBusiness` is optional for callers other than the HTTP body (seeds, tests): absent means false. */
+export type ResolveCaseInput = Omit<z.infer<typeof resolveCaseSchema>, 'suspendBusiness'> & { suspendBusiness?: boolean };

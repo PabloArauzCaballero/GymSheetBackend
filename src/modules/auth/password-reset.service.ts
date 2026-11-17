@@ -4,7 +4,9 @@ import { Op } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { randomInt } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
+import { BrandNameService } from '../../common/branding/brand-name.service';
 import { NotificationChannel, RefreshTokenRevokedReason } from '../../common/enums/domain.enums';
+import { hashClientIp } from '../../common/privacy/client-ip-hash';
 import { env } from '../../config/env';
 import { UsersRepository } from '../users/users.repository';
 import { NotificationService } from '../notifications/notification.service';
@@ -42,6 +44,7 @@ export class PasswordResetService {
     private readonly notifications: NotificationService,
     private readonly refreshTokens: RefreshTokenRepository,
     private readonly sequelize: Sequelize,
+    private readonly brands: BrandNameService,
   ) {}
 
   /**
@@ -80,7 +83,7 @@ export class PasswordResetService {
           expiraEn,
           consumidoEn: null,
           intentos: 0,
-          solicitadoDesdeIp: requesterIp,
+          ipHmac: hashClientIp(requesterIp),
         },
         { transaction },
       );
@@ -99,6 +102,8 @@ export class PasswordResetService {
         'Si no lo pediste tú, ignora este mensaje: tu contraseña sigue siendo la misma.',
       ].join('\n'),
       deduplicationKey: `password-reset-${user.id}-${expiraEn.getTime()}`,
+      // The body is a credential: email only, never in the in-app inbox.
+      secret: true,
     });
   }
 
@@ -148,6 +153,8 @@ export class PasswordResetService {
         RefreshTokenRevokedReason.PASSWORD_RESET,
         transaction,
       );
+      // And the access tokens already in flight, not only the refresh tokens.
+      await this.users.invalidateIssuedSessions(user.id, transaction);
     });
 
     // Aviso posterior al cambio, no una cortesía: es lo único que le dice a la
@@ -155,7 +162,7 @@ export class PasswordResetService {
     await this.notifications.enqueueDirectMessage({
       recipientUserId: user.id,
       channel: NotificationChannel.EMAIL,
-      subject: 'Tu contraseña de GymSheet ha cambiado',
+      subject: `Tu contraseña de ${await this.brands.forUser(user.id)} ha cambiado`,
       body: [
         'Acabas de establecer una contraseña nueva.',
         '',

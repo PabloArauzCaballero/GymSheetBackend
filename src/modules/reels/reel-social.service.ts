@@ -398,12 +398,9 @@ function visibleAuthorPair(
           AND viewer.estado = 'ACTIVO' AND author.estado = 'ACTIVO'
           AND (viewer.suspended_until IS NULL OR viewer.suspended_until <= NOW())
           AND (author.suspended_until IS NULL OR author.suspended_until <= NOW())
-          AND NOT EXISTS (
-            SELECT 1 FROM public.perfiles_antropometricos age
-             WHERE age.usuario_id = author.id
-               AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, age.fecha_nacimiento))::int,
-                            age.edad, 0) < 18
-          )
+          -- A known minor is never visible; an unknown birth date does not block here.
+          AND (author.fecha_nacimiento IS NULL
+            OR EXTRACT(YEAR FROM age(CURRENT_DATE, author.fecha_nacimiento))::int >= 18)
       )
       AND (
         EXISTS (
@@ -411,12 +408,7 @@ function visibleAuthorPair(
           JOIN public.usuarios author ON author.id = ${authorExpression}
           LEFT JOIN social.profile_settings settings ON settings.user_id = author.id
           WHERE viewer.id = ${viewerExpression}
-            AND EXISTS (
-              SELECT 1 FROM public.perfiles_antropometricos age
-               WHERE age.usuario_id = author.id
-                 AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, age.fecha_nacimiento))::int,
-                              age.edad, 0) >= 18
-            )
+            AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, author.fecha_nacimiento))::int, 0) >= 18
             AND ((author.tenant_id = viewer.tenant_id AND COALESCE(settings.profile_enabled, false) = true)
               OR (author.tenant_id <> viewer.tenant_id
                 AND COALESCE(settings.profile_enabled, false) = true

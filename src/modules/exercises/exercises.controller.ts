@@ -126,7 +126,7 @@ export class ExercisesController {
   }
 }
 
-@Roles(UserRole.ADMIN)
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller('admin/exercises/global')
 export class AdminExercisesController {
   constructor(private readonly exercisesService: ExercisesService) {}

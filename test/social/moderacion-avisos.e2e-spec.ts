@@ -17,6 +17,7 @@ import { NotificationDeliveryService } from "../../src/modules/notifications/not
 import { NotificationService } from "../../src/modules/notifications/notification.service";
 import { NotificationDeliveryRunner } from "../../src/workers/notification-delivery.runner";
 import { PushDispatcherService } from "../../src/modules/notifications/delivery/push-dispatcher.service";
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from "../support/e2e-app";
 
 describe("H11 moderation notices (PostgreSQL e2e)", () => {
   let moduleRef: TestingModule | undefined;
@@ -124,9 +125,10 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           email: `h11-s1-m1-${label}-${suffix}@example.test`,
           password: "h11-moderation-e2e-password",
           nombreCompleto: `H11 Report ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application!, registered.body.data.user.id as string);
       return {
         userId: registered.body.data.user.id as string,
         accessToken: registered.body.data.accessToken as string,
@@ -236,7 +238,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
     expect(count.count).toBe("1");
   }, 60000);
 
-  it("H11.S1.M2 scopes gym moderation to its tenant and allows explicit central access", async () => {
+  it("H11.S1.M2 refuses gym moderation and allows central access", async () => {
     if (!application || !moduleRef || !sequelize) {
       throw new Error("H11 E2E setup did not finish.");
     }
@@ -249,9 +251,10 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           email: `h11-s1-m2-${label}-${suffix}@example.test`,
           password: "h11-moderation-e2e-password",
           nombreCompleto: `H11 Scope ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application!, registered.body.data.user.id as string);
       return {
         userId: registered.body.data.user.id as string,
         accessToken: registered.body.data.accessToken as string,
@@ -277,8 +280,11 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
       `UPDATE public.usuarios SET rol = 'SYSTEM_ADMIN' WHERE id = :userId`,
       { replacements: { userId: central.userId } },
     );
-    const { seedAdminPermissions } = await import("../../src/database/seeders/admin-permissions.seed");
-    await sequelize.transaction((transaction) => seedAdminPermissions(transaction));
+    // The retired gym-level grant (ADR-0018): it must open nothing.
+    await sequelize.query(
+      `INSERT INTO admin.permissions (key, label, description, domain)
+       VALUES ('moderation:read', 'legacy', 'e2e', 'moderation') ON CONFLICT (key) DO NOTHING`,
+    );
     await sequelize.query(
       `INSERT INTO admin.user_permissions
          (id, user_id, permission_key, granted_by_user_id, granted_at)
@@ -313,18 +319,15 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
       .expect(201);
     const casePath = url(`/admin/moderation/cases/CHAT_MESSAGE/${sent.body.data.id}`);
 
+    // ADR-0018: gym staff no longer moderates, not even with the old grant.
     await request(application.getHttpServer())
       .get(casePath)
       .set("Authorization", `Bearer ${gymAAdmin.accessToken}`)
-      .expect(404);
+      .expect(403);
     await request(application.getHttpServer())
       .get(url("/admin/moderation/queue"))
       .set("Authorization", `Bearer ${gymAAdmin.accessToken}`)
-      .expect(200)
-      .then((response) => {
-        expect(response.body.data.map((item: { targetId: string }) => item.targetId))
-          .not.toContain(sent.body.data.id);
-      });
+      .expect(403);
     const centralCase = await request(application.getHttpServer())
       .get(casePath)
       .set("Authorization", `Bearer ${central.accessToken}`)
@@ -346,9 +349,10 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           email: `h11-s1-m3-${label}-${suffix}@example.test`,
           password: "h11-moderation-e2e-password",
           nombreCompleto: `H11 Hide ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application!, registered.body.data.user.id as string);
       return {
         userId: registered.body.data.user.id as string,
         accessToken: registered.body.data.accessToken as string,
@@ -476,9 +480,10 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           email: `h11-s2-m1-${label}-${suffix}@example.test`,
           password: "h11-notice-e2e-password",
           nombreCompleto: `H11 Notice ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application!, registered.body.data.user.id as string);
       return {
         userId: registered.body.data.user.id as string,
         accessToken: registered.body.data.accessToken as string,
@@ -658,9 +663,10 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           email: `h11-s2-m2-${label}-${suffix}@example.test`,
           password: "h11-notice-e2e-password",
           nombreCompleto: `H11 Suppression ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application!, registered.body.data.user.id as string);
       return {
         userId: registered.body.data.user.id as string,
         accessToken: registered.body.data.accessToken as string,
@@ -785,9 +791,10 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           email: `h11-s2-m4-${label}-${suffix}@example.test`,
           password: "h11-notice-e2e-password",
           nombreCompleto: `H11 Preview ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application!, registered.body.data.user.id as string);
       return {
         userId: registered.body.data.user.id as string,
         accessToken: registered.body.data.accessToken as string,
@@ -908,9 +915,10 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
           email: `h11-s2-m3-${label}-${suffix}@example.test`,
           password: "h11-notice-e2e-password",
           nombreCompleto: `H11 Stale Link ${label} ${suffix}`,
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
+      await markEmailVerified(application!, registered.body.data.user.id as string);
       return {
         userId: registered.body.data.user.id as string,
         accessToken: registered.body.data.accessToken as string,

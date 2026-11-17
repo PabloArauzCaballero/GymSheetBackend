@@ -7,9 +7,16 @@ const routine = (over: Partial<AccessRoutine> = {}): AccessRoutine => ({
   createdByUserId: 'owner',
   visibility: RoutineVisibility.PRIVATE,
   moderationState: 'VISIBLE',
-  authorTenantId: 'gym-a',
   ...over,
 });
+// A private routine whose author belongs to gym-a, as the repository loads it.
+const gymARoutine = () => Object.assign(routine(), { authorTenantId: 'gym-a' });
+// Gym staff of the author's own gym: no staff powers any more (ADR-0019, franja 7a).
+const legacyStaff = [UserRole.ADMIN, UserRole.FRONT_DESK, UserRole.COACH].map((role) => ({
+  id: `staff-${role}`,
+  role,
+  tenantId: 'gym-a',
+}));
 
 describe('canViewRoutine', () => {
   it('el autor siempre ve, incluso oculta por moderación', () => {
@@ -45,9 +52,10 @@ describe('canViewRoutine', () => {
   it('SYSTEM_ADMIN ve todo', () => {
     expect(canViewRoutine({ id: 's', role: UserRole.SYSTEM_ADMIN }, routine(), null)).toBe('FULL');
   });
-  it('ADMIN ve las privadas de su gimnasio y no las de otro', () => {
-    expect(canViewRoutine({ id: 'a', role: UserRole.ADMIN, tenantId: 'gym-a' }, routine(), null)).toBe('FULL');
-    expect(canViewRoutine({ id: 'a', role: UserRole.ADMIN, tenantId: 'gym-b' }, routine(), null)).toBe('NONE');
+  it('el personal heredado del gimnasio del autor no ve sus privadas', () => {
+    for (const staff of legacyStaff) {
+      expect(canViewRoutine(staff, gymARoutine(), null)).toBe('NONE');
+    }
   });
 });
 
@@ -60,8 +68,10 @@ describe('canEditRoutine', () => {
     expect(canEditRoutine(owner, { ...routine(), isOfficial: true })).toBe(false);
     expect(canEditRoutine({ id: 's', role: UserRole.SYSTEM_ADMIN }, { ...routine(), isOfficial: true })).toBe(true);
   });
-  it('ADMIN edita las de su gimnasio', () => {
-    expect(canEditRoutine({ id: 'a', role: UserRole.ADMIN, tenantId: 'gym-a' }, routine())).toBe(true);
-    expect(canEditRoutine({ id: 'a', role: UserRole.ADMIN, tenantId: 'gym-b' }, routine())).toBe(false);
+  it('el personal heredado del gimnasio del autor no edita; SYSTEM_ADMIN sí', () => {
+    for (const staff of legacyStaff) {
+      expect(canEditRoutine(staff, gymARoutine())).toBe(false);
+    }
+    expect(canEditRoutine({ id: 's', role: UserRole.SYSTEM_ADMIN }, gymARoutine())).toBe(true);
   });
 });

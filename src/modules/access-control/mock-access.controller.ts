@@ -8,7 +8,7 @@ import {
   mockAccessEventSchema,
 } from './mock-access.schemas';
 
-@Roles(UserRole.ADMIN)
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller('admin/access/mock')
 export class MockAccessController {
   constructor(private readonly service: AccessControlService) {}

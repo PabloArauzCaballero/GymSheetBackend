@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { MediaModule } from '../media/media.module';
 import { TrainingModule } from '../training/training.module';
+import { CommentAttachmentRelease } from './comment-attachment-release';
 import { CommunityController } from './community.controller';
 import { GiphyService } from './giphy.service';
 import { CommunityRepository } from './community.repository';
@@ -12,6 +13,6 @@ import { ContentRatingModel } from './content-rating.model';
 @Module({
   imports: [SequelizeModule.forFeature([ContentRatingModel, ContentCommentModel]), TrainingModule, MediaModule],
   controllers: [CommunityController],
-  providers: [CommunityRepository, CommunityService, GiphyService],
+  providers: [CommunityRepository, CommunityService, CommentAttachmentRelease, GiphyService],
 })
 export class CommunityModule {}

@@ -1,3 +1,4 @@
+import { personAccountSql } from "../../common/sql/person-accounts";
 import { Injectable, Optional } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
 import { Op, QueryTypes, Transaction } from "sequelize";
@@ -8,13 +9,21 @@ import { DiscoveryPassModel } from "./discovery-pass.model";
 import { ProfileSocialSettingsModel } from "./profile-social-settings.model";
 import { lockSocialPairUsers } from "./social-pair-lock";
 import type { SocialDiscoverySettings } from "./social-discovery-settings.policy";
-import type { DiscoveryPreferencesInput } from "./social.schemas";
+import type { DiscoveryIntent, DiscoveryPreferencesInput } from "./social.schemas";
 import { SocialRecommendationOutboxService } from "./social-recommendation-outbox.service";
+import type { PublicAboutRow } from "./social-profile.mapper";
+import {
+  consumeDiscoveryImpressionRow,
+  findOpenDiscoveryImpression,
+  insertDiscoveryImpressions,
+  markDiscoveryImpressionObserved,
+  type IssuedImpression,
+} from "./discovery-impressions.sql";
 
 export interface DiscoveryPreferences {
   configured: true;
   genders: ("MALE" | "FEMALE")[];
-  intents: ("TRAINING" | "FRIENDSHIP" | "DATING")[];
+  intents: DiscoveryIntent[];
   minAge: number;
   maxAge: number;
   radiusKm: number;
@@ -55,7 +64,7 @@ export interface DirectoryRow {
    * consumidores vivos en web y móvil que la leen.
    */
   photos: { id: string; url: string }[];
-  /** Años, calculados desde `fecha_nacimiento` (o `edad` en perfiles antiguos). Nulo si no hay ninguno. */
+  /** Years derived from `usuarios.fecha_nacimiento`. Null when the account has no birth date. */
   age: number | null;
   gender: string | null;
   experienceLevel: string | null;
@@ -64,6 +73,8 @@ export interface DirectoryRow {
   /** Public gym coordinates and declared discovery intent, internal to ranking only. */
   recommendationArea?: { lat: number; lon: number } | null;
   recommendationIntents?: string[];
+  /** Optional "Conocer" answers; display only, never a ranking input. */
+  about?: PublicAboutRow | null;
 }
 
 /**
@@ -105,8 +116,6 @@ export interface DirectoryFilters {
   discoveryOnly?: boolean;
   /** Map directory: never return an account without a verified adult age. */
   adultOnly?: boolean;
-  /** Alfabético para el directorio; por puntos para la baraja. */
-  orderBy?: "name" | "points";
 }
 
 /** Qué fue lo último que decidió el viewer, y qué hay que tocar para revertirlo. */
@@ -642,7 +651,7 @@ export class SocialRepository {
     const rows = await this.sequelize.query<{ allowed: boolean }>(
       `SELECT COUNT(DISTINCT u.id) = 2
                 AND BOOL_AND(u.estado = 'ACTIVO'
-                  AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad, 0) >= 18
+                  AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int, 0) >= 18
                   AND s.profile_enabled
                   AND s.cross_gym_enabled) AS allowed
          FROM public.usuarios u
@@ -706,7 +715,7 @@ export class SocialRepository {
       lat: number | null;
       lon: number | null;
     }>(
-      `SELECT COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, profile.fecha_nacimiento))::int, profile.edad) AS age,
+      `SELECT EXTRACT(YEAR FROM age(CURRENT_DATE, account.fecha_nacimiento))::int AS age,
               account.genero AS gender, profile.objetivo AS goal,
               branch.latitude::float8 AS lat, branch.longitude::float8 AS lon
          FROM public.usuarios account
@@ -860,6 +869,10 @@ export class SocialRepository {
         },
       );
       if (!rows[0]) return null;
+      // Map off (or profile off, which forces it) erases the precise location, not just hides it.
+      if (!settings.mapEnabled) {
+        await this.sequelize.query(`DELETE FROM social.map_locations WHERE user_id = :userId`, { replacements: { userId }, transaction });
+      }
       await this.recommendationOutbox?.enqueueProfileSnapshot(
         userId,
         transaction,
@@ -903,94 +916,40 @@ export class SocialRepository {
 
   async issueDiscoveryImpressions(
     viewerId: string,
-    impressions: readonly {
-      id: string;
-      targetId: string;
-      featureCodes: string[];
-    }[],
+    impressions: readonly IssuedImpression[],
     transaction?: Transaction,
   ): Promise<void> {
-    for (const impression of impressions) {
-      await this.sequelize.query(
-        `INSERT INTO social.discovery_impressions
-           (id, viewer_id, target_id, feature_codes)
-         VALUES (:id, :viewerId, :targetId,
-           ARRAY(SELECT jsonb_array_elements_text(CAST(:featureCodes AS jsonb))))
-         ON CONFLICT (id) DO NOTHING`,
-        {
-          replacements: {
-            id: impression.id,
-            viewerId,
-            targetId: impression.targetId,
-            featureCodes: JSON.stringify(impression.featureCodes),
-          },
-          transaction,
-        },
-      );
-    }
+    await insertDiscoveryImpressions(this.sequelize, viewerId, impressions, transaction);
   }
 
-  async getDiscoveryImpression(
+  getDiscoveryImpression(
     viewerId: string,
     impressionId: string,
     transaction?: Transaction,
   ): Promise<{ targetId: string } | null> {
-    const rows = await this.sequelize.query<{ target_id: string }>(
-      `SELECT target_id FROM social.discovery_impressions
-        WHERE id = :impressionId AND viewer_id = :viewerId
-          AND issued_at >= NOW() - INTERVAL '24 hours'
-          AND retracted_at IS NULL AND action IS NULL`,
-      {
-        type: QueryTypes.SELECT,
-        replacements: { viewerId, impressionId },
-        transaction,
-      },
-    );
-    return rows[0] ? { targetId: rows[0].target_id } : null;
+    return findOpenDiscoveryImpression(this.sequelize, viewerId, impressionId, transaction);
   }
 
-  async observeDiscoveryImpression(
+  observeDiscoveryImpression(
     viewerId: string,
     impressionId: string,
     transaction: Transaction,
   ): Promise<boolean> {
-    const rows = await this.sequelize.query<{ id: string }>(
-      `UPDATE social.discovery_impressions
-          SET observed_at = COALESCE(observed_at, NOW())
-        WHERE id = :impressionId AND viewer_id = :viewerId
-          AND issued_at >= NOW() - INTERVAL '24 hours'
-          AND retracted_at IS NULL AND action IS NULL
-        RETURNING id`,
-      {
-        type: QueryTypes.SELECT,
-        replacements: { viewerId, impressionId },
-        transaction,
-      },
-    );
-    return rows.length === 1;
+    return markDiscoveryImpressionObserved(this.sequelize, viewerId, impressionId, transaction);
   }
 
-  async consumeDiscoveryImpression(
+  consumeDiscoveryImpression(
     viewerId: string,
     targetId: string,
     impressionId: string,
     action: "LIKE" | "PASS",
     transaction: Transaction,
   ): Promise<string[] | null> {
-    const rows = await this.sequelize.query<{ feature_codes: string[] }>(
-      `UPDATE social.discovery_impressions
-          SET action = :action, acted_at = NOW()
-        WHERE id = :impressionId AND viewer_id = :viewerId AND target_id = :targetId
-          AND observed_at IS NOT NULL AND issued_at >= NOW() - INTERVAL '24 hours'
-          AND retracted_at IS NULL AND action IS NULL
-        RETURNING feature_codes`,
-      {
-        type: QueryTypes.SELECT,
-        replacements: { viewerId, targetId, impressionId, action },
-        transaction,
-      },
+    return consumeDiscoveryImpressionRow(
+      this.sequelize,
+      { viewerId, targetId, impressionId, action },
+      transaction,
     );
-    return rows[0]?.feature_codes ?? null;
   }
 
   async enqueueRecommendationSignal(
@@ -1122,7 +1081,7 @@ export class SocialRepository {
               NULL::varchar,
               dp.created_at
          FROM social.discovery_passes dp
-        WHERE dp.viewer_id = :viewerId
+        WHERE dp.viewer_id = :viewerId AND dp.origin = 'SWIPE'
         ORDER BY decided_at DESC
         LIMIT 1`,
       { type: QueryTypes.SELECT, replacements: { viewerId }, transaction },
@@ -1238,12 +1197,6 @@ export class SocialRepository {
     // generaría ni siquiera es SQL válido.
     if (filters.userIds && filters.userIds.length === 0) return [];
 
-    // Lista blanca, nunca entrada del usuario: la cláusula se interpola.
-    const orderBy =
-      filters.orderBy === "points"
-        ? "up.points DESC NULLS LAST, u.nombre_completo ASC"
-        : "u.nombre_completo ASC";
-
     const rows = await this.sequelize.query<{
       usuario_id: string;
       full_name: string;
@@ -1264,6 +1217,7 @@ export class SocialRepository {
       recommendation_lat: number | null;
       recommendation_lon: number | null;
       recommendation_intents: string[] | null;
+      about: PublicAboutRow | null;
     }>(
       `SELECT u.id AS usuario_id,
               u.nombre_completo AS full_name,
@@ -1278,12 +1232,17 @@ export class SocialRepository {
               s.social_status,
               s.visible AS social_visible,
               ph.items AS photos,
-              COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad) AS age,
+              EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int AS age,
               up.points,
               up.level_code,
               rank_branch.latitude::float8 AS recommendation_lat,
               rank_branch.longitude::float8 AS recommendation_lon,
-              candidate_preferences.intents AS recommendation_intents
+              candidate_preferences.intents AS recommendation_intents,
+              -- Hidden orientation never leaves the database.
+              CASE WHEN pd.user_id IS NOT NULL THEN json_build_object(
+                'interests', pd.interests, 'drinking', pd.drinking, 'smoking', pd.smoking,
+                'pets', pd.pets, 'bio', pd.bio, 'orientationVisible', pd.orientation_visible,
+                'orientation', CASE WHEN pd.orientation_visible THEN pd.orientation END) END AS about
          FROM public.usuarios u
          LEFT JOIN public.perfiles_antropometricos p ON p.usuario_id = u.id
          LEFT JOIN profile.onboarding o ON o.user_id = u.id
@@ -1305,6 +1264,7 @@ export class SocialRepository {
           AND ((c.requester_id = u.id AND c.addressee_id = :viewerId)
             OR (c.addressee_id = u.id AND c.requester_id = :viewerId))
          LEFT JOIN social.profile_settings s ON s.user_id = u.id
+         LEFT JOIN social.profile_details pd ON pd.user_id = u.id
          -- La galería entera, no sólo la portada: la tarjeta de descubrimiento
          -- pasa las fotos con el dedo, así que necesita todas. El LIMIT es el
          -- tope de producto (6) y va DENTRO del subselect: agregando primero y
@@ -1331,6 +1291,7 @@ export class SocialRepository {
              WHERE (block.blocker_id = :viewerId AND block.blocked_id = u.id)
                 OR (block.blocker_id = u.id AND block.blocked_id = :viewerId))
           AND u.estado = 'ACTIVO'
+          AND ${personAccountSql("u")}
           AND (u.suspended_until IS NULL OR u.suspended_until <= NOW())
           AND (
             COALESCE(u.tenant_id, :defaultTenantId) = :tenantId
@@ -1338,21 +1299,21 @@ export class SocialRepository {
               AND COALESCE(u.tenant_id, :defaultTenantId) <> :tenantId
               AND s.profile_enabled = true
               AND s.cross_gym_enabled = true
-              AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad, 0) >= 18)
+              AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int, 0) >= 18)
           )
           AND (:objetivo::text IS NULL OR p.objetivo = ANY(string_to_array(:objetivo, ',')))
           AND (:branchId::uuid IS NULL OR u.sede_id = :branchId)
           AND (:gender::text IS NULL OR u.genero = :gender)
           AND (jsonb_array_length(CAST(:gendersJson AS jsonb)) = 0 OR u.genero IN (
             SELECT jsonb_array_elements_text(CAST(:gendersJson AS jsonb))))
-          AND (:minAge::integer IS NULL OR COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad) >= :minAge)
-          AND (:maxAge::integer IS NULL OR COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad) <= :maxAge)
+          AND (:minAge::integer IS NULL OR EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int >= :minAge)
+          AND (:maxAge::integer IS NULL OR EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int <= :maxAge)
           AND (:search::text IS NULL OR u.nombre_completo ILIKE :search)
           AND (:targetUserId::uuid IS NULL OR u.id = :targetUserId)
           AND (NOT :hasUserIds::boolean OR u.id IN (:userIds))
           AND (NOT :mapOnly::boolean OR (s.profile_enabled = TRUE AND s.map_enabled = TRUE))
           AND (NOT :discoveryOnly::boolean OR s.profile_enabled = TRUE)
-          AND (NOT :adultOnly::boolean OR COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, p.fecha_nacimiento))::int, p.edad, 0) >= 18)
+          AND (NOT :adultOnly::boolean OR COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int, 0) >= 18)
           AND (NOT :excludeDecided::boolean
             OR (NOT EXISTS (
                   SELECT 1 FROM social.connections dc
@@ -1361,7 +1322,7 @@ export class SocialRepository {
                AND NOT EXISTS (
                   SELECT 1 FROM social.discovery_passes dp
                    WHERE dp.viewer_id = :viewerId AND dp.target_id = u.id)))
-        ORDER BY ${orderBy}
+        ORDER BY u.nombre_completo ASC, u.id ASC
         LIMIT :limit`,
       {
         type: QueryTypes.SELECT,
@@ -1430,6 +1391,7 @@ export class SocialRepository {
             ? null
             : { lat: row.recommendation_lat, lon: row.recommendation_lon },
         recommendationIntents: row.recommendation_intents ?? [],
+        about: row.about,
       };
     });
   }
@@ -1513,7 +1475,7 @@ export class SocialRepository {
     return this.listPasses(
       `SELECT dp.viewer_id AS user_id, dp.created_at AS passed_at
          FROM social.discovery_passes dp
-        WHERE dp.target_id = :viewerId
+        WHERE dp.target_id = :viewerId AND dp.origin = 'SWIPE'
         ORDER BY dp.created_at DESC
         LIMIT :limit`,
       viewerId,
@@ -1604,6 +1566,7 @@ export class SocialRepository {
             FROM social.discovery_passes dp
             JOIN public.usuarios vu ON vu.id = dp.viewer_id
            WHERE dp.target_id = :viewerId
+             AND dp.origin = 'SWIPE'
              AND vu.estado = 'ACTIVO'
              AND COALESCE(vu.tenant_id, :defaultTenantId) = :tenantId) AS passes_received,
          (SELECT COUNT(*)

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Transaction } from 'sequelize';
+import { QueryTypes, Transaction } from 'sequelize';
 import { FacilityStatus, UserGender, UserRole, UserStatus } from '../../common/enums/domain.enums';
 import { BranchModel } from '../facilities/branch.model';
 import { UserModel } from './user.model';
@@ -12,8 +12,13 @@ export type CreateClientUserInput = {
   /** Gimnasio de la cuenta. Nulo solo en una instalación de una sola marca. */
   tenantId?: string | null;
   gender?: UserGender | null;
+  /** `YYYY-MM-DD`, already validated as 18–100. */
+  birthDate?: string | null;
   acceptedTermsAt?: Date | null;
   termsVersion?: string | null;
+  /** Set at creation only when a provider already vouched for the address. */
+  emailVerifiedAt?: Date | null;
+  signupRisk?: 'LOW' | 'MEDIUM' | 'HIGH' | null;
 };
 
 /**
@@ -60,24 +65,22 @@ export class UsersRepository {
     return this.userModel.findOne({ where: { id: userId, status: UserStatus.ACTIVE }, transaction });
   }
 
+  /** The listing a business account owns, or null (ADR-0020). One primary-key probe. */
+  async findBusinessEntityId(userId: string, transaction?: Transaction): Promise<string | null> {
+    if (!this.userModel.sequelize) throw new Error("User database connection is unavailable.");
+    const [row] = await this.userModel.sequelize.query<{ entity_id: string }>(
+      "SELECT entity_id FROM business.accounts WHERE user_id = :userId",
+      { replacements: { userId }, type: QueryTypes.SELECT, transaction },
+    );
+    return row?.entity_id ?? null;
+  }
+
   findByEmail(emailAddress: string, transaction?: Transaction): Promise<UserModel | null> {
     return this.userModel.findOne({ where: { email: emailAddress.toLowerCase() }, transaction });
   }
 
   findActiveByEmail(emailAddress: string): Promise<UserModel | null> {
     return this.userModel.findOne({ where: { email: emailAddress.toLowerCase(), status: UserStatus.ACTIVE } });
-  }
-
-  /**
-   * El `ADMIN` activo más antiguo de un tenant. No hay garantía de "exactamente
-   * uno por tenant" en este esquema (`tenantId` es solo branding, no una tabla
-   * de tenants) — el más antiguo es una elección determinista ante 0 o varios.
-   */
-  findAdminForTenant(tenantId: string): Promise<UserModel | null> {
-    return this.userModel.findOne({
-      where: { role: UserRole.ADMIN, tenantId, status: UserStatus.ACTIVE },
-      order: [["createdAt", "ASC"]],
-    });
   }
 
   createClient(input: CreateClientUserInput, transaction?: Transaction): Promise<UserModel> {
@@ -87,9 +90,38 @@ export class UsersRepository {
       fullName: input.fullName,
       tenantId: input.tenantId ?? null,
       gender: input.gender ?? null,
+      birthDate: input.birthDate ?? null,
       acceptedTermsAt: input.acceptedTermsAt ?? null,
       termsVersion: input.termsVersion ?? null,
+      emailVerifiedAt: input.emailVerifiedAt ?? null,
+      signupRisk: input.signupRisk ?? null,
     }, { transaction });
+  }
+
+  /**
+   * A business account (ADR-0020): role NEGOCIO and no person data — the
+   * database refuses a birth date or sex on it (ck_usuarios_business_no_person_data).
+   */
+  createBusiness(
+    input: { email: string; passwordHash: string; fullName: string; tenantId: string; signupRisk: 'LOW' | 'MEDIUM' | 'HIGH' },
+    transaction: Transaction,
+  ): Promise<UserModel> {
+    return this.userModel.create({
+      email: input.email.toLowerCase(),
+      passwordHash: input.passwordHash,
+      fullName: input.fullName,
+      role: UserRole.BUSINESS,
+      tenantId: input.tenantId,
+      signupRisk: input.signupRisk,
+    }, { transaction });
+  }
+
+  /** Idempotent: the first verification timestamp is kept. */
+  async markEmailVerified(userId: string, transaction?: Transaction): Promise<void> {
+    await this.userModel.update(
+      { emailVerifiedAt: new Date() },
+      { where: { id: userId, emailVerifiedAt: null }, transaction },
+    );
   }
 
   createStaffUser(input: CreateStaffUserInput, transaction?: Transaction): Promise<UserModel> {
@@ -110,12 +142,33 @@ export class UsersRepository {
    * y una operación de seguridad no debe poder cambiar el rol o el estado de
    * la cuenta como efecto secundario.
    */
+  /** Every access token issued before now stops working on its next request. */
+  async invalidateIssuedSessions(userId: string, transaction?: Transaction): Promise<void> {
+    await this.userModel.update({ sessionsValidAfter: new Date() }, { where: { id: userId }, transaction });
+  }
+
   updatePasswordHash(
     userId: string,
     passwordHash: string,
     transaction?: Transaction,
   ): Promise<[affectedCount: number]> {
     return this.userModel.update({ passwordHash }, { where: { id: userId }, transaction });
+  }
+
+  /** Writes only the display name, for the same reason as `updatePasswordHash`. */
+  async updateFullName(userId: string, fullName: string, transaction?: Transaction): Promise<void> {
+    await this.userModel.update({ fullName }, { where: { id: userId }, transaction });
+  }
+
+  /**
+   * Swaps the login address of an account whose new mailbox was just proven.
+   * Raises `UniqueConstraintError` when another account took it meanwhile.
+   */
+  async changeEmail(userId: string, email: string, transaction: Transaction): Promise<void> {
+    await this.userModel.update(
+      { email: email.toLowerCase(), emailVerifiedAt: new Date() },
+      { where: { id: userId }, transaction },
+    );
   }
 
   /** Marca cuándo se cerró el último socket de chat activo de esta cuenta. */

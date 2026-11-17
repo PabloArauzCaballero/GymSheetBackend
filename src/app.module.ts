@@ -5,9 +5,15 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ThrottlerStorageService } from '@nestjs/throttler/dist/throttler.service';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { ResilientThrottlerStorage } from './common/redis/resilient-throttler.storage';
+import { BusinessAccountsModule } from './modules/business-accounts/business-accounts.module';
+import { BusinessKycModule } from './modules/business-kyc/business-kyc.module';
+import { BusinessListingsModule } from './modules/business-listings/business-listings.module';
+import { AccountKindGuard } from './common/guards/account-kind.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { EmailVerificationGuard } from './common/guards/email-verification.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { HttpMetricsInterceptor } from './common/metrics/http-metrics.interceptor';
+import { CounterRegistryModule } from './common/metrics/counter-registry';
 import { OptionalRedisClient, REDIS_CLIENT, RedisModule } from './common/redis/redis.module';
 import { RealtimeModule } from './common/realtime/realtime.module';
 import { env } from './config/env';
@@ -15,11 +21,13 @@ import { DatabaseModule } from './database/database.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { AccessControlModule } from './modules/access-control/access-control.module';
 import { AdminAccessModule } from './modules/admin-access/admin-access.module';
+import { AntibotModule } from './modules/antibot/antibot.module';
 import { AuditInterceptor } from './modules/admin-access/audit.interceptor';
 import { PermissionGuard } from './modules/admin-access/permission.guard';
 import { AuthModule } from './modules/auth/auth.module';
 import { EquipmentModule } from './modules/equipment/equipment.module';
 import { ExercisesModule } from './modules/exercises/exercises.module';
+import { AccountModule } from './modules/account/account.module';
 import { ExportModule } from './modules/export/export.module';
 import { FacilitiesModule } from './modules/facilities/facilities.module';
 import { HealthModule } from './modules/health/health.module';
@@ -41,12 +49,17 @@ import { TrainingInvitationsModule } from './modules/training-invitations/traini
 import { ProgressionModule } from './modules/progression/progression.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { UsersModule } from './modules/users/users.module';
+import { VerificationModule } from './modules/verification/verification.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 import { DirectoryModule } from './modules/directory/directory.module';
+import { LegalAcceptanceGuard } from './modules/legal/legal-acceptance.guard';
+import { LegalModule } from './modules/legal/legal.module';
+import { ConsentsModule } from './modules/consents/consents.module';
 
 @Module({
   imports: [
     RedisModule,
+    CounterRegistryModule,
     RealtimeModule,
     /**
      * Rate-limit counters live in Redis when it is configured, so the limit is
@@ -99,6 +112,9 @@ import { DirectoryModule } from './modules/directory/directory.module';
     HealthModule,
     GatewayModule,
     AuthModule,
+    AntibotModule,
+    LegalModule,
+    ConsentsModule,
     UsersModule,
     ProfilesModule,
     EquipmentModule,
@@ -115,6 +131,7 @@ import { DirectoryModule } from './modules/directory/directory.module';
     ProgramsModule,
     ProgressionModule,
     ExportModule,
+    AccountModule,
     MediaModule,
     SocialModule,
     ChatModule,
@@ -125,11 +142,22 @@ import { DirectoryModule } from './modules/directory/directory.module';
     AdminAccessModule,
     TenantsModule,
     DirectoryModule,
+    BusinessAccountsModule,
+    BusinessKycModule,
+    BusinessListingsModule,
+    VerificationModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Deny-by-default for business accounts, and business/* for them only (ADR-0020).
+    { provide: APP_GUARD, useClass: AccountKindGuard },
+    // Right after authentication: an account that has not accepted the current
+    // terms/privacy versions gets 428 before any other rule runs.
+    { provide: APP_GUARD, useClass: LegalAcceptanceGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    // Only routes marked @RequiresVerifiedEmail() (the social surface).
+    { provide: APP_GUARD, useClass: EmailVerificationGuard },
     // Runs after RolesGuard: only tightens routes that opt in via @RequirePermission().
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: HttpMetricsInterceptor },

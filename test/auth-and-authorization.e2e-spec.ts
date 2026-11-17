@@ -7,6 +7,7 @@ import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter
 import { ResponseInterceptor } from '../src/common/interceptors/response.interceptor';
 import { requestIdMiddleware } from '../src/common/middleware/request-id.middleware';
 import { env } from '../src/config/env';
+import { E2E_SIGNUP_FIELDS } from './support/e2e-app';
 
 /**
  * Exercises the guard chain end to end against a real PostgreSQL instance.
@@ -47,7 +48,7 @@ describe('Authentication and authorization (e2e)', () => {
     it('registers a new client account', async () => {
       const response = await request(httpServer)
         .post(url('/auth/register'))
-        .send({ email: uniqueEmail, password, nombreCompleto: 'E2E Test User', acceptedTerms: true })
+        .send({ email: uniqueEmail, password, nombreCompleto: 'E2E Test User', ...E2E_SIGNUP_FIELDS })
         .expect(201);
 
       expect(response.body.data.accessToken).toEqual(expect.any(String));
@@ -63,7 +64,7 @@ describe('Authentication and authorization (e2e)', () => {
           password,
           nombreCompleto: 'Escalation Attempt',
           rol: 'ADMIN',
-          acceptedTerms: true,
+          ...E2E_SIGNUP_FIELDS,
         })
         .expect(201);
 

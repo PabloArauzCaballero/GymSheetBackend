@@ -14,6 +14,7 @@ import { requestIdMiddleware } from "../../src/common/middleware/request-id.midd
 import { env } from "../../src/config/env";
 import { ChatEventsService } from "../../src/modules/chat/chat-events.service";
 import { MessageModel } from "../../src/modules/chat/message.model";
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from "../support/e2e-app";
 
 describe("H7 catalog sticker persistence", () => {
   let app: INestApplication;
@@ -54,8 +55,9 @@ describe("H7 catalog sticker persistence", () => {
       email: `h7-${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`,
       password: "e2e-strong-password",
       nombreCompleto: `H7 ${label}`,
-      acceptedTerms: true,
+      ...E2E_SIGNUP_FIELDS,
     }).expect(201);
+    await markEmailVerified(app, response.body.data.user.id as string);
     return { token: response.body.data.accessToken as string, id: response.body.data.user.id as string };
   }
 

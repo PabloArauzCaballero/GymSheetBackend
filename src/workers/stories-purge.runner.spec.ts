@@ -16,7 +16,7 @@ function createRunner(
 const emptyPass: StoriesPurgeResult = {
   examined: 0,
   deleted: 0,
-  filesRemoved: 0,
+  releasesQueued: 0,
   failed: 0,
 };
 
@@ -41,7 +41,7 @@ describe("StoriesPurgeRunner", () => {
     const fullBatch: StoriesPurgeResult = {
       examined: env.STORIES_PURGE_BATCH_SIZE,
       deleted: env.STORIES_PURGE_BATCH_SIZE,
-      filesRemoved: env.STORIES_PURGE_BATCH_SIZE,
+      releasesQueued: env.STORIES_PURGE_BATCH_SIZE,
       failed: 0,
     };
     const purgeExpired = jest

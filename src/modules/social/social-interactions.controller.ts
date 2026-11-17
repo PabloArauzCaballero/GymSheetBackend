@@ -5,6 +5,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
 import { SocialInteractionsService } from "./social-interactions.service";
 import { InteractionListQuery, interactionListQuerySchema } from "./social.schemas";
+import { RequiresVerifiedEmail } from "../../common/decorators/requires-verified-email.decorator";
 
 /**
  * Quién me dio like y quién me dio next, en las dos direcciones.
@@ -14,6 +15,7 @@ import { InteractionListQuery, interactionListQuerySchema } from "./social.schem
  * retirar) y éste sólo mira hacia atrás — qué ha pasado conmigo. Sin prefijo en
  * `@Controller()`, como el resto del módulo: el `api/v1` lo pone `main.ts`.
  */
+@RequiresVerifiedEmail()
 @Controller()
 export class SocialInteractionsController {
   constructor(private readonly service: SocialInteractionsService) {}

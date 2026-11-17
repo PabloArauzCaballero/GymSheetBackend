@@ -41,6 +41,14 @@ export class UsersService {
     });
   }
 
+  /** Name rectification: the only account field the person sets as free text. */
+  async updateFullName(userId: string, fullName: string): Promise<UserModel> {
+    const user = await this.getActiveUserOrFail(userId);
+    await this.usersRepository.updateFullName(userId, fullName);
+    user.fullName = fullName;
+    return user;
+  }
+
   private async applyAccountUpdate(user: UserModel, input: UpdateMyAccountInput, transaction?: Transaction): Promise<UserModel> {
     if (input.genero !== undefined) {
       if (transaction) await user.update({ gender: input.genero }, { transaction });

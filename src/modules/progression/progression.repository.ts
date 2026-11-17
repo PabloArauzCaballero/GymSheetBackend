@@ -1,3 +1,4 @@
+import { personAccountSql } from "../../common/sql/person-accounts";
 import { Injectable } from "@nestjs/common";
 import { MONTHLY_STRIKES_BASE } from "./user-streak-strike.model";
 import { settleStrikes, totalOf, type StrikeSettlement } from "./streak-strikes";
@@ -554,11 +555,11 @@ export class ProgressionRepository {
            SELECT COUNT(*) AS n FROM sesion GROUP BY local_start::date) por_dia)::text AS max_sessions_in_day,
         (SELECT COALESCE(MAX(EXTRACT(EPOCH FROM (LEAST(sesion.fecha_fin, u.ultima) - sesion.fecha_inicio)) / 60), 0)
            FROM sesion JOIN ultima_serie u ON u.sesion_id = sesion.id)::text AS longest_session_minutes,
-        -- El cumpleaños sale del perfil; sin fecha de nacimiento, simplemente no hay insignia.
+        -- Birthday comes from the account birth date; without one there is simply no badge.
         (SELECT COUNT(*) FROM sesion
-           JOIN public.perfiles_antropometricos p ON p.usuario_id = :userId
-          WHERE p.fecha_nacimiento IS NOT NULL
-            AND to_char(local_start, 'MM-DD') = to_char(p.fecha_nacimiento, 'MM-DD'))::text AS birthday_sessions,
+           JOIN public.usuarios birthday_user ON birthday_user.id = :userId
+          WHERE birthday_user.fecha_nacimiento IS NOT NULL
+            AND to_char(local_start, 'MM-DD') = to_char(birthday_user.fecha_nacimiento, 'MM-DD'))::text AS birthday_sessions,
         (SELECT COALESCE(MAX(n), 0) FROM records_por_sesion)::text AS max_records_in_session
       `,
       {
@@ -965,6 +966,7 @@ export class ProgressionRepository {
              ) ub
          ) top_badges ON true
         WHERE u.estado = 'ACTIVO'
+          AND ${personAccountSql("u")}
           AND (:tenantId::text IS NULL OR u.tenant_id IS NOT DISTINCT FROM :tenantId)
           AND p.points > 0
         ORDER BY ${orderBy}

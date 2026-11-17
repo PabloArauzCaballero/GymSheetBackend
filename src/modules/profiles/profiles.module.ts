@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { SequelizeModule } from "@nestjs/sequelize";
+import { ConsentsModule } from "../consents/consents.module";
 import { MediaModule } from "../media/media.module";
+import { UserModel } from "../users/user.model";
 import { AnthropometricProfileModel } from "./anthropometric-profile.model";
 import { ProfilesController } from "./profiles.controller";
 import { ProfilesRepository } from "./profiles.repository";
@@ -17,16 +19,20 @@ import { ProfilePhotosRepository } from "./profile-photos.repository";
 import { ProfilePhotosService } from "./profile-photos.service";
 import { TutorialProgressController } from "./tutorial-progress.controller";
 import { TutorialProgressService } from "./tutorial-progress.service";
+import { VerificationModule } from "../verification/verification.module";
 
 @Module({
   imports: [
+    ConsentsModule,
     MediaModule,
     IntegrationModule,
+    VerificationModule,
     SequelizeModule.forFeature([
       AnthropometricProfileModel,
       OnboardingModel,
       BodyMeasurementModel,
       ProfilePhotoModel,
+      UserModel,
     ]),
   ],
   controllers: [ProfilesController, OnboardingController, ProfilePhotosController, TutorialProgressController],

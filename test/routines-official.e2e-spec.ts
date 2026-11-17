@@ -6,7 +6,7 @@ describe('Routines v2 · official (e2e)', () => {
   let ana: { token: string; id: string };
   let leo: { token: string; id: string };
   let sys: { token: string; id: string };
-  let coach: { token: string; id: string };
+  let gymAdmin: { token: string; id: string };
   const tag = `off${Date.now().toString(36)}`;
   let routineId = '';
 
@@ -15,9 +15,9 @@ describe('Routines v2 · official (e2e)', () => {
     ana = await e2e.register('off-ana');
     leo = await e2e.register('off-leo');
     sys = await e2e.register('off-sys');
-    coach = await e2e.register('off-coach');
+    gymAdmin = await e2e.register('off-gym-admin');
     await e2e.promote(sys.id, 'SYSTEM_ADMIN');
-    await e2e.promote(coach.id, 'ADMIN');
+    await e2e.promote(gymAdmin.id, 'ADMIN');
     const ex = await createPersonalExercise(e2e.as(ana.token), `${tag} ex`);
     const res = await e2e.as(ana.token).post('/routines').send({ nombre: `${tag} Para oficial`, dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: ex }] }] }).expect(201);
     routineId = res.body.data.id;
@@ -31,12 +31,16 @@ describe('Routines v2 · official (e2e)', () => {
     await e2e.as(sys.token).post(`/admin/routines/${routineId}/official`).expect(400);
   });
 
-  it('un socio o un ADMIN de gimnasio no marcan oficiales (OFFICIAL_FORBIDDEN)', async () => {
+  it('un socio o un ADMIN de gimnasio no marcan oficiales', async () => {
     await e2e.as(ana.token).post(`/admin/routines/${routineId}/official`).expect(403);
     await e2e.as(ana.token).post(`/admin/routines/${routineId}/publish`).catch(() => undefined);
     await e2e.as(ana.token).post(`/routines/${routineId}/publish`).expect(201);
-    const res = await e2e.as(coach.token).post(`/admin/routines/${routineId}/official`).expect(403);
-    expect(res.body.code).toBe('OFFICIAL_FORBIDDEN');
+    // Since franja 7a (ADR-0019) the legacy gym ADMIN is refused by the role
+    // guard itself, before the service's OFFICIAL_FORBIDDEN check is reached.
+    const res = await e2e.as(gymAdmin.token).post(`/admin/routines/${routineId}/official`).expect(403);
+    expect(res.body.code).not.toBe('OFFICIAL_FORBIDDEN');
+    const pub = await e2e.as(leo.token).get(`/routines?scope=public&q=${tag}`).expect(200);
+    expect(pub.body.data.items.map((r: { id: string; esOficial: boolean }) => [r.id, r.esOficial])).toEqual([[routineId, false]]);
   });
 
   it('SYSTEM_ADMIN la marca: sale en Recomendadas por REPP y deja de salir en Públicas', async () => {

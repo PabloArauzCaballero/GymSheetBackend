@@ -1,3 +1,4 @@
+import { BrandingModule } from "../../common/branding/branding.module";
 import { Module } from "@nestjs/common";
 import { SequelizeModule } from "@nestjs/sequelize";
 import { BusinessDateService } from "../../common/time/business-date.service";
@@ -33,6 +34,7 @@ import { PlanFeatureModel } from "./plan-feature.model";
 
 @Module({
   imports: [
+    BrandingModule,
     AccessCredentialModule,
     FacilitiesModule,
     IntegrationModule,

@@ -40,7 +40,7 @@ import {
   updateRoomSchema,
 } from './facilities.schemas';
 
-@Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller('admin/facilities')
 export class FacilitiesController {
   constructor(private readonly service: FacilitiesService) {}
@@ -54,7 +54,6 @@ export class FacilitiesController {
   }
 
   @Post('branches')
-  @Roles(UserRole.ADMIN)
   createBranch(
     @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(createBranchSchema)) input: CreateBranchInput,
@@ -63,7 +62,6 @@ export class FacilitiesController {
   }
 
   @Patch('branches/:id')
-  @Roles(UserRole.ADMIN)
   updateBranch(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('id', UuidParamPipe) id: string,
@@ -73,7 +71,6 @@ export class FacilitiesController {
   }
 
   @Delete('branches/:id')
-  @Roles(UserRole.ADMIN)
   deactivateBranch(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('id', UuidParamPipe) id: string,
@@ -91,7 +88,6 @@ export class FacilitiesController {
   }
 
   @Post('rooms')
-  @Roles(UserRole.ADMIN)
   createRoom(
     @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(createRoomSchema)) input: CreateRoomInput,
@@ -100,7 +96,6 @@ export class FacilitiesController {
   }
 
   @Patch('rooms/:id')
-  @Roles(UserRole.ADMIN)
   updateRoom(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('id', UuidParamPipe) id: string,
@@ -110,7 +105,6 @@ export class FacilitiesController {
   }
 
   @Delete('rooms/:id')
-  @Roles(UserRole.ADMIN)
   deactivateRoom(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('id', UuidParamPipe) id: string,
@@ -127,7 +121,6 @@ export class FacilitiesController {
   }
 
   @Post('access-points')
-  @Roles(UserRole.ADMIN)
   createAccessPoint(
     @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(createAccessPointSchema))
@@ -137,7 +130,6 @@ export class FacilitiesController {
   }
 
   @Patch('access-points/:id')
-  @Roles(UserRole.ADMIN)
   updateAccessPoint(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('id', UuidParamPipe) id: string,
@@ -148,7 +140,6 @@ export class FacilitiesController {
   }
 
   @Delete('access-points/:id')
-  @Roles(UserRole.ADMIN)
   deactivateAccessPoint(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('id', UuidParamPipe) id: string,
@@ -157,7 +148,6 @@ export class FacilitiesController {
   }
 
   @Post('equipment-assignments')
-  @Roles(UserRole.ADMIN)
   assignEquipment(
     @CurrentUser() actor: AuthenticatedUser,
     @Body(new ZodValidationPipe(assignEquipmentSchema))

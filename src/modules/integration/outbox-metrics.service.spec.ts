@@ -1,4 +1,5 @@
 import { QueueItemStatus } from '../../common/enums/domain.enums';
+import { MEDIA_RELEASE_QUEUE } from '../media/media-release.service';
 import { OutboxMetricsService } from './outbox-metrics.service';
 import { QueueMetricsSnapshot } from './outbox.repository';
 
@@ -88,5 +89,21 @@ describe('OutboxMetricsService', () => {
     const output = await service.renderPrometheus();
 
     expect(output).toContain('queue="weird\\"queue"');
+  });
+  it('always renders the media.release dead letters, zero included (ADR-0017 runbook)', async () => {
+    const empty = await buildService({ depth: [], backlogAge: [] }).service.renderPrometheus();
+    expect(empty).toContain('# TYPE gym_sheet_outbox_dead_letter_jobs gauge');
+    expect(empty).toContain(`gym_sheet_outbox_dead_letter_jobs{queue="${MEDIA_RELEASE_QUEUE}"} 0`);
+
+    const stuck = await buildService({
+      depth: [
+        { queueName: MEDIA_RELEASE_QUEUE, status: QueueItemStatus.DEAD_LETTER, count: 4 },
+        { queueName: MEDIA_RELEASE_QUEUE, status: QueueItemStatus.FAILED, count: 9 },
+        { queueName: 'notifications.delivery', status: QueueItemStatus.DEAD_LETTER, count: 2 },
+      ],
+      backlogAge: [],
+    }).service.renderPrometheus();
+    expect(stuck).toContain(`gym_sheet_outbox_dead_letter_jobs{queue="${MEDIA_RELEASE_QUEUE}"} 4`);
+    expect(stuck).not.toContain('gym_sheet_outbox_dead_letter_jobs{queue="notifications.delivery"}');
   });
 });

@@ -27,7 +27,7 @@ export class AccessCredentialSelfController {
   }
 }
 
-@Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller('admin/access/credentials')
 export class AccessCredentialAdminController {
   constructor(private readonly service: AccessCredentialService) {}

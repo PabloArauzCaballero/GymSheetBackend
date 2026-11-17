@@ -10,7 +10,6 @@ import {
   RoutineStatus,
   RoutineVisibility,
   UserRole,
-  UserStatus,
 } from '../../common/enums/domain.enums';
 import { ExercisesService } from '../exercises/exercises.service';
 import { WorkoutSessionResponse } from '../workouts/workout.mapper';
@@ -32,7 +31,6 @@ import {
 import { applyRoutineStills } from './routine-stills';
 import { routineWhereForScope, TrainingRepository } from './training.repository';
 import {
-  AssignRoutineInput,
   SelfScheduleRoutineInput,
   CreateRoutineInput,
   ImportRoutinesInput,
@@ -244,46 +242,8 @@ export class TrainingService {
     return mapAssignmentToResponse(hydrated ?? assignment);
   }
 
-  async assignRoutine(
-    coach: Actor,
-    routineId: string,
-    input: AssignRoutineInput,
-  ): Promise<RoutineAssignmentResponse> {
-    const routine = await this.getRoutineModelOrFail(routineId);
-    await this.access.assertCanEdit(coach, routine);
-
-    const client = await this.repository.findClientById(input.clientUserId);
-    if (!client || client.status !== UserStatus.ACTIVE) {
-      throw new NotFoundException('Cliente no encontrado o inactivo.');
-    }
-    if (client.id === coach.id) {
-      throw new BadRequestException('No puedes asignarte una rutina a ti mismo como coach.');
-    }
-
-    try {
-      const assignment = await this.sequelize.transaction(async (transaction) => {
-        const created = await this.repository.createAssignment(routineId, coach.id, input, transaction);
-        // D15: la asignación del entrenador aparece como compartida ya aceptada.
-        await this.repository.ensureCoachShare(routineId, coach.id, client.id, transaction);
-        return created;
-      });
-      const hydrated = await this.repository.findAssignmentById(assignment.id);
-      return mapAssignmentToResponse(hydrated ?? assignment);
-    } catch (error: unknown) {
-      throw this.translateConflict(
-        error,
-        'Este cliente ya tiene una asignación activa de esta rutina.',
-      );
-    }
-  }
-
   async listMyAssignments(clientUserId: string): Promise<RoutineAssignmentResponse[]> {
     const assignments = await this.repository.listAssignmentsForClient(clientUserId);
-    return assignments.map(mapAssignmentToResponse);
-  }
-
-  async listCoachAssignments(coachUserId: string): Promise<RoutineAssignmentResponse[]> {
-    const assignments = await this.repository.listAssignmentsByCoach(coachUserId);
     return assignments.map(mapAssignmentToResponse);
   }
 

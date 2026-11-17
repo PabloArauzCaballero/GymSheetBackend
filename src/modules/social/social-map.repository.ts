@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
-import { QueryTypes } from "sequelize";
+import { QueryTypes, Transaction } from "sequelize";
 import { ProfileSocialSettingsModel } from "./profile-social-settings.model";
 import { PublicMapCell } from "./social-map.policy";
 import { SocialMapLocationModel } from "./social-map-location.model";
@@ -70,7 +70,18 @@ export class SocialMapRepository {
     }));
   }
 
-  async savePrivateLocation(userId: string, location: { latitude: number; longitude: number }, cellId: string): Promise<void> {
+  runInTransaction<T>(work: (transaction: Transaction) => Promise<T>): Promise<T> {
+    const sequelize = this.locations.sequelize;
+    if (!sequelize) throw new Error("Social map database connection is unavailable.");
+    return sequelize.transaction(work);
+  }
+
+  async savePrivateLocation(
+    userId: string,
+    location: { latitude: number; longitude: number },
+    cellId: string,
+    transaction?: Transaction,
+  ): Promise<void> {
     const sequelize = this.locations.sequelize;
     if (!sequelize) throw new Error("Social map database connection is unavailable.");
     await sequelize.query(
@@ -78,7 +89,7 @@ export class SocialMapRepository {
        VALUES (:userId, :latitude, :longitude, :cellId, NOW())
        ON CONFLICT (user_id) DO UPDATE SET latitude = EXCLUDED.latitude,
          longitude = EXCLUDED.longitude, cell_id = EXCLUDED.cell_id, updated_at = NOW()`,
-      { replacements: { userId, ...location, cellId }, type: QueryTypes.INSERT },
+      { replacements: { userId, ...location, cellId }, type: QueryTypes.INSERT, transaction },
     );
   }
 
@@ -100,7 +111,7 @@ export class SocialMapRepository {
           AND settings.profile_enabled = TRUE
           AND settings.map_enabled = TRUE
           AND user_account.estado = 'ACTIVO'
-          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, profile.fecha_nacimiento))::int, profile.edad, 0) >= 18
+          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, user_account.fecha_nacimiento))::int, 0) >= 18
         GROUP BY location.cell_id`,
       { replacements: { viewerId, cellIds: cells.map((cell) => cell.id) }, type: QueryTypes.SELECT },
     );
@@ -124,7 +135,7 @@ export class SocialMapRepository {
           AND settings.profile_enabled = TRUE
           AND settings.map_enabled = TRUE
           AND user_account.estado = 'ACTIVO'
-          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, profile.fecha_nacimiento))::int, profile.edad, 0) >= 18
+          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, user_account.fecha_nacimiento))::int, 0) >= 18
         ORDER BY location.updated_at DESC, location.user_id
         LIMIT 30`,
       { replacements: { viewerId, cellId }, type: QueryTypes.SELECT },
@@ -152,7 +163,7 @@ export class SocialMapRepository {
           AND settings.profile_enabled = TRUE
           AND settings.map_enabled = TRUE
           AND user_account.estado = 'ACTIVO'
-          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, profile.fecha_nacimiento))::int, profile.edad, 0) >= 18
+          AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, user_account.fecha_nacimiento))::int, 0) >= 18
         ORDER BY location.updated_at DESC, location.user_id
         LIMIT 120`,
       { replacements: { viewerId, cellIds }, type: QueryTypes.SELECT },

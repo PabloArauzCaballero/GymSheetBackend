@@ -576,7 +576,9 @@ describe("ChatService.listConversations", () => {
     expect(summary.systemKind).toBeNull();
   });
 
-  it("ensures the system conversations exist before listing, using the caller's tenant", async () => {
+  it("ensures REPP's support conversation exists before listing, whatever the caller's gym", async () => {
+    // Franja 7a (ADR-0019): there is no gym admin chat any more, so the caller's
+    // gym plays no part in which system chats exist.
     const ensureSystemConversations = jest.fn().mockResolvedValue(undefined);
     const service = createService(
       { listConversationsForUser: jest.fn().mockResolvedValue([]) },
@@ -589,23 +591,24 @@ describe("ChatService.listConversations", () => {
 
     await service.listConversations(userA);
 
-    expect(ensureSystemConversations).toHaveBeenCalledWith(userA, "topfitness");
+    expect(ensureSystemConversations).toHaveBeenCalledTimes(1);
+    expect(ensureSystemConversations.mock.calls[0]).toEqual([userA]);
   });
 
-  it("falls back to the default tenant when the caller has none", async () => {
-    const ensureSystemConversations = jest.fn().mockResolvedValue(undefined);
+  it("creates the system conversations before reading the list, so a new one is listed at once", async () => {
+    const calls: string[] = [];
     const service = createService(
-      { listConversationsForUser: jest.fn().mockResolvedValue([]) },
+      { listConversationsForUser: jest.fn().mockImplementation(() => { calls.push("list"); return Promise.resolve([]); }) },
       {},
       {},
       {},
-      { ensureSystemConversations },
+      { ensureSystemConversations: jest.fn().mockImplementation(() => { calls.push("ensure"); return Promise.resolve(); }) },
       { findActiveById: jest.fn().mockResolvedValue({ id: userA, tenantId: null, status: UserStatus.ACTIVE }) },
     );
 
     await service.listConversations(userA);
 
-    expect(ensureSystemConversations).toHaveBeenCalledWith(userA, expect.any(String));
+    expect(calls).toEqual(["ensure", "list"]);
   });
 });
 

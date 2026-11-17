@@ -19,7 +19,7 @@ function createService(options: {
   isReferenced: boolean;
   storageRemove?: jest.Mock;
   lockStorageKey?: jest.Mock;
-  immutable?: boolean;
+  keepsKey?: boolean;
 }) {
   const lockStorageKey =
     options.lockStorageKey ?? jest.fn().mockResolvedValue(undefined);
@@ -31,7 +31,7 @@ function createService(options: {
     { lockStorageKey, isReferenced } as unknown as MediaReferencesRepository,
     {
       name: "local",
-      immutable: options.immutable ?? false,
+      canRemove: () => !(options.keepsKey ?? false),
       upload: jest.fn(),
       remove,
     } as unknown as MediaStorageProvider,
@@ -74,27 +74,41 @@ describe("MediaRetentionService.deleteRowAndUnreferencedFile", () => {
   });
 
   /**
-   * Requisito de producto (ADR-0010): con un almacén inmutable la fila cae
-   * igual —la story caduca, la foto sale de la galería— pero el binario se
-   * conserva. Lo importante de este test es la SEGUNDA aserción: el servicio
-   * no debe anunciar `fileRemoved: true` por un borrado que el adaptador va a
-   * ignorar.
+   * The catalog stays immutable (ADR-0010, ADR-0017): the row goes —the media
+   * leaves the library— but the binary is kept. What matters is the SECOND
+   * assertion: the service must not announce `fileRemoved: true` for a
+   * removal the adapter is going to skip.
    */
-  it("keeps the file on immutable storage, even with no references left", async () => {
+  it("keeps the file of a key the storage does not delete, even with no references left", async () => {
     const { service, remove } = createService({
       isReferenced: false,
-      immutable: true,
+      keepsKey: true,
     });
     const deleteOwnRow = jest.fn().mockResolvedValue(undefined);
 
     const result = await service.deleteRowAndUnreferencedFile(
-      "users/u1/stories/sha256.jpg",
+      "catalog/sha256.jpg",
       deleteOwnRow,
     );
 
     expect(deleteOwnRow).toHaveBeenCalledWith(transaction);
     expect(result).toEqual({ fileRemoved: false });
     expect(remove).not.toHaveBeenCalled();
+  });
+
+  /** A rejected removal is never reported as done: the caller must see it. */
+  it("propagates a removal the storage rejects, after the row is gone", async () => {
+    const denied = Object.assign(new Error("Access Denied."), { code: "AccessDenied" });
+    const { service } = createService({
+      isReferenced: false,
+      storageRemove: jest.fn().mockRejectedValue(denied),
+    });
+    const deleteOwnRow = jest.fn().mockResolvedValue(undefined);
+
+    await expect(
+      service.deleteRowAndUnreferencedFile("users/u1/stories/sha256.jpg", deleteOwnRow),
+    ).rejects.toBe(denied);
+    expect(deleteOwnRow).toHaveBeenCalledWith(transaction);
   });
 
   it("counts references only after deleting its own row, inside one transaction", async () => {

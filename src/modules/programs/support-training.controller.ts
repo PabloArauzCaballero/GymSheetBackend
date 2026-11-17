@@ -14,7 +14,7 @@ import { SupportTrainingService } from './support-training.service';
 const closeWeeksSchema = z.object({ hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional() });
 const recomputeSchema = z.object({ semana: z.number().int().min(1).max(60) });
 
-@Roles(UserRole.ADMIN, UserRole.FRONT_DESK)
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller('admin/support')
 export class SupportTrainingController {
   constructor(private readonly support: SupportTrainingService) {}

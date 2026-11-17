@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { z } from 'zod';
 import { Sequelize } from 'sequelize-typescript';
-import { NotificationStatus } from '../../common/enums/domain.enums';
+import { NotificationChannel, NotificationStatus } from '../../common/enums/domain.enums';
 import { OutboxJobModel } from '../integration/outbox-job.model';
 import { NotificationAdapterFactory } from './delivery/notification-adapter.factory';
 import { NotificationRepository } from './notification.repository';
+import { NoticeEmailPayload, noticeEmailPayloadSchema } from './notice-email.service';
+
+/** What a secret message's body becomes once delivered. */
+export const SECRET_BODY_REDACTED = '[Código enviado por correo]';
 
 const deliveryPayloadSchema = z
   .object({ notificationId: z.string().uuid() })
@@ -19,6 +23,8 @@ export class NotificationDeliveryService {
   ) {}
 
   async deliver(job: OutboxJobModel): Promise<void> {
+    const notice = noticeEmailPayloadSchema.safeParse(job.payload);
+    if (notice.success) return this.deliverNoticeEmail(job, notice.data);
     const payload = deliveryPayloadSchema.parse(job.payload);
     const message = await this.repository.findMessage(payload.notificationId);
     if (!message) throw new NotFoundException('Notification no longer exists.');
@@ -62,6 +68,9 @@ export class NotificationDeliveryService {
     const result = await adapter.deliver({
       notificationId: message.id,
       recipientUserId: message.recipientUserId,
+      ...(typeof message.metadata.recipientEmail === 'string'
+        ? { recipientEmail: message.metadata.recipientEmail }
+        : {}),
       subject: message.subject,
       body: message.body,
       daysRemaining: message.daysRemaining,
@@ -87,9 +96,31 @@ export class NotificationDeliveryService {
       );
       await this.repository.updateDeliveryState(
         locked,
-        { status: NotificationStatus.SENT, sentAt: new Date() },
+        {
+          status: NotificationStatus.SENT,
+          sentAt: new Date(),
+          // A delivered credential has no reason to stay readable in the database.
+          ...(locked.secret ? { body: SECRET_BODY_REDACTED } : {}),
+        },
         transaction,
       );
+    });
+  }
+
+  /**
+   * A self-contained notice email (see `NoticeEmailService`): no message row
+   * to update, so the outbox job itself is the delivery record (attempts,
+   * backoff, dead letter) and the address is the one the job carries.
+   */
+  private async deliverNoticeEmail(job: OutboxJobModel, notice: NoticeEmailPayload): Promise<void> {
+    await this.adapterFactory.forChannel(NotificationChannel.EMAIL).deliver({
+      notificationId: job.id,
+      recipientUserId: notice.recipientUserId,
+      recipientEmail: notice.to,
+      subject: notice.subject,
+      body: notice.body,
+      daysRemaining: null,
+      idempotencyKey: job.deduplicationKey,
     });
   }
 

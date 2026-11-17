@@ -10,6 +10,7 @@ import { ExercisesRepository } from './exercises.repository';
 import { EquipmentInferenceService } from './equipment-inference.service';
 import { ExerciseCommunityService } from './exercise-community.service';
 import { ExercisesService } from './exercises.service';
+import { PersonalExerciseMediaRelease } from './personal-exercise-media-release';
 
 /** Principal mínimo para las rutas personales; el gimnasio acota el equipo. */
 function actorFor(id: string): AuthenticatedUser {
@@ -26,6 +27,13 @@ function actorFor(id: string): AuthenticatedUser {
 const ownerId = '00000000-0000-4000-8000-000000000001';
 const otherUserId = '00000000-0000-4000-8000-000000000002';
 const exerciseId = '00000000-0000-4000-8000-000000000003';
+
+const personalMedia = {
+  removeAllOf: jest.fn(
+    async (_exercise: unknown, alsoInTransaction: (transaction: unknown) => Promise<void>) =>
+      alsoInTransaction({ id: 'tx' }),
+  ),
+};
 
 function createService(
   repositoryOverrides: Partial<ExercisesRepository>,
@@ -45,6 +53,7 @@ function createService(
     equipmentInference,
     sequelize,
     {} as ExerciseCommunityService,
+    personalMedia as unknown as PersonalExerciseMediaRelease,
   );
 }
 

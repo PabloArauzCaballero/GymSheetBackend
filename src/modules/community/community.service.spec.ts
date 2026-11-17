@@ -1,6 +1,7 @@
 import type { MediaStorageProvider } from '../media/media-storage.port';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { RoutineNotifier } from '../training/routine-notifier';
+import type { CommentAttachmentRelease } from './comment-attachment-release';
 import { CommentRow, CommunityRepository } from './community.repository';
 import { CommunityService } from './community.service';
 
@@ -38,6 +39,7 @@ describe('CommunityService · me gusta de comentarios', () => {
     repository as unknown as CommunityRepository,
     { notify: jest.fn() } as unknown as RoutineNotifier,
     { upload: jest.fn() } as unknown as MediaStorageProvider,
+    { removeByAuthor: jest.fn() } as unknown as CommentAttachmentRelease,
   );
   const actor = { id: 'viewer' };
 
@@ -131,6 +133,7 @@ describe('CommunityService · respuestas', () => {
     repository as unknown as CommunityRepository,
     { notify: jest.fn() } as unknown as RoutineNotifier,
     { upload: jest.fn() } as unknown as MediaStorageProvider,
+    { removeByAuthor: jest.fn() } as unknown as CommentAttachmentRelease,
   );
   const actor = { id: 'viewer' };
   const parent = { id: 'p1', targetKind: 'EXERCISE', targetId: 'e1', replyToId: null, status: 'VISIBLE', authorId: 'u9' };
@@ -177,6 +180,7 @@ describe('CommunityService · valoraciones', () => {
     repository as unknown as CommunityRepository,
     { notify: jest.fn() } as unknown as RoutineNotifier,
     { upload: jest.fn() } as unknown as MediaStorageProvider,
+    { removeByAuthor: jest.fn() } as unknown as CommentAttachmentRelease,
   );
   const actor = { id: 'viewer' };
 

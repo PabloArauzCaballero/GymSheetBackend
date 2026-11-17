@@ -83,19 +83,12 @@ export class DirectoryService {
     return mapDirectoryEntityDetail(entity);
   }
 
+  /** REPP seeds a listing it owns; never verified or linked to a gym from the body (D1). */
   async createEntity(
     actor: AuthenticatedUser,
     body: CreateEntityBody
   ): Promise<DirectoryEntityDetailDto> {
-    const userId =
-      actor.role === UserRole.SYSTEM_ADMIN && body.user_id ? body.user_id : actor.id;
-
-    let tenantId = body.tenant_id ?? null;
-    if (actor.role !== UserRole.SYSTEM_ADMIN) {
-      if (body.entity_type === 'GYM' && actor.tenantId) {
-        tenantId = actor.tenantId;
-      }
-    }
+    const userId = actor.id;
 
     const baseSlug = body.name
       .toLowerCase()
@@ -106,26 +99,18 @@ export class DirectoryService {
 
     const slug = `${baseSlug}-${Date.now().toString(36)}`;
 
-    return this.sequelize.transaction(async (transaction) => {
-      const entity = await this.repository.createEntity(
-        slug,
-        {
-          ...body,
-          user_id: userId,
-          tenant_id: tenantId ?? undefined,
-        },
-        transaction
-      );
-
-      this.productEvents?.emit('directory_entity_created', {
-        entityId: entity.id,
-        entityType: entity.entityType,
-        userId: entity.userId,
-      });
-
-      const detail = await this.repository.findEntityById(entity.id);
-      return mapDirectoryEntityDetail(detail!);
+    const entity = await this.sequelize.transaction((transaction) =>
+      this.repository.createEntity(slug, { ...body, user_id: userId }, transaction),
+    );
+    this.productEvents?.emit('directory_entity_created', {
+      entityId: entity.id,
+      entityType: entity.entityType,
+      userId: entity.userId,
     });
+    // Read after the commit: inside the transaction a second connection could not see the new row (it answered 500).
+    const detail = await this.repository.findEntityById(entity.id);
+    if (!detail) throw new NotFoundException('Oferente no encontrado en el directorio.');
+    return mapDirectoryEntityDetail(detail);
   }
 
   // ==========================================
@@ -185,11 +170,13 @@ export class DirectoryService {
 
   async createReview(
     entityId: string,
-    userId: string,
+    author: Pick<AuthenticatedUser, 'id' | 'tenantId'>,
     body: CreateReviewBody
   ): Promise<ReviewItemDto> {
+    const userId = author.id;
+    // Only a public listing takes reviews: a DRAFT (unapproved business) or suspended one does not exist for people.
     const entity = await this.repository.findEntityById(entityId);
-    if (!entity) throw new NotFoundException('Oferente no encontrado.');
+    if (!entity || entity.status !== 'ACTIVE') throw new NotFoundException('Oferente no encontrado.');
 
     const existing = await this.repository.findUserReviewForEntity(entityId, userId);
     if (existing) {
@@ -198,7 +185,7 @@ export class DirectoryService {
       );
     }
 
-    const isVerifiedAthlete = await this.checkIfVerifiedAthlete(entity.tenantId, userId);
+    const isVerifiedAthlete = await this.checkIfVerifiedAthlete(entity.tenantId, author);
 
     const review = await this.repository.createReview(
       entityId,
@@ -240,9 +227,8 @@ export class DirectoryService {
   ): Promise<ReviewItemDto> {
     const review = await this.repository.findReviewById(reviewId);
     if (!review) throw new NotFoundException('Reseña no encontrada.');
-    if (review.userId !== userId) {
-      throw new ForbiddenException('No tienes permiso para editar esta reseña.');
-    }
+    // Someone else's review answers like a missing one (D12): 404, never 403.
+    if (review.userId !== userId) throw new NotFoundException('Reseña no encontrada.');
 
     const updated = await this.repository.updateReview(reviewId, body);
     const populated = await this.repository.findReviewById(updated.id);
@@ -257,9 +243,7 @@ export class DirectoryService {
     const isOwner = review.userId === userId;
     const isSuperAdmin = role === UserRole.SYSTEM_ADMIN;
 
-    if (!isOwner && !isSuperAdmin) {
-      throw new ForbiddenException('No tienes permiso para eliminar esta reseña.');
-    }
+    if (!isOwner && !isSuperAdmin) throw new NotFoundException('Reseña no encontrada.');
 
     await this.repository.deleteReview(reviewId);
   }
@@ -293,12 +277,12 @@ export class DirectoryService {
     const entity = await this.repository.findEntityById(review.entityId);
     if (!entity) throw new NotFoundException('Oferente no encontrado.');
 
-    // Verificar si el autor es el propietario o un administrador autorizado
+    // Only the listing's owner or REPP answers: a gym role is not the owner (ADR-0019).
     const isEntityOwner = entity.userId === authorId;
-    const isTenantAdmin = authorRole === UserRole.ADMIN || authorRole === UserRole.SYSTEM_ADMIN;
+    const isPlatformAdmin = authorRole === UserRole.SYSTEM_ADMIN;
 
-    if (!isEntityOwner && !isTenantAdmin) {
-      throw new ForbiddenException('Solo el propietario oficial o administrador puede responder a esta reseña.');
+    if (!isEntityOwner && !isPlatformAdmin) {
+      throw new ForbiddenException('Solo el propietario oficial o REPP puede responder a esta reseña.');
     }
 
     await this.repository.createOrUpdateReply(reviewId, authorId, body.reply_text);
@@ -329,20 +313,29 @@ export class DirectoryService {
   // EVALUACIÓN DE ATLETA VERIFICADO
   // ==========================================
 
-  private async checkIfVerifiedAthlete(tenantId: string | null, userId: string): Promise<boolean> {
+  /**
+   * A gym listing's "verified athlete" seal: the author belongs to that gym
+   * and has a membership or a granted entry there. Memberships and access
+   * decisions carry no tenant column; the gym is the author's own (D3: the
+   * old query filtered by `tenantId`/`customerId`, which those tables do not
+   * have, and every review of a gym listing failed with a 500).
+   */
+  private async checkIfVerifiedAthlete(
+    tenantId: string | null,
+    author: Pick<AuthenticatedUser, 'id' | 'tenantId'>,
+  ): Promise<boolean> {
     if (!tenantId) {
       // Para tiendas / oferentes independientes, cualquier atleta autenticado cuenta con el sello de comunidad
       return true;
     }
+    if (author.tenantId !== tenantId) return false;
 
-    // Verificar si tiene membresía o asistencias registradas en ese gimnasio/tenant
-    const membership = await this.membershipModel.findOne({
-      where: { tenantId, customerId: userId },
-    });
+    const membership = await this.membershipModel.findOne({ where: { userId: author.id }, attributes: ['id'] });
     if (membership) return true;
 
     const access = await this.accessDecisionModel.findOne({
-      where: { tenantId, customerId: userId, outcome: 'GRANTED' },
+      where: { userId: author.id, outcome: 'GRANTED' },
+      attributes: ['id'],
     });
     return Boolean(access);
   }

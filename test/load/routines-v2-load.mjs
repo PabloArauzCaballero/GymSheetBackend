@@ -42,9 +42,20 @@ async function call(path, { token, method = 'GET', body } = {}) {
 
 async function register(label) {
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1e6)}`;
+  // Signup must echo the current terms version; read it instead of hardcoding it.
+  const legal = await call('/legal/current');
+  const termsVersion = legal.data.documents.find((entry) => entry.document === 'TERMS').version;
   const res = await call('/auth/register', {
     method: 'POST',
-    body: { email: `${label}-${suffix}@load.test`, password: 'load-strong-password', nombreCompleto: `Load ${label}`, acceptedTerms: true },
+    body: {
+      email: `${label}-${suffix}@load.test`,
+      password: 'load-strong-password',
+      nombreCompleto: `Load ${label}`,
+      acceptedTerms: true,
+      genero: 'MALE',
+      fechaNacimiento: '1995-05-15',
+      termsVersion,
+    },
   });
   if (res.status !== 201) throw new Error(`register ${res.status}`);
   return res.data.accessToken;

@@ -2,6 +2,7 @@ import { ConnectionStatus } from "../../common/enums/domain.enums";
 import { ConnectionModel } from "./connection.model";
 import { DirectoryRow, EarnedBadgeRow, InteractionCountsRow } from "./social.repository";
 import { resolveMediaUrl } from "../../common/media/media-url";
+import { mapPublicAbout, type PublicAboutResponse } from "./social-profile.mapper";
 
 export type ConnectionResponse = {
   id: string;
@@ -51,6 +52,8 @@ export type DirectoryEntryResponse = {
   experienceLevel: string | null;
   points: number | null;
   levelCode: string | null;
+  /** Interests, habits and bio; `orientation` only when its owner made it visible. */
+  about: PublicAboutResponse;
 };
 
 export function mapDirectoryRowToResponse(row: DirectoryRow): DirectoryEntryResponse {
@@ -70,6 +73,41 @@ export function mapDirectoryRowToResponse(row: DirectoryRow): DirectoryEntryResp
     experienceLevel: row.experienceLevel,
     points: row.points,
     levelCode: row.levelCode,
+    about: mapPublicAbout(row.about),
+  };
+}
+
+/** Why a card was ranked where it is (closed list; clients ignore unknown codes). */
+export const DISCOVERY_REASON_CODES = [
+  "NEARBY",
+  "SAME_GOAL",
+  "SAME_ROUTINE",
+  "SHARED_INTERESTS",
+  "VERIFIED",
+  "NEW_HERE",
+] as const;
+export type DiscoveryReasonCode = (typeof DISCOVERY_REASON_CODES)[number];
+
+/** A "Conocer" deck card: the directory entry plus ranking context. */
+export type DiscoveryCardResponse = DirectoryEntryResponse & {
+  reasons: DiscoveryReasonCode[];
+  /** Whole kilometres, never below 1: an exact location is never exposed. */
+  distanceKm: number | null;
+};
+
+export function mapDiscoveryCard(
+  row: DirectoryRow,
+  ranking: { reasons: readonly string[]; distanceKm: number | null } | undefined,
+): DiscoveryCardResponse {
+  return {
+    ...mapDirectoryRowToResponse(row),
+    reasons: (ranking?.reasons ?? []).filter((code): code is DiscoveryReasonCode =>
+      (DISCOVERY_REASON_CODES as readonly string[]).includes(code),
+    ),
+    distanceKm:
+      ranking?.distanceKm === null || ranking?.distanceKm === undefined
+        ? null
+        : Math.max(1, Math.round(ranking.distanceKm)),
   };
 }
 

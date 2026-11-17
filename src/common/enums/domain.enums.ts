@@ -9,6 +9,24 @@ export enum UserRole {
    * capacidad que sí necesita.
    */
   SYSTEM_ADMIN = "SYSTEM_ADMIN",
+  /**
+   * Platform moderator: a member of the central REPP team that moderates the
+   * social content of EVERY gym (ADR-0018). It is not gym staff: it satisfies
+   * no gym role, needs no permission grant, and only SYSTEM_ADMIN assigns it.
+   */
+  MODERATOR = "MODERATOR",
+  /**
+   * Business account (ADR-0020): one login per marketplace business (gym,
+   * coach, center, store, service provider). It is not a person: no birth
+   * date, sex, social profile or discovery, and `AccountKindGuard` only lets
+   * it reach its own allow-list of routes.
+   */
+  BUSINESS = "NEGOCIO",
+  /**
+   * Legacy gym staff roles (`ADMIN`, `COACH`, `FRONT_DESK`, and the external
+   * trainer): since franja 7a they grant no power at all (ADR-0019) and are
+   * removed with their staff tables in franja 7d.
+   */
   ADMIN = "ADMIN",
   CLIENT = "CLIENTE",
   EXTERNAL_TRAINER = "ENTRENADOR_EXTERNO",
@@ -317,6 +335,8 @@ export enum RefreshTokenRevokedReason {
   REUSE_DETECTED = "REUSE_DETECTED",
   /** The account's password was reset, which ends every existing session. */
   PASSWORD_RESET = "PASSWORD_RESET",
+  /** The owner removed the device from their account. */
+  DEVICE_REVOKED = "DEVICE_REVOKED",
 }
 
 /**

@@ -55,6 +55,17 @@ x-app-environment: &app-environment
   ACCESS_MOCK_ENABLED: ${ACCESS_MOCK_ENABLED:-false}
   WHATSAPP_MEMBERSHIP_PHONE: ${WHATSAPP_MEMBERSHIP_PHONE:?WHATSAPP_MEMBERSHIP_PHONE is required}
   METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
+  # Required: the privacy pepper (ADR-0014/0015). This stack runs with NODE_ENV=development, so
+  # the production check in env.ts would not catch a missing value; Compose refuses to deploy.
+  IP_HASH_SECRET: ${IP_HASH_SECRET:?IP_HASH_SECRET (>= 32 chars) is required}
+  # Required: own key of every KYC ciphertext (ADR-0021); never derived from the JWT secrets.
+  KYC_ENCRYPTION_KEY: ${KYC_ENCRYPTION_KEY:?KYC_ENCRYPTION_KEY (>= 32 chars) is required}
+  BUSINESS_PHONE_OTP_PROVIDER: ${BUSINESS_PHONE_OTP_PROVIDER:-disabled}
+  WHATSAPP_CLOUD_ACCESS_TOKEN: ${WHATSAPP_CLOUD_ACCESS_TOKEN:-}
+  WHATSAPP_CLOUD_PHONE_NUMBER_ID: ${WHATSAPP_CLOUD_PHONE_NUMBER_ID:-}
+  WHATSAPP_CLOUD_OTP_TEMPLATE: ${WHATSAPP_CLOUD_OTP_TEMPLATE:-}
+  # Anti-bot ticket key (ADR-0013); env.ts requires it with NODE_ENV=production.
+  REGISTRATION_TICKET_SECRET: ${REGISTRATION_TICKET_SECRET:-}
 
   # Fijos a los alias internos (con prefijo de proyecto, ver comentario en el servicio `postgres`
   # más abajo) de los servicios `postgres`/`redis` de este mismo stack. Lo que se pegue en Coolify
@@ -176,7 +187,10 @@ x-app-environment: &app-environment
   MEDIA_MIRROR_ALLOWED_HOSTS: ${MEDIA_MIRROR_ALLOWED_HOSTS:-images.unsplash.com,raw.githubusercontent.com}
   MEDIA_MIRROR_TIMEOUT_MS: ${MEDIA_MIRROR_TIMEOUT_MS:-15000}
 
-  # Almacén de media inmutable (ADR-0010). `MINIO_ENDPOINT` es el alias INTERNO
+  # Almacén de media MinIO. En producción lo sirve `datacenter-minio`. El
+  # contenido de las personas (`users/…`) se borra de verdad, todas sus versiones
+  # (ADR-0017); el catálogo (`catalog/`, `ejercicios/`) sigue inmutable (ADR-0010).
+  # `MINIO_ENDPOINT` es el alias INTERNO
   # del servicio de abajo: por ahí escribe la API. Por dónde LEEN los navegadores
   # es otra cosa — `MEDIA_STORAGE_PUBLIC_BASE_URL`, que apunta al Funnel.
   # Las credenciales sólo se exigen con MEDIA_STORAGE_PROVIDER=minio, y quien lo
@@ -188,6 +202,12 @@ x-app-environment: &app-environment
   MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-}
   MINIO_BUCKET: ${MINIO_BUCKET:-gymsheet-media}
   MINIO_REGION: ${MINIO_REGION:-us-east-1}
+  # Obligatoria con MEDIA_STORAGE_PROVIDER=minio en producción: sin valor la API
+  # no arranca. `true` SÓLO después de aplicar al usuario de la API la política de
+  # borrado bajo `users/*` del runbook de ADR-0017 (si no, cada borrado termina en
+  # dead-letter con AccessDenied); `false` conserva el contenido de las personas y
+  # entonces ningún texto puede prometer su borrado.
+  MEDIA_USER_CONTENT_DELETABLE: ${MEDIA_USER_CONTENT_DELETABLE:-}
   CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
   CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
   CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
@@ -200,16 +220,17 @@ x-app-environment: &app-environment
 x-worker-service: &worker-service
   image: gymsheet-backend:coolify
   pull_policy: never
-  profiles: ['workers']
   environment:
     <<: *app-environment
   volumes:
-    # `worker-stories-purge` borra binarios de stories caducadas. Sin este
+    # `worker-stories-purge`, `worker-account-data` y `worker-privacy-retention` borran
+    # binarios (stories caducadas, archivos de cuentas cerradas, contenido denunciado
+    # vencido). Sin este
     # volumen veía un /app/storage/media vacío: la fila caía pero el fichero
     # quedaba huérfano en el volumen de `api`, sin error y sin rastro. Con
-    # MEDIA_STORAGE_PROVIDER=minio el borrado ya no ocurre nunca (ADR-0010) y
-    # el montaje es inocuo, pero mientras exista el proveedor local tiene que
-    # ver exactamente el mismo disco que la API.
+    # MEDIA_STORAGE_PROVIDER=minio borran en MinIO (ADR-0017) y el montaje es
+    # inocuo, pero mientras exista el proveedor local tiene que ver exactamente
+    # el mismo disco que la API.
     - media-data:/app/storage/media
   depends_on:
     postgres:
@@ -397,7 +418,7 @@ services:
       start_period: 20s
 
   # ---------------------------------------------------------------------------
-  # Almacén de media inmutable (ADR-0010). Sustituye al volumen `media-data`
+  # Almacén de media (ADR-0010, ADR-0017). Sustituye al volumen `media-data`
   # como destino de lo que suben los socios: fotos de perfil, stories y
   # adjuntos de chat, ordenados por usuario en
   # `users/<userId>/<categoria>/<sha256>.<ext>`.
@@ -488,13 +509,17 @@ services:
       start_period: 15s
 
   # Una pasada al desplegar, como `migrate`: crea el bucket, activa el
-  # versionado y deja al usuario de la API SIN permiso de borrado. Reutiliza la
-  # imagen del servidor —que ya trae `mc`— para no bajar una segunda.
+  # versionado y deja al usuario de la API con permiso de borrado SÓLO bajo
+  # `users/*` (ADR-0017). Reutiliza la imagen del servidor —que ya trae `mc`—
+  # para no bajar una segunda.
   #
   # Idempotente: se ejecuta entero en cada despliegue y converge al mismo
-  # estado. Es además el sitio donde vive la garantía de "no se borra nunca":
-  # el no-op del adaptador es código y alguien puede quitarlo; esto es el
-  # servidor diciendo que no.
+  # estado. Es además el sitio donde vive la garantía de que el catálogo no se
+  # borra: el no-op del adaptador para `catalog/` y `ejercicios/` es código y
+  # alguien puede quitarlo; esto es el servidor diciendo que no. Este servicio
+  # sólo configura el MinIO de este stack (perfil `media`): el
+  # `datacenter-minio` de producción se configura a mano con el runbook de
+  # ADR-0017.
   minio-init:
     # quay.io, NO Docker Hub: `minio/minio` ya no se puede bajar de Docker Hub
     # («pull access denied … repository does not exist»), y eso tumbó un
@@ -529,11 +554,15 @@ services:
         mc alias set gs "http://gymsheet-minio:9000" "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
 
         mc mb --ignore-existing gs/"$$MINIO_BUCKET"
-        # Versionado: una sobrescritura nunca destruye la versión previa.
+        # Versionado: una sobrescritura nunca destruye la versión previa. Por
+        # eso la API borra el contenido de una persona versión por versión.
         mc version enable gs/"$$MINIO_BUCKET"
 
-        # Política del usuario de la API: escribir y leer, NUNCA borrar. Sin
-        # s3:DeleteObject ni s3:DeleteObjectVersion, a propósito.
+        # Política del usuario de la API (ADR-0017): escribir y leer todo;
+        # borrar todas las versiones SÓLO bajo users/*, business/*/public/*
+        # (logo y portada de un negocio, ADR-0020) y business/*/kyc/* (documentos
+        # KYC cifrados, privados y borrables, ADR-0021). Nunca catalog/ ni
+        # ejercicios/. ListBucketVersions es del bucket: se acota por s3:prefix.
         cat > /tmp/app-policy.json <<JSON
         {
           "Version": "2012-10-17",
@@ -547,6 +576,17 @@ services:
               "Effect": "Allow",
               "Action": ["s3:ListBucket"],
               "Resource": ["arn:aws:s3:::$$MINIO_BUCKET"]
+            },
+            {
+              "Effect": "Allow",
+              "Action": ["s3:DeleteObject", "s3:DeleteObjectVersion"],
+              "Resource": ["arn:aws:s3:::$$MINIO_BUCKET/users/*", "arn:aws:s3:::$$MINIO_BUCKET/business/*/public/*", "arn:aws:s3:::$$MINIO_BUCKET/business/*/kyc/*"]
+            },
+            {
+              "Effect": "Allow",
+              "Action": ["s3:ListBucketVersions"],
+              "Resource": ["arn:aws:s3:::$$MINIO_BUCKET"],
+              "Condition": {"StringLike": {"s3:prefix": ["users/*", "business/*/public/*", "business/*/kyc/*"]}}
             }
           ]
         }
@@ -563,7 +603,8 @@ services:
         # stories se excluyen, incluidos objetos históricos: sólo la API
         # autenticada entrega su media y revalida acceso en cada descarga.
         # Nunca añadir users/*/chats/*, users/*/stories/*, users/* ni bucket/*.
-        # NO se concede s3:ListBucket anónimo.
+        # NO se concede s3:ListBucket anónimo. `users/*/ejercicios/*` (subidas a
+        # ejercicios personales, ADR-0017) se lee igual que `ejercicios/*`.
         cat > /tmp/bucket-policy.json <<JSON
         {
           "Version": "2012-10-17",
@@ -575,8 +616,10 @@ services:
               "Resource": [
                 "arn:aws:s3:::$$MINIO_BUCKET/users/*/perfiles/*",
                 "arn:aws:s3:::$$MINIO_BUCKET/users/*/publicaciones/*",
+                "arn:aws:s3:::$$MINIO_BUCKET/users/*/ejercicios/*",
                 "arn:aws:s3:::$$MINIO_BUCKET/catalog/*",
-                "arn:aws:s3:::$$MINIO_BUCKET/ejercicios/*"
+                "arn:aws:s3:::$$MINIO_BUCKET/ejercicios/*",
+                "arn:aws:s3:::$$MINIO_BUCKET/business/*/public/*"
               ]
             }
           ]
@@ -584,7 +627,7 @@ services:
         JSON
         mc anonymous set-json /tmp/bucket-policy.json gs/"$$MINIO_BUCKET"
 
-        echo "minio-init: bucket $$MINIO_BUCKET listo (versionado on, usuario de API sin borrado)"
+        echo "minio-init: bucket $$MINIO_BUCKET listo (versionado on, API borra sólo bajo users/)"
     restart: 'no'
     init: true
     networks:
@@ -596,8 +639,33 @@ services:
         max-file: '3'
 
   # ---------------------------------------------------------------------------
-  # Workers. Apagados por defecto: cada uno es un proceso Node completo (~200 MB
-  # con el runtime de Nest dentro) y encenderlos los cinco a ciegas puede dejar
+  # Workers de privacidad: SIEMPRE encendidos, sin perfil. Cumplen plazos que los textos legales
+  # prometen (stories a las 24 h, exportaciones y cierres de cuenta, retención diaria de datos
+  # personales); dejarlos detrás de un perfil opcional es incumplirlos en silencio.
+  #   stories-purge     → borra stories caducadas (una denunciada espera a que su denuncia se cierre)
+  #   account-data      → exportaciones completas y cierres de cuenta (colas del outbox)
+  #   privacy-retention → `db:privacy:retention` cada 24 h con jitter: tickets de alta gastados,
+  #                       HMAC de IP de más de 90 días, sanciones de cuentas cerradas vencidas y
+  #                       contenido denunciado de cuentas cerradas 180 días después de la última
+  #                       denuncia, y selfies de verificación vencidas. El comando de una sola
+  #                       pasada sigue disponible.
+  # Cada uno es un proceso Node (~200 MB); el VPS tiene que tener margen para los tres.
+  # ---------------------------------------------------------------------------
+
+  worker-stories-purge:
+    <<: *worker-service
+    command: ['node', 'dist/workers/stories-purge.worker.js']
+
+  worker-account-data:
+    <<: *worker-service
+    command: ['node', 'dist/workers/account-data.worker.js']
+
+  worker-privacy-retention:
+    <<: *worker-service
+    command: ['node', 'dist/workers/privacy-retention.worker.js']
+
+  # Workers opcionales. Apagados por defecto: cada uno es un proceso Node completo (~200 MB
+  # con el runtime de Nest dentro) y encenderlos a ciegas puede dejar
   # sin memoria al VPS y tumbar el despliegue de la API, que es lo que de verdad
   # no puede caerse. Para encenderlos, añadir en las variables de la aplicación
   # en Coolify:
@@ -606,36 +674,35 @@ services:
   #
   # y redesplegar. Docker Compose lee COMPOSE_PROFILES del archivo de entorno que
   # Coolify pasa con --env-file, igual que el resto de variables. Si por lo que
-  # sea no lo leyera, el fallo es benigno: los workers no arrancan y todo lo
+  # sea no lo leyera, el fallo es benigno: estos workers no arrancan y todo lo
   # demás queda exactamente como hoy.
   #
   # Reparto de responsabilidades (docs/workers/notification-workers.md):
   #   access-event        → drena la bandeja de eventos de acceso física
   #   membership-reminder → avisos de vencimiento de membresía
   #   notification-delivery → entrega lo que el outbox transaccional deja listo
-  #   stories-purge       → borra stories caducadas
   #   exercises-dataset-refresh → refresco del dataset externo de ejercicios;
   #     solo hace trabajo real con EXERCISES_DATASET_ENABLED=true.
   # ---------------------------------------------------------------------------
 
   worker-access-event:
     <<: *worker-service
+    profiles: ['workers']
     command: ['node', 'dist/workers/access-event.worker.js']
 
   worker-membership-reminder:
     <<: *worker-service
+    profiles: ['workers']
     command: ['node', 'dist/workers/membership-reminder.worker.js']
 
   worker-notification-delivery:
     <<: *worker-service
+    profiles: ['workers']
     command: ['node', 'dist/workers/notification-delivery.worker.js']
-
-  worker-stories-purge:
-    <<: *worker-service
-    command: ['node', 'dist/workers/stories-purge.worker.js']
 
   worker-exercises-dataset-refresh:
     <<: *worker-service
+    profiles: ['workers']
     command: ['node', 'dist/workers/exercises-dataset-refresh.worker.js']
 
 volumes:

@@ -1,0 +1,284 @@
+import { PLATFORM_ACCOUNT_ROLES } from "../moderation/moderation.policy";
+import { Injectable } from "@nestjs/common";
+import { InjectModel } from "@nestjs/sequelize";
+import { Op, QueryTypes, Transaction } from "sequelize";
+import { Sequelize } from "sequelize-typescript";
+import { effectiveTenantOf } from "../../common/tenancy/tenant-scope";
+import { env } from "../../config/env";
+import { PhotoVerificationModel } from "./photo-verification.model";
+import {
+  VerificationGestureCode,
+  VerificationRejectionReason,
+  VerificationStatus,
+  VerificationStatusValue,
+} from "./verification.catalog";
+
+/** The platform queue mixes every gym (ADR-0018): each row says which one. */
+export type QueueRow = { verification: PhotoVerificationModel; memberName: string; tenantId: string; tenantName: string | null };
+export type ScopedVerification = { verification: PhotoVerificationModel; tenantId: string };
+export type ExpiredReview = { id: string; userId: string };
+export type MemberPhoto = { userId: string; id: string; url: string };
+export type ClearedSelfie = { id: string; storageKey: string };
+
+/** Data access of `social.photo_verifications` plus the user/photo facts it needs. */
+@Injectable()
+export class VerificationRepository {
+  constructor(
+    private readonly sequelize: Sequelize,
+    @InjectModel(PhotoVerificationModel) private readonly rows: typeof PhotoVerificationModel,
+  ) {}
+
+  runInTransaction<T>(work: (transaction: Transaction) => Promise<T>): Promise<T> {
+    return this.sequelize.transaction(work);
+  }
+
+  /** Locks the account row: serializes challenges and decisions per member. */
+  async lockUser(userId: string, transaction: Transaction): Promise<{ verifiedAt: Date | null; role: string } | null> {
+    const [row] = await this.sequelize.query<{ verified_at: Date | null; rol: string }>(
+      `SELECT verified_at, rol FROM public.usuarios WHERE id = :userId FOR UPDATE`,
+      { type: QueryTypes.SELECT, replacements: { userId }, transaction },
+    );
+    return row ? { verifiedAt: row.verified_at, role: row.rol } : null;
+  }
+
+  /** Role of an account, for the review rule (no lock: reading a selfie changes nothing). */
+  async accountRole(userId: string): Promise<string | null> {
+    const [row] = await this.sequelize.query<{ rol: string }>(
+      `SELECT rol FROM public.usuarios WHERE id = :userId`,
+      { type: QueryTypes.SELECT, replacements: { userId } },
+    );
+    return row?.rol ?? null;
+  }
+
+  async userVerifiedAt(userId: string): Promise<Date | null> {
+    const [row] = await this.sequelize.query<{ verified_at: Date | null }>(
+      `SELECT verified_at FROM public.usuarios WHERE id = :userId`,
+      { type: QueryTypes.SELECT, replacements: { userId } },
+    );
+    return row?.verified_at ?? null;
+  }
+
+  async setUserVerifiedAt(userId: string, verifiedAt: Date | null, transaction: Transaction): Promise<void> {
+    await this.sequelize.query(
+      `UPDATE public.usuarios SET verified_at = :verifiedAt WHERE id = :userId`,
+      { replacements: { userId, verifiedAt }, transaction },
+    );
+  }
+
+  /** Photos the member and everybody else can see (moderation-hidden ones excluded). */
+  async visiblePhotos(userIds: readonly string[], transaction?: Transaction): Promise<MemberPhoto[]> {
+    if (userIds.length === 0) return [];
+    return this.sequelize.query<MemberPhoto>(
+      `SELECT user_id AS "userId", id, url FROM profile.photos
+        WHERE user_id IN (:userIds) AND hidden_at IS NULL
+        ORDER BY user_id, position, created_at`,
+      { type: QueryTypes.SELECT, replacements: { userIds }, transaction },
+    );
+  }
+
+  async countExistingPhotos(userId: string, photoIds: readonly string[], transaction: Transaction): Promise<number> {
+    if (photoIds.length === 0) return 0;
+    const [row] = await this.sequelize.query<{ total: string }>(
+      `SELECT count(*) AS total FROM profile.photos
+        WHERE user_id = :userId AND id IN (:photoIds) AND hidden_at IS NULL`,
+      { type: QueryTypes.SELECT, replacements: { userId, photoIds }, transaction },
+    );
+    return Number(row?.total ?? 0);
+  }
+
+  findLatestForUser(userId: string, transaction?: Transaction): Promise<PhotoVerificationModel | null> {
+    return this.rows.findOne({ where: { userId }, order: [["createdAt", "DESC"]], transaction });
+  }
+
+  findLatestDecided(userId: string): Promise<PhotoVerificationModel | null> {
+    return this.rows.findOne({
+      where: { userId, decidedAt: { [Op.ne]: null } },
+      order: [["decidedAt", "DESC"]],
+    });
+  }
+
+  findLatestApproved(userId: string, transaction: Transaction): Promise<PhotoVerificationModel | null> {
+    return this.rows.findOne({
+      where: { userId, status: VerificationStatus.APPROVED },
+      order: [["decidedAt", "DESC"]],
+      transaction,
+    });
+  }
+
+  findActiveForUser(userId: string, transaction: Transaction): Promise<PhotoVerificationModel | null> {
+    return this.rows.findOne({
+      where: { userId, status: [VerificationStatus.PENDING_UPLOAD, VerificationStatus.PENDING_REVIEW] },
+      transaction,
+    });
+  }
+
+  async attemptDatesSince(userId: string, since: Date, transaction?: Transaction): Promise<Date[]> {
+    const rows = await this.rows.findAll({
+      attributes: ["createdAt"],
+      where: { userId, createdAt: { [Op.gt]: since } },
+      order: [["createdAt", "DESC"]],
+      transaction,
+    });
+    return rows.map((row) => row.createdAt);
+  }
+
+  findByIdForUser(id: string, userId: string, transaction?: Transaction): Promise<PhotoVerificationModel | null> {
+    return this.rows.findOne({ where: { id, userId }, transaction, lock: transaction ? transaction.LOCK.UPDATE : undefined });
+  }
+
+  /**
+   * Row visible to a moderator, with the member's gym: `null` scope (platform
+   * moderator, SYSTEM_ADMIN not impersonating) sees every gym, otherwise only
+   * the given one. Out of scope reads as missing (404).
+   */
+  async findByIdInScope(
+    id: string,
+    tenantScope: string | null,
+    transaction?: Transaction,
+  ): Promise<ScopedVerification | null> {
+    const verification = await this.rows.findOne({
+      where: { id },
+      transaction,
+      lock: transaction ? transaction.LOCK.UPDATE : undefined,
+    });
+    if (!verification) return null;
+    const [owner] = await this.sequelize.query<{ tenant_id: string | null }>(
+      `SELECT tenant_id FROM public.usuarios WHERE id = :userId`,
+      { type: QueryTypes.SELECT, replacements: { userId: verification.userId }, transaction },
+    );
+    const tenantId = effectiveTenantOf({ tenantId: owner?.tenant_id ?? null });
+    return tenantScope === null || tenantId === tenantScope ? { verification, tenantId } : null;
+  }
+
+  create(
+    input: { userId: string; gestureCode: VerificationGestureCode; issuedAt: Date; expiresAt: Date },
+    transaction: Transaction,
+  ): Promise<PhotoVerificationModel> {
+    return this.rows.create(
+      {
+        userId: input.userId,
+        gestureCode: input.gestureCode,
+        challengeIssuedAt: input.issuedAt,
+        challengeExpiresAt: input.expiresAt,
+        status: VerificationStatus.PENDING_UPLOAD,
+      },
+      { transaction },
+    );
+  }
+
+  async update(
+    id: string,
+    changes: Partial<{
+      status: VerificationStatusValue;
+      selfieStorageKey: string | null;
+      selfieMimeType: string | null;
+      selfieDeletedAt: Date;
+      submittedAt: Date;
+      reviewerId: string;
+      decisionReason: VerificationRejectionReason | null;
+      decidedAt: Date;
+      approvedPhotoIds: string[];
+      revokedAt: Date;
+    }>,
+    transaction?: Transaction,
+  ): Promise<void> {
+    await this.rows.update(changes, { where: { id }, transaction });
+  }
+
+  /**
+   * `reviewer` never sees its own attempt; attempts of platform accounts
+   * (MODERATOR, SYSTEM_ADMIN) are listed only to a SYSTEM_ADMIN (ADR-0018 §8).
+   */
+  async listQueue(
+    status: VerificationStatusValue,
+    limit: number,
+    tenantScope: string | null,
+    reviewer: { id: string; seesPlatformAccounts: boolean },
+  ): Promise<QueueRow[]> {
+    const ids = await this.sequelize.query<{ id: string; member_name: string; tenant_id: string; tenant_name: string | null }>(
+      `SELECT v.id, u.nombre_completo AS member_name, owner.tenant_id, tn.nombre AS tenant_name
+         FROM social.photo_verifications v
+         JOIN public.usuarios u ON u.id = v.user_id
+         CROSS JOIN LATERAL (SELECT COALESCE(u.tenant_id, :defaultTenant) AS tenant_id) owner
+         LEFT JOIN public.tenants tn ON tn.id = owner.tenant_id
+        WHERE v.status = :status AND (CAST(:tenantScope AS varchar) IS NULL OR owner.tenant_id = :tenantScope)
+          AND v.user_id <> :reviewerId
+          AND (:seesPlatformAccounts OR u.rol NOT IN (:platformRoles))
+        ORDER BY COALESCE(v.submitted_at, v.created_at), v.id
+        LIMIT :limit`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: {
+          status,
+          limit,
+          tenantScope,
+          defaultTenant: env.DEFAULT_TENANT_ID,
+          reviewerId: reviewer.id,
+          seesPlatformAccounts: reviewer.seesPlatformAccounts,
+          platformRoles: [...PLATFORM_ACCOUNT_ROLES],
+        },
+      },
+    );
+    if (ids.length === 0) return [];
+    const models = await this.rows.findAll({ where: { id: ids.map((row) => row.id) } });
+    const byId = new Map(models.map((model) => [model.id, model]));
+    return ids.flatMap((row) => {
+      const verification = byId.get(row.id);
+      return verification
+        ? [{ verification, memberName: row.member_name, tenantId: row.tenant_id, tenantName: row.tenant_name }]
+        : [];
+    });
+  }
+
+  /** Abandoned challenges (never answered) become EXPIRED. */
+  async expireAbandoned(issuedBefore: Date): Promise<number> {
+    const [count] = await this.rows.update(
+      { status: VerificationStatus.EXPIRED },
+      { where: { status: VerificationStatus.PENDING_UPLOAD, challengeIssuedAt: { [Op.lte]: issuedBefore } } },
+    );
+    return count;
+  }
+
+  /**
+   * Up to `limit` submitted selfies nobody decided before `submittedBefore`
+   * become EXPIRED (review deadline, legal review I-5); their keys are then
+   * cleared by `clearDueSelfies` like any EXPIRED attempt. SKIP LOCKED leaves
+   * a row a decision is holding to that decision.
+   */
+  expireStaleReviews(submittedBefore: Date, limit: number, transaction: Transaction): Promise<ExpiredReview[]> {
+    return this.sequelize.query<ExpiredReview>(
+      `WITH due AS (
+         SELECT id FROM social.photo_verifications
+          WHERE status = 'PENDING_REVIEW' AND submitted_at <= :submittedBefore
+          ORDER BY submitted_at, id
+          LIMIT :limit
+          FOR UPDATE SKIP LOCKED)
+       UPDATE social.photo_verifications v SET status = 'EXPIRED'
+         FROM due WHERE v.id = due.id
+       RETURNING v.id, v.user_id AS "userId"`,
+      { type: QueryTypes.SELECT, replacements: { submittedBefore, limit }, transaction },
+    );
+  }
+
+  /**
+   * Clears the key of up to `limit` selfies due for erasure (EXPIRED attempts,
+   * and decided ones once `decidedBefore` passed) and returns the cleared keys.
+   * SKIP LOCKED leaves rows a decision or a revocation holds to the next run.
+   */
+  clearDueSelfies(decidedBefore: Date, now: Date, limit: number, transaction: Transaction): Promise<ClearedSelfie[]> {
+    return this.sequelize.query<ClearedSelfie>(
+      `WITH due AS (
+         SELECT id, selfie_storage_key FROM social.photo_verifications
+          WHERE selfie_storage_key IS NOT NULL
+            AND (status = 'EXPIRED' OR (status IN ('APPROVED', 'REJECTED') AND decided_at <= :decidedBefore))
+          ORDER BY created_at
+          LIMIT :limit
+          FOR UPDATE SKIP LOCKED)
+       UPDATE social.photo_verifications v
+          SET selfie_storage_key = NULL, selfie_mime_type = NULL, selfie_deleted_at = :now
+         FROM due WHERE v.id = due.id
+       RETURNING v.id, due.selfie_storage_key AS "storageKey"`,
+      { type: QueryTypes.SELECT, replacements: { decidedBefore, now, limit }, transaction },
+    );
+  }
+}

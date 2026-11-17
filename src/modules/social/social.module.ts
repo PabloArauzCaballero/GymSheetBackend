@@ -13,15 +13,22 @@ import { SocialMapService } from "./social-map.service";
 import { SocialInteractionsController } from "./social-interactions.controller";
 import { SocialInteractionsService } from "./social-interactions.service";
 import { SocialController } from "./social.controller";
+import { SocialProfileController } from "./social-profile.controller";
+import { SocialProfileRepository } from "./social-profile.repository";
+import { SocialProfileService } from "./social-profile.service";
+import { ConsentsModule } from "../consents/consents.module";
 import { SocialRepository } from "./social.repository";
 import { SocialService } from "./social.service";
 import { RecommendationsClient } from "./recommendations-client";
+import { DiscoveryRankingRepository } from "./discovery-ranking.repository";
+import { DiscoveryRankingService } from "./discovery-ranking.service";
 import { IntegrationModule } from "../integration/integration.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { ChatModule } from "../chat/chat.module";
 
 @Module({
   imports: [
+    ConsentsModule,
     forwardRef(() => ChatModule),
     IntegrationModule,
     NotificationsModule,
@@ -38,6 +45,7 @@ import { ChatModule } from "../chat/chat.module";
     SocialController,
     SocialInteractionsController,
     SocialMapController,
+    SocialProfileController,
   ],
   providers: [
     ChatEventsService,
@@ -47,6 +55,10 @@ import { ChatModule } from "../chat/chat.module";
     SocialMapRepository,
     SocialMapService,
     RecommendationsClient,
+    DiscoveryRankingRepository,
+    DiscoveryRankingService,
+    SocialProfileRepository,
+    SocialProfileService,
   ],
   exports: [ChatEventsService, SocialService, SocialRepository],
 })

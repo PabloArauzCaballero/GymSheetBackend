@@ -1,3 +1,4 @@
+import { UserRole } from "../enums/domain.enums";
 import { env } from "../../config/env";
 
 /**
@@ -37,4 +38,24 @@ export function isAccountInScope(
   tenantScope: string | null,
 ): boolean {
   return tenantScope === null || effectiveTenantOf(account) === tenantScope;
+}
+
+/**
+ * Roles that run the social moderation of the platform (ADR-0018): the central
+ * REPP team (`MODERATOR`) and the platform administrator. Gym staff is never
+ * part of it, whatever permissions it holds.
+ */
+export const PLATFORM_MODERATION_ROLES: readonly UserRole[] = [UserRole.MODERATOR, UserRole.SYSTEM_ADMIN];
+
+/**
+ * Scope a platform role acts on.
+ *
+ * A `MODERATOR` keeps its own gym in `tenantScope` (it is still a member there
+ * and every member route must stay bound to it), but on the platform surfaces
+ * it moderates every gym: those surfaces, and the audit rows they write, read
+ * the scope through this function. Every other principal keeps its own scope,
+ * so a SYSTEM_ADMIN impersonating a gym still sees only that gym.
+ */
+export function platformScopeOf(actor: { role: UserRole; tenantScope: string | null }): string | null {
+  return actor.role === UserRole.MODERATOR ? null : actor.tenantScope;
 }

@@ -3,7 +3,7 @@ title: "Referencia — Variables de entorno"
 type: reference
 status: verified
 criticality: high
-last_reviewed: "2026-08-06"
+last_reviewed: "2026-11-16"
 source_revision: "27f3fd2"
 source_files: [".env.example"]
 tags: [backend, reference, config]
@@ -26,6 +26,26 @@ tags: [backend, reference, config]
 | `REQUEST_BODY_LIMIT` | Límite de tamaño de body | No | `1mb` |
 | `LOG_LEVEL` | Nivel de logs | No | `info` |
 | `BUSINESS_TIME_ZONE` | Zona horaria de negocio | No | `America/Guayaquil` |
+| `BUSINESS_SIGNUP_ENABLED` | Abre `POST /business/signup` (ADR-0020). Cerrada: `404 BUSINESS_SIGNUP_DISABLED`. En producción sigue cerrada mientras los textos legales de negocios sean borradores (`BUSINESS_LEGAL_TEXTS_ARE_DRAFTS`) | No (`false`) | `false` |
+| `HANDLE_AVAILABILITY_RATE_LIMIT_MAX` | Peticiones por cliente a `GET /public/handles/:handle/availability` por ventana `RATE_LIMIT_TTL_SECONDS` | No (`30`) | `30` |
+
+## KYC de negocios (ADR-0021)
+
+| Variable | Uso | Requerida | Default |
+|---|---|---|---|
+| `KYC_ENCRYPTION_KEY` | Clave propia (≥ 32) de todo cifrado KYC (NIT, CI, teléfono, documentos). **Sin respaldo** en secretos JWT; perderla pierde los documentos. Sin ella fuera de producción el KYC responde `503 KYC_UNAVAILABLE` | **Sí en producción** (el arranque falla) | — |
+| `KYC_PIPELINE_BUDGET_MS` | Presupuesto total de las comprobaciones automáticas del envío (200–10000); vencido, el resto es `ERROR` → `IN_REVIEW` | No | `2000` |
+| `KYC_CHECK_STATEMENT_TIMEOUT_MS` | `statement_timeout` de cada consulta de las comprobaciones (50–5000) | No | `500` |
+| `BUSINESS_KYC_REVIEW_SLA_HOURS` | SLA de la cola REPP de revisión, en horas hábiles (lun–vie en `BUSINESS_TIME_ZONE`, sin feriados) | No | `24` |
+| `BUSINESS_KYC_POST_REVIEW_SLA_HOURS` | SLA de la revisión posterior de una aprobación automática, en horas corridas | No | `72` |
+| `BUSINESS_PHONE_OTP_PROVIDER` | `disabled` (no envía; el teléfono queda sin verificar y el KYC va a revisión, nunca se autoaprueba) o `whatsapp-cloud` | No | `disabled` |
+| `WHATSAPP_CLOUD_ACCESS_TOKEN` | Token de la WhatsApp Business Cloud API (secreto) | Sí con `whatsapp-cloud` | — |
+| `WHATSAPP_CLOUD_PHONE_NUMBER_ID` | Id del número emisor (solo dígitos) | Sí con `whatsapp-cloud` | — |
+| `WHATSAPP_CLOUD_OTP_TEMPLATE` | Nombre de la plantilla de autenticación aprobada por Meta (`[a-z0-9_]`) | Sí con `whatsapp-cloud` | — |
+| `WHATSAPP_CLOUD_TEMPLATE_LANGUAGE` | Idioma de la plantilla | No | `es` |
+| `WHATSAPP_CLOUD_API_VERSION` | Versión de Graph API (`vNN.N`); el host es fijo (`graph.facebook.com`) | No | `v21.0` |
+
+El KYC también necesita `IP_HASH_SECRET` (los HMAC de NIT, CI, teléfono y correo); sin él responde `503 KYC_UNAVAILABLE`.
 
 ## Base de datos (PostgreSQL)
 
@@ -55,6 +75,52 @@ tags: [backend, reference, config]
 | `REDIS_CONNECT_TIMEOUT_MS` | Timeout de conexión | No |
 | `RATE_LIMIT_TTL_SECONDS` `RATE_LIMIT_MAX` `AUTH_RATE_LIMIT_MAX` | Límites de petición | No |
 
+## Anti-bot de alta de cuentas ([[ADR-0013]])
+
+| Variable | Propósito | Por defecto | Requerida |
+|---|---|---|---:|
+| `REGISTRATION_TICKET_SECRET` | Clave HMAC de tickets de formulario y nonces de atestación (≥ 32) | aleatoria por proceso fuera de producción | Sí en producción (**secreto**) |
+| `SIGNUP_TICKET_REQUIRED` | Sin ticket se rechaza (`false` sólo para cortar clientes viejos) | `true` | No |
+| `SIGNUP_MIN_FILL_MS` | Tiempo mínimo entre emitir el ticket y enviar | `3000` | No |
+| `SIGNUP_LIMIT_PER_IP_HOUR` `SIGNUP_LIMIT_PER_INSTALLATION_DAY` `SIGNUP_LIMIT_PER_EMAIL_DOMAIN_HOUR` | Velocidad de altas (Redis si existe; si no, por proceso) | `5` / `3` / `30` | No |
+| `SIGNUP_EMAIL_DOMAIN_ALLOWLIST` | Dominios exentos del límite por dominio | gmail, outlook, hotmail, live, yahoo, icloud, me, proton | No |
+| `ANTIBOT_HTTP_TIMEOUT_MS` | Timeout de Turnstile, Google y HIBP | `3000` | No |
+| `TURNSTILE_SECRET` | Activa Cloudflare Turnstile en el canal WEB | vacío (apagado) | No (**secreto**) |
+| `TURNSTILE_FAIL_CLOSED` | Rechazar si Cloudflare no responde | `false` | No |
+| `ATTESTATION_ENABLED` | Exige Play Integrity en Android | `false` | No |
+| `PLAY_INTEGRITY_PACKAGE_NAME` `PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON` | Paquete y cuenta de servicio de Play Integrity | vacío | Si `ATTESTATION_ENABLED` (**secreto**) |
+| `PASSWORD_BREACH_CHECK_ENABLED` | Consulta k-anónima a Have I Been Pwned (sólo riesgo) | `false` | No |
+
+`IP_HASH_SECRET` (ya existente) también firma el `ip_hmac` de `auth.signup_audit`; sin él no se guarda evidencia de IP.
+
+## Acceso con Google / Apple
+
+| Variable | Propósito | Por defecto | Requerida |
+|---|---|---|---:|
+| `AUTH_GOOGLE_ENABLED` | Activa `POST /auth/google` y `/auth/google/complete` (apagado = 404) | `false` | No |
+| `GOOGLE_CLIENT_IDS` | Client ids aceptados como `aud`, separados por comas | vacío | Si `AUTH_GOOGLE_ENABLED` |
+| `AUTH_APPLE_ENABLED` | Activa `POST /auth/apple` y `/auth/apple/complete` (apagado = 404) | `false` | No |
+| `APPLE_CLIENT_IDS` | Bundle id / Services id aceptados como `aud` | vacío | Si `AUTH_APPLE_ENABLED` |
+
+`IP_HASH_SECRET` también firma `auth.user_devices.last_ip_hmac`; sin él no se guarda evidencia de IP del dispositivo.
+
+Desde la franja 4 (ADR-0014) `IP_HASH_SECRET` firma además `public.password_reset_tokens.ip_hmac`,
+`admin.audit_log.ip_hmac` y `training.routine_progress_download_audits.ip_hmac`: la API ya no guarda
+ninguna IP en claro. La migración `202611180201` convierte las IP existentes con el secreto presente
+al correrla (sin secreto, las anula). `yarn db:privacy:retention` (alias `db:signups:retention`;
+el worker `privacy-retention` lo corre cada 24 h) anula todo HMAC de más de 90 días. Cambiar el secreto rompe la correlación con
+los HMAC anteriores, que de todos modos caducan a los 90 días.
+
+`IP_HASH_SECRET` es el pepper de privacidad de la API (ADR-0015): también firma el correo de una
+cuenta sancionada que se cierra (`moderation.closed_account_sanctions.email_hmac`), para que volver a
+registrarse con ese correo herede las faltas. Sin él no se guarda ese registro y cerrar la cuenta
+borra las sanciones. Rotarlo deja sin efecto los registros existentes.
+
+**`IP_HASH_SECRET` es obligatoria con `NODE_ENV=production`** (32 caracteres o más; `src/config/privacy-env.ts`):
+sin ella la API y los workers no arrancan y el error de inicio nombra la variable. Fuera de producción sigue
+siendo opcional. Los dos compose la pasan a los contenedores; `docker-compose.coolify.yml` la exige (`:?`)
+porque ese despliegue arranca con `NODE_ENV=development` y la validación de producción no lo cubriría.
+
 ## Métricas / acceso
 
 | Variable | Propósito | Requerida |
@@ -71,6 +137,15 @@ tags: [backend, reference, config]
 | `WORKER_POLL_INTERVAL_MS` `WORKER_BATCH_SIZE` `WORKER_CONCURRENCY` `WORKER_LOCK_TIMEOUT_MS` `WORKER_MAX_ATTEMPTS` | Loop de workers |
 | `OUTBOX_RETENTION_DAYS` `OUTBOX_PRUNE_BATCH_SIZE` | Retención de outbox |
 | `REMINDER_SCAN_INTERVAL_MS` | Escaneo de recordatorios |
+
+## Almacenamiento de media
+
+| Variable | Propósito | Por defecto | Requerida |
+|---|---|---|---:|
+| `MEDIA_STORAGE_PROVIDER` | `local` (disco) o `minio` (ADR-0010, ADR-0017) | `local` | No |
+| `MEDIA_STORAGE_LOCAL_ROOT` `MEDIA_STORAGE_PUBLIC_BASE_URL` | Raíz en disco y URL pública del media | `storage/media`, `http://localhost:3000/media` | No |
+| `MINIO_ENDPOINT` `MINIO_ACCESS_KEY` `MINIO_SECRET_KEY` `MINIO_BUCKET` | Conexión a MinIO (host interno, no la URL pública) | vacío, `gymsheet-media` | Si `minio` (**secreto** la clave) |
+| `MEDIA_USER_CONTENT_DELETABLE` | `true`: el usuario MinIO de la API puede borrar todas las versiones bajo `users/*` y `business/*/public/*` (política en ADR-0017 y ADR-0020). `false`: el contenido de las personas se conserva y ningún texto puede prometer su borrado. Sólo `true`/`false`; el disco local siempre borra | vacío = `true` | **Sí en producción con `minio`** |
 
 ## Notificaciones (gateway externo)
 
@@ -92,4 +167,4 @@ tags: [backend, reference, config]
 `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` (**secreto**), `SEED_ADMIN_FULL_NAME`, `SEED_MOCK_PASSWORD` (**secreto**).
 
 > [!danger] Secretos
-> `JWT_*_SECRET`, `DB_PASSWORD`, `NOTIFICATION_GATEWAY_SECRET`, `METRICS_SCRAPE_TOKEN`, `SEED_*_PASSWORD` son secretos: solo por env, nunca en el repo ni en logs.
+> `JWT_*_SECRET`, `DB_PASSWORD`, `REGISTRATION_TICKET_SECRET`, `TURNSTILE_SECRET`, `PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON`, `NOTIFICATION_GATEWAY_SECRET`, `METRICS_SCRAPE_TOKEN`, `IP_HASH_SECRET`, `KYC_ENCRYPTION_KEY`, `WHATSAPP_CLOUD_ACCESS_TOKEN`, `SEED_*_PASSWORD` son secretos: solo por env, nunca en el repo ni en logs.

@@ -1,7 +1,9 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { DomainException } from '../../common/errors/domain.exception';
 import { UserRole } from '../../common/enums/domain.enums';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { ModerationService } from './moderation.service';
+import { ModerationAutoHideService } from './moderation-auto-hide.service';
 import {
   ModerationReason,
   ModerationResolution,
@@ -56,6 +58,7 @@ describe('ModerationService', () => {
       release: jest.fn().mockResolvedValue(1),
       listStrikes: jest.fn().mockResolvedValue([]),
       findQueue: jest.fn().mockResolvedValue([]),
+      findAccountRole: jest.fn().mockResolvedValue(UserRole.CLIENT),
       ...overrides,
     };
     const notifications = {
@@ -69,6 +72,30 @@ describe('ModerationService', () => {
     };
     const connections = { update: jest.fn().mockResolvedValue([1]) };
     const passes = { bulkCreate: jest.fn().mockResolvedValue([]) };
+    const minors = {
+      suspendIfCorroborated: jest.fn().mockResolvedValue(true),
+      confirm: jest.fn().mockResolvedValue(undefined),
+      liftIfCleared: jest.fn().mockResolvedValue(undefined),
+    };
+    const evidence = {
+      captureChatMessage: jest.fn().mockResolvedValue(undefined),
+      findChatMessage: jest.fn().mockResolvedValue(null),
+    };
+    const safeguards = {
+      openAutoHideReview: jest.fn().mockResolvedValue('review-1'),
+      closeAutoHideReview: jest.fn().mockResolvedValue(false),
+    };
+    const chatEvents = { emitConversationRevoked: jest.fn() };
+    const caseContent = {
+      snapshot: jest.fn().mockResolvedValue({ content: null, contentUnavailableReason: 'ERASED', evidence: null }),
+    };
+    const noticeEmails = { enqueue: jest.fn().mockResolvedValue(true) };
+    const autoHide = new ModerationAutoHideService(
+      sequelize as never,
+      repository as never,
+      safeguards as never,
+      notifications as never,
+    );
 
     const service = new ModerationService(
       sequelize as never,
@@ -76,8 +103,16 @@ describe('ModerationService', () => {
       notifications as never,
       connections as never,
       passes as never,
+      minors as never,
+      evidence as never,
+      autoHide,
+      noticeEmails as never,
+      caseContent as never,
+      undefined,
+      undefined,
+      chatEvents as never,
     );
-    return { service, repository, notifications, connections, passes, sequelize };
+    return { service, repository, notifications, connections, passes, sequelize, minors, evidence, safeguards, chatEvents, noticeEmails, caseContent };
   }
 
   const reportInput = {
@@ -146,7 +181,7 @@ describe('ModerationService', () => {
       await service.report(reporter, reportInput);
 
       expect(passes.bulkCreate).toHaveBeenCalledWith(
-        [{ viewerId: 'reporter-1', targetId: 'author-1' }],
+        [{ viewerId: 'reporter-1', targetId: 'author-1', origin: 'REPORT' }],
         expect.objectContaining({ ignoreDuplicates: true }),
       );
       expect(connections.update).toHaveBeenCalled();
@@ -211,6 +246,47 @@ describe('ModerationService', () => {
     });
   });
 
+  describe('salvaguardas al reportar', () => {
+    it('una denuncia por menor de edad pide la suspensión corroborada en la misma transacción, sin escalera', async () => {
+      const { service, minors, repository } = build();
+      await service.report(reporter, { ...reportInput, targetKind: ModerationTargetKind.USER, targetId: 'author-1', reason: ModerationReason.MENOR_DE_EDAD });
+      expect(minors.suspendIfCorroborated).toHaveBeenCalledWith(
+        { reportedUserId: 'author-1', tenantId: expect.any(String), targetKind: ModerationTargetKind.USER }, expect.anything());
+      expect(repository.createStrike).not.toHaveBeenCalled();
+    });
+
+    it('cualquier otro motivo no suspende a nadie', async () => {
+      const { service, minors } = build();
+      await service.report(reporter, reportInput);
+      expect(minors.suspendIfCorroborated).not.toHaveBeenCalled();
+    });
+
+    it('guarda una copia de evidencia de un mensaje de chat denunciado', async () => {
+      const { service, evidence } = build({ canReporterViewChatMessage: jest.fn().mockResolvedValue(true) });
+      await service.report(reporter, { ...reportInput, targetKind: ModerationTargetKind.CHAT_MESSAGE, targetId: 'message-1' });
+      expect(evidence.captureChatMessage).toHaveBeenCalledWith('message-1', expect.anything());
+    });
+
+    it('al ocultar por umbral abre un caso de revisión y avisa a la autora con el motivo', async () => {
+      const { service, safeguards, notifications } = build({ countDistinctReporters: jest.fn().mockResolvedValue(3) });
+      await service.report(reporter, reportInput);
+      expect(safeguards.openAutoHideReview).toHaveBeenCalledWith(
+        expect.objectContaining({ targetKind: 'STORY', targetId: 'story-1', authorUserId: 'author-1', distinctReporters: 3 }),
+        expect.anything(),
+      );
+      const [notice] = notifications.enqueueDirectMessage.mock.calls[0] as [{ recipientUserId: string; body: string; metadata: { type: string } }];
+      expect(notice).toMatchObject({ recipientUserId: 'author-1', metadata: { type: 'CONTENT_HIDDEN' } });
+      expect(notice.body).toContain('Contenido sexual');
+    });
+
+    it('no revela a la persona denunciada quién la denunció al cerrar el chat', async () => {
+      const { service, chatEvents, sequelize } = build();
+      sequelize.query.mockImplementation((sql: string) => Promise.resolve(sql.includes('SELECT c.id') ? [{ id: 'conv-1' }] : []));
+      await service.report(reporter, reportInput);
+      expect(chatEvents.emitConversationRevoked).toHaveBeenCalledWith('conv-1');
+    });
+  });
+
   describe('resolver', () => {
     it('cierra el caso sin sancionar cuando se descarta', async () => {
       const { service, repository } = build();
@@ -219,7 +295,7 @@ describe('ModerationService', () => {
         moderator,
         ModerationTargetKind.STORY,
         'story-1',
-        { hideContent: false, sanction: false, note: null },
+        { hideContent: false, sanction: false, confirmMinor: false, note: null },
       );
 
       expect(repository.createStrike).not.toHaveBeenCalled();
@@ -239,6 +315,7 @@ describe('ModerationService', () => {
       await service.resolve(moderator, ModerationTargetKind.STORY, 'story-1', {
         hideContent: true,
         sanction: false,
+        confirmMinor: false,
         note: null,
       });
 
@@ -258,7 +335,7 @@ describe('ModerationService', () => {
         moderator,
         ModerationTargetKind.STORY,
         'story-1',
-        { hideContent: true, sanction: true, note: 'desnudo' },
+        { hideContent: true, sanction: true, confirmMinor: false, note: 'desnudo' },
       );
 
       expect(result.sanction).toMatchObject({ kind: StrikeKind.ADVERTENCIA });
@@ -274,7 +351,7 @@ describe('ModerationService', () => {
         moderator,
         ModerationTargetKind.STORY,
         'story-1',
-        { hideContent: true, sanction: true, note: null },
+        { hideContent: true, sanction: true, confirmMinor: false, note: null },
       );
 
       expect(result.sanction).toMatchObject({ kind: StrikeKind.SUSPENSION, days: 7 });
@@ -283,6 +360,89 @@ describe('ModerationService', () => {
         expect.any(Date),
         expect.anything(),
       );
+    });
+
+    it('confirmar un menor cierra la cuenta en vez de sancionar', async () => {
+      const { service, repository, minors } = build();
+      const result = await service.resolve(moderator, ModerationTargetKind.USER, 'author-1', {
+        hideContent: false, sanction: true, confirmMinor: true, note: null,
+      });
+      expect(minors.confirm).toHaveBeenCalledWith('author-1', expect.anything());
+      expect(repository.createStrike).not.toHaveBeenCalled();
+      expect(repository.resolveTarget).toHaveBeenCalledWith(
+        expect.objectContaining({ resolution: ModerationResolution.MENOR_CONFIRMADO, discarded: false }),
+        expect.anything(),
+      );
+      expect(result).toMatchObject({ minorConfirmed: true, sanction: null });
+    });
+
+    it('descartar una denuncia por menor levanta la suspensión preventiva', async () => {
+      const { service, minors } = build({
+        findOpenReportsForTarget: jest.fn().mockResolvedValue([
+          { id: 'report-1', reporterUserId: 'reporter-1', reportedUserId: 'author-1', tenantId: 'topfitness', reason: ModerationReason.MENOR_DE_EDAD },
+        ]),
+      });
+      await service.resolve(moderator, ModerationTargetKind.USER, 'author-1', {
+        hideContent: false, sanction: false, confirmMinor: false, note: null,
+      });
+      expect(minors.liftIfCleared).toHaveBeenCalledWith('author-1', { kind: 'USER', id: 'author-1' }, expect.anything(), {
+        sanctionFollows: false,
+      });
+      expect(minors.confirm).not.toHaveBeenCalled();
+    });
+
+    it('el aviso de sanción dice el motivo (categoría y texto corto)', async () => {
+      const { service, notifications } = build({ countActiveStrikes: jest.fn().mockResolvedValue(1) });
+      await service.resolve(moderator, ModerationTargetKind.STORY, 'story-1', {
+        hideContent: true, sanction: true, confirmMinor: false, note: 'nota interna',
+      });
+      const sanctionNotice = (notifications.enqueueDirectMessage.mock.calls as [{ recipientUserId: string; body: string; metadata: Record<string, unknown> }][])
+        .map(([message]) => message)
+        .find((message) => message.recipientUserId === 'author-1' && message.metadata?.type === 'MODERATION_SANCTION');
+      expect(sanctionNotice?.body).toContain('Motivo: Contenido sexual (contenido sexual o desnudos');
+      expect(sanctionNotice?.body).not.toContain('nota interna');
+      expect(sanctionNotice?.metadata).toMatchObject({ reason: 'CONTENIDO_SEXUAL', sanction: 'SUSPENSION', days: 1 });
+    });
+
+    it('una suspensión o una expulsión también se avisan por correo, una vez por falta; una advertencia no', async () => {
+      const suspended = build({ countActiveStrikes: jest.fn().mockResolvedValue(1) });
+      await suspended.service.resolve(moderator, ModerationTargetKind.STORY, 'story-1', {
+        hideContent: true, sanction: true, confirmMinor: false, note: 'nota interna',
+      });
+      expect(suspended.noticeEmails.enqueue).toHaveBeenCalledTimes(1);
+      const [email] = suspended.noticeEmails.enqueue.mock.calls[0] as [{ recipientUserId: string; subject: string; body: string; deduplicationKey: string }];
+      expect(email).toMatchObject({
+        recipientUserId: 'author-1',
+        subject: 'Tu cuenta ha sido suspendida',
+        deduplicationKey: 'moderation.sanction:strike-1',
+      });
+      expect(email.body).toContain('Motivo: Contenido sexual');
+      expect(email.body).not.toContain('nota interna');
+
+      const expelled = build({ countActiveStrikes: jest.fn().mockResolvedValue(10) });
+      const result = await expelled.service.resolve(moderator, ModerationTargetKind.STORY, 'story-1', {
+        hideContent: true, sanction: true, confirmMinor: false, note: null,
+      });
+      expect(result.sanction).toMatchObject({ kind: StrikeKind.EXPULSION });
+      expect(expelled.noticeEmails.enqueue).toHaveBeenCalledWith(expect.objectContaining({ subject: 'Tu cuenta ha sido cerrada' }), undefined);
+
+      const warned = build({ countActiveStrikes: jest.fn().mockResolvedValue(0) });
+      await warned.service.resolve(moderator, ModerationTargetKind.STORY, 'story-1', {
+        hideContent: true, sanction: true, confirmMinor: false, note: null,
+      });
+      expect(warned.noticeEmails.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('el moderador restaura lo oculto por umbral, cierra la revisión y avisa a la autora', async () => {
+      const { service, repository, safeguards, notifications } = build();
+      safeguards.closeAutoHideReview.mockResolvedValue(true);
+      await service.resolve(moderator, ModerationTargetKind.STORY, 'story-1', {
+        hideContent: false, sanction: false, confirmMinor: false, note: null,
+      });
+      expect(repository.setContentHidden).toHaveBeenCalledWith(expect.objectContaining({ hidden: false }), expect.anything());
+      expect(safeguards.closeAutoHideReview).toHaveBeenCalledWith({ kind: 'STORY', id: 'story-1' }, 'mod-1', true, expect.anything());
+      const types = (notifications.enqueueDirectMessage.mock.calls as [{ metadata?: { type?: string } }][]).map(([message]) => message.metadata?.type);
+      expect(types).toContain('CONTENT_RESTORED');
     });
 
     it('rechaza un caso que ya no está abierto', async () => {
@@ -294,6 +454,7 @@ describe('ModerationService', () => {
         service.resolve(moderator, ModerationTargetKind.STORY, 'story-1', {
           hideContent: false,
           sanction: false,
+          confirmMinor: false,
           note: null,
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
@@ -312,6 +473,7 @@ describe('ModerationService', () => {
       await service.resolve(moderator, ModerationTargetKind.STORY, 'story-1', {
         hideContent: true,
         sanction: true,
+        confirmMinor: false,
         note: null,
       });
 
@@ -332,6 +494,7 @@ describe('ModerationService', () => {
         service.resolve(moderator, ModerationTargetKind.STORY, 'story-1', {
           hideContent: true,
           sanction: false,
+          confirmMinor: false,
           note: null,
         }),
       ).resolves.toMatchObject({ resolved: true });
@@ -347,6 +510,106 @@ describe('ModerationService', () => {
       await expect(
         service.claim(moderator, ModerationTargetKind.STORY, 'story-1'),
       ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('who may decide on a case (ADR-0018 §8)', () => {
+    const platform = (id: string, role: UserRole): AuthenticatedUser => ({
+      id, email: `${id}@repp.test`, role, tenantId: 'topfitness', tenantScope: role === UserRole.SYSTEM_ADMIN ? null : 'topfitness', impersonating: false,
+    });
+    const centralModerator = platform('mod-central', UserRole.MODERATOR);
+    const systemAdmin = platform('sys-admin', UserRole.SYSTEM_ADMIN);
+    const caseAbout = (reportedUserId: string, role: UserRole, reason: string = ModerationReason.ACOSO) => build({
+      findOpenReportsForTarget: jest.fn().mockResolvedValue([
+        { id: 'report-1', reporterUserId: 'reporter-1', reportedUserId, tenantId: 'topfitness', reason },
+      ]),
+      findReportsForTarget: jest.fn().mockResolvedValue([
+        { id: 'report-1', reporterUserId: 'reporter-1', reportedUserId, tenantId: 'topfitness', reason, details: null, createdAt: new Date(), status: 'PENDIENTE' },
+      ]),
+      findAccountRole: jest.fn().mockResolvedValue(role),
+      countActiveStrikes: jest.fn().mockResolvedValue(9),
+    });
+    const everything = { hideContent: true, sanction: true, confirmMinor: true, note: null };
+    const expectRefusal = async (promise: Promise<unknown>, code: string) => {
+      const error: unknown = await promise.catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(DomainException);
+      expect((error as DomainException).getStatus()).toBe(403);
+      expect((error as DomainException).code).toBe(code);
+    };
+    const expectNothingApplied = (built: ReturnType<typeof build>) => {
+      expect(built.repository.createStrike).not.toHaveBeenCalled();
+      expect(built.repository.setSuspension).not.toHaveBeenCalled();
+      expect(built.repository.setContentHidden).not.toHaveBeenCalled();
+      expect(built.repository.resolveTarget).not.toHaveBeenCalled();
+      expect(built.minors.confirm).not.toHaveBeenCalled();
+      expect(built.minors.liftIfCleared).not.toHaveBeenCalled();
+      expect(built.sequelize.query).not.toHaveBeenCalled();
+      expect(built.notifications.enqueueDirectMessage).not.toHaveBeenCalled();
+      // The refused dossier never reads the reported content either.
+      expect(built.caseContent.snapshot).not.toHaveBeenCalled();
+    };
+
+    it('nobody claims, reads or resolves a case about their own account', async () => {
+      for (const actor of [centralModerator, systemAdmin]) {
+        const built = caseAbout(actor.id, actor.role, ModerationReason.MENOR_DE_EDAD);
+        await expectRefusal(built.service.claim(actor, ModerationTargetKind.USER, actor.id), 'MODERATION_SELF_CASE');
+        await expectRefusal(built.service.getCase(actor, ModerationTargetKind.USER, actor.id), 'MODERATION_SELF_CASE');
+        await expectRefusal(built.service.resolve(actor, ModerationTargetKind.USER, actor.id, everything), 'MODERATION_SELF_CASE');
+        expect(built.repository.claim).not.toHaveBeenCalled();
+        expectNothingApplied(built);
+      }
+    });
+
+    it.each([UserRole.MODERATOR, UserRole.SYSTEM_ADMIN])(
+      'a MODERATOR cannot claim, read or resolve a case about a %s account: no strike, expulsion, minor closure or hide',
+      async (role) => {
+        const built = caseAbout('peer-1', role, ModerationReason.MENOR_DE_EDAD);
+        await expectRefusal(built.service.claim(centralModerator, ModerationTargetKind.STORY, 'story-1'), 'MODERATION_PEER_CASE');
+        await expectRefusal(built.service.getCase(centralModerator, ModerationTargetKind.STORY, 'story-1'), 'MODERATION_PEER_CASE');
+        await expectRefusal(built.service.resolve(centralModerator, ModerationTargetKind.STORY, 'story-1', everything), 'MODERATION_PEER_CASE');
+        await expectRefusal(
+          built.service.resolve(centralModerator, ModerationTargetKind.STORY, 'story-1', { ...everything, confirmMinor: false }),
+          'MODERATION_PEER_CASE',
+        );
+        expect(built.repository.claim).not.toHaveBeenCalled();
+        expectNothingApplied(built);
+      },
+    );
+
+    it('a SYSTEM_ADMIN decides on a case about a moderator, with the role checked under the verdict lock', async () => {
+      const built = caseAbout('peer-1', UserRole.MODERATOR);
+      await built.service.claim(systemAdmin, ModerationTargetKind.USER, 'peer-1');
+      const verdict = await built.service.resolve(systemAdmin, ModerationTargetKind.USER, 'peer-1', { ...everything, confirmMinor: false });
+      expect(verdict.sanction).toMatchObject({ kind: StrikeKind.EXPULSION });
+      expect(built.repository.findAccountRole).toHaveBeenLastCalledWith('peer-1', expect.anything());
+    });
+
+    it('the case file carries the read-only snapshot of the reported content for the moderator', async () => {
+      const built = caseAbout('author-1', UserRole.CLIENT);
+      const content = { kind: 'ROUTINE', name: 'Privada', description: null, visibility: 'PRIVATE', days: [], reach: { copies: 2, liveCopies: 1, activations: 3 } };
+      built.caseContent.snapshot.mockResolvedValue({ content, contentUnavailableReason: null, evidence: null });
+      const kase = await built.service.getCase(centralModerator, ModerationTargetKind.ROUTINE, 'routine-1');
+      expect(built.caseContent.snapshot).toHaveBeenCalledWith(ModerationTargetKind.ROUTINE, 'routine-1');
+      expect(kase).toMatchObject({ content, contentUnavailableReason: null, evidence: null });
+    });
+
+    it('a MODERATOR still decides on a member case', async () => {
+      const built = caseAbout('author-1', UserRole.CLIENT);
+      await expect(built.service.claim(centralModerator, ModerationTargetKind.USER, 'author-1')).resolves.toMatchObject({ claimed: true });
+      await expect(built.service.resolve(centralModerator, ModerationTargetKind.USER, 'author-1', { ...everything, confirmMinor: false }))
+        .resolves.toMatchObject({ resolved: true });
+    });
+
+    it('the queue never lists the viewer\'s own cases, and only a SYSTEM_ADMIN sees platform accounts', async () => {
+      const built = build();
+      await built.service.listQueue(centralModerator, 1, 20);
+      expect(built.repository.findQueue).toHaveBeenLastCalledWith(
+        expect.objectContaining({ viewerUserId: 'mod-central', includePlatformAccounts: false }),
+      );
+      await built.service.listQueue(systemAdmin, 1, 20);
+      expect(built.repository.findQueue).toHaveBeenLastCalledWith(
+        expect.objectContaining({ viewerUserId: 'sys-admin', includePlatformAccounts: true }),
+      );
     });
   });
 });

@@ -17,6 +17,7 @@ import { seedCustomerExperience } from "./customer-experience.seed";
 import { seedFacilities } from "./facilities.seed";
 import { seedExerciseSearchAliases } from "./exercise-search-aliases.seed";
 import { seedProgression } from "./progression.seed";
+import { SEED_USER_DEMOGRAPHICS, seedLegalAcceptances } from "./seed-user-legal";
 
 export type SeedMode = "base" | "mock" | "all";
 
@@ -26,6 +27,8 @@ interface SeedUser {
   password: string;
   role: UserRole;
   status: UserStatus;
+  /** Scenario accounts finished signup, email included; the verification flow is tested with fresh signups. */
+  emailVerified?: true;
 }
 
 interface SeedEnvironment {
@@ -66,13 +69,13 @@ export function resolveSeedUsers(
         seedEnvironment.SEED_ADMIN_PASSWORD,
         "SEED_ADMIN_PASSWORD",
       ),
-      role: UserRole.ADMIN,
+      // REPP operates the platform and the gym has no staff (ADR-0019): the
+      // base administrator is the platform's `SYSTEM_ADMIN`.
+      role: UserRole.SYSTEM_ADMIN,
       status: UserStatus.ACTIVE,
     });
-    // Administrador de PLATAFORMA, distinto del administrador de un gimnasio.
-    // Sólo se siembra si se pidió explícitamente: es la cuenta que puede ver y
-    // operar todos los gimnasios, y no debe existir por defecto en ninguna
-    // instalación que no la haya declarado.
+    // An optional, additional platform administrator, only when explicitly
+    // declared.
     if (
       seedEnvironment.SEED_SYSTEM_ADMIN_EMAIL &&
       seedEnvironment.SEED_SYSTEM_ADMIN_PASSWORD
@@ -107,12 +110,13 @@ export function resolveSeedUsers(
       seedEnvironment.SEED_MOCK_PASSWORD,
       "SEED_MOCK_PASSWORD",
     );
-    users.push(
+    const scenarioUsers: SeedUser[] = [
       {
+        // A member like any other: there are no gym coaches any more (ADR-0019).
         email: "coach.mock@gymsheet.local",
         fullName: "Coach Mock",
         password,
-        role: UserRole.COACH,
+        role: UserRole.CLIENT,
         status: UserStatus.ACTIVE,
       },
       {
@@ -143,12 +147,24 @@ export function resolveSeedUsers(
         role: UserRole.CLIENT,
         status: UserStatus.ACTIVE,
       })),
-    );
+    ];
+    users.push(...scenarioUsers.map((user) => ({ ...user, emailVerified: true as const })));
   }
   return users;
 }
 
 async function upsertUser(
+  sequelize: Sequelize,
+  seedUser: SeedUser,
+  transaction: Transaction,
+): Promise<"created" | "updated" | "unchanged"> {
+  const outcome = await upsertUserAccount(seedUser, transaction);
+  const user = await UserModel.findOne({ where: { email: seedUser.email }, transaction });
+  if (user) await seedLegalAcceptances(sequelize, user.id, transaction);
+  return outcome;
+}
+
+async function upsertUserAccount(
   seedUser: SeedUser,
   transaction: Transaction,
 ): Promise<"created" | "updated" | "unchanged"> {
@@ -165,7 +181,10 @@ async function upsertUser(
       passwordMatches &&
       existing.fullName === seedUser.fullName &&
       existing.role === seedUser.role &&
-      existing.status === seedUser.status;
+      existing.status === seedUser.status &&
+      existing.birthDate !== null &&
+      existing.gender !== null &&
+      (!seedUser.emailVerified || existing.emailVerifiedAt !== null);
     if (unchanged) return "unchanged";
     const passwordHash = passwordMatches
       ? existing.passwordHash
@@ -176,6 +195,9 @@ async function upsertUser(
         passwordHash,
         role: seedUser.role,
         status: seedUser.status,
+        birthDate: existing.birthDate ?? SEED_USER_DEMOGRAPHICS.birthDate,
+        gender: existing.gender ?? SEED_USER_DEMOGRAPHICS.gender,
+        ...(seedUser.emailVerified ? { emailVerifiedAt: existing.emailVerifiedAt ?? new Date() } : {}),
       },
       { transaction },
     );
@@ -190,6 +212,9 @@ async function upsertUser(
     passwordHash,
     role: seedUser.role,
     status: seedUser.status,
+    birthDate: SEED_USER_DEMOGRAPHICS.birthDate,
+    gender: SEED_USER_DEMOGRAPHICS.gender,
+    ...(seedUser.emailVerified ? { emailVerifiedAt: new Date() } : {}),
   };
   await UserModel.create(
     { email: seedUser.email, ...managedValues },
@@ -256,7 +281,7 @@ export async function runSeeds(mode: SeedMode): Promise<void> {
         },
       );
       for (const user of users) {
-        counters[await upsertUser(user, transaction)] += 1;
+        counters[await upsertUser(sequelize, user, transaction)] += 1;
       }
       // El catálogo de permisos es infraestructura, no datos de prueba: se
       // siembra en todos los modos junto con el otorgamiento al admin de

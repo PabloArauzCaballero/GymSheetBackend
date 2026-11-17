@@ -1,14 +1,21 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UserRole } from '../../common/enums/domain.enums';
-import { AuthenticatedUser, JwtPayload } from '../../common/types/auth-context.types';
+import { suspendedSessionError } from '../../common/moderation/account-suspension';
+import { AuthenticatedUser, JwtPayload, accountKindOf } from '../../common/types/auth-context.types';
 import { env } from '../../config/env';
+import { SanctionStatusService } from '../sanction-status/sanction-status.service';
 import { UsersRepository } from '../users/users.repository';
+import { UserActivityService } from '../users/user-activity.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private readonly usersRepository: UsersRepository) {
+  constructor(
+    private readonly usersRepository: UsersRepository,
+    private readonly sanctionStatus: SanctionStatusService,
+    @Optional() private readonly activity?: UserActivityService,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -31,14 +38,27 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('La sesión ya no es válida.');
     }
 
+    // Ending every session (account takeover, password reset) must also end
+    // the access tokens already issued, not only the refresh tokens. `sat` is
+    // the issue time in ms; tokens minted before it existed fall back to the
+    // start of their `iat` second, which errs on the side of rejecting.
+    const validAfter = activeUser.sessionsValidAfter;
+    if (validAfter) {
+      const issuedAtMs = typeof payload.sat === 'number' ? payload.sat : (payload.iat ?? 0) * 1000;
+      if (issuedAtMs < validAfter.getTime()) throw new UnauthorizedException('La sesión ya no es válida.');
+    }
+
     // La suspensión se comprueba en CADA petición, no sólo al entrar: una
     // sanción que espera a que caduque el token deja al sancionado dentro
     // durante toda la vida del access token, que es justo cuando más falta hace
     // que salga. Se compara contra el reloj y no se limpia la columna: la
     // suspensión termina sola cuando pasa la fecha.
     if (activeUser.suspendedUntil && activeUser.suspendedUntil.getTime() > Date.now()) {
-      throw new UnauthorizedException(
-        'Tu cuenta está suspendida temporalmente por incumplir las normas de la comunidad.',
+      // The reason travels in `details`: a suspended session cannot open the
+      // inbox where the notice waits, so the refusal itself has to say why.
+      throw suspendedSessionError(
+        activeUser.suspendedUntil,
+        await this.sanctionStatus.suspensionReason(activeUser.id, activeUser.suspendedUntil),
       );
     }
 
@@ -46,6 +66,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // efecto en la siguiente petición, sin esperar a que caduque la sesión.
     // El respaldo agrupa a las cuentas sin tenant propio bajo el tenant por
     // defecto en vez de dejarlas sin filtro (ver DEFAULT_TENANT_ID en env.ts).
+    // Discovery activity signal (at most one write every 5 minutes per account).
+    this.activity?.recordIfStale(activeUser.id, activeUser.lastActiveAt);
+
     const ownTenantId = activeUser.tenantId ?? env.DEFAULT_TENANT_ID;
     const isSystemAdmin = activeUser.role === UserRole.SYSTEM_ADMIN;
 
@@ -58,6 +81,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       ? (payload.tenantId as string)
       : ownTenantId;
 
+    // Only a business account pays the extra lookup of the listing it owns.
+    const accountKind = accountKindOf(activeUser.role);
+    const businessEntityId =
+      accountKind === 'BUSINESS' ? await this.usersRepository.findBusinessEntityId(activeUser.id) : null;
+
     return {
       id: activeUser.id,
       email: activeUser.email,
@@ -67,6 +95,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       // cualquier otro principal queda atado a un gimnasio concreto.
       tenantScope: isSystemAdmin && !impersonating ? null : effectiveTenantId,
       impersonating,
+      emailVerified: Boolean(activeUser.emailVerifiedAt),
+      deviceId: typeof payload.did === "string" ? payload.did : null,
+      accountKind,
+      businessEntityId,
     };
   }
 }

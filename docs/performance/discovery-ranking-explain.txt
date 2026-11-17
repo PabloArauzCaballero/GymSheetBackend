@@ -1,0 +1,313 @@
+Subquery Scan on ranked  (cost=699.68..699.72 rows=1 width=174) (actual time=27.586..27.828 rows=81 loops=1)
+  Filter: ((ranked.rn <= 20) OR ranked.is_new OR ranked.liked_viewer)
+  Rows Removed by Filter: 269
+  Buffers: shared hit=18340
+  CTE p
+    ->  Result  (cost=0.00..0.01 rows=1 width=12) (actual time=0.001..0.002 rows=1 loops=1)
+  CTE viewer
+    ->  Nested Loop Left Join  (cost=1.43..76.47 rows=1 width=188) (actual time=0.117..0.131 rows=1 loops=1)
+          Join Filter: (br.id = u.sede_id)
+          Rows Removed by Join Filter: 1
+          Buffers: shared hit=20
+          ->  Nested Loop Left Join  (cost=1.43..49.62 rows=1 width=196) (actual time=0.064..0.073 rows=1 loops=1)
+                Join Filter: (vs.map_enabled AND (ml.updated_at >= (p.as_of - '24:00:00'::interval)))
+                Buffers: shared hit=16
+                ->  Nested Loop Left Join  (cost=1.29..41.44 rows=1 width=153) (actual time=0.059..0.066 rows=1 loops=1)
+                      Buffers: shared hit=14
+                      ->  Nested Loop Left Join  (cost=1.00..33.13 rows=1 width=152) (actual time=0.048..0.055 rows=1 loops=1)
+                            Buffers: shared hit=11
+                            ->  Nested Loop Left Join  (cost=0.72..24.82 rows=1 width=116) (actual time=0.037..0.042 rows=1 loops=1)
+                                  Buffers: shared hit=8
+                                  ->  Nested Loop Left Join  (cost=0.57..16.64 rows=1 width=114) (actual time=0.030..0.034 rows=1 loops=1)
+                                        Buffers: shared hit=6
+                                        ->  Nested Loop  (cost=0.29..8.33 rows=1 width=103) (actual time=0.018..0.020 rows=1 loops=1)
+                                              Buffers: shared hit=3
+                                              ->  CTE Scan on p  (cost=0.00..0.02 rows=1 width=8) (actual time=0.003..0.004 rows=1 loops=1)
+                                              ->  Index Scan using usuarios_pkey on usuarios u  (cost=0.29..8.30 rows=1 width=95) (actual time=0.012..0.013 rows=1 loops=1)
+                                                    Index Cond: (id = '00000000-0000-4000-a000-000000000001'::uuid)
+                                                    Buffers: shared hit=3
+                                        ->  Index Scan using perfiles_antropometricos_usuario_id_key on perfiles_antropometricos pa  (cost=0.29..8.30 rows=1 width=27) (actual time=0.011..0.011 rows=1 loops=1)
+                                              Index Cond: (usuario_id = '00000000-0000-4000-a000-000000000001'::uuid)
+                                              Buffers: shared hit=3
+                                  ->  Index Scan using onboarding_pkey on onboarding ob  (cost=0.14..8.16 rows=1 width=18) (actual time=0.005..0.006 rows=0 loops=1)
+                                        Index Cond: (user_id = '00000000-0000-4000-a000-000000000001'::uuid)
+                                        Buffers: shared hit=2
+                            ->  Index Scan using profile_details_pkey on profile_details pd  (cost=0.29..8.30 rows=1 width=52) (actual time=0.010..0.010 rows=1 loops=1)
+                                  Index Cond: (user_id = '00000000-0000-4000-a000-000000000001'::uuid)
+                                  Buffers: shared hit=3
+                      ->  Index Scan using profile_settings_pkey on profile_settings vs  (cost=0.29..8.30 rows=1 width=17) (actual time=0.009..0.010 rows=1 loops=1)
+                            Index Cond: (user_id = '00000000-0000-4000-a000-000000000001'::uuid)
+                            Buffers: shared hit=3
+                ->  Index Scan using map_locations_pkey on map_locations ml  (cost=0.15..8.17 rows=1 width=52) (actual time=0.004..0.005 rows=0 loops=1)
+                      Index Cond: (user_id = '00000000-0000-4000-a000-000000000001'::uuid)
+                      Buffers: shared hit=2
+          ->  Seq Scan on branches br  (cost=0.00..10.50 rows=1 width=44) (actual time=0.009..0.010 rows=2 loops=1)
+                Filter: ((status)::text = 'ACTIVE'::text)
+                Buffers: shared hit=1
+          SubPlan 2
+            ->  Unique  (cost=16.31..16.32 rows=2 width=16) (actual time=0.025..0.028 rows=0 loops=1)
+                  Buffers: shared hit=3
+                  ->  Sort  (cost=16.31..16.31 rows=2 width=16) (actual time=0.024..0.027 rows=0 loops=1)
+                        Sort Key: tp.routine_id
+                        Sort Method: quicksort  Memory: 25kB
+                        Buffers: shared hit=3
+                        ->  Append  (cost=0.12..16.30 rows=2 width=16) (actual time=0.014..0.016 rows=0 loops=1)
+                              Buffers: shared hit=3
+                              ->  Index Scan using uq_program_activo_por_carril on training_programs tp  (cost=0.12..8.14 rows=1 width=16) (actual time=0.006..0.006 rows=0 loops=1)
+                                    Index Cond: (usuario_id = u.id)
+                                    Filter: (routine_id IS NOT NULL)
+                                    Buffers: shared hit=2
+                              ->  Index Only Scan using uq_assignment_active on routine_assignments ra  (cost=0.12..8.14 rows=1 width=16) (actual time=0.006..0.006 rows=0 loops=1)
+                                    Index Cond: (cliente_user_id = u.id)
+                                    Heap Fetches: 0
+                                    Buffers: shared hit=1
+  CTE feat
+    ->  Nested Loop  (cost=220.41..622.54 rows=1 width=361) (actual time=1.162..21.992 rows=350 loops=1)
+          Buffers: shared hit=18334
+          ->  Nested Loop  (cost=220.41..581.05 rows=1 width=391) (actual time=1.038..11.767 rows=350 loops=1)
+                Buffers: shared hit=14132
+                ->  Nested Loop Anti Join  (cost=220.41..581.02 rows=1 width=323) (actual time=1.037..11.587 rows=350 loops=1)
+                      Join Filter: (dp.target_id = u_1.id)
+                      Rows Removed by Join Filter: 1406
+                      Buffers: shared hit=14132
+                      ->  Nested Loop Anti Join  (cost=219.99..576.49 rows=1 width=323) (actual time=1.015..11.066 rows=354 loops=1)
+                            Join Filter: (((dc.requester_id = '00000000-0000-4000-a000-000000000001'::uuid) AND (dc.addressee_id = u_1.id)) OR ((dc.requester_id = u_1.id) AND (dc.addressee_id = '00000000-0000-4000-a000-000000000001'::uuid) AND ((dc.status)::text <> 'PENDING'::text)))
+                            Rows Removed by Join Filter: 1064
+                            Buffers: shared hit=13069
+                            ->  Nested Loop Anti Join  (cost=211.39..553.24 rows=1 width=323) (actual time=0.996..9.655 rows=356 loops=1)
+                                  Buffers: shared hit=10580
+                                  ->  Nested Loop Left Join  (cost=210.74..548.56 rows=1 width=323) (actual time=0.988..9.110 rows=356 loops=1)
+                                        Buffers: shared hit=9156
+                                        ->  Nested Loop Left Join  (cost=210.45..540.72 rows=1 width=307) (actual time=0.969..8.322 rows=356 loops=1)
+                                              Filter: ((v_1.lat IS NULL) OR (CASE WHEN ((v_1.lat IS NULL) OR (CASE WHEN (ml_1.user_id IS NOT NULL) THEN ((('-90'::numeric + ((((split_part((ml_1.cell_id)::text, ':'::text, 1))::integer)::numeric + 0.5) * 0.01796622349982033777)))::double precision) ELSE (br_1.latitude)::double precision END IS NULL)) THEN NULL::double precision ELSE ('12742'::double precision * asin(sqrt((power(sin((radians((CASE WHEN (ml_1.user_id IS NOT NULL) THEN ((('-90'::numeric + ((((split_part((ml_1.cell_id)::text, ':'::text, 1))::integer)::numeric + 0.5) * 0.01796622349982033777)))::double precision) ELSE (br_1.latitude)::double precision END - v_1.lat)) / '2'::double precision)), '2'::double precision) + ((cos(radians(v_1.lat)) * cos(radians(CASE WHEN (ml_1.user_id IS NOT NULL) THEN ((('-90'::numeric + ((((split_part((ml_1.cell_id)::text, ':'::text, 1))::integer)::numeric + 0.5) * 0.01796622349982033777)))::double precision) ELSE (br_1.latitude)::double precision END))) * power(sin((radians((CASE WHEN (ml_1.user_id IS NOT NULL) THEN (('-180'::double precision + (((((split_part((ml_1.cell_id)::text, ':'::text, 2))::integer)::numeric + 0.5))::double precision * ('2000'::double precision / ('111320'::double precision * GREATEST(cos(radians((('-90'::numeric + ((((split_part((ml_1.cell_id)::text, ':'::text, 1))::integer)::numeric + 0.5) * 0.01796622349982033777)))::double precision)), '0.087'::double precision)))))) ELSE (br_1.longitude)::double precision END - v_1.lon)) / '2'::double precision)), '2'::double precision)))))) END <= '25'::double precision))
+                                              Buffers: shared hit=8088
+                                              ->  Nested Loop Left Join  (cost=210.31..538.57 rows=1 width=279) (actual time=0.951..7.573 rows=356 loops=1)
+                                                    Join Filter: (ml_1.user_id IS NOT NULL)
+                                                    Rows Removed by Join Filter: 356
+                                                    Buffers: shared hit=7376
+                                                    ->  Nested Loop Left Join  (cost=210.31..538.55 rows=1 width=345) (actual time=0.946..7.378 rows=356 loops=1)
+                                                          Join Filter: (s_1.map_enabled AND (ml_1.updated_at >= (p_2.as_of - '24:00:00'::interval)))
+                                                          Buffers: shared hit=7376
+                                                          ->  Nested Loop Left Join  (cost=210.17..536.61 rows=1 width=248) (actual time=0.940..7.187 rows=356 loops=1)
+                                                                Buffers: shared hit=6664
+                                                                ->  Nested Loop Left Join  (cost=209.88..529.42 rows=1 width=212) (actual time=0.932..6.494 rows=356 loops=1)
+                                                                      Buffers: shared hit=5596
+                                                                      ->  Nested Loop Left Join  (cost=209.74..527.47 rows=1 width=210) (actual time=0.927..6.292 rows=356 loops=1)
+                                                                            Buffers: shared hit=4884
+                                                                            ->  Nested Loop  (cost=209.45..520.13 rows=1 width=199) (actual time=0.919..5.675 rows=356 loops=1)
+                                                                                  Join Filter: (((u_1.suspended_until IS NULL) OR (u_1.suspended_until <= p_2.as_of)) AND ((EXTRACT(year FROM age(((p_2.as_of)::date)::timestamp with time zone, (u_1.fecha_nacimiento)::timestamp with time zone)))::integer >= 18) AND ((EXTRACT(year FROM age(((p_2.as_of)::date)::timestamp with time zone, (u_1.fecha_nacimiento)::timestamp with time zone)))::integer >= 18) AND ((EXTRACT(year FROM age(((p_2.as_of)::date)::timestamp with time zone, (u_1.fecha_nacimiento)::timestamp with time zone)))::integer <= 60))
+                                                                                  Buffers: shared hit=3816
+                                                                                  ->  Nested Loop  (cost=209.45..520.05 rows=1 width=199) (actual time=0.913..5.175 rows=356 loops=1)
+                                                                                        Join Filter: (u_1.id = s_1.user_id)
+                                                                                        Buffers: shared hit=3816
+                                                                                        ->  Nested Loop  (cost=209.17..519.63 rows=1 width=218) (actual time=0.905..4.493 rows=356 loops=1)
+                                                                                              Join Filter: ("*SELECT* 1_2".id = u_1.id)
+                                                                                              Buffers: shared hit=2748
+                                                                                              ->  Nested Loop  (cost=208.88..514.66 rows=1 width=89) (actual time=0.849..2.946 rows=356 loops=1)
+                                                                                                    Join Filter: ((v_1.age >= (cp.min_age - CASE WHEN cp.flexible_age THEN 2 ELSE 0 END)) AND (v_1.age <= (cp.max_age + CASE WHEN cp.flexible_age THEN 2 ELSE 0 END)) AND ((v_1.gender)::text = ANY (cp.genders)))
+                                                                                                    Buffers: shared hit=967
+                                                                                                    ->  CTE Scan on viewer v_1  (cost=0.00..0.02 rows=1 width=62) (actual time=0.118..0.119 rows=1 loops=1)
+                                                                                                          Buffers: shared hit=20
+                                                                                                    ->  Hash Join  (cost=208.88..508.14 rows=200 width=105) (actual time=0.726..2.701 rows=356 loops=1)
+                                                                                                          Hash Cond: (cp.user_id = "*SELECT* 1_2".id)
+                                                                                                          Buffers: shared hit=947
+                                                                                                          ->  Seq Scan on discovery_preferences cp  (cost=0.00..273.00 rows=10000 width=89) (actual time=0.003..0.818 rows=10029 loops=1)
+                                                                                                                Buffers: shared hit=173
+                                                                                                          ->  Hash  (cost=206.38..206.38 rows=200 width=16) (actual time=0.708..0.719 rows=356 loops=1)
+                                                                                                                Buckets: 1024  Batches: 1  Memory Usage: 25kB
+                                                                                                                Buffers: shared hit=774
+                                                                                                                ->  HashAggregate  (cost=204.38..206.38 rows=200 width=16) (actual time=0.650..0.681 rows=356 loops=1)
+                                                                                                                      Group Key: "*SELECT* 1_2".id
+                                                                                                                      Batches: 1  Memory Usage: 61kB
+                                                                                                                      Buffers: shared hit=774
+                                                                                                                      ->  Append  (cost=0.29..203.48 rows=362 width=16) (actual time=0.062..0.590 rows=361 loops=1)
+                                                                                                                            Buffers: shared hit=774
+                                                                                                                            ->  Subquery Scan on "*SELECT* 1_2"  (cost=0.29..123.29 rows=300 width=16) (actual time=0.062..0.315 rows=300 loops=1)
+                                                                                                                                  Buffers: shared hit=631
+                                                                                                                                  ->  Limit  (cost=0.29..120.29 rows=300 width=24) (actual time=0.061..0.293 rows=300 loops=1)
+                                                                                                                                        Buffers: shared hit=631
+                                                                                                                                        ->  Index Scan using ix_usuarios_discovery_active on usuarios u_2  (cost=0.29..2000.41 rows=5000 width=24) (actual time=0.059..0.273 rows=300 loops=1)
+                                                                                                                                              Index Cond: ((tenant_id)::text = 'default'::text)
+                                                                                                                                              Filter: ((genero)::text = 'FEMALE'::text)
+                                                                                                                                              Rows Removed by Filter: 329
+                                                                                                                                              Buffers: shared hit=631
+                                                                                                                            ->  Subquery Scan on "*SELECT* 2_2"  (cost=0.29..70.03 rows=60 width=16) (actual time=0.030..0.213 rows=60 loops=1)
+                                                                                                                                  Buffers: shared hit=137
+                                                                                                                                  ->  Limit  (cost=0.29..69.43 rows=60 width=24) (actual time=0.029..0.207 rows=60 loops=1)
+                                                                                                                                        Buffers: shared hit=137
+                                                                                                                                        ->  Nested Loop  (cost=0.29..1921.42 rows=1667 width=24) (actual time=0.029..0.203 rows=60 loops=1)
+                                                                                                                                              Join Filter: (u_3.created_at >= (p_3.as_of - '7 days'::interval))
+                                                                                                                                              Buffers: shared hit=137
+                                                                                                                                              ->  Index Scan using ix_usuarios_discovery_new on usuarios u_3  (cost=0.29..1796.41 rows=5000 width=24) (actual time=0.026..0.179 rows=60 loops=1)
+                                                                                                                                                    Index Cond: ((tenant_id)::text = 'default'::text)
+                                                                                                                                                    Filter: ((genero)::text = 'FEMALE'::text)
+                                                                                                                                                    Rows Removed by Filter: 79
+                                                                                                                                                    Buffers: shared hit=137
+                                                                                                                                              ->  CTE Scan on p p_3  (cost=0.00..0.02 rows=1 width=8) (actual time=0.000..0.000 rows=1 loops=60)
+                                                                                                                            ->  Subquery Scan on "*SELECT* 3"  (cost=0.01..0.03 rows=1 width=16) (actual time=0.019..0.021 rows=0 loops=1)
+                                                                                                                                  Buffers: shared hit=3
+                                                                                                                                  ->  Limit  (cost=0.01..0.02 rows=1 width=24) (actual time=0.018..0.019 rows=0 loops=1)
+                                                                                                                                        Buffers: shared hit=3
+                                                                                                                                        ->  Sort  (cost=0.01..0.02 rows=0 width=24) (actual time=0.017..0.018 rows=0 loops=1)
+                                                                                                                                              Sort Key: last_active_at DESC NULLS LAST, id
+                                                                                                                                              Sort Method: quicksort  Memory: 25kB
+                                                                                                                                              Buffers: shared hit=3
+                                                                                                                                              ->  Result  (cost=0.00..0.00 rows=0 width=24) (actual time=0.000..0.001 rows=0 loops=1)
+                                                                                                                                                    One-Time Filter: false
+                                                                                                                            ->  Subquery Scan on "*SELECT* 4"  (cost=0.29..8.32 rows=1 width=16) (actual time=0.015..0.017 rows=1 loops=1)
+                                                                                                                                  Buffers: shared hit=3
+                                                                                                                                  ->  Limit  (cost=0.29..8.31 rows=1 width=24) (actual time=0.015..0.016 rows=1 loops=1)
+                                                                                                                                        Buffers: shared hit=3
+                                                                                                                                        ->  Index Scan using ix_connections_addressee_recent on connections c  (cost=0.29..8.31 rows=1 width=24) (actual time=0.014..0.015 rows=1 loops=1)
+                                                                                                                                              Index Cond: ((addressee_id = '00000000-0000-4000-a000-000000000001'::uuid) AND ((status)::text = 'PENDING'::text))
+                                                                                                                                              Buffers: shared hit=3
+                                                                                              ->  Index Scan using usuarios_pkey on usuarios u_1  (cost=0.29..4.96 rows=1 width=129) (actual time=0.004..0.004 rows=1 loops=356)
+                                                                                                    Index Cond: (id = cp.user_id)
+                                                                                                    Filter: ((email_verified_at IS NOT NULL) AND (id <> '00000000-0000-4000-a000-000000000001'::uuid) AND ((estado)::text = 'ACTIVO'::text) AND ((genero)::text = 'FEMALE'::text) AND ((tenant_id)::text = 'default'::text) AND ((SubPlan 12) = 2))
+                                                                                                    Buffers: shared hit=1781
+                                                                                                    SubPlan 12
+                                                                                                      ->  Aggregate  (cost=4.35..4.36 rows=1 width=8) (actual time=0.002..0.002 rows=1 loops=356)
+                                                                                                            Buffers: shared hit=713
+                                                                                                            ->  Limit  (cost=0.29..4.32 rows=2 width=4) (actual time=0.001..0.002 rows=2 loops=356)
+                                                                                                                  Buffers: shared hit=713
+                                                                                                                  ->  Index Only Scan using ix_profile_photos_visible on photos ph  (cost=0.29..4.32 rows=2 width=4) (actual time=0.001..0.001 rows=2 loops=356)
+                                                                                                                        Index Cond: (user_id = u_1.id)
+                                                                                                                        Heap Fetches: 0
+                                                                                                                        Buffers: shared hit=713
+                                                                                        ->  Index Scan using profile_settings_pkey on profile_settings s_1  (cost=0.29..0.40 rows=1 width=29) (actual time=0.001..0.001 rows=1 loops=356)
+                                                                                              Index Cond: (user_id = cp.user_id)
+                                                                                              Filter: profile_enabled
+                                                                                              Buffers: shared hit=1068
+                                                                                  ->  CTE Scan on p p_2  (cost=0.00..0.02 rows=1 width=8) (actual time=0.000..0.000 rows=1 loops=356)
+                                                                            ->  Index Scan using perfiles_antropometricos_usuario_id_key on perfiles_antropometricos pa_1  (cost=0.29..7.34 rows=1 width=27) (actual time=0.001..0.001 rows=1 loops=356)
+                                                                                  Index Cond: (usuario_id = u_1.id)
+                                                                                  Buffers: shared hit=1068
+                                                                      ->  Index Scan using onboarding_pkey on onboarding ob_1  (cost=0.14..1.92 rows=1 width=18) (actual time=0.000..0.000 rows=0 loops=356)
+                                                                            Index Cond: (user_id = u_1.id)
+                                                                            Buffers: shared hit=712
+                                                                ->  Index Scan using profile_details_pkey on profile_details pd_1  (cost=0.29..7.18 rows=1 width=52) (actual time=0.001..0.001 rows=1 loops=356)
+                                                                      Index Cond: (user_id = u_1.id)
+                                                                      Buffers: shared hit=1068
+                                                          ->  Index Scan using map_locations_pkey on map_locations ml_1  (cost=0.15..1.93 rows=1 width=106) (actual time=0.000..0.000 rows=0 loops=356)
+                                                                Index Cond: (user_id = u_1.id)
+                                                                Buffers: shared hit=712
+                                                    ->  Result  (cost=0.00..0.01 rows=1 width=16) (actual time=0.000..0.000 rows=1 loops=356)
+                                              ->  Index Scan using branches_pkey on branches br_1  (cost=0.14..2.08 rows=1 width=44) (actual time=0.001..0.001 rows=1 loops=356)
+                                                    Index Cond: (id = u_1.sede_id)
+                                                    Filter: ((status)::text = 'ACTIVE'::text)
+                                                    Buffers: shared hit=712
+                                        ->  Index Scan using ix_connections_requester on connections liked  (cost=0.29..7.83 rows=1 width=32) (actual time=0.002..0.002 rows=0 loops=356)
+                                              Index Cond: ((requester_id = u_1.id) AND ((status)::text = 'PENDING'::text))
+                                              Filter: (addressee_id = '00000000-0000-4000-a000-000000000001'::uuid)
+                                              Rows Removed by Filter: 1
+                                              Buffers: shared hit=1068
+                                  ->  Bitmap Heap Scan on user_blocks b  (cost=0.65..4.67 rows=1 width=32) (actual time=0.001..0.001 rows=0 loops=356)
+                                        Recheck Cond: (((blocked_id = u_1.id) AND (blocker_id = '00000000-0000-4000-a000-000000000001'::uuid)) OR ((blocked_id = '00000000-0000-4000-a000-000000000001'::uuid) AND (blocker_id = u_1.id)))
+                                        Buffers: shared hit=1424
+                                        ->  BitmapOr  (cost=0.65..0.65 rows=1 width=0) (actual time=0.001..0.001 rows=0 loops=356)
+                                              Buffers: shared hit=1424
+                                              ->  Bitmap Index Scan on ix_social_user_blocks_blocked  (cost=0.00..0.32 rows=1 width=0) (actual time=0.000..0.000 rows=0 loops=356)
+                                                    Index Cond: ((blocked_id = u_1.id) AND (blocker_id = '00000000-0000-4000-a000-000000000001'::uuid))
+                                                    Buffers: shared hit=712
+                                              ->  Bitmap Index Scan on ix_social_user_blocks_blocked  (cost=0.00..0.32 rows=1 width=0) (actual time=0.000..0.000 rows=0 loops=356)
+                                                    Index Cond: ((blocked_id = '00000000-0000-4000-a000-000000000001'::uuid) AND (blocker_id = u_1.id))
+                                                    Buffers: shared hit=712
+                            ->  Bitmap Heap Scan on connections dc  (cost=8.61..23.18 rows=3 width=40) (actual time=0.002..0.003 rows=3 loops=356)
+                                  Recheck Cond: ((requester_id = '00000000-0000-4000-a000-000000000001'::uuid) OR (addressee_id = '00000000-0000-4000-a000-000000000001'::uuid))
+                                  Filter: ((requester_id = '00000000-0000-4000-a000-000000000001'::uuid) OR ((addressee_id = '00000000-0000-4000-a000-000000000001'::uuid) AND ((status)::text <> 'PENDING'::text)))
+                                  Rows Removed by Filter: 1
+                                  Heap Blocks: exact=1065
+                                  Buffers: shared hit=2489
+                                  ->  BitmapOr  (cost=8.61..8.61 rows=4 width=0) (actual time=0.001..0.001 rows=0 loops=356)
+                                        Buffers: shared hit=1424
+                                        ->  Bitmap Index Scan on ix_connections_requester_recent  (cost=0.00..4.30 rows=2 width=0) (actual time=0.001..0.001 rows=2 loops=356)
+                                              Index Cond: (requester_id = '00000000-0000-4000-a000-000000000001'::uuid)
+                                              Buffers: shared hit=712
+                                        ->  Bitmap Index Scan on ix_connections_addressee_recent  (cost=0.00..4.30 rows=2 width=0) (actual time=0.001..0.001 rows=2 loops=356)
+                                              Index Cond: (addressee_id = '00000000-0000-4000-a000-000000000001'::uuid)
+                                              Buffers: shared hit=712
+                      ->  Index Only Scan using pk_discovery_passes on discovery_passes dp  (cost=0.41..4.49 rows=4 width=16) (actual time=0.001..0.001 rows=4 loops=354)
+                            Index Cond: (viewer_id = '00000000-0000-4000-a000-000000000001'::uuid)
+                            Heap Fetches: 0
+                            Buffers: shared hit=1063
+                ->  CTE Scan on viewer v  (cost=0.00..0.02 rows=1 width=68) (actual time=0.000..0.000 rows=1 loops=350)
+          ->  CTE Scan on p p_1  (cost=0.00..0.02 rows=1 width=12) (actual time=0.000..0.000 rows=1 loops=350)
+          SubPlan 4
+            ->  Seq Scan on sesiones_entrenamiento se  (cost=0.00..7.50 rows=1 width=0) (actual time=0.009..0.009 rows=0 loops=350)
+                  Filter: ((fecha_inicio <= p_1.as_of) AND (usuario_id = u_1.id) AND ((estado)::text = 'EN_PROGRESO'::text) AND (fecha_inicio >= (p_1.as_of - '03:00:00'::interval)))
+                  Rows Removed by Filter: 200
+                  Buffers: shared hit=1050
+          SubPlan 5
+            ->  Index Scan using ix_access_decisions_user_date on decisions ad  (cost=0.15..8.17 rows=1 width=0) (actual time=0.000..0.000 rows=0 loops=350)
+                  Index Cond: ((user_id = u_1.id) AND (decided_at >= (p_1.as_of - '03:00:00'::interval)) AND (decided_at <= p_1.as_of))
+                  Filter: ((outcome)::text = 'GRANTED'::text)
+                  Buffers: shared hit=700
+          SubPlan 6
+            ->  Aggregate  (cost=0.26..0.28 rows=1 width=8) (actual time=0.007..0.007 rows=1 loops=350)
+                  ->  Function Scan on h  (cost=0.01..0.11 rows=10 width=8) (actual time=0.003..0.004 rows=24 loops=350)
+          SubPlan 7
+            ->  Aggregate  (cost=4.33..4.34 rows=1 width=8) (actual time=0.002..0.002 rows=1 loops=350)
+                  Buffers: shared hit=701
+                  ->  Index Only Scan using ix_connections_requester_recent on connections lc  (cost=0.29..4.33 rows=1 width=0) (actual time=0.001..0.002 rows=2 loops=350)
+                        Index Cond: ((requester_id = u_1.id) AND (created_at >= (p_1.as_of - '90 days'::interval)) AND (created_at <= p_1.as_of))
+                        Heap Fetches: 0
+                        Buffers: shared hit=701
+          SubPlan 8
+            ->  Aggregate  (cost=4.32..4.33 rows=1 width=8) (actual time=0.002..0.002 rows=1 loops=350)
+                  Buffers: shared hit=701
+                  ->  Index Only Scan using ix_discovery_passes_viewer_recent on discovery_passes lp  (cost=0.29..4.32 rows=1 width=0) (actual time=0.001..0.002 rows=4 loops=350)
+                        Index Cond: ((viewer_id = u_1.id) AND (created_at >= (p_1.as_of - '90 days'::interval)) AND (created_at <= p_1.as_of))
+                        Heap Fetches: 0
+                        Buffers: shared hit=701
+          SubPlan 9
+            ->  Unique  (cost=16.31..16.32 rows=2 width=16) (actual time=0.001..0.001 rows=0 loops=350)
+                  Buffers: shared hit=1050
+                  ->  Sort  (cost=16.31..16.31 rows=2 width=16) (actual time=0.001..0.001 rows=0 loops=350)
+                        Sort Key: tp_1.routine_id
+                        Sort Method: quicksort  Memory: 25kB
+                        Buffers: shared hit=1050
+                        ->  Append  (cost=0.12..16.30 rows=2 width=16) (actual time=0.001..0.001 rows=0 loops=350)
+                              Buffers: shared hit=1050
+                              ->  Index Scan using uq_program_activo_por_carril on training_programs tp_1  (cost=0.12..8.14 rows=1 width=16) (actual time=0.000..0.000 rows=0 loops=350)
+                                    Index Cond: (usuario_id = u_1.id)
+                                    Filter: (routine_id IS NOT NULL)
+                                    Buffers: shared hit=700
+                              ->  Index Only Scan using uq_assignment_active on routine_assignments ra_1  (cost=0.12..8.14 rows=1 width=16) (actual time=0.000..0.000 rows=0 loops=350)
+                                    Index Cond: (cliente_user_id = u_1.id)
+                                    Heap Fetches: 0
+                                    Buffers: shared hit=350
+          SubPlan 10
+            ->  Aggregate  (cost=0.12..0.13 rows=1 width=8) (actual time=0.001..0.001 rows=1 loops=350)
+                  ->  Function Scan on unnest i  (cost=0.00..0.11 rows=1 width=0) (actual time=0.001..0.001 rows=1 loops=350)
+                        Filter: (i = ANY ('{TRAINING}'::text[]))
+                        Rows Removed by Filter: 0
+          SubPlan 11
+            ->  Aggregate  (cost=0.24..0.26 rows=1 width=8) (actual time=0.001..0.001 rows=1 loops=350)
+                  ->  Function Scan on unnest i_1  (cost=0.00..0.23 rows=7 width=0) (actual time=0.001..0.001 rows=0 loops=350)
+                        Filter: (i = ANY (v.interests))
+                        Rows Removed by Filter: 2
+  CTE scored
+    ->  Nested Loop  (cost=0.00..0.62 rows=1 width=142) (actual time=1.225..27.177 rows=350 loops=1)
+          Buffers: shared hit=18334
+          ->  CTE Scan on feat f  (cost=0.00..0.02 rows=1 width=334) (actual time=1.164..22.264 rows=350 loops=1)
+                Buffers: shared hit=18334
+          ->  CTE Scan on viewer v_2  (cost=0.00..0.02 rows=1 width=160) (actual time=0.000..0.000 rows=1 loops=350)
+          SubPlan 14
+            ->  Aggregate  (cost=0.15..0.16 rows=1 width=8) (actual time=0.002..0.002 rows=1 loops=350)
+                  ->  Function Scan on unnest signal  (cost=0.07..0.13 rows=6 width=8) (actual time=0.001..0.001 rows=6 loops=350)
+          SubPlan 15
+            ->  Aggregate  (cost=0.15..0.16 rows=1 width=8) (actual time=0.002..0.002 rows=1 loops=350)
+                  ->  Function Scan on unnest signal_1  (cost=0.07..0.13 rows=6 width=8) (actual time=0.001..0.001 rows=6 loops=350)
+  ->  WindowAgg  (cost=0.03..0.05 rows=1 width=150) (actual time=27.582..27.704 rows=350 loops=1)
+        Buffers: shared hit=18340
+        ->  Sort  (cost=0.03..0.04 rows=1 width=142) (actual time=27.564..27.603 rows=350 loops=1)
+              Sort Key: s.score DESC, s.id DESC
+              Sort Method: quicksort  Memory: 76kB
+              Buffers: shared hit=18340
+              ->  CTE Scan on scored s  (cost=0.00..0.02 rows=1 width=142) (actual time=1.227..27.375 rows=350 loops=1)
+                    Buffers: shared hit=18334
+Planning:
+  Buffers: shared hit=1605
+Planning Time: 10.381 ms
+Execution Time: 29.033 ms
+TIMINGS ms p50 31 p95 34 max 36

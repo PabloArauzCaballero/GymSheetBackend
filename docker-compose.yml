@@ -50,6 +50,8 @@ x-app-environment: &app-environment
   # Media storage (ports & adapters). `local` writes to the media-data volume the
   # api service mounts at /app/storage/media and serves under the public base URL.
   # Switch to cloudinary/s3 by implementing the adapter and setting the provider.
+  # `local` always deletes people's content for real (ADR-0017); the MinIO-only
+  # MEDIA_USER_CONTENT_DELETABLE does not apply here.
   MEDIA_STORAGE_PROVIDER: ${MEDIA_STORAGE_PROVIDER:-local}
   MEDIA_STORAGE_LOCAL_ROOT: ${MEDIA_STORAGE_LOCAL_ROOT:-/app/storage/media}
   MEDIA_STORAGE_PUBLIC_BASE_URL: ${MEDIA_STORAGE_PUBLIC_BASE_URL:-http://localhost:3001/media}
@@ -110,6 +112,12 @@ x-app-environment: &app-environment
   REDIS_REQUIRED: "true"
 
   METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
+  # Required when NODE_ENV=production (the default here): env.ts refuses to start without it.
+  IP_HASH_SECRET: ${IP_HASH_SECRET:-}
+  # Required when NODE_ENV=production: key of every KYC ciphertext (ADR-0021).
+  KYC_ENCRYPTION_KEY: ${KYC_ENCRYPTION_KEY:-}
+  # Anti-bot ticket key (ADR-0013); env.ts requires it with NODE_ENV=production.
+  REGISTRATION_TICKET_SECRET: ${REGISTRATION_TICKET_SECRET:-}
   # 3002 (puerto de la web): el socket de chat lo abre el navegador directo
   # contra este backend, no a través del BFF, así que necesita CORS propio.
   CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3002}
@@ -338,6 +346,30 @@ services:
           memory: 128m
     stop_grace_period: 45s
 
+  # Account rights (franja 4): builds full exports and erases the files of
+  # closed accounts, both through the outbox with retries and dead-letter.
+  worker-account-data:
+    <<: [*app-image, *app-security, *worker-runtime]
+    command: ["node", "dist/workers/account-data.worker.js"]
+    environment:
+      <<: *app-environment
+    # Deletes binaries of closed accounts: same media volume as the api.
+    volumes:
+      - media-data:/app/storage/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+          cpus: "0.5"
+        reservations:
+          memory: 128m
+    stop_grace_period: 45s
+
   worker-exercises-dataset:
     <<: [*app-image, *app-security, *worker-runtime]
     command: ["node", "dist/workers/exercises-dataset-refresh.worker.js"]
@@ -365,6 +397,32 @@ services:
     # Unlike the other workers this one deletes binaries, so it needs the same
     # media volume the api writes to. Mounted over the read-only root
     # filesystem, exactly as in the api service.
+    volumes:
+      - media-data:/app/storage/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+          cpus: "0.5"
+        reservations:
+          memory: 128m
+    stop_grace_period: 45s
+
+  # Personal-data retention (ADR-0014): runs `db:privacy:retention` every 24 h
+  # with jitter (spent signup tickets, 90-day IP hashes, expired closed-account
+  # sanctions, reported content of closed accounts 180 days after its last
+  # report closed, verification selfies when due). Releases files through the media queue, so it mounts the
+  # same media volume as the api.
+  worker-privacy-retention:
+    <<: [*app-image, *app-security, *worker-runtime]
+    command: ["node", "dist/workers/privacy-retention.worker.js"]
+    environment:
+      <<: *app-environment
     volumes:
       - media-data:/app/storage/media
     depends_on:

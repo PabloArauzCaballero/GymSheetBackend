@@ -8,6 +8,7 @@ import { ResponseInterceptor } from "../src/common/interceptors/response.interce
 import { requestIdMiddleware } from "../src/common/middleware/request-id.middleware";
 import { env } from "../src/config/env";
 import { SpotifyOEmbed, SpotifyOEmbedClient } from "../src/modules/music/spotify-oembed.client";
+import { E2E_SIGNUP_FIELDS } from "./support/e2e-app";
 
 /** Ids base62 de 22 caracteres distintos en cada corrida: la base de e2e se reutiliza. */
 function spotifyId(): string {
@@ -62,7 +63,7 @@ describe("music playlists API (PostgreSQL integration)", () => {
         email: `music-${name}-${suffix}@example.test`,
         password: "music-qa-password",
         nombreCompleto: `QA Música ${name}`,
-        acceptedTerms: true,
+        ...E2E_SIGNUP_FIELDS,
       }).expect(201);
     const [ana, bea, caro] = await Promise.all([register("ana"), register("bea"), register("caro")]);
     anaToken = ana.body.data.accessToken as string;

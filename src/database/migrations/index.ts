@@ -119,7 +119,30 @@ import { tutorialProgressInitialMigration } from "./202611080001-tutorial-progre
 import { tutorialProgressMigration } from "./202611120001-tutorial-progress";
 import { messagePreviewsOnByDefaultMigration } from "./202611160001-message-previews-on-by-default";
 import { progressionStrikesAndCoachCardsMigration } from "./202610190002-progression-strikes-and-coach-cards";
+import { socialProfileDetailsMigration } from "./202611160101-social-profile-details";
+import { userBirthDateAndLegalAcceptancesMigration } from "./202611160201-user-birth-date-and-legal-acceptances";
+import { emailVerificationDevicesIdentitiesMigration } from "./202611170101-email-verification-devices-identities";
 import { DatabaseMigration } from "./migration.types";
+import { signupAntibotMigration } from "./202611170201-signup-antibot";
+import { sessionsValidAfterMigration } from "./202611170301-sessions-valid-after";
+import { notificationSecretMessagesMigration } from "./202611170401-notification-secret-messages";
+import { privacyIpHmacAndConsentsMigration } from "./202611180201-privacy-ip-hmac-and-consents";
+import { accountRightsMigration } from "./202611180101-account-rights";
+import { downloadAuditIpContractAndClosedAccountSanctionsMigration } from "./202611180301-download-audit-ip-contract-and-closed-account-sanctions";
+import { moderationLegalSafeguardsMigration } from "./202611180401-moderation-legal-safeguards";
+import { authorDeletedEvidenceHoldMigration } from "./202611190101-author-deleted-evidence-hold";
+import { discoveryRankingMigration } from "./202611190101-discovery-ranking";
+import { exerciseMediaEvidenceHoldMigration } from "./202611190201-exercise-media-evidence-hold";
+import { photoVerificationsMigration } from "./202611200101-photo-verifications";
+import { platformModeratorsMigration } from "./202611200101-platform-moderators";
+import { photoVerificationSelfieKeyIndexMigration } from "./202611200201-photo-verification-selfie-key-index";
+import { revokeTenantAdminChatsMigration } from "./202611200301-revoke-tenant-admin-chats";
+import { businessAccountsMigration } from "./202611200401-business-accounts";
+import { businessNameSkeletonMigration } from "./202611200402-business-name-skeleton";
+import { storedNameSkeletonMigration } from "./202611200403-stored-name-skeleton";
+import { businessKycMigration } from "./202611200501-business-kyc";
+import { businessListingsMigration } from "./202611200601-business-listings";
+import { listingVersionStampMigration } from "./202611200602-listing-version-stamp";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
 export const databaseMigrations: DatabaseMigration[] = [
@@ -246,4 +269,27 @@ export const databaseMigrations: DatabaseMigration[] = [
   tutorialProgressInitialMigration,
   tutorialProgressMigration,
   messagePreviewsOnByDefaultMigration,
+  socialProfileDetailsMigration,
+  userBirthDateAndLegalAcceptancesMigration,
+  emailVerificationDevicesIdentitiesMigration,
+  signupAntibotMigration,
+  sessionsValidAfterMigration,
+  notificationSecretMessagesMigration,
+  privacyIpHmacAndConsentsMigration,
+  accountRightsMigration,
+  downloadAuditIpContractAndClosedAccountSanctionsMigration,
+  moderationLegalSafeguardsMigration,
+  authorDeletedEvidenceHoldMigration,
+  discoveryRankingMigration,
+  exerciseMediaEvidenceHoldMigration,
+  photoVerificationsMigration,
+  platformModeratorsMigration,
+  photoVerificationSelfieKeyIndexMigration,
+  revokeTenantAdminChatsMigration,
+  businessAccountsMigration,
+  businessNameSkeletonMigration,
+  storedNameSkeletonMigration,
+  businessKycMigration,
+  businessListingsMigration,
+  listingVersionStampMigration,
 ];

@@ -2,6 +2,7 @@ import {
   Column,
   CreatedAt,
   DataType,
+  Default,
   ForeignKey,
   Model,
   PrimaryKey,
@@ -10,6 +11,7 @@ import {
 } from "sequelize-typescript";
 import { FitnessGoal, OnboardingStatus } from "../../common/enums/domain.enums";
 import { UserModel } from "../users/user.model";
+import type { OnboardingSocialStepState } from "./onboarding.schemas";
 
 @Table({
   tableName: "onboarding",
@@ -52,6 +54,9 @@ export class OnboardingModel extends Model {
   declare consentHealth: boolean;
   @Column({ type: DataType.BOOLEAN, field: "consent_data" })
   declare consentData: boolean;
+  @Default("PENDING")
+  @Column({ type: DataType.STRING(16), field: "social_step", allowNull: false })
+  declare socialStep: OnboardingSocialStepState;
   @Column({ type: DataType.DATE, field: "started_at" })
   declare startedAt: Date | null;
   @Column({ type: DataType.DATE, field: "completed_at" })

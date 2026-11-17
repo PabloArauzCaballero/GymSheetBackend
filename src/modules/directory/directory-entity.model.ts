@@ -1,4 +1,5 @@
 import {
+  BeforeSave,
   BelongsTo,
   BelongsToMany,
   Column,
@@ -13,6 +14,7 @@ import {
   Table,
   UpdatedAt,
 } from 'sequelize-typescript';
+import { businessNameSkeleton } from '../business-accounts/handle-rules';
 import { BranchModel } from '../facilities/branch.model';
 import { TenantModel } from '../tenants/tenant.model';
 import { UserModel } from '../users/user.model';
@@ -30,7 +32,7 @@ export type DirectoryEntityType =
   | 'STORE'
   | 'SERVICE_PROVIDER';
 
-export type DirectoryEntityStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'SUSPENDED';
+export type DirectoryEntityStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'SUSPENDED' | 'CLOSED';
 
 @Table({
   tableName: 'entities',
@@ -53,6 +55,14 @@ export class DirectoryEntityModel extends Model {
   @Column({ type: DataType.STRING(180), allowNull: false })
   declare name: string;
 
+  /**
+   * Anti-impersonation key of `name` (ADR-0020), folded only in the
+   * application and stored, so lookups compare stored values. NOT NULL in the
+   * database; `allowNull` here because model validation runs before the hook.
+   */
+  @Column({ type: DataType.TEXT, allowNull: true, field: 'name_skeleton' })
+  declare nameSkeleton: string;
+
   @Column({ type: DataType.STRING(255), allowNull: true })
   declare headline: string | null;
 
@@ -60,8 +70,9 @@ export class DirectoryEntityModel extends Model {
   declare description: string;
 
   @ForeignKey(() => CategoryModel)
-  @Column({ type: DataType.UUID, allowNull: false, field: 'primary_category_id' })
-  declare primaryCategoryId: string;
+  // Null only while the listing is DRAFT or CLOSED (ck_directory_entity_public_category, ADR-0020).
+  @Column({ type: DataType.UUID, allowNull: true, field: 'primary_category_id' })
+  declare primaryCategoryId: string | null;
 
   @BelongsTo(() => CategoryModel, { as: 'primaryCategory', foreignKey: 'primaryCategoryId' })
   declare primaryCategory?: CategoryModel;
@@ -166,4 +177,10 @@ export class DirectoryEntityModel extends Model {
   @UpdatedAt
   @Column({ field: 'updated_at' })
   declare updatedAt: Date;
+
+  /** Every ORM create and instance update keeps the stored skeleton in step with the name. */
+  @BeforeSave
+  static foldNameSkeleton(entity: DirectoryEntityModel): void {
+    if (entity.isNewRecord || entity.changed('name')) entity.nameSkeleton = businessNameSkeleton(entity.name);
+  }
 }

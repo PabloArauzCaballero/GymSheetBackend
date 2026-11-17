@@ -16,6 +16,16 @@ import { PlanPriceHistoryModel } from './plan-price-history.model';
 
 export type EntityPlanType = 'MEMBERSHIP_PLAN' | 'PASS' | 'SERVICE' | 'PRODUCT';
 export type EntityPlanStatus = 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+export type ListingOfferKind =
+  | 'MEMBERSHIP'
+  | 'DAY_PASS'
+  | 'MULTI_DAY_PASS'
+  | 'CLASS_PACK'
+  | 'PRODUCT'
+  | 'SERVICE_SESSION'
+  | 'SERVICE_PACK';
+/** Post-moderation state (ADR-0022): only LIVE is public; HELD/HIDDEN/REJECTED are not. */
+export type ListingModerationStatus = 'LIVE' | 'HELD' | 'HIDDEN' | 'REJECTED';
 
 @Table({
   tableName: 'entity_plans',
@@ -59,7 +69,44 @@ export class EntityPlanModel extends Model {
   @Column({ type: DataType.DECIMAL(12, 2), allowNull: false, field: 'current_price' })
   declare currentPrice: string;
 
-  @Default('USD')
+  /** `type` is derived from this (ck_entity_plan_type_of_kind). */
+  @Column({ type: DataType.STRING(20), allowNull: false, field: 'offer_kind' })
+  declare offerKind: ListingOfferKind;
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'sessions_count' })
+  declare sessionsCount: number | null;
+
+  @Column({ type: DataType.INTEGER, allowNull: true, field: 'stock_quantity' })
+  declare stockQuantity: number | null;
+
+  @Default(0)
+  @Column({ type: DataType.INTEGER, allowNull: false, field: 'stock_reserved' })
+  declare stockReserved: number;
+
+  @Column({ type: DataType.UUID, allowNull: true, field: 'product_category_id' })
+  declare productCategoryId: string | null;
+
+  @Default('HELD')
+  @Column({ type: DataType.STRING(10), allowNull: false, field: 'moderation_status' })
+  declare moderationStatus: ListingModerationStatus;
+
+  @Column({ type: DataType.STRING(40), allowNull: true, field: 'moderation_reason_code' })
+  declare moderationReasonCode: string | null;
+
+  @Default([])
+  @Column({ type: DataType.ARRAY(DataType.TEXT), allowNull: false, field: 'auto_check_codes' })
+  declare autoCheckCodes: string[];
+
+  @Column({ type: DataType.DATE, allowNull: true, field: 'published_at' })
+  declare publishedAt: Date | null;
+
+  @Column({ type: DataType.UUID, allowNull: true, field: 'moderated_by_user_id' })
+  declare moderatedByUserId: string | null;
+
+  @Column({ type: DataType.DATE, allowNull: true, field: 'moderated_at' })
+  declare moderatedAt: Date | null;
+
+  @Default('BOB')
   @Column({ type: DataType.CHAR(3), allowNull: false })
   declare currency: string;
 

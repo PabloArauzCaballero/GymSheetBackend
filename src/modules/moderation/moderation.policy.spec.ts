@@ -1,5 +1,8 @@
+import { UserRole } from '../../common/enums/domain.enums';
 import {
   AUTO_HIDE_DISTINCT_REPORTERS,
+  caseRefusalFor,
+  isBusinessTarget,
   isHideableTarget,
   ModerationReason,
   ModerationResolution,
@@ -10,6 +13,7 @@ import {
   strikeExpiryFrom,
   StrikeKind,
 } from './moderation.policy';
+import { businessSuspensionReasonFor } from './moderation-business-resolution';
 
 describe('Política de moderación', () => {
   const now = new Date('2026-09-15T12:00:00.000Z');
@@ -119,5 +123,51 @@ describe('Política de moderación', () => {
       // Si bastara con una, alguien insistente tumbaría contenido ajeno solo.
       expect(AUTO_HIDE_DISTINCT_REPORTERS).toBeGreaterThan(1);
     });
+  });
+
+  describe('who may decide on a case (ADR-0018 §8)', () => {
+    const moderator = { id: 'mod-1', role: UserRole.MODERATOR };
+    const systemAdmin = { id: 'sys-1', role: UserRole.SYSTEM_ADMIN };
+
+    it('refuses every case about the actor itself', () => {
+      expect(caseRefusalFor(moderator, { id: 'mod-1', role: UserRole.MODERATOR })).toBe('MODERATION_SELF_CASE');
+      expect(caseRefusalFor(systemAdmin, { id: 'sys-1', role: UserRole.SYSTEM_ADMIN })).toBe('MODERATION_SELF_CASE');
+    });
+
+    it('leaves cases about platform accounts to a SYSTEM_ADMIN', () => {
+      expect(caseRefusalFor(moderator, { id: 'mod-2', role: UserRole.MODERATOR })).toBe('MODERATION_PEER_CASE');
+      expect(caseRefusalFor(moderator, { id: 'sys-1', role: UserRole.SYSTEM_ADMIN })).toBe('MODERATION_PEER_CASE');
+      expect(caseRefusalFor(systemAdmin, { id: 'mod-2', role: UserRole.MODERATOR })).toBeNull();
+      expect(caseRefusalFor(systemAdmin, { id: 'sys-2', role: UserRole.SYSTEM_ADMIN })).toBeNull();
+    });
+
+    it('lets a moderator decide on members, staff and erased accounts', () => {
+      for (const role of [UserRole.CLIENT, UserRole.ADMIN, UserRole.FRONT_DESK, null]) {
+        expect(caseRefusalFor(moderator, { id: 'someone', role })).toBeNull();
+      }
+    });
+  });
+});
+
+describe('marketplace cases (ADR-0022)', () => {
+  it('a business registered with the moderator\'s own mailbox is the moderator\'s own case', () => {
+    const moderator = { id: 'mod-1', role: UserRole.MODERATOR, email: 'Ana.Perez+repp@gmail.com' };
+    expect(caseRefusalFor(moderator, { id: 'biz-1', role: UserRole.BUSINESS, email: 'anaperez+negocio@googlemail.com' })).toBe('MODERATION_SELF_CASE');
+    expect(caseRefusalFor(moderator, { id: 'biz-2', role: UserRole.BUSINESS, email: 'otra@example.test' })).toBeNull();
+    // A person is told apart by id only: two people may share a family mailbox alias.
+    expect(caseRefusalFor(moderator, { id: 'person-1', role: UserRole.CLIENT, email: 'anaperez@gmail.com' })).toBeNull();
+  });
+
+  it('listings are hideable; a business profile is not (it is suspended), and both are marketplace targets', () => {
+    expect(isHideableTarget(ModerationTargetKind.BUSINESS_LISTING)).toBe(true);
+    expect(isHideableTarget(ModerationTargetKind.BUSINESS_PROFILE)).toBe(false);
+    expect(isBusinessTarget(ModerationTargetKind.BUSINESS_PROFILE)).toBe(true);
+    expect(isBusinessTarget(ModerationTargetKind.REEL)).toBe(false);
+  });
+
+  it('the business reads a suspension reason that fits the report', () => {
+    expect(businessSuspensionReasonFor('PERFIL_FALSO')).toBe('IMPERSONATION');
+    expect(businessSuspensionReasonFor('DROGAS')).toBe('PROHIBITED_ACTIVITY');
+    expect(businessSuspensionReasonFor('SPAM')).toBe('OTHER');
   });
 });

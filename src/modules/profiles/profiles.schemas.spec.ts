@@ -26,9 +26,10 @@ describe("birth date helpers", () => {
 });
 
 describe("upsertProfileSchema", () => {
-  it("stores the birth date and derives the age from it", () => {
+  it("passes the birth date through for the account and stores no separate age", () => {
     const parsed = upsertProfileSchema.parse({ ...base, fechaNacimiento: yearsAgo(30) });
-    expect(parsed).toMatchObject({ birthDate: yearsAgo(30), age: 30 });
+    expect(parsed).toMatchObject({ birthDate: yearsAgo(30) });
+    expect(parsed).not.toHaveProperty("age");
   });
 
   it("rejects ages outside 18 to 100", () => {
@@ -48,7 +49,7 @@ describe("upsertProfileSchema", () => {
 
     it("accepts someone who turns exactly 18 today", () => {
       const parsed = upsertProfileSchema.parse({ ...base, fechaNacimiento: "2008-11-16" });
-      expect(parsed).toMatchObject({ birthDate: "2008-11-16", age: 18 });
+      expect(parsed).toMatchObject({ birthDate: "2008-11-16" });
     });
   });
 
@@ -56,12 +57,12 @@ describe("upsertProfileSchema", () => {
     const result = upsertProfileSchema.safeParse({ ...base, edad: 17 });
     expect(result.success).toBe(false);
     expect(result.error?.issues[0].message).toBe("Debes tener al menos 18 años.");
-    expect(upsertProfileSchema.parse({ ...base, edad: 18 })).toMatchObject({ age: 18 });
+    expect(upsertProfileSchema.safeParse({ ...base, edad: 18 }).success).toBe(true);
   });
 
   it("still accepts the legacy age from installed app versions without touching the date", () => {
     const parsed = upsertProfileSchema.parse({ ...base, edad: 28 });
-    expect(parsed).toMatchObject({ age: 28 });
+    expect(parsed).not.toHaveProperty("age");
     expect(parsed).not.toHaveProperty("birthDate");
   });
 
@@ -71,26 +72,29 @@ describe("upsertProfileSchema", () => {
     expect(parsed).not.toHaveProperty("birthDate");
   });
 
-  it("clears both fields when the birth date is explicitly null", () => {
+  it("clears the birth date when it is explicitly null", () => {
     expect(upsertProfileSchema.parse({ ...base, fechaNacimiento: null })).toMatchObject({
       birthDate: null,
-      age: null,
     });
   });
 });
 
 describe("mapProfileToResponse", () => {
-  it("prefers the age computed from the birth date over the stored one", () => {
-    const response = mapProfileToResponse({
-      id: "p",
-      userId: "u",
-      age: 18,
-      birthDate: yearsAgo(40),
-      weightKg: "80.00",
-      heightCm: 180,
-      goal: TrainingGoal.STRENGTH,
-      measurementUpdatedAt: new Date(),
-    } as AnthropometricProfileModel);
+  const profile = {
+    id: "p",
+    userId: "u",
+    weightKg: "80.00",
+    heightCm: 180,
+    goal: TrainingGoal.STRENGTH,
+    measurementUpdatedAt: new Date(),
+  } as AnthropometricProfileModel;
+
+  it("derives the age from the account birth date", () => {
+    const response = mapProfileToResponse(profile, yearsAgo(40));
     expect(response).toMatchObject({ edad: 40, fechaNacimiento: yearsAgo(40) });
+  });
+
+  it("reports no age when the account has no birth date", () => {
+    expect(mapProfileToResponse(profile, null)).toMatchObject({ edad: null, fechaNacimiento: null });
   });
 });

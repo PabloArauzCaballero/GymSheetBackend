@@ -30,7 +30,7 @@ export class StoriesPurgeRunner {
             event: "stories_purge.batch_completed",
             examined: result.examined,
             deleted: result.deleted,
-            filesRemoved: result.filesRemoved,
+            releasesQueued: result.releasesQueued,
             failed: result.failed,
           });
         }

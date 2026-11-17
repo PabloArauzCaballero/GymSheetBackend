@@ -8,6 +8,7 @@ import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter
 import { ResponseInterceptor } from '../src/common/interceptors/response.interceptor';
 import { requestIdMiddleware } from '../src/common/middleware/request-id.middleware';
 import { env } from '../src/config/env';
+import { E2E_SIGNUP_FIELDS, markEmailVerified } from './support/e2e-app';
 
 /**
  * Punto 5 del audit: chat entre socios conectados. Cubre el camino REST
@@ -55,9 +56,10 @@ describe('Chat between connections (e2e)', () => {
         email: `chat-${label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.test`,
         password,
         nombreCompleto: `Chat ${label}`,
-        acceptedTerms: true,
+        ...E2E_SIGNUP_FIELDS,
       })
       .expect(201);
+    await markEmailVerified(application, response.body.data.user.id as string);
     return {
       accessToken: response.body.data.accessToken as string,
       userId: response.body.data.user.id as string,

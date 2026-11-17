@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access --
    supertest tipa las respuestas como `any`; este ayudante solo las reenvía a las pruebas. */
 import { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { Test, TestingModuleBuilder } from '@nestjs/testing';
 import { Sequelize } from 'sequelize-typescript';
 import { json, urlencoded } from 'express';
 import request from 'supertest';
@@ -10,14 +10,28 @@ import { HttpExceptionFilter } from '../../src/common/filters/http-exception.fil
 import { ResponseInterceptor } from '../../src/common/interceptors/response.interceptor';
 import { requestIdMiddleware } from '../../src/common/middleware/request-id.middleware';
 import { env } from '../../src/config/env';
+import { LEGAL_DOCUMENTS } from '../../src/modules/legal/legal-documents';
 
 export type E2eApp = {
   app: INestApplication;
   http: Parameters<typeof request>[0];
   url: (path: string) => string;
-  register: (label: string) => Promise<{ token: string; id: string }>;
-  /** Cambia el rol en la base (la sesión se revalida contra la base en cada petición). */
-  promote: (userId: string, role: 'ADMIN' | 'SYSTEM_ADMIN' | 'COACH') => Promise<void>;
+  /**
+   * Registers a member. The email is verified directly in the database unless
+   * `verifyEmail: false`, because most suites exercise social routes, which
+   * require a verified email (the PIN flow has its own e2e spec).
+   */
+  register: (label: string, options?: { verifyEmail?: boolean }) => Promise<{ token: string; id: string }>;
+  /**
+   * Cambia el rol en la base (la sesión se revalida contra la base en cada petición).
+   * `ADMIN`/`COACH`/`FRONT_DESK` are legacy gym staff with no powers since
+   * franja 7a (ADR-0019): promote to them only to prove they are refused.
+   */
+  promote: (userId: string, role: 'ADMIN' | 'SYSTEM_ADMIN' | 'MODERATOR' | 'COACH' | 'FRONT_DESK') => Promise<void>;
+  /** Registers an account and makes it REPP's platform admin, the only operator of `admin/*`. */
+  platformAdmin: (label: string) => Promise<{ token: string; id: string }>;
+  /** A platform admin token scoped to one gym (`POST /auth/impersonate-tenant`), to operate that gym. */
+  impersonate: (platformAdminToken: string, tenantId?: string) => Promise<string>;
   /** SQL de apoyo para preparar o inspeccionar estado que la API no expone. */
   sql: (statement: string, replacements?: Record<string, unknown>) => Promise<void>;
   as: (token: string) => {
@@ -31,9 +45,35 @@ export type E2eApp = {
 
 const password = 'e2e-strong-password';
 
+/**
+ * Fields every signup must send: sex (MALE|FEMALE), an adult birth date and
+ * the terms version the client showed. Spread into each register body.
+ */
+export const E2E_SIGNUP_FIELDS = {
+  acceptedTerms: true,
+  genero: 'MALE',
+  fechaNacimiento: '1995-05-15',
+  termsVersion: LEGAL_DOCUMENTS.TERMS,
+} as const;
+
+/**
+ * Marks the account's email as verified straight in the database, the state a
+ * confirmed PIN leaves. For suites that post `/auth/register` themselves and
+ * then use social routes (`@RequiresVerifiedEmail`).
+ */
+export async function markEmailVerified(app: INestApplication, userId: string): Promise<void> {
+  await app.get(Sequelize).query(
+    'UPDATE public.usuarios SET email_verified_at = now() WHERE id = :userId AND email_verified_at IS NULL',
+    { replacements: { userId } },
+  );
+}
+
 /** Arranca la app completa contra la base de pruebas, igual que main.ts. */
-export async function bootE2eApp(): Promise<E2eApp> {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+export async function bootE2eApp(
+  /** Optional provider overrides, e.g. a stubbed outbound fetcher. */
+  configure: (builder: TestingModuleBuilder) => TestingModuleBuilder = (builder) => builder,
+): Promise<E2eApp> {
+  const moduleRef = await configure(Test.createTestingModule({ imports: [AppModule] })).compile();
   const app = moduleRef.createNestApplication({ bodyParser: false });
   app.setGlobalPrefix(env.API_PREFIX);
   app.use(requestIdMiddleware);
@@ -46,28 +86,49 @@ export async function bootE2eApp(): Promise<E2eApp> {
   const url = (path: string) => `/${env.API_PREFIX}${path}`;
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
+  const promote: E2eApp['promote'] = async (userId, role) => {
+    await app.get(Sequelize).query('UPDATE public.usuarios SET rol = :role WHERE id = :userId', {
+      replacements: { role, userId },
+    });
+  };
+  const register: E2eApp['register'] = async (label, options = {}) => {
+    // The real client path: fetch a form ticket first (SIGNUP_MIN_FILL_MS is 0 in e2e).
+    const ticketResponse = await request(http).get(url('/auth/register/ticket')).expect(200);
+    const response = await request(http)
+      .post(url('/auth/register'))
+      .send({
+        ticket: ticketResponse.body.data.ticket as string,
+        email: `${label}-${suffix}@example.test`,
+        password,
+        nombreCompleto: `E2E ${label}`,
+        ...E2E_SIGNUP_FIELDS,
+      })
+      .expect(201);
+    const token = response.body.data.accessToken as string;
+    const me = await request(http).get(url('/auth/me')).set('Authorization', `Bearer ${token}`);
+    const id = (me.body.data?.id ?? me.body.data?.usuario?.id) as string;
+    if (options.verifyEmail !== false) await markEmailVerified(app, id);
+    return { token, id };
+  };
+
   return {
     app,
     http,
     url,
-    register: async (label) => {
-      const response = await request(http)
-        .post(url('/auth/register'))
-        .send({
-          email: `${label}-${suffix}@example.test`,
-          password,
-          nombreCompleto: `E2E ${label}`,
-          acceptedTerms: true,
-        })
-        .expect(201);
-      const token = response.body.data.accessToken as string;
-      const me = await request(http).get(url('/auth/me')).set('Authorization', `Bearer ${token}`);
-      return { token, id: (me.body.data?.id ?? me.body.data?.usuario?.id) as string };
+    register,
+    promote,
+    platformAdmin: async (label) => {
+      const account = await register(label);
+      await promote(account.id, 'SYSTEM_ADMIN');
+      return account;
     },
-    promote: async (userId, role) => {
-      await app.get(Sequelize).query('UPDATE public.usuarios SET rol = :role WHERE id = :userId', {
-        replacements: { role, userId },
-      });
+    impersonate: async (platformAdminToken, tenantId = env.DEFAULT_TENANT_ID) => {
+      const response = await request(http)
+        .post(url('/auth/impersonate-tenant'))
+        .set('Authorization', `Bearer ${platformAdminToken}`)
+        .send({ tenantId })
+        .expect(201);
+      return response.body.data.accessToken as string;
     },
     sql: async (statement, replacements = {}) => {
       await app.get(Sequelize).query(statement, { replacements });

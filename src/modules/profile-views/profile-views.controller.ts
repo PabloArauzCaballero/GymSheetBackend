@@ -9,11 +9,13 @@ import {
   profileViewersQuerySchema,
   recordProfileViewSchema,
 } from "./profile-views.schemas";
+import { RequiresVerifiedEmail } from "../../common/decorators/requires-verified-email.decorator";
 
 @Controller("me/profile-views")
 export class ProfileViewsController {
   constructor(private readonly service: ProfileViewsService) {}
 
+  @RequiresVerifiedEmail()
   @Post()
   async record(
     @CurrentUser() user: AuthenticatedUser,

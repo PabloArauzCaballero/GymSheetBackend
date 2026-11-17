@@ -5,9 +5,9 @@ import { ageFromBirthDate } from "./birth-date";
 export type AnthropometricProfileResponse = {
   id: string;
   usuarioId: string;
-  /** Calculada desde `fechaNacimiento` si existe; si no, la edad guardada. */
+  /** Derived from the account birth date; null when the account has none. */
   edad: number | null;
-  /** `YYYY-MM-DD` o nulo. */
+  /** `YYYY-MM-DD` or null, read from `usuarios.fecha_nacimiento`. */
   fechaNacimiento: string | null;
   pesoKg: number;
   estaturaCm: number;
@@ -15,15 +15,15 @@ export type AnthropometricProfileResponse = {
   fechaActualizacion: Date;
 };
 
-/** Maps an ORM profile to the established v1 response without exposing internals. */
+/** Maps an ORM profile (with its account birth date) to the v1 response without exposing internals. */
 export function mapProfileToResponse(
   profile: AnthropometricProfileModel,
+  birthDate: string | null,
 ): AnthropometricProfileResponse {
-  const birthDate = profile.birthDate ?? null;
   return {
     id: profile.id,
     usuarioId: profile.userId,
-    edad: birthDate ? ageFromBirthDate(birthDate) : profile.age,
+    edad: birthDate ? ageFromBirthDate(birthDate) : null,
     fechaNacimiento: birthDate,
     pesoKg: Number(profile.weightKg),
     estaturaCm: profile.heightCm,

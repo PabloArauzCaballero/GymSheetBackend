@@ -1,5 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { createHmac } from 'node:crypto';
+import { withIpHashSecret } from '../../common/privacy/testing/with-ip-hash-secret';
 import { NotificationChannel, RefreshTokenRevokedReason } from '../../common/enums/domain.enums';
 import { PasswordResetService } from './password-reset.service';
 
@@ -39,6 +41,7 @@ function buildService(options: {
   const users = {
     findActiveByEmail: jest.fn().mockResolvedValue(options.user),
     updatePasswordHash: jest.fn().mockResolvedValue(undefined),
+    invalidateIssuedSessions: jest.fn().mockResolvedValue(undefined),
   };
   const notifications = { enqueueDirectMessage: jest.fn().mockResolvedValue(true) };
   const refreshTokens = { revokeAllForUser: jest.fn().mockResolvedValue([0]) };
@@ -54,6 +57,7 @@ function buildService(options: {
     notifications as never,
     refreshTokens as never,
     sequelize as never,
+    { forUser: jest.fn().mockResolvedValue('Top Fitness') } as never,
   );
   return { service, tokens, users, notifications, refreshTokens, created };
 }
@@ -69,6 +73,25 @@ describe('PasswordResetService', () => {
       // de una cuenta real, que es exactamente el punto.
       expect(tokens.create).not.toHaveBeenCalled();
       expect(notifications.enqueueDirectMessage).not.toHaveBeenCalled();
+    });
+
+    it('stores only the keyed hash of the requesting IP, never the raw address', async () => {
+      const secret = 'reset-ip-hash-secret-0123456789abcdef';
+      const { service, created } = buildService({ user: { id: 'user-1' } });
+
+      await withIpHashSecret(secret, () => service.requestPin('athlete@gymsheet.local', '203.0.113.9'));
+
+      const expected = createHmac('sha256', secret).update('203.0.113.9').digest('hex');
+      expect(created[0]).toMatchObject({ ipHmac: expected });
+      expect(JSON.stringify(created[0])).not.toContain('203.0.113.9');
+    });
+
+    it('stores no IP evidence when IP_HASH_SECRET is not configured', async () => {
+      const { service, created } = buildService({ user: { id: 'user-1' } });
+
+      await withIpHashSecret(undefined, () => service.requestPin('athlete@gymsheet.local', '203.0.113.9'));
+
+      expect(created[0]).toMatchObject({ ipHmac: null });
     });
 
     it('stores the PIN hashed and emails the code through the messaging port', async () => {
@@ -124,11 +147,18 @@ describe('PasswordResetService', () => {
 
     it('sets the new password and burns the code', async () => {
       const token = tokenFor('123456');
-      const { service, users } = buildService({ user: { id: 'user-1' }, existingToken: token });
+      const { service, users, notifications } = buildService({ user: { id: 'user-1' }, existingToken: token });
 
       await service.confirm('athlete@gymsheet.local', '123456', 'ClaveNueva2026!');
 
+      // The notice signs with the person's gym (or REPP), never the old product name.
+      expect(notifications.enqueueDirectMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'Tu contraseña de Top Fitness ha cambiado' }),
+      );
+
       expect(users.updatePasswordHash).toHaveBeenCalledTimes(1);
+      // The access tokens already issued end too, not only the refresh tokens.
+      expect(users.invalidateIssuedSessions).toHaveBeenCalledWith('user-1', expect.anything());
       const [, passwordHash] = users.updatePasswordHash.mock.calls[0] as [string, string];
       await expect(bcrypt.compare('ClaveNueva2026!', passwordHash)).resolves.toBe(true);
       expect(token.update).toHaveBeenCalledWith(

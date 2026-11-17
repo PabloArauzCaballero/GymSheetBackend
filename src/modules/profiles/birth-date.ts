@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /** The whole app is 18+ (product decision F1.11). */
 export const MIN_PROFILE_AGE = 18;
 export const MAX_PROFILE_AGE = 100;
@@ -27,3 +29,13 @@ export function ageFromBirthDate(birthDate: string, today: Date = new Date()): n
   if (birthdayPending) age -= 1;
   return age;
 }
+
+export const MIN_AGE_MESSAGE = `Debes tener al menos ${MIN_PROFILE_AGE} años.`;
+export const MAX_AGE_MESSAGE = `La edad no puede superar los ${MAX_PROFILE_AGE} años.`;
+
+/** `YYYY-MM-DD` birth date of someone aged 18 to 100 today (shared by signup and profile). */
+export const adultBirthDateSchema = z
+  .string({ required_error: "Indica tu fecha de nacimiento." })
+  .refine(isCalendarDate, "fechaNacimiento debe ser una fecha válida YYYY-MM-DD.")
+  .refine((value) => ageFromBirthDate(value) >= MIN_PROFILE_AGE, MIN_AGE_MESSAGE)
+  .refine((value) => ageFromBirthDate(value) <= MAX_PROFILE_AGE, MAX_AGE_MESSAGE);

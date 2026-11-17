@@ -1,6 +1,7 @@
 import { SupportTrainingService } from '../src/modules/programs/support-training.service';
 import { ProgramWeekCloseService } from '../src/modules/programs/program-week-close.service';
 import { bootE2eApp, E2eApp } from './support/e2e-app';
+import { legacyGymStaff } from './support/legacy-staff';
 
 /** RF-B3 · soporte: ver el entrenamiento de un socio y recalcular una semana sin bajar puntos. */
 describe('Support training view (e2e)', () => {
@@ -19,10 +20,9 @@ describe('Support training view (e2e)', () => {
   beforeAll(async () => {
     e2e = await bootE2eApp();
     member = await e2e.register('sup-member');
-    sys = await e2e.register('sup-sys');
-    gymAdmin = await e2e.register('sup-admin');
-    await e2e.promote(sys.id, 'SYSTEM_ADMIN');
-    await e2e.promote(gymAdmin.id, 'ADMIN');
+    sys = await e2e.platformAdmin('sup-sys');
+    // Holds both support grants: they used to open the view to the gym; they open nothing since franja 7a.
+    gymAdmin = await legacyGymStaff(e2e, 'sup-admin', 'ADMIN', { keys: ['support:read', 'support:respond'] });
     const list = await e2e.as(member.token).get(`/exercises?pageSize=1&page=${1 + Math.floor(Math.random() * 1000)}`).expect(200);
     g1 = list.body.data.items[0].id;
     const r = await e2e
@@ -44,8 +44,9 @@ describe('Support training view (e2e)', () => {
     await e2e.as(member.token).get(`/admin/support/users/${member.id}/training`).expect(403);
   });
 
-  it('un ADMIN de gimnasio sin el permiso support:read tampoco', async () => {
+  it('un ADMIN de gimnasio tampoco, ni con los permisos support:read y support:respond (franja 7a)', async () => {
     await e2e.as(gymAdmin.token).get(`/admin/support/users/${member.id}/training`).expect(403);
+    await e2e.as(gymAdmin.token).post(`/admin/support/programs/${programId}/recompute-week`).send({ semana: 1 }).expect(403);
   });
 
   it('SYSTEM_ADMIN ve programas, semanas, bonos, invitaciones y últimas sesiones', async () => {

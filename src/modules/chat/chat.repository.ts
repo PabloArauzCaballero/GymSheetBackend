@@ -1,6 +1,7 @@
 import { chatRequestFingerprint } from "./chat-request-fingerprint";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
+import { hasOpenReportSql } from "../../common/moderation/open-report.sql";
 import { literal, Op, QueryTypes, Transaction, type WhereOptions } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { ConversationParticipantModel } from "./conversation-participant.model";
@@ -14,7 +15,12 @@ import { replyPreviewOf, type MessageExtras, type MessageReaction } from "./chat
 
 export const REPLY_UNAVAILABLE_MESSAGE = "El mensaje al que respondes ya no está disponible.";
 
-export type SystemConversationKind = "CORPORATE" | "TENANT_ADMIN";
+/**
+ * The only system chat left is REPP's support (`CORPORATE`). The gym admin one
+ * (`TENANT_ADMIN`) is neither created nor listed since franja 7a (ADR-0019);
+ * the value stays allowed by the column CHECK until franja 7d.
+ */
+export type SystemConversationKind = "CORPORATE";
 
 export type MessageCreateFields = {
   type: MessageType;
@@ -88,6 +94,8 @@ export interface TrainingInviteConversationEvent {
 }
 
 /** Aviso de sistema «X activó/desactivó los mensajes temporales». */
+export type PurgedChatMedia = { id: string; mediaProvider: string | null; mediaKey: string | null };
+
 export interface DisappearingTimerEvent {
   readonly id: string;
   readonly conversationId: string;
@@ -830,8 +838,8 @@ export class ChatRepository {
             ORDER BY item.created_at DESC, item.id DESC LIMIT 1
          ) last_msg ON true
         WHERE c.revoked_at IS NULL
+          AND c.system_kind IS DISTINCT FROM 'TENANT_ADMIN'
         ORDER BY (c.system_kind IS NULL) ASC,
-                 CASE c.system_kind WHEN 'CORPORATE' THEN 0 WHEN 'TENANT_ADMIN' THEN 1 ELSE 2 END,
                  COALESCE(last_msg.created_at, c.created_at) DESC`,
       { type: QueryTypes.SELECT, replacements: { userId } },
     );
@@ -925,26 +933,24 @@ export class ChatRepository {
 
   /**
    * Borra un lote de mensajes temporales ya caducados. La lectura ya los oculta
-   * desde `expires_at`; esto es la higiene posterior. Un mensaje denunciado se
-   * conserva para que moderación pueda revisarlo.
+   * desde `expires_at`; esto es la higiene posterior. Un mensaje con una
+   * denuncia ABIERTA se conserva para que moderación lo revise; resuelta, se
+   * purga como los demás (la copia de evidencia vive en moderación).
+   * Returns each deleted message's stored file so the caller releases it in `transaction`.
    */
-  async purgeExpiredMessages(batchSize: number): Promise<number> {
-    const rows = await this.sequelize.query<{ id: string }>(
+  async purgeExpiredMessages(batchSize: number, transaction: Transaction): Promise<PurgedChatMedia[]> {
+    return this.sequelize.query<PurgedChatMedia>(
       `DELETE FROM chat.messages
         WHERE id IN (
           SELECT m.id FROM chat.messages m
            WHERE m.expires_at IS NOT NULL AND m.expires_at <= now()
-             AND NOT EXISTS (
-               SELECT 1 FROM moderation.reports r
-                WHERE r.target_kind = 'CHAT_MESSAGE' AND r.target_id = m.id
-             )
+             AND NOT ${hasOpenReportSql("CHAT_MESSAGE", "m.id")}
            ORDER BY m.expires_at
            LIMIT :batchSize
         )
-        RETURNING id`,
-      { type: QueryTypes.SELECT, replacements: { batchSize } },
+        RETURNING id, media_provider AS "mediaProvider", media_key AS "mediaKey"`,
+      { type: QueryTypes.SELECT, replacements: { batchSize }, transaction },
     );
-    return rows.length;
   }
 
   /** IDs de todas las conversaciones donde participa — para difundir presencia. */

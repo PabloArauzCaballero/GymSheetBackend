@@ -10,9 +10,11 @@ export class ConversationModel extends Model {
   declare id: string;
 
   /**
-   * `null` para un chat normal entre socios. `CORPORATE`/`TENANT_ADMIN` fija
-   * la conversación arriba de la lista y marca al otro lado como el único que
-   * puede escribir (ver `ConversationParticipantModel.canWrite`).
+   * `null` for a regular chat between members. `CORPORATE` pins the
+   * conversation at the top of the list and marks the other side as the only
+   * one that can write (see `ConversationParticipantModel.canWrite`).
+   * `TENANT_ADMIN` rows are legacy, revoked by migration 202611200301 and
+   * never listed (ADR-0019); the value goes away in franja 7d.
    */
   @Column({ type: DataType.STRING(20), allowNull: true, field: "system_kind" })
   declare systemKind: "CORPORATE" | "TENANT_ADMIN" | null;

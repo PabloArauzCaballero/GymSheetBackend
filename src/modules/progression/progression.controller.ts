@@ -91,13 +91,10 @@ export class ProgressionController {
 }
 
 /**
- * Catálogo editable por el gimnasio.
- *
- * Todavía no hay pantalla que consuma esto; el encargo era dejarlo hecho y
- * sembrado. Está completo a propósito —altas, ediciones y retiradas— para que
- * la interfaz de administración se construya sin volver aquí.
+ * Progression catalog (levels, badges, prizes, redemption), operated by REPP
+ * (ADR-0019): a gym's catalog is edited by a `SYSTEM_ADMIN` impersonating it.
  */
-@Roles(UserRole.ADMIN)
+@Roles(UserRole.SYSTEM_ADMIN)
 @Controller("admin/progression")
 export class ProgressionAdminController {
   constructor(private readonly adminService: ProgressionAdminService) {}

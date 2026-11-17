@@ -6,10 +6,9 @@ import {
   MediaStorageProvider,
   MediaUploadInput,
   MediaUploadTarget,
-  mediaTargetPrefix,
+  mediaObjectKey,
   StoredAsset,
 } from "../media-storage.port";
-import { resolveMediaExtension } from "./mime-extension";
 
 export interface LocalStorageConfig {
   /** Directorio raíz donde se escriben los binarios. */
@@ -36,7 +35,6 @@ export interface LocalStorageConfig {
  */
 export class LocalStorageAdapter implements MediaStorageProvider {
   readonly name = "local" as const;
-  readonly immutable = false;
   private readonly root: string;
   private readonly publicBaseUrl: string;
 
@@ -50,8 +48,7 @@ export class LocalStorageAdapter implements MediaStorageProvider {
     target: MediaUploadTarget,
   ): Promise<StoredAsset> {
     const checksumSha256 = createHash("sha256").update(input.buffer).digest("hex");
-    const extension = resolveMediaExtension(input.mimeType);
-    const key = `${mediaTargetPrefix(target)}/${checksumSha256}${extension}`;
+    const key = mediaObjectKey(target, checksumSha256, input.mimeType);
     const absolutePath = this.resolveWithinRoot(key);
 
     const reused = existsSync(absolutePath);
@@ -74,6 +71,11 @@ export class LocalStorageAdapter implements MediaStorageProvider {
       checksumSha256,
       reused,
     };
+  }
+
+  /** A local disk is development storage: every key inside the root is deletable. */
+  canRemove(): boolean {
+    return true;
   }
 
   async remove(key: string): Promise<void> {

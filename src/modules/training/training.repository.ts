@@ -21,7 +21,6 @@ import { authorPhotoSql, coverSql } from './routine-catalog.repository';
 import { ExerciseStill } from './routine-stills';
 import type { RoutineAuthor } from './training.mapper';
 import {
-  AssignRoutineInput,
   CreateRoutineInput,
   RoutineExerciseInput,
   UpdateRoutineExerciseInput,
@@ -357,48 +356,6 @@ export class TrainingRepository {
     await this.assignmentModel.update({ status }, { where: { id }, transaction });
   }
 
-  createAssignment(
-    routineId: string,
-    assignedById: string,
-    input: AssignRoutineInput,
-    transaction?: Transaction,
-  ): Promise<RoutineAssignmentModel> {
-    return this.assignmentModel.create(
-      {
-        routineId,
-        clientUserId: input.clientUserId,
-        assignedByUserId: assignedById,
-        scheduledFor: input.scheduledFor,
-        weekdays: input.weekdays,
-        note: input.note,
-      },
-      { transaction },
-    );
-  }
-
-  /** D15: una asignación del entrenador queda como compartida aceptada (idempotente). */
-  async ensureCoachShare(
-    routineId: string,
-    ownerId: string,
-    inviteeId: string,
-    transaction?: Transaction,
-  ): Promise<void> {
-    const existing = await this.shareModel.findOne({
-      where: { routineId, inviteeId, status: { [Op.in]: ['PENDING', 'ACCEPTED'] } },
-      transaction,
-    });
-    if (existing) {
-      if (existing.status === 'PENDING') {
-        await existing.update({ status: 'ACCEPTED', respondedAt: new Date() }, { transaction });
-      }
-      return;
-    }
-    await this.shareModel.create(
-      { routineId, ownerId, inviteeId, status: 'ACCEPTED', origin: 'ENTRENADOR', respondedAt: new Date() },
-      { transaction },
-    );
-  }
-
   findAssignmentById(id: string): Promise<RoutineAssignmentModel | null> {
     return this.assignmentModel.findByPk(id, {
       include: [routineInclude, clientInclude],
@@ -411,17 +368,5 @@ export class TrainingRepository {
       include: [routineInclude, clientInclude],
       order: [['createdAt', 'DESC']],
     });
-  }
-
-  listAssignmentsByCoach(assignedByUserId: string): Promise<RoutineAssignmentModel[]> {
-    return this.assignmentModel.findAll({
-      where: { assignedByUserId },
-      include: [routineInclude, clientInclude],
-      order: [['createdAt', 'DESC']],
-    });
-  }
-
-  findClientById(clientUserId: string): Promise<UserModel | null> {
-    return this.userModel.findByPk(clientUserId);
   }
 }

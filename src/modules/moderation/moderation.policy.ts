@@ -6,6 +6,9 @@
  * moderación discute la escalera, no el SQL.
  */
 
+import { UserRole } from "../../common/enums/domain.enums";
+import { canonicalEmail } from "../../common/privacy/email-hash";
+
 /** Qué se puede reportar. */
 export const ModerationTargetKind = {
   STORY: "STORY",
@@ -18,6 +21,10 @@ export const ModerationTargetKind = {
   USER: "USER",
   /** Enlace de música (Spotify) público de la comunidad. */
   MUSIC_PLAYLIST: "MUSIC_PLAYLIST",
+  /** A public listing of the marketplace (`directory.entity_plans`, ADR-0022). */
+  BUSINESS_LISTING: "BUSINESS_LISTING",
+  /** A public business profile (`directory.entities`, ADR-0022). */
+  BUSINESS_PROFILE: "BUSINESS_PROFILE",
 } as const;
 export type ModerationTargetKindValue =
   (typeof ModerationTargetKind)[keyof typeof ModerationTargetKind];
@@ -55,6 +62,10 @@ export const ModerationResolution = {
   USUARIO_ADVERTIDO: "USUARIO_ADVERTIDO",
   USUARIO_SUSPENDIDO: "USUARIO_SUSPENDIDO",
   USUARIO_EXPULSADO: "USUARIO_EXPULSADO",
+  /** A moderator confirmed the account belongs to a minor: it is closed, not sanctioned. */
+  MENOR_CONFIRMADO: "MENOR_CONFIRMADO",
+  /** The business behind a listing or profile was suspended (ADR-0022): its whole marketplace presence goes. */
+  NEGOCIO_SUSPENDIDO: "NEGOCIO_SUSPENDIDO",
 } as const;
 export type ModerationResolutionValue =
   (typeof ModerationResolution)[keyof typeof ModerationResolution];
@@ -116,8 +127,20 @@ export function severityOf(reason: ModerationReasonValue): number {
  */
 export const AUTO_HIDE_DISTINCT_REPORTERS = 3;
 
-/** Cuánto pesa una sanción antes de caducar: un año, como en Facebook. */
+/**
+ * Counting window of a sanction: one year, like Facebook. The single source of
+ * this number (the legal texts cite it). A sanction row is NEVER deleted: after
+ * this window it stays as history (`expires_at` in the past) and only stops
+ * counting for the ladder.
+ */
 export const STRIKE_LIFETIME_DAYS = 365;
+
+/**
+ * How long the evidence of a report outlives the closing of the last report on
+ * it: the chat message copy and the content an account closure kept because
+ * it was reported. Shared so both promises read the same number.
+ */
+export const REPORT_EVIDENCE_RETENTION_DAYS = 180;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -208,6 +231,44 @@ export function isHideableTarget(kind: ModerationTargetKindValue): boolean {
     kind === ModerationTargetKind.EXERCISE ||
     kind === ModerationTargetKind.COMMENT ||
     kind === ModerationTargetKind.REEL ||
-    kind === ModerationTargetKind.MUSIC_PLAYLIST
+    kind === ModerationTargetKind.MUSIC_PLAYLIST ||
+    kind === ModerationTargetKind.BUSINESS_LISTING
   );
+}
+
+/**
+ * Marketplace targets (ADR-0022). Their author is a business account: the
+ * person ladder (strikes, minors) does not apply; REPP hides the listing or
+ * suspends the business through its KYC state machine.
+ */
+export function isBusinessTarget(kind: ModerationTargetKindValue): boolean {
+  return kind === ModerationTargetKind.BUSINESS_LISTING || kind === ModerationTargetKind.BUSINESS_PROFILE;
+}
+
+/** Accounts of the platform itself (ADR-0018): the REPP moderation team and the platform admin. */
+export const PLATFORM_ACCOUNT_ROLES: readonly string[] = [UserRole.MODERATOR, UserRole.SYSTEM_ADMIN];
+
+export type CaseRefusalCode = "MODERATION_SELF_CASE" | "MODERATION_PEER_CASE";
+
+/**
+ * Who may decide on a case about an account (ADR-0018 §8). Nobody decides on
+ * a case about their own account, and a case about a platform account
+ * (MODERATOR or SYSTEM_ADMIN) is decided only by a SYSTEM_ADMIN: otherwise a
+ * moderator could clear itself, or strike, expel or erase a peer or the
+ * administrator that oversees it. `reportedRole` is null for an account that
+ * no longer exists, which is never a platform account.
+ */
+export function caseRefusalFor(
+  actor: { id: string; role: UserRole; email?: string },
+  reported: { id: string; role: string | null; email?: string | null },
+): CaseRefusalCode | null {
+  if (reported.id === actor.id) return "MODERATION_SELF_CASE";
+  // A business registered with the moderator's own mailbox is the moderator's own (ADR-0021 §8).
+  if (reported.role === UserRole.BUSINESS && actor.email && reported.email && canonicalEmail(actor.email) === canonicalEmail(reported.email)) {
+    return "MODERATION_SELF_CASE";
+  }
+  if (reported.role !== null && PLATFORM_ACCOUNT_ROLES.includes(reported.role) && actor.role !== UserRole.SYSTEM_ADMIN) {
+    return "MODERATION_PEER_CASE";
+  }
+  return null;
 }

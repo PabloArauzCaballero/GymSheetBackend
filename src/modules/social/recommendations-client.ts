@@ -1,5 +1,6 @@
 import { Injectable, UnprocessableEntityException } from "@nestjs/common";
 import { env } from "../../config/env";
+import type { DiscoveryIntent } from "./social.schemas";
 
 export interface PeopleRankRequest {
   version: 1;
@@ -32,7 +33,7 @@ export interface PeopleRankRequest {
     id: string;
     age: number;
     gender: string;
-    intents: string[];
+    intents: DiscoveryIntent[];
     interests: string[];
     goals: string[];
     availability: string[];
