@@ -133,6 +133,20 @@ describe('marketplace orders paid by QR or cash, confirmed by the business (e2e,
     expect(history.count).toBe(1);
   });
 
+  it('«Mis compras»: the buyer lists their orders newest first and pages with the cursor', async () => {
+    const all = (await h.e2e.as(buyer.token).get('/directory/payments/orders/my-orders?limit=50').expect(200)).body.data;
+    expect(all.items.length).toBeGreaterThanOrEqual(2);
+    const created = all.items.map((item: { createdAt: string }) => item.createdAt);
+    expect([...created].sort().reverse()).toEqual(created);
+    const first = (await h.e2e.as(buyer.token).get('/directory/payments/orders/my-orders?limit=1').expect(200)).body.data;
+    expect(first.items).toHaveLength(1);
+    expect(first.nextCursor).toEqual(expect.any(String));
+    const second = (await h.e2e.as(buyer.token).get(`/directory/payments/orders/my-orders?limit=1&cursor=${encodeURIComponent(first.nextCursor)}`).expect(200)).body.data;
+    expect(second.items[0].id).toBe(all.items[1].id);
+    const others = (await h.e2e.as(stranger.token).get('/directory/payments/orders/my-orders?limit=50').expect(200)).body.data;
+    expect(others.items).toEqual([]);
+  });
+
   it('stock: reserved at creation under a lock, 409 when exhausted, released on cancel and reject, consumed on confirm', async () => {
     const productId = await productOf(h, seller, 3);
     const first = await order(h, buyer.token, { listingId: productId, quantity: 2 });
