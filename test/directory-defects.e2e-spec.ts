@@ -105,7 +105,7 @@ describe('directory defects (e2e, franja 8a)', () => {
     await e2e.as(stranger.token).del(`/directory/reviews/${reviewId}`).expect(404);
   });
 
-  it('D4/D5: public plan and payment data come mapped, without the tax id nor internal fields', async () => {
+  it('D4/D5: public plans come mapped without internal fields; the payment data is not public', async () => {
     const owner = await e2e.register('d45-owner');
     const entityId = await insertEntity({ userId: owner.id });
     const planId = await insertPlan(entityId);
@@ -115,10 +115,8 @@ describe('directory defects (e2e, franja 8a)', () => {
       { entityId },
     );
     const http = e2e.as('');
-    const config = await http.get(`/public/directory/entities/${entityId}/payment-config`).expect(200);
-    expect(config.body.data).toMatchObject({ bankName: 'Banco Union', accountNumber: '1000-2000-3000' });
-    expect(config.body.data).not.toHaveProperty('taxId');
-    expect(config.body.data).not.toHaveProperty('entityId');
+    // Franja 8d (ADR-0024): the payment data is not public at all; only the buyer of an open order reads it.
+    await http.get(`/public/directory/entities/${entityId}/payment-config`).expect(404);
 
     const plan = await http.get(`/public/directory/plans/${planId}`).expect(200);
     expect(plan.body.data.metadata).toEqual({});
@@ -137,7 +135,7 @@ describe('directory defects (e2e, franja 8a)', () => {
     await http.get(`/public/directory/plans/${planId}`).expect(404);
     await http.get(`/public/directory/entities/${entityId}/plans`).expect(404);
     const buyer = await e2e.register('d7-buyer');
-    await e2e.as(buyer.token).post('/directory/payments/orders').send({ planId }).expect(404);
+    await e2e.as(buyer.token).post('/directory/payments/orders').send({ listingId: planId }).expect(404);
   });
 
   it('D8: a plan priced without a currency is in BOB', async () => {

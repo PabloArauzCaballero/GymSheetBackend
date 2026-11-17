@@ -165,6 +165,11 @@ describe('marketplace cases (ADR-0022)', () => {
     expect(isBusinessTarget(ModerationTargetKind.REEL)).toBe(false);
   });
 
+  it('a disputed order is a marketplace target that is never hidden (ADR-0024)', () => {
+    expect(isBusinessTarget(ModerationTargetKind.PAYMENT_ORDER)).toBe(true);
+    expect(isHideableTarget(ModerationTargetKind.PAYMENT_ORDER)).toBe(false);
+  });
+
   it('the business reads a suspension reason that fits the report', () => {
     expect(businessSuspensionReasonFor('PERFIL_FALSO')).toBe('IMPERSONATION');
     expect(businessSuspensionReasonFor('DROGAS')).toBe('PROHIBITED_ACTIVITY');

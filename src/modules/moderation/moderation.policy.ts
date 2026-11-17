@@ -25,6 +25,8 @@ export const ModerationTargetKind = {
   BUSINESS_LISTING: "BUSINESS_LISTING",
   /** A public business profile (`directory.entities`, ADR-0022). */
   BUSINESS_PROFILE: "BUSINESS_PROFILE",
+  /** A buyer's dispute about one of its orders (`directory.payment_orders`, ADR-0024). */
+  PAYMENT_ORDER: "PAYMENT_ORDER",
 } as const;
 export type ModerationTargetKindValue =
   (typeof ModerationTargetKind)[keyof typeof ModerationTargetKind];
@@ -237,12 +239,18 @@ export function isHideableTarget(kind: ModerationTargetKindValue): boolean {
 }
 
 /**
- * Marketplace targets (ADR-0022). Their author is a business account: the
- * person ladder (strikes, minors) does not apply; REPP hides the listing or
- * suspends the business through its KYC state machine.
+ * Marketplace targets (ADR-0022, ADR-0024). Their author is a business
+ * account: the person ladder (strikes, minors) does not apply; REPP hides the
+ * listing or suspends the business through its KYC state machine. An order
+ * is never hidden and REPP never decides its payment: a dispute can only end
+ * in suspending the business (no refunds by REPP).
  */
 export function isBusinessTarget(kind: ModerationTargetKindValue): boolean {
-  return kind === ModerationTargetKind.BUSINESS_LISTING || kind === ModerationTargetKind.BUSINESS_PROFILE;
+  return (
+    kind === ModerationTargetKind.BUSINESS_LISTING ||
+    kind === ModerationTargetKind.BUSINESS_PROFILE ||
+    kind === ModerationTargetKind.PAYMENT_ORDER
+  );
 }
 
 /** Accounts of the platform itself (ADR-0018): the REPP moderation team and the platform admin. */

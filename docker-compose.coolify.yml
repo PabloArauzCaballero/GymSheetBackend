@@ -116,6 +116,9 @@ x-app-environment: &app-environment
   REMINDER_SCAN_INTERVAL_MS: ${REMINDER_SCAN_INTERVAL_MS:-3600000}
   STORIES_PURGE_INTERVAL_MS: ${STORIES_PURGE_INTERVAL_MS:-3600000}
   STORIES_PURGE_BATCH_SIZE: ${STORIES_PURGE_BATCH_SIZE:-200}
+  # Marketplace orders (ADR-0024): payment deadlines of an unpaid order, in hours.
+  ORDER_PAYMENT_TTL_HOURS: ${ORDER_PAYMENT_TTL_HOURS:-24}
+  ORDER_CASH_TTL_HOURS: ${ORDER_CASH_TTL_HOURS:-72}
   NOTIFICATION_DELIVERY_PROVIDER: ${NOTIFICATION_DELIVERY_PROVIDER:-IN_APP}
   NOTIFICATION_GATEWAY_URL: ${NOTIFICATION_GATEWAY_URL:-}
   NOTIFICATION_GATEWAY_SECRET: ${NOTIFICATION_GATEWAY_SECRET:-}
@@ -663,6 +666,14 @@ services:
   worker-privacy-retention:
     <<: *worker-service
     command: ['node', 'dist/workers/privacy-retention.worker.js']
+
+  # Orders of the marketplace (ADR-0024): always on, like the privacy workers. It keeps
+  # promises made to buyers (an unpaid order expires and frees its stock at the deadline;
+  # the unpaid orders of a suspended seller are cancelled with "no pagues") and reminds
+  # the business of receipts waiting for its decision.
+  worker-orders-maintenance:
+    <<: *worker-service
+    command: ['node', 'dist/workers/orders-maintenance.worker.js']
 
   # Workers opcionales. Apagados por defecto: cada uno es un proceso Node completo (~200 MB
   # con el runtime de Nest dentro) y encenderlos a ciegas puede dejar

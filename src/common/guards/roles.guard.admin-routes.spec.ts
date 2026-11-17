@@ -14,12 +14,11 @@ import { RolesGuard } from './roles.guard';
  * `ADMIN`/`FRONT_DESK`/`COACH` is refused by the guard itself, and the next
  * route someone writes is checked here without being listed by hand.
  *
- * `admin/directory` is the one exception: it has no role on purpose, because
- * a listing's owner may be any member; the service lets the owner or a
- * `SYSTEM_ADMIN` in and answers 404 to everyone else.
+ * There is no exception any more: the owner-gated `admin/directory` console
+ * was removed in franja 8d (ADR-0024), and a business manages its listing and
+ * its orders under `business/me/*`.
  */
 const PLATFORM_ROLES = new Set<UserRole>([UserRole.SYSTEM_ADMIN, UserRole.MODERATOR]);
-const OWNER_GATED_PREFIXES = ['admin/directory'];
 const LEGACY_STAFF = [UserRole.ADMIN, UserRole.FRONT_DESK, UserRole.COACH, UserRole.EXTERNAL_TRAINER];
 
 type AdminRoute = { name: string; controller: Type; handler: (...args: unknown[]) => unknown };
@@ -41,7 +40,6 @@ async function collectAdminRoutes(): Promise<AdminRoute[]> {
       const controller = candidate as Type;
       const path: unknown = Reflect.getMetadata(PATH_METADATA, controller);
       if (typeof path !== 'string' || !path.startsWith('admin/')) continue;
-      if (OWNER_GATED_PREFIXES.some((prefix) => path.startsWith(prefix))) continue;
       const prototype = controller.prototype as Record<string, unknown>;
       for (const key of Object.getOwnPropertyNames(prototype)) {
         const handler = prototype[key];

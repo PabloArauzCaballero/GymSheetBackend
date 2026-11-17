@@ -68,6 +68,16 @@ const BUSINESS_REACHABLE: string[] = [
   'POST business/me/listings/:id/pause',
   'POST business/me/listings/:id/resume',
   'POST business/me/locations',
+  // Orders inbox and payment data of the business (ADR-0024, franja 8d).
+  'GET business/me/orders',
+  'GET business/me/orders/:id',
+  'GET business/me/orders/:id/receipt',
+  'POST business/me/orders/:id/confirm',
+  'POST business/me/orders/:id/reject',
+  'GET business/me/payment-config',
+  'GET business/me/payment-config/qr',
+  'PUT business/me/payment-config',
+  'PUT business/me/payment-config/qr',
 ];
 
 type Route = { method: string; path: string; controller: Type; handler: object };

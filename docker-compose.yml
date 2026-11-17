@@ -77,6 +77,9 @@ x-app-environment: &app-environment
   # es el SHA-256 del contenido, así que se comparte entre usuarios).
   STORIES_PURGE_INTERVAL_MS: ${STORIES_PURGE_INTERVAL_MS:-3600000}
   STORIES_PURGE_BATCH_SIZE: ${STORIES_PURGE_BATCH_SIZE:-200}
+  # Marketplace orders (ADR-0024): payment deadlines of an unpaid order, in hours.
+  ORDER_PAYMENT_TTL_HOURS: ${ORDER_PAYMENT_TTL_HOURS:-24}
+  ORDER_CASH_TTL_HOURS: ${ORDER_CASH_TTL_HOURS:-72}
   CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
   CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
   CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
@@ -311,6 +314,29 @@ services:
   worker-programs-week-close:
     <<: [*app-image, *app-security, *worker-runtime]
     command: ["node", "dist/workers/program-week-close.worker.js"]
+    environment:
+      <<: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+          cpus: "0.5"
+        reservations:
+          memory: 128m
+    stop_grace_period: 45s
+
+  # Marketplace orders (ADR-0024): expires unpaid orders past their deadline and
+  # frees their stock, cancels the unpaid orders of a seller that stopped being
+  # public ("no pagues") and reminds the business of receipts waiting at 24 h
+  # and 48 h. Deletes no binaries, so it needs no media volume.
+  worker-orders-maintenance:
+    <<: [*app-image, *app-security, *worker-runtime]
+    command: ["node", "dist/workers/orders-maintenance.worker.js"]
     environment:
       <<: *app-environment
     depends_on:

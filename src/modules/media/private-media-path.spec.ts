@@ -9,6 +9,9 @@ describe("isPrivateStoredMediaPath", () => {
     "/stories/legacy-photo.jpg",
     "/business/1b6f0d1e-0000-4000-8000-000000000001/kyc/2c6f0d1e-0000-4000-8000-000000000002/3d6f0d1e-0000-4000-8000-000000000003.bin",
     "/business/a/kyc",
+    "/orders/1b6f0d1e-0000-4000-8000-000000000001/receipt/3d6f0d1e-0000-4000-8000-000000000003.bin",
+    "/orders",
+    "/business/1b6f0d1e-0000-4000-8000-000000000001/payment/3d6f0d1e-0000-4000-8000-000000000003.bin",
   ])("blocks private media path %s from static delivery", (path) => {
     expect(isPrivateStoredMediaPath(path)).toBe(true);
   });

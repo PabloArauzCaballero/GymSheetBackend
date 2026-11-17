@@ -141,6 +141,7 @@ import { businessNameSkeletonMigration } from "./202611200402-business-name-skel
 import { storedNameSkeletonMigration } from "./202611200403-stored-name-skeleton";
 import { businessKycMigration } from "./202611200501-business-kyc";
 import { businessListingsMigration } from "./202611200601-business-listings";
+import { businessOrdersMigration } from "./202611200801-business-orders";
 
 /** Ordered migration registry. IDs must remain immutable after deployment. */
 export const databaseMigrations: DatabaseMigration[] = [
@@ -288,4 +289,5 @@ export const databaseMigrations: DatabaseMigration[] = [
   storedNameSkeletonMigration,
   businessKycMigration,
   businessListingsMigration,
+  businessOrdersMigration,
 ];

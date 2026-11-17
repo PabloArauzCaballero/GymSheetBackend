@@ -31,6 +31,8 @@ import { Sequelize } from "sequelize-typescript";
  * | `directory.entities`     | `logo_url`, `cover_url`, `gallery` | URL       |
  * | `directory.entity_plans` | `media_urls`                      | URL        |
  * | `business.kyc_documents` | `storage_key`                     | clave      |
+ * | `directory.payment_orders` | `receipt_private_key`           | clave      |
+ * | `directory.entity_payment_configs` | `qr_private_key`        | clave      |
  *
  * Las tablas que solo guardan la URL pública (no la clave) se comparan por
  * sufijo exacto `"/<clave>"` con `right()`, nunca con `LIKE`: la clave viaja
@@ -130,7 +132,33 @@ export class MediaReferencesRepository {
     );
 
     if (rows[0]?.referenced === true) return true;
+    if (await this.isPaymentEvidenceReferenced(storageKey, transaction)) return true;
     return this.isKycDocumentReferenced(storageKey, transaction);
+  }
+
+  /**
+   * Payment receipts and QRs (ADR-0024), probed only while their columns
+   * exist: rolling back the orders migration queues the files on
+   * `media.release`, and those jobs drain after the columns are gone.
+   */
+  private async isPaymentEvidenceReferenced(storageKey: string, transaction?: Transaction): Promise<boolean> {
+    const [columns] = await this.sequelize.query<{ present: number }>(
+      `SELECT count(*)::int AS present FROM information_schema.columns
+        WHERE table_schema = 'directory'
+          AND ((table_name = 'payment_orders' AND column_name = 'receipt_private_key')
+            OR (table_name = 'entity_payment_configs' AND column_name = 'qr_private_key'))`,
+      { type: QueryTypes.SELECT, transaction },
+    );
+    if (columns?.present !== 2) return false;
+    const [row] = await this.sequelize.query<{ referenced: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM directory.payment_orders WHERE receipt_private_key = :storageKey
+          UNION ALL
+         SELECT 1 FROM directory.entity_payment_configs WHERE qr_private_key = :storageKey
+       ) AS referenced`,
+      { type: QueryTypes.SELECT, replacements: { storageKey }, transaction },
+    );
+    return row?.referenced === true;
   }
 
   /**
