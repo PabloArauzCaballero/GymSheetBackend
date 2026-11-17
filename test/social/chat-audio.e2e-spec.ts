@@ -156,4 +156,36 @@ describe("H7 chat audio persistence", () => {
       ]));
     } finally { deleted.mockRestore(); published.mockRestore(); }
   }, 60000);
+  it("previews a voice note in the conversation list instead of an empty conversation", async () => {
+    const audio = readFileSync(join(__dirname, "../../src/modules/chat/fixtures/valid-audio.m4a"));
+    const a = await register("preview-sender");
+    const b = await register("preview-recipient");
+    const connected = await request(server).post(url("/me/connections"))
+      .set("Authorization", `Bearer ${a.token}`).send({ addresseeId: b.id }).expect(201);
+    await request(server).patch(url(`/me/connections/${connected.body.data.id}`))
+      .set("Authorization", `Bearer ${b.token}`).send({ action: "ACCEPT" }).expect(200);
+    const started = await request(server).post(url("/me/conversations"))
+      .set("Authorization", `Bearer ${a.token}`).send({ otherUserId: b.id }).expect(201);
+    const conversationId = started.body.data.conversationId as string;
+    const messagesUrl = url(`/me/conversations/${conversationId}/messages`);
+    const summaryFor = async (token: string) => {
+      const list = await request(server).get(url("/me/conversations")).set("Authorization", `Bearer ${token}`).expect(200);
+      return (list.body.data as Array<Record<string, unknown>>).find((item) => item.conversationId === conversationId);
+    };
+
+    const empty = await summaryFor(a.token);
+    expect(empty).toMatchObject({ lastMessage: null, lastMessageType: null, lastMessageFromMe: false, lastMessageAt: null });
+
+    await request(server).post(`${messagesUrl}/media`).set("Authorization", `Bearer ${a.token}`)
+      .field("type", "audio").attach("file", audio, { filename: "voice.m4a", contentType: "audio/mp4" }).expect(201);
+    expect(await summaryFor(a.token)).toMatchObject({ lastMessage: "Nota de voz", lastMessageType: "audio", lastMessageFromMe: true });
+    expect(await summaryFor(b.token)).toMatchObject({ lastMessage: "Nota de voz", lastMessageType: "audio", lastMessageFromMe: false });
+
+    await request(server).post(`${messagesUrl}/media`).set("Authorization", `Bearer ${b.token}`)
+      .field("type", "audio").field("viewOnce", "true")
+      .attach("file", audio, { filename: "once.m4a", contentType: "audio/mp4" }).expect(201);
+    expect(await summaryFor(a.token)).toMatchObject({
+      lastMessage: "Nota de voz de escucha única", lastMessageType: "audio", lastMessageFromMe: false,
+    });
+  }, 60000);
 });

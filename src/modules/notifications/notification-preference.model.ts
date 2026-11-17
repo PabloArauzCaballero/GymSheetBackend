@@ -28,7 +28,7 @@ export class NotificationPreferenceModel extends Model {
   @Column({ type: DataType.BOOLEAN, allowNull: false, field: 'membership_expiry_enabled' })
   declare membershipExpiryEnabled: boolean;
 
-  @Default(false)
+  @Default(true)
   @Column({ type: DataType.BOOLEAN, allowNull: false, field: 'message_preview_enabled' })
   declare messagePreviewEnabled: boolean;
 

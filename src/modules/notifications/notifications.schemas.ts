@@ -18,7 +18,9 @@ export const notificationListSchema = z.object({
 export const updateNotificationPreferenceSchema = z
   .object({
     recordatoriosVencimiento: z.boolean(),
-    vistaPreviaMensajes: z.boolean().default(false),
+    // Optional: a client without this switch must not reset it when it saves
+    // other preferences. Omitted means "keep the current value".
+    vistaPreviaMensajes: z.boolean().optional(),
     canalPreferido: z.enum([
       NotificationChannel.IN_APP,
       NotificationChannel.HTTP_GATEWAY,
@@ -73,7 +75,7 @@ export const updateNotificationPreferenceSchema = z
   })
   .transform((input) => ({
     membershipExpiryEnabled: input.recordatoriosVencimiento,
-    messagePreviewEnabled: input.vistaPreviaMensajes,
+    ...(input.vistaPreviaMensajes === undefined ? {} : { messagePreviewEnabled: input.vistaPreviaMensajes }),
     preferredChannel: input.canalPreferido,
     externalDeliveryConsentAt: input.consentimientoExternoEn
       ? new Date(input.consentimientoExternoEn)
