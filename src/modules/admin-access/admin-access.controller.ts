@@ -1,83 +1,19 @@
-import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
-import { Audited } from '../../common/decorators/audited.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { RequirePermission } from '../../common/decorators/require-permission.decorator';
+import { Controller, Get } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/domain.enums';
-import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
-import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import { AuthenticatedUser } from '../../common/types/auth-context.types';
-import { AdminPermissionKey } from './admin-permission.catalog';
-import { AdminPermissionsService } from './admin-permissions.service';
-import { GrantPermissionInput, grantPermissionSchema } from './admin-access.schemas';
+import { ADMIN_PERMISSION_KEYS } from './admin-permission.catalog';
 
-// Deliberately not under `admin/access/*`: that prefix is already the physical
-// access-control module (devices/credentials). This is unrelated — granular
-// admin RBAC permissions — so it gets its own `admin/permissions` namespace.
+/**
+ * Franja 7d (ADR-0029): the granular permission catalog went with the staff
+ * (its grants opened nothing since ADR-0019: every `admin/*` route is
+ * `SYSTEM_ADMIN`'s). Only `me` stays, deprecated, so the current web keeps
+ * gating the platform console with it until it decides by role.
+ */
 @Roles(UserRole.SYSTEM_ADMIN)
 @Controller('admin/permissions')
 export class AdminAccessController {
-  constructor(private readonly adminPermissionsService: AdminPermissionsService) {}
-
   @Get('me')
-  async getMine(@CurrentUser() user: AuthenticatedUser) {
-    const permissionKeys = await this.adminPermissionsService.getEffectivePermissionKeys(
-      user.id,
-      user.role,
-    );
-    return { permissionKeys };
-  }
-
-  @Get('catalog')
-  @RequirePermission(AdminPermissionKey.ADMIN_ACCESS_MANAGE)
-  listCatalog() {
-    return this.adminPermissionsService.listCatalog();
-  }
-
-  @Get(':userId')
-  @RequirePermission(AdminPermissionKey.ADMIN_ACCESS_MANAGE)
-  listForUser(
-    @Param('userId', UuidParamPipe) userId: string,
-    @CurrentUser() actor: AuthenticatedUser,
-  ) {
-    return this.adminPermissionsService.listGrantsForUser(userId, actor.tenantScope);
-  }
-
-  @Post(':userId')
-  @RequirePermission(AdminPermissionKey.ADMIN_ACCESS_MANAGE)
-  @Audited({
-    domain: 'admin-access',
-    action: 'grant',
-    targetKind: 'user',
-    targetParam: 'userId',
-  })
-  grant(
-    @Param('userId', UuidParamPipe) userId: string,
-    @Body(new ZodValidationPipe(grantPermissionSchema)) input: GrantPermissionInput,
-    @CurrentUser() actor: AuthenticatedUser,
-  ) {
-    return this.adminPermissionsService.grant(
-      userId,
-      input,
-      actor.id,
-      actor.tenantScope,
-    );
-  }
-
-  @Delete(':userId/:permissionKey')
-  @RequirePermission(AdminPermissionKey.ADMIN_ACCESS_MANAGE)
-  @Audited({
-    domain: 'admin-access',
-    action: 'revoke',
-    targetKind: 'user',
-    targetParam: 'userId',
-  })
-  async revoke(
-    @Param('userId', UuidParamPipe) userId: string,
-    @Param('permissionKey') permissionKey: string,
-    @CurrentUser() actor: AuthenticatedUser,
-  ) {
-    await this.adminPermissionsService.revoke(userId, permissionKey, actor.tenantScope);
-    return { revoked: true };
+  getMine() {
+    return { permissionKeys: [...ADMIN_PERMISSION_KEYS] };
   }
 }

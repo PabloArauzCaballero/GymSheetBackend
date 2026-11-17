@@ -3,17 +3,18 @@ import { QueryTypes, Transaction } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { env } from '../src/config/env';
 import { revokeTenantAdminChatsMigration } from '../src/database/migrations/202611200301-revoke-tenant-admin-chats';
+import { retireTenantAdminChatsMigration } from '../src/database/migrations/202611201303-retire-tenant-admin-chats';
 import { businessNameSkeleton } from '../src/modules/business-accounts/handle-rules';
 import { bootE2eApp, createPersonalExercise, E2eApp } from './support/e2e-app';
-import { LEGACY_STAFF_ROLES, legacyGymStaff } from './support/legacy-staff';
 
 /**
- * Franja 7a (ADR-0019): REPP operates the platform and the gym has no staff.
- * Legacy gym `ADMIN`/`FRONT_DESK`/`COACH` accounts keep their role value until
- * franja 7d, but it opens nothing: every `admin/*` route is REPP's, the coach
- * assignment routes are gone, and the pinned gym admin chat no longer exists.
+ * Franja 7a (ADR-0019): REPP operates the platform and the gym has no staff:
+ * every `admin/*` route is REPP's, the coach assignment routes are gone, and
+ * the pinned gym admin chat no longer exists. Franja 7d (ADR-0029) removed the
+ * staff roles (their accounts are members now), the permission grants and the
+ * staff closure route.
  */
-describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', () => {
+describe('REPP operates the platform; the gym has no staff (e2e, franjas 7a and 7d)', () => {
   let e2e: E2eApp;
   let sequelize: Sequelize;
   let platform: { token: string; id: string };
@@ -36,7 +37,6 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
     ['get', '/admin/progression/levels'],
     ['post', '/admin/progression/prizes/redeem', { code: 'NOPE' }],
     ['get', '/admin/users?q=x&roles=CLIENTE'],
-    ['post', `/admin/users/${uuid}/close`],
     ['get', '/admin/media'],
     ['post', '/admin/notifications/broadcast', {}],
     ['get', '/admin/facilities/branches'],
@@ -44,8 +44,7 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
     ['get', '/admin/tenants'],
     ['get', '/admin/signups'],
     ['get', '/admin/audit'],
-    ['get', '/admin/permissions/catalog'],
-    ['get', `/admin/permissions/${uuid}`],
+    ['get', '/admin/permissions/me'],
     ['get', '/admin/equipment/catalog'],
   ];
   const call = (token: string, [method, path, body]: Route) => {
@@ -64,16 +63,32 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
   });
 
   describe('admin/* is REPP only', () => {
-    it.each(LEGACY_STAFF_ROLES)('a legacy gym %s gets 403 on every admin/* route, even holding every permission grant', async (role) => {
-      const keys = (await sequelize.query<{ key: string }>('SELECT key FROM admin.permissions', { type: QueryTypes.SELECT }))
-        .map((row) => row.key);
-      const staff = await legacyGymStaff(e2e, `f7a-${role.toLowerCase()}`, role, { keys });
+    it('a member account (what every former staff account is since franja 7d) gets 403 on every admin/* route', async () => {
+      const formerStaff = await e2e.register('f7d-former-staff');
       const admitted: string[] = [];
       for (const route of adminRoutes) {
-        const response = await call(staff.token, route);
+        const response = await call(formerStaff.token, route);
         if (response.status !== 403) admitted.push(`${route[0]} ${route[1]} -> ${response.status}`);
       }
       expect(admitted).toEqual([]);
+    }, 60000);
+
+    it('the staff closure and the permission grant routes are gone (404), even for SYSTEM_ADMIN (franja 7d)', async () => {
+      const retired: Route[] = [
+        ['post', `/admin/users/${uuid}/close`],
+        ['get', '/admin/permissions/catalog'],
+        ['get', `/admin/permissions/${uuid}`],
+        ['post', `/admin/permissions/${uuid}`, { permissionKey: 'support:read' }],
+        ['del', `/admin/permissions/${uuid}/support:read`],
+      ];
+      const answered: string[] = [];
+      for (const route of retired) {
+        const response = await call(platform.token, route);
+        if (response.status !== 404) answered.push(`${route[0]} ${route[1]} -> ${response.status}`);
+      }
+      expect(answered).toEqual([]);
+      const keys = await e2e.as(platform.token).get('/admin/permissions/me').expect(200);
+      expect(keys.body.data.permissionKeys).toEqual(expect.arrayContaining(['support:read', 'admin-access:manage']));
     }, 60000);
 
     it('the platform SYSTEM_ADMIN passes the role check on the same routes', async () => {
@@ -114,8 +129,8 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
       qrImageUrl: 'https://example.test/qr.png',
     };
 
-    it("a legacy gym ADMIN of the listing's gym who does not own it gets 404 on its payments and 403 replying", async () => {
-      const staff = await legacyGymStaff(e2e, 'f7a-dir-admin', 'ADMIN', { tenantId: gym });
+    it("a member of the listing's gym who does not own it gets 404 on its payments and 403 replying", async () => {
+      const staff = await e2e.register('f7a-dir-member');
       await e2e.as(staff.token).put(`/admin/directory/entities/${entityId}/payment-config`).send(paymentConfig).expect(404);
       await e2e.as(staff.token).get(`/admin/directory/entities/${entityId}/payment-orders`).expect(404);
       await e2e.as(staff.token).post(`/directory/reviews/${reviewId}/reply`).send({ reply_text: 'Gracias por venir' }).expect(403);
@@ -137,8 +152,8 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
 
   describe('coach routine assignment is gone', () => {
     it('assigning and listing as coach answer 404 for any role; assignments made before stay visible to the member', async () => {
-      const coach = await legacyGymStaff(e2e, 'f7a-assigner', 'COACH');
-      const gymAdmin = await legacyGymStaff(e2e, 'f7a-assigner-admin', 'ADMIN');
+      const coach = await e2e.register('f7a-assigner');
+      const gymAdmin = await e2e.register('f7a-assigner-member');
       const member = await e2e.register('f7a-assigned');
       const exerciseId = await createPersonalExercise(e2e.as(coach.token), `f7a ex ${uuid.slice(0, 6)}`);
       const routine = await e2e.as(coach.token).post('/routines')
@@ -180,30 +195,13 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
       env.SEED_SYSTEM_CORPORATE_EMAIL = previousCorporateEmail;
     });
 
-    it('lists the CORPORATE chat, never creates a TENANT_ADMIN one and does not list a legacy one', async () => {
-      const gymAdmin = await legacyGymStaff(e2e, 'f7a-chat-admin', 'ADMIN', { tenantId: env.DEFAULT_TENANT_ID });
+    it('lists only the CORPORATE chat, and the database refuses a TENANT_ADMIN one (franja 7d)', async () => {
       const member = await e2e.register('f7a-chat-member');
-      // A legacy, still open TENANT_ADMIN conversation of this member (as one created before franja 7a).
-      const legacyId = randomUUID();
-      await e2e.sql(`INSERT INTO chat.conversations (id, system_kind) VALUES (:legacyId, 'TENANT_ADMIN')`, { legacyId });
-      await e2e.sql(
-        `INSERT INTO chat.participants (conversation_id, user_id, can_write)
-         VALUES (:legacyId, :memberId, false), (:legacyId, :adminId, true)`,
-        { legacyId, memberId: member.id, adminId: gymAdmin.id },
-      );
-
       const listed = await e2e.as(member.token).get('/me/conversations').expect(200);
-      const kinds = (listed.body.data as { systemKind: string | null; conversationId: string }[]);
-      expect(kinds.map((item) => item.systemKind)).toEqual(['CORPORATE']);
-      expect(kinds.map((item) => item.conversationId)).not.toContain(legacyId);
-      await e2e.as(member.token).get('/me/conversations').expect(200);
-
-      const created = await sequelize.query<{ id: string }>(
-        `SELECT c.id FROM chat.conversations c JOIN chat.participants p ON p.conversation_id = c.id
-          WHERE p.user_id = :memberId AND c.system_kind = 'TENANT_ADMIN'`,
-        { type: QueryTypes.SELECT, replacements: { memberId: member.id } },
-      );
-      expect(created.map((row) => row.id)).toEqual([legacyId]);
+      expect((listed.body.data as { systemKind: string | null }[]).map((item) => item.systemKind)).toEqual(['CORPORATE']);
+      await expect(
+        e2e.sql(`INSERT INTO chat.conversations (id, kind, system_kind) VALUES (:id, 'SYSTEM', 'TENANT_ADMIN')`, { id: randomUUID() }),
+      ).rejects.toThrow(/ck_chat_conversations_system_kind/u);
     }, 60000);
   });
 
@@ -227,6 +225,8 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
       // Rolled back at the end: the shared schema and its data are left as they were.
       const transaction = await sequelize.transaction();
       try {
+        // Franja 7d moved the ledger and the chats to `retired`: undo it first, redo it last.
+        await retireTenantAdminChatsMigration.down(queryInterface, transaction);
         await revokeTenantAdminChatsMigration.down(queryInterface, transaction);
         expect(await ledgerExists(transaction)).toBe(false);
         await sequelize.query(
@@ -251,6 +251,8 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
         expect(await revokedAtOf(open, transaction)).not.toBeNull();
         expect(await revokedAtOf(revokedBefore, transaction)).toEqual(earlier);
         expect(await revokedAtOf(corporate, transaction)).toBeNull();
+        await retireTenantAdminChatsMigration.up(queryInterface, transaction);
+        expect(await ledgerExists(transaction)).toBe(false);
       } finally {
         await transaction.rollback();
       }

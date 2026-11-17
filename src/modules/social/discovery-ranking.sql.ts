@@ -154,12 +154,10 @@ cand AS (
 ),
 feat AS MATERIALIZED (
   SELECT c.*,
-         (EXISTS (SELECT 1 FROM public.sesiones_entrenamiento se
-                   WHERE se.usuario_id = c.id AND se.estado = 'EN_PROGRESO'
-                     AND se.fecha_inicio BETWEEN p.as_of - INTERVAL '3 hours' AND p.as_of)
-          OR EXISTS (SELECT 1 FROM access_control.decisions ad
-                      WHERE ad.user_id = c.id AND ad.outcome = 'GRANTED'
-                        AND ad.decided_at BETWEEN p.as_of - INTERVAL '3 hours' AND p.as_of)) AS training_now,
+         -- A workout in progress is the only "training now" signal: physical access left with ADR-0029.
+         EXISTS (SELECT 1 FROM public.sesiones_entrenamiento se
+                  WHERE se.usuario_id = c.id AND se.estado = 'EN_PROGRESO'
+                    AND se.fecha_inicio BETWEEN p.as_of - INTERVAL '3 hours' AND p.as_of) AS training_now,
          EXTRACT(EPOCH FROM (p.as_of - c.seen_at)) / 3600 AS hours_seen,
          EXTRACT(EPOCH FROM (p.as_of - c.created_at)) / 3600 AS hours_since_signup,
          COALESCE((SELECT count(*) FILTER (WHERE h.mine >= p.hours_cutoff AND h.theirs >= p.hours_cutoff)::float8

@@ -83,11 +83,10 @@ describe('directory defects (e2e, franja 8a)', () => {
     expect(response.body.data.isVerifiedAthlete).toBe(false);
   });
 
-  it('D2: only the owner (or REPP) answers a review; a legacy gym ADMIN does not', async () => {
+  it('D2: only the owner (or REPP) answers a review; another member of the gym does not', async () => {
     const owner = await e2e.register('d2-owner');
     const author = await e2e.register('d2-author');
     const legacyAdmin = await e2e.register('d2-admin');
-    await e2e.promote(legacyAdmin.id, 'ADMIN');
     const entityId = await insertEntity({ tenantId: 'default', userId: owner.id });
     const posted = await e2e.as(author.token).post(`/directory/entities/${entityId}/reviews`).send(review).expect(201);
     const reviewId = posted.body.data.id as string;

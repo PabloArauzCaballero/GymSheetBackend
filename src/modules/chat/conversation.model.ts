@@ -15,11 +15,10 @@ export class ConversationModel extends Model {
    * `null` for a regular chat between members. `CORPORATE` pins the
    * conversation at the top of the list and marks the other side as the only
    * one that can write (see `ConversationParticipantModel.canWrite`).
-   * `TENANT_ADMIN` rows are legacy, revoked by migration 202611200301 and
-   * never listed (ADR-0019); the value goes away in franja 7d.
+   * The gym admin chat (`TENANT_ADMIN`) was retired in franja 7d (ADR-0029).
    */
   @Column({ type: DataType.STRING(20), allowNull: true, field: "system_kind" })
-  declare systemKind: "CORPORATE" | "TENANT_ADMIN" | null;
+  declare systemKind: "CORPORATE" | null;
 
   /** BUSINESS: a person with a business (ADR-0023); no disappearing messages and no location there. */
   @Default("DIRECT")

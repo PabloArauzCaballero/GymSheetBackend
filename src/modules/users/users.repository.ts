@@ -21,14 +21,6 @@ export type CreateClientUserInput = {
   signupRisk?: 'LOW' | 'MEDIUM' | 'HIGH' | null;
 };
 
-/**
- * Alta de cuenta con rol laboral. El rol se exige explícito (no hay valor por
- * defecto) porque, a diferencia del alta de cliente, aquí concede permisos.
- */
-export type CreateStaffUserInput = CreateClientUserInput & {
-  role: UserRole;
-};
-
 @Injectable()
 export class UsersRepository {
   constructor(
@@ -122,16 +114,6 @@ export class UsersRepository {
       { emailVerifiedAt: new Date() },
       { where: { id: userId, emailVerifiedAt: null }, transaction },
     );
-  }
-
-  createStaffUser(input: CreateStaffUserInput, transaction?: Transaction): Promise<UserModel> {
-    return this.userModel.create({
-      email: input.email.toLowerCase(),
-      passwordHash: input.passwordHash,
-      fullName: input.fullName,
-      role: input.role,
-      tenantId: input.tenantId ?? null,
-    }, { transaction });
   }
 
   /**

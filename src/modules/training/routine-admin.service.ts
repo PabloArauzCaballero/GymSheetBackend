@@ -50,7 +50,7 @@ export class RoutineAdminService {
 
   /** Listado para la consola: oficiales, ocultas, por autor o por texto. */
   async list(query: AdminRoutineListQuery, tenantScope: string | null) {
-    // Un ADMIN de gimnasio solo ve las rutinas de autores de su gimnasio.
+    // A SYSTEM_ADMIN impersonating a gym only sees routines of that gym's authors.
     const where: string[] = [tenantScope ? 'r.tenant_id_autor = :tenantScope' : 'TRUE'];
     if (query.oficial !== undefined) where.push('r.es_oficial = :oficial');
     if (query.estadoModeracion) where.push('r.estado_moderacion = :estadoModeracion');

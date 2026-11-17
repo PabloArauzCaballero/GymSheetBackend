@@ -18,6 +18,7 @@ import { retireMembershipMachineryMigration } from '../src/database/migrations/2
 import { gymMembershipVisibilityMigration } from '../src/database/migrations/202611201101-gym-membership-visibility';
 import { businessNameSkeleton, handleSkeleton } from '../src/modules/business-accounts/handle-rules';
 import { E2eApp, bootE2eApp, markEmailVerified } from './support/e2e-app';
+import { redoStaffContraction, undoStaffContraction } from './support/staff-contraction-migrations';
 
 type Acceptance = { document: string; version: string; contentSha256: string | null };
 
@@ -448,10 +449,11 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
     const queryInterface = sequelize.getQueryInterface();
     const transaction = await sequelize.transaction();
     try {
-      // Migrations roll back in reverse id order: the gym visibility (202611201101), the retired membership
+      // Migrations roll back in reverse id order: the staff contraction (2026112013xx), the gym visibility (202611201101), the retired membership
       // tables (202611201002), the subscription ledger (202611201001), the affiliations (202611200901), the
       // orders (202611200801), the business chats (202611200701), the listings (202611200602, 202611200601)
       // and the KYC tables (202611200501) come after business.accounts.
+      await undoStaffContraction(queryInterface, transaction);
       await gymMembershipVisibilityMigration.down(queryInterface, transaction);
       await retireMembershipMachineryMigration.down(queryInterface, transaction);
       await subscriptionLedgerMigration.down(queryInterface, transaction);
@@ -484,6 +486,7 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
       await subscriptionLedgerMigration.up(queryInterface, transaction);
       await retireMembershipMachineryMigration.up(queryInterface, transaction);
       await gymMembershipVisibilityMigration.up(queryInterface, transaction);
+      await redoStaffContraction(queryInterface, transaction);
       const [again] = await sequelize.query<{ accounts: string | null }>(
         `SELECT to_regclass('business.accounts')::text AS accounts`,
         { type: QueryTypes.SELECT, transaction },

@@ -8,10 +8,11 @@ describe('AuditLogService', () => {
   const gymAdmin: AuthenticatedUser = {
     id: 'actor-1',
     email: 'admin@gym.test',
-    role: UserRole.ADMIN,
+    // REPP's admin impersonating a gym: the only scoped actor of admin/* since ADR-0019.
+    role: UserRole.SYSTEM_ADMIN,
     tenantId: 'topfitness',
     tenantScope: 'topfitness',
-    impersonating: false,
+    impersonating: true,
   };
 
   const systemAdmin: AuthenticatedUser = {

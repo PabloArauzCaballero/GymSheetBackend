@@ -141,8 +141,8 @@ describe('Política de moderación', () => {
       expect(caseRefusalFor(systemAdmin, { id: 'sys-2', role: UserRole.SYSTEM_ADMIN })).toBeNull();
     });
 
-    it('lets a moderator decide on members, staff and erased accounts', () => {
-      for (const role of [UserRole.CLIENT, UserRole.ADMIN, UserRole.FRONT_DESK, null]) {
+    it('lets a moderator decide on members and erased accounts', () => {
+      for (const role of [UserRole.CLIENT, null]) {
         expect(caseRefusalFor(moderator, { id: 'someone', role })).toBeNull();
       }
     });

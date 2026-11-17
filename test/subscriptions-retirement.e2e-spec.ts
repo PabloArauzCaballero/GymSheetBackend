@@ -7,6 +7,7 @@ import { KycHarness, bootKycHarness } from './support/kyc-e2e';
 import { createListing } from './support/listings-e2e';
 import { removeReceipts } from './support/orders-e2e';
 import { GymSeller, cashOrder, confirmOrder, gymSeller, periodsOf, socioData } from './support/subscriptions-e2e';
+import { redoStaffContraction, undoStaffContraction } from './support/staff-contraction-migrations';
 
 /** The gym-operated membership routes and physical access left the product (ADR-0026). */
 const REMOVED_PERSON_ROUTES = [
@@ -86,6 +87,7 @@ describe('retirement of the gym-operated membership machinery (e2e, franja 8e)',
     const queryInterface = h.sequelize.getQueryInterface();
     const transaction = await h.sequelize.transaction();
     try {
+      await undoStaffContraction(queryInterface, transaction);
       await gymMembershipVisibilityMigration.down(queryInterface, transaction);
       await retireMembershipMachineryMigration.down(queryInterface, transaction);
       await subscriptionLedgerMigration.down(queryInterface, transaction);
@@ -100,6 +102,7 @@ describe('retirement of the gym-operated membership machinery (e2e, franja 8e)',
       await subscriptionLedgerMigration.up(queryInterface, transaction);
       await retireMembershipMachineryMigration.up(queryInterface, transaction);
       await gymMembershipVisibilityMigration.up(queryInterface, transaction);
+      await redoStaffContraction(queryInterface, transaction);
       expect(await snapshot(transaction)).toEqual(before);
     } finally {
       await transaction.rollback();

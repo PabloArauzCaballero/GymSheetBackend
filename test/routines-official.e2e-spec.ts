@@ -15,9 +15,9 @@ describe('Routines v2 · official (e2e)', () => {
     ana = await e2e.register('off-ana');
     leo = await e2e.register('off-leo');
     sys = await e2e.register('off-sys');
-    gymAdmin = await e2e.register('off-gym-admin');
+    gymAdmin = await e2e.register('off-moderator');
     await e2e.promote(sys.id, 'SYSTEM_ADMIN');
-    await e2e.promote(gymAdmin.id, 'ADMIN');
+    await e2e.promote(gymAdmin.id, 'MODERATOR');
     const ex = await createPersonalExercise(e2e.as(ana.token), `${tag} ex`);
     const res = await e2e.as(ana.token).post('/routines').send({ nombre: `${tag} Para oficial`, dias: [{ diaSemana: 1, ejercicios: [{ ejercicioId: ex }] }] }).expect(201);
     routineId = res.body.data.id;
@@ -31,12 +31,12 @@ describe('Routines v2 · official (e2e)', () => {
     await e2e.as(sys.token).post(`/admin/routines/${routineId}/official`).expect(400);
   });
 
-  it('un socio o un ADMIN de gimnasio no marcan oficiales', async () => {
+  it('un socio o un moderador de REPP no marcan oficiales', async () => {
     await e2e.as(ana.token).post(`/admin/routines/${routineId}/official`).expect(403);
     await e2e.as(ana.token).post(`/admin/routines/${routineId}/publish`).catch(() => undefined);
     await e2e.as(ana.token).post(`/routines/${routineId}/publish`).expect(201);
-    // Since franja 7a (ADR-0019) the legacy gym ADMIN is refused by the role
-    // guard itself, before the service's OFFICIAL_FORBIDDEN check is reached.
+    // Writing official routines is SYSTEM_ADMIN's (ADR-0019): a moderator only reads
+    // admin/routines and is refused by the role guard, before OFFICIAL_FORBIDDEN.
     const res = await e2e.as(gymAdmin.token).post(`/admin/routines/${routineId}/official`).expect(403);
     expect(res.body.code).not.toBe('OFFICIAL_FORBIDDEN');
     const pub = await e2e.as(leo.token).get(`/routines?scope=public&q=${tag}`).expect(200);

@@ -89,16 +89,8 @@ describe('Platform moderation (e2e)', () => {
     await e2e.promote(platformAdmin.id, 'SYSTEM_ADMIN');
     gymAdmin = await e2e.register('platform-mod-gym-admin');
     frontDesk = await e2e.register('platform-mod-front-desk');
-    await e2e.promote(gymAdmin.id, 'ADMIN');
-    await e2e.promote(frontDesk.id, 'FRONT_DESK');
+    // Gym B's former staff: members since franja 7d (ADR-0029), they moderate nothing.
     await e2e.sql('UPDATE public.usuarios SET tenant_id = :gymB WHERE id IN (:ids)', { gymB, ids: [gymAdmin.id, frontDesk.id] });
-    // The grants gym-level moderation used to need. They no longer open anything.
-    await e2e.sql(`INSERT INTO admin.permissions (key, label, description, domain)
-                   VALUES ('moderation:read', 'legacy', 'e2e', 'moderation'), ('moderation:act', 'legacy', 'e2e', 'moderation')
-                   ON CONFLICT (key) DO NOTHING`);
-    await e2e.sql(`INSERT INTO admin.user_permissions (id, user_id, permission_key)
-                   SELECT gen_random_uuid(), u, k FROM unnest(ARRAY[:ids]::uuid[]) u, unnest(ARRAY['moderation:read', 'moderation:act']) k`,
-    { ids: [gymAdmin.id, frontDesk.id] });
   }, 60000);
   afterAll(async () => e2e?.app.close());
 
@@ -108,7 +100,8 @@ describe('Platform moderation (e2e)', () => {
       await e2e.as(caller.token).put(`/admin/platform/moderators/${candidate.id}`).expect(403);
       await e2e.as(caller.token).get('/admin/platform/moderators').expect(403);
     }
-    const refused = await e2e.as(platformAdmin.token).put(`/admin/platform/moderators/${gymAdmin.id}`).expect(409);
+    // A platform account cannot wear both hats.
+    const refused = await e2e.as(platformAdmin.token).put(`/admin/platform/moderators/${platformAdmin.id}`).expect(409);
     expect(refused.body.code).toBe('MODERATOR_NOT_ASSIGNABLE');
     await e2e.as(platformAdmin.token).put(`/admin/platform/moderators/${randomUUID()}`).expect(404);
 
@@ -162,7 +155,7 @@ describe('Platform moderation (e2e)', () => {
     expect(notice?.mensaje).not.toMatch(/gimnasio/iu);
   });
 
-  it('gym ADMIN and FRONT_DESK are refused on every moderation surface, legacy grants or not', async () => {
+  it("gym B's former ADMIN and FRONT_DESK (members since ADR-0029) are refused on every moderation surface", async () => {
     const author = await reportedInGymB('platform-mod-refused');
     const base = `/admin/moderation/cases/USER/${author.id}`;
     for (const staff of [gymAdmin, frontDesk]) {
@@ -179,8 +172,8 @@ describe('Platform moderation (e2e)', () => {
     const open = await selectRows<{ status: string }>(e2e,
       `SELECT status FROM moderation.reports WHERE target_kind = 'USER' AND target_id = :id`, { id: author.id });
     expect(open).toEqual([{ status: 'PENDIENTE' }]);
-    const catalog = await e2e.as(platformAdmin.token).get('/admin/permissions/catalog').expect(200);
-    expect(JSON.stringify(catalog.body.data)).not.toContain('moderation:');
+    const keys = await e2e.as(platformAdmin.token).get('/admin/permissions/me').expect(200);
+    expect(JSON.stringify(keys.body.data)).not.toContain('moderation:');
   });
 
   it('revoking a moderator closes the console to it and frees the cases it had claimed', async () => {

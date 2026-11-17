@@ -21,8 +21,8 @@ describe('ACCOUNT_CLOSURE_STEPS', () => {
   it('collects the files of photos, stories, reels, chat media, comment attachments, verification selfies and personal exercise uploads', () => {
     const withMedia = new Set(ACCOUNT_CLOSURE_STEPS.filter((step) => step.mediaKey).map((step) => step.table));
     expect([...withMedia].sort()).toEqual([
-      'chat.messages', 'community.content_comments', 'profile.photos', 'profile.stories', 'social.photo_verifications', 'social.reels',
-      'training.exercise_media',
+      'chat.messages', 'community.content_comments', 'profile.photos', 'profile.stories', 'retired.chat_tenant_admin_messages',
+      'social.photo_verifications', 'social.reels', 'training.exercise_media',
     ]);
   });
 
@@ -85,7 +85,7 @@ describe('ACCOUNT_CLOSURE_STEPS', () => {
     expect(preview.proof).toEqual({ password: true, emailPin: false });
   });
 
-  it("a staff closure leaves the members' gym chats and the routines assigned to them in place", () => {
+  it("a former staff member's closure leaves the routines assigned to members in place and ends the retired staff file", () => {
     const deleted = (table: string) => ACCOUNT_CLOSURE_STEPS.filter((step) => step.table === table && step.disposition === 'DELETED');
     for (const step of deleted('chat.conversations')) expect(step.where).toContain('p.can_write = false');
     expect(deleted('training.routine_assignments').map((step) => step.where)).toEqual(['t.cliente_user_id = :userId']);
@@ -94,7 +94,7 @@ describe('ACCOUNT_CLOSURE_STEPS', () => {
     const ownRoutines = deleted('training.routines')[0];
     expect(ownRoutines.where).toContain('es_oficial');
     expect(ownRoutines.where).toContain('training.routine_assignments');
-    const staffProfile = ACCOUNT_CLOSURE_STEPS.find((step) => step.table === 'membership.staff_profiles');
+    const staffProfile = ACCOUNT_CLOSURE_STEPS.find((step) => step.table === 'retired.membership_staff_profiles');
     expect(staffProfile).toMatchObject({ disposition: 'ANONYMIZED' });
     expect(staffProfile?.set).toContain("employment_status = 'TERMINATED'");
   });
@@ -103,5 +103,19 @@ describe('ACCOUNT_CLOSURE_STEPS', () => {
     const outbox = ACCOUNT_CLOSURE_STEPS.find((step) => step.table === 'integration.outbox_jobs');
     expect(outbox?.where).toContain("t.payload->>'survivesClosure' = 'false'");
     expect(outbox?.where).toContain("t.payload->>'recipientUserId' = CAST(:userId AS text)");
+  });
+
+  it('covers the tables retired by ADR-0029 and never touches a live staff or access-control table', () => {
+    const tables = ACCOUNT_CLOSURE_STEPS.map((step) => step.table);
+    expect(tables).toEqual(expect.arrayContaining([
+      'retired.membership_staff_profiles', 'retired.access_control_credentials', 'retired.access_control_decisions',
+      'retired.admin_user_permissions', 'retired.admin_retired_permission_grants', 'retired.staff_role_conversions',
+      'retired.chat_tenant_admin_messages', 'retired.chat_tenant_admin_conversations',
+    ]));
+    expect(tables.filter((table) => /^(access_control|admin\.(user_permissions|retired_permission_grants)|membership\.staff_)/u.test(table))).toEqual([]);
+    const [messages, conversations] = ['retired.chat_tenant_admin_messages', 'retired.chat_tenant_admin_conversations']
+      .map((table) => tables.indexOf(table));
+    expect(messages).toBeLessThan(conversations);
+    expect(ACCOUNT_CLOSURE_STEPS[messages]).toMatchObject({ disposition: 'DELETED', mediaKey: 't.media_key' });
   });
 });

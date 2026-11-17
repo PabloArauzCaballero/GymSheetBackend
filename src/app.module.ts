@@ -26,7 +26,6 @@ import { GatewayModule } from './gateway/gateway.module';
 import { AdminAccessModule } from './modules/admin-access/admin-access.module';
 import { AntibotModule } from './modules/antibot/antibot.module';
 import { AuditInterceptor } from './modules/admin-access/audit.interceptor';
-import { PermissionGuard } from './modules/admin-access/permission.guard';
 import { AuthModule } from './modules/auth/auth.module';
 import { EquipmentModule } from './modules/equipment/equipment.module';
 import { ExercisesModule } from './modules/exercises/exercises.module';
@@ -162,8 +161,6 @@ import { ConsentsModule } from './modules/consents/consents.module';
     { provide: APP_GUARD, useClass: RolesGuard },
     // Only routes marked @RequiresVerifiedEmail() (the social surface).
     { provide: APP_GUARD, useClass: EmailVerificationGuard },
-    // Runs after RolesGuard: only tightens routes that opt in via @RequirePermission().
-    { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: HttpMetricsInterceptor },
     // Solo actua sobre las rutas marcadas con `@Audited()`, y solo cuando el
     // handler respondio correctamente. Va despues de las metricas porque

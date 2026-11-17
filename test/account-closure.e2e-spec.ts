@@ -15,7 +15,7 @@ const PASSWORD = 'e2e-strong-password';
  */
 const NOT_A_MEMBER_ROW = new Set([
   'facilities.equipment_assignments', 'facilities.maintenance_events', 'integration.legacy_import_batches',
-  'membership.staff_profiles', 'directory.plan_price_history',
+  'directory.plan_price_history',
   // Cascade from training.training_invites.
   'training.training_invite_commands', 'training.training_invite_revisions',
   // Only business accounts produce these (ADR-0020). A business cannot reach `me/account/*`
@@ -150,7 +150,7 @@ describe('Account closure (e2e)', () => {
       expect(customer).toMatchObject({ phone_number: null, notes: null });
       expect(customer?.customer_number).toMatch(/^C-/);
       expect(await countRows(sequelize, 'membership.memberships', 't.user_id = :userId AND t.notes IS NULL', closer.id)).toBe(1);
-      expect(await countRows(sequelize, 'access_control.credentials', "t.user_id = :userId AND t.status = 'REVOKED'", closer.id)).toBe(1);
+      expect(await countRows(sequelize, 'retired.access_control_credentials', "t.user_id = :userId AND t.status = 'REVOKED'", closer.id)).toBe(1);
     });
 
     it('erases the stored files through the shared media.release outbox queue', async () => {
@@ -194,9 +194,9 @@ describe('Account closure (e2e)', () => {
     expect(await countRows(sequelize, 'auth.identities', 't.user_id = :userId', member.id)).toBe(0);
   });
 
-  it('refuses closure of staff accounts and of a session without a token', async () => {
-    const coach = await e2e.register('closer-coach');
-    await e2e.promote(coach.id, 'COACH');
+  it('refuses closure of platform accounts and of a session without a token', async () => {
+    const coach = await e2e.register('closer-moderator');
+    await e2e.promote(coach.id, 'MODERATOR');
     await e2e.as(coach.token).del('/me/account').send({ password: PASSWORD }).expect(403);
     await request(e2e.http).delete(e2e.url('/me/account')).send({ password: PASSWORD }).expect(401);
   });

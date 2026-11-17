@@ -39,13 +39,11 @@ describe("REPP's KYC console: queues, viewer, decisions and accounts (e2e, franj
       { id: owner.entityId },
     ))[0];
 
-  it('403 for gym staff, members and business accounts on admin/business/*', async () => {
-    const gymAdmin = await h.e2e.register('kyc-gym-admin');
-    await h.e2e.promote(gymAdmin.id, 'ADMIN');
+  it('403 for members and business accounts on admin/business/*', async () => {
     const person = await h.e2e.register('kyc-member');
     const business = await h.business('kyc-console-biz');
     for (const path of ['/admin/business/kyc/queue?queue=REVIEW', '/admin/business/accounts', '/admin/business/blocklist']) {
-      for (const [who, token, code] of [['gym ADMIN', gymAdmin.token, undefined], ['person', person.token, undefined], ['business', business.token, 'ACCOUNT_KIND_NOT_ALLOWED']] as const) {
+      for (const [who, token, code] of [['person', person.token, undefined], ['business', business.token, 'ACCOUNT_KIND_NOT_ALLOWED']] as const) {
         const response = await h.e2e.as(token).get(path);
         expect({ path, who, status: response.status }).toEqual({ path, who, status: 403 });
         if (code) expect(response.body.code).toBe(code);

@@ -30,7 +30,7 @@ const clientUser: AuthenticatedUser = {
 
 describe('RolesGuard', () => {
   it('denies a client reaching a route restricted to administrators', () => {
-    const guard = createGuard([UserRole.ADMIN]);
+    const guard = createGuard([UserRole.SYSTEM_ADMIN]);
 
     expect(() => guard.canActivate(createContext(clientUser))).toThrow(ForbiddenException);
   });
@@ -38,13 +38,13 @@ describe('RolesGuard', () => {
   it('denies an unauthenticated request to a role-restricted route', () => {
     // Defence in depth: if JwtAuthGuard were ever bypassed or reordered, a
     // request without a principal must still not satisfy a role requirement.
-    const guard = createGuard([UserRole.ADMIN]);
+    const guard = createGuard([UserRole.SYSTEM_ADMIN]);
 
     expect(() => guard.canActivate(createContext(undefined))).toThrow(ForbiddenException);
   });
 
   it('allows a user holding one of the required roles', () => {
-    const guard = createGuard([UserRole.ADMIN, UserRole.CLIENT]);
+    const guard = createGuard([UserRole.SYSTEM_ADMIN, UserRole.CLIENT]);
 
     expect(guard.canActivate(createContext(clientUser))).toBe(true);
   });
@@ -80,23 +80,23 @@ describe('RolesGuard — administrador de plataforma', () => {
     } as unknown as ExecutionContext;
   }
 
-  it('entra en una ruta abierta a administradores de gimnasio', () => {
-    const guard = createGuard([UserRole.ADMIN, UserRole.FRONT_DESK]);
+  it('entra en una ruta de plataforma', () => {
+    const guard = createGuard([UserRole.SYSTEM_ADMIN, UserRole.MODERATOR]);
 
     expect(guard.canActivate(contextFor(systemAdmin))).toBe(true);
   });
 
   /**
-   * No es un atajo universal: las rutas de socio o de entrenador asumen datos
-   * propios (rutinas asignadas, progresión) que un administrador de plataforma
-   * no tiene, y dejarle entrar produciría respuestas sin sentido en vez de un
-   * permiso denegado claro.
+   * Sin atajos desde la franja 7d (ADR-0029): las rutas de socio, de negocio o
+   * de moderación asumen datos propios que un administrador de plataforma no
+   * tiene, así que solo entra donde la ruta lo nombra.
    */
-  it('no entra en una ruta que no admite administradores', () => {
-    const guard = createGuard([UserRole.COACH]);
+  it.each([[UserRole.CLIENT], [UserRole.BUSINESS], [UserRole.MODERATOR]])(
+    'no entra en una ruta que solo admite %s',
+    (role) => {
+      const guard = createGuard([role]);
 
-    expect(() => guard.canActivate(contextFor(systemAdmin))).toThrow(
-      ForbiddenException,
-    );
-  });
+      expect(() => guard.canActivate(contextFor(systemAdmin))).toThrow(ForbiddenException);
+    },
+  );
 });

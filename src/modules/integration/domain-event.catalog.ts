@@ -1,13 +1,10 @@
 import {
-  EmploymentStatus,
   MaintenanceStatus,
   MembershipStatus,
 } from "../../common/enums/domain.enums";
 
 export const GymDomainEvent = {
   CUSTOMER_REGISTERED: "customer.registered.v1",
-  STAFF_PROFILE_CREATED: "staff.profile-created.v1",
-  STAFF_STATUS_CHANGED: "staff.employment-status-changed.v1",
   MEMBERSHIP_ACTIVATED: "membership.activated.v1",
   MEMBERSHIP_STATUS_CHANGED: "membership.status-changed.v1",
   SUBSCRIPTION_PERIOD_OPENED: "subscription.period-opened.v1",
@@ -34,17 +31,6 @@ export type GymDomainEventPayloadMap = {
     customerNumber: string;
     pinCredentialId: string;
     notificationPreferenceId: string;
-  };
-  [GymDomainEvent.STAFF_PROFILE_CREATED]: {
-    userId: string;
-    staffProfileId: string;
-    branchIds: string[];
-  };
-  [GymDomainEvent.STAFF_STATUS_CHANGED]: {
-    userId: string;
-    staffProfileId: string;
-    fromStatus: EmploymentStatus;
-    toStatus: EmploymentStatus;
   };
   [GymDomainEvent.MEMBERSHIP_ACTIVATED]: {
     membershipId: string;

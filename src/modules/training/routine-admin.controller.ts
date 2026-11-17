@@ -1,14 +1,12 @@
 import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
 import { Audited } from '../../common/decorators/audited.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/domain.enums';
 import { PLATFORM_MODERATION_ROLES, platformScopeOf } from '../../common/tenancy/tenant-scope';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
-import { AdminPermissionKey } from '../admin-access/admin-permission.catalog';
 import { RoutineAdminService } from './routine-admin.service';
 import { AdminRoutineListQuery, adminRoutineListQuerySchema } from './routine-v2.schemas';
 import { CreateRoutineInput, createRoutineSchema } from './training.schemas';
@@ -43,7 +41,6 @@ export class RoutineAdminController {
   }
 
   @Get(':id/insights')
-  @RequirePermission(AdminPermissionKey.ANALYTICS_READ)
   insights(@CurrentUser() actor: AuthenticatedUser, @Param('id', UuidParamPipe) id: string) {
     return this.admin.insights(id, actor.tenantScope);
   }

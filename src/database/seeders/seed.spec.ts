@@ -54,7 +54,7 @@ describe('database seeds', () => {
     });
 
     expect(users[0].role).toBe(UserRole.SYSTEM_ADMIN);
-    const gymStaff = users.filter((user) => [UserRole.ADMIN, UserRole.FRONT_DESK, UserRole.COACH].includes(user.role));
+    const gymStaff = users.filter((user) => ['ADMIN', 'FRONT_DESK', 'COACH', 'ENTRENADOR_EXTERNO'].includes(user.role as string));
     expect(gymStaff).toEqual([]);
   });
 

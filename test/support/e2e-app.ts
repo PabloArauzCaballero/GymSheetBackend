@@ -22,12 +22,8 @@ export type E2eApp = {
    * require a verified email (the PIN flow has its own e2e spec).
    */
   register: (label: string, options?: { verifyEmail?: boolean }) => Promise<{ token: string; id: string }>;
-  /**
-   * Cambia el rol en la base (la sesión se revalida contra la base en cada petición).
-   * `ADMIN`/`COACH`/`FRONT_DESK` are legacy gym staff with no powers since
-   * franja 7a (ADR-0019): promote to them only to prove they are refused.
-   */
-  promote: (userId: string, role: 'ADMIN' | 'SYSTEM_ADMIN' | 'MODERATOR' | 'COACH' | 'FRONT_DESK') => Promise<void>;
+  /** Cambia el rol en la base (la sesión se revalida contra la base en cada petición). */
+  promote: (userId: string, role: 'SYSTEM_ADMIN' | 'MODERATOR') => Promise<void>;
   /** Registers an account and makes it REPP's platform admin, the only operator of `admin/*`. */
   platformAdmin: (label: string) => Promise<{ token: string; id: string }>;
   /** A platform admin token scoped to one gym (`POST /auth/impersonate-tenant`), to operate that gym. */

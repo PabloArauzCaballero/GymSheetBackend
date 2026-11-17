@@ -24,7 +24,7 @@ describe('ModerationService', () => {
   const moderator: AuthenticatedUser = {
     id: 'mod-1',
     email: 'admin@gym.test',
-    role: UserRole.ADMIN,
+    role: UserRole.MODERATOR,
     tenantId: 'topfitness',
     tenantScope: 'topfitness',
     impersonating: false,

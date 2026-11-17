@@ -11,6 +11,7 @@ import { retireMembershipMachineryMigration } from '../src/database/migrations/2
 import { gymMembershipVisibilityMigration } from '../src/database/migrations/202611201101-gym-membership-visibility';
 import { KycBusiness, KycHarness, bootKycHarness, letters } from './support/kyc-e2e';
 import { createListing, membership, publicGet, publicIds, publishedBusiness } from './support/listings-e2e';
+import { redoStaffContraction, undoStaffContraction } from './support/staff-contraction-migrations';
 
 describe('business listings, locations and the public marketplace (e2e, franja 8c)', () => {
   let h: KycHarness;
@@ -220,6 +221,7 @@ describe('business listings, locations and the public marketplace (e2e, franja 8
     try {
       // Reverse id order: 202611201101, 202611201002, 202611201001, the affiliations (202611200901, which
       // reference the locations), the orders (202611200801) and the business chats (202611200701) go first.
+      await undoStaffContraction(queryInterface, transaction);
       await gymMembershipVisibilityMigration.down(queryInterface, transaction);
       await retireMembershipMachineryMigration.down(queryInterface, transaction);
       await subscriptionLedgerMigration.down(queryInterface, transaction);
@@ -245,6 +247,7 @@ describe('business listings, locations and the public marketplace (e2e, franja 8
       await subscriptionLedgerMigration.up(queryInterface, transaction);
       await retireMembershipMachineryMigration.up(queryInterface, transaction);
       await gymMembershipVisibilityMigration.up(queryInterface, transaction);
+      await redoStaffContraction(queryInterface, transaction);
       const [back] = await h.sequelize.query<{ offerKind: string; moderationStatus: string }>(
         'SELECT offer_kind AS "offerKind", moderation_status AS "moderationStatus" FROM directory.entity_plans WHERE id = :id',
         { type: QueryTypes.SELECT, replacements: { id: live.id }, transaction },

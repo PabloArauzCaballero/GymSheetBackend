@@ -1,11 +1,10 @@
 import { ExecutionContext, ForbiddenException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { PERMISSIONS_KEY } from "../../common/decorators/require-permission.decorator";
 import { UserRole } from "../../common/enums/domain.enums";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { platformScopeOf } from "../../common/tenancy/tenant-scope";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
-import { ADMIN_PERMISSION_CATALOG } from "../admin-access/admin-permission.catalog";
+import { ADMIN_PERMISSION_KEYS } from "../admin-access/admin-permission.catalog";
 import { SignupAdminController } from "../antibot/signup-admin.controller";
 import { RoutineAdminController } from "../training/routine-admin.controller";
 import { VerificationAdminController } from "../verification/verification.controller";
@@ -55,26 +54,22 @@ describe("Platform moderation (ADR-0018)", () => {
     ...["queue", "selfie", "decide"].map((handler): [object, string] => [VerificationAdminController, handler]),
   ];
 
-  it.each(moderationRoutes)("%p.%s admits MODERATOR and SYSTEM_ADMIN and refuses every gym role", (controller, handler) => {
+  it.each(moderationRoutes)("%p.%s admits MODERATOR and SYSTEM_ADMIN and refuses members and businesses", (controller, handler) => {
     expect(canEnter(controller, handler, principal(UserRole.MODERATOR))).toBe(true);
     expect(canEnter(controller, handler, principal(UserRole.SYSTEM_ADMIN, null))).toBe(true);
-    for (const role of [UserRole.ADMIN, UserRole.FRONT_DESK, UserRole.COACH, UserRole.CLIENT, UserRole.EXTERNAL_TRAINER]) {
+    for (const role of [UserRole.CLIENT, UserRole.BUSINESS]) {
       expect(canEnter(controller, handler, principal(role))).toBe(false);
     }
   });
 
-  it("no moderation route depends on a granular permission any more", () => {
-    for (const [controller, handler] of moderationRoutes) {
-      const target = (controller as { prototype: Record<string, () => unknown> }).prototype[handler];
-      expect(Reflect.getMetadata(PERMISSIONS_KEY, target)).toBeUndefined();
-    }
-    expect(ADMIN_PERMISSION_CATALOG.map((permission) => permission.key).filter((key) => key.startsWith("moderation:"))).toEqual([]);
+  it("no moderation key is left in the platform console keys (the grant catalog is gone, ADR-0029)", () => {
+    expect(ADMIN_PERMISSION_KEYS.filter((key) => key.startsWith("moderation:"))).toEqual([]);
   });
 
   it("only SYSTEM_ADMIN manages the moderators", () => {
     for (const handler of ["list", "assign", "revoke"]) {
       expect(canEnter(PlatformModeratorsController, handler, principal(UserRole.SYSTEM_ADMIN, null))).toBe(true);
-      for (const role of [UserRole.MODERATOR, UserRole.ADMIN, UserRole.FRONT_DESK]) {
+      for (const role of [UserRole.MODERATOR, UserRole.CLIENT, UserRole.BUSINESS]) {
         expect(canEnter(PlatformModeratorsController, handler, principal(role))).toBe(false);
       }
     }
@@ -84,7 +79,7 @@ describe("Platform moderation (ADR-0018)", () => {
     expect(platformScopeOf(principal(UserRole.MODERATOR, "gym-a"))).toBeNull();
     expect(platformScopeOf(principal(UserRole.SYSTEM_ADMIN, null))).toBeNull();
     expect(platformScopeOf(principal(UserRole.SYSTEM_ADMIN, "impersonated"))).toBe("impersonated");
-    expect(platformScopeOf(principal(UserRole.ADMIN, "gym-a"))).toBe("gym-a");
+    expect(platformScopeOf(principal(UserRole.CLIENT, "gym-a"))).toBe("gym-a");
   });
 
   it("every decision notice names the REPP moderation team and never the gym", () => {

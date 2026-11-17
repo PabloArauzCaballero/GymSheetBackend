@@ -114,8 +114,8 @@ describe("ExerciseMediaService.uploadMedia al volver a subir una pieza", () => {
     expect(storage.upload).toHaveBeenCalledWith(expect.anything(), { category: "ejercicios", exerciseId });
   });
 
-  it.each([UserRole.ADMIN, UserRole.FRONT_DESK, UserRole.COACH])(
-    "rechaza a un %s heredado del gimnasio sin tocar el almacenamiento",
+  it.each([UserRole.CLIENT, UserRole.MODERATOR, UserRole.BUSINESS])(
+    "rechaza a un %s sin tocar el almacenamiento",
     async (role) => {
       const { service, storage, existing } = buildService();
 

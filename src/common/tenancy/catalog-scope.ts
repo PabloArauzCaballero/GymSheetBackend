@@ -25,8 +25,8 @@ export type CatalogScope = "GLOBAL";
  *
  * | actor                                | `alcance`  | resultado          |
  * |--------------------------------------|------------|--------------------|
- * | ADMIN de gimnasio                    | omitido    | su gimnasio        |
- * | ADMIN de gimnasio                    | `GLOBAL`   | **403**            |
+ * | cuenta acotada que no es de plataforma | omitido  | su gimnasio        |
+ * | cuenta acotada que no es de plataforma | `GLOBAL` | **403**            |
  * | SYSTEM_ADMIN suplantando             | omitido    | gimnasio suplantado|
  * | SYSTEM_ADMIN suplantando             | `GLOBAL`   | **400**            |
  * | SYSTEM_ADMIN sin suplantar           | `GLOBAL`   | catálogo global    |

@@ -7,7 +7,7 @@ function actor(overrides: Partial<AuthenticatedUser>): AuthenticatedUser {
   return {
     id: "00000000-0000-4000-8000-000000000001",
     email: "actor@example.test",
-    role: UserRole.ADMIN,
+    role: UserRole.CLIENT,
     tenantId: "topfitness",
     tenantScope: "topfitness",
     impersonating: false,
@@ -16,16 +16,16 @@ function actor(overrides: Partial<AuthenticatedUser>): AuthenticatedUser {
 }
 
 describe("resolveCatalogTenant", () => {
-  it("escribe en su propio gimnasio cuando un ADMIN no declara alcance", () => {
+  it("escribe en su propio gimnasio cuando una cuenta que no es de plataforma no declara alcance", () => {
     expect(resolveCatalogTenant(actor({}), undefined)).toBe("topfitness");
   });
 
   /**
-   * El gimnasio sale del token, no del cuerpo: un ADMIN no puede nombrar otro
+   * El gimnasio sale del token, no del cuerpo: una cuenta así no puede nombrar otro
    * gimnasio ni por error ni a propósito, así que el único intento posible es
    * subir de nivel, y eso se le niega.
    */
-  it("niega a un ADMIN de gimnasio tocar el catálogo global", () => {
+  it("niega el catálogo global a una cuenta que no es de plataforma", () => {
     expect(() => resolveCatalogTenant(actor({}), "GLOBAL")).toThrow(ForbiddenException);
   });
 
