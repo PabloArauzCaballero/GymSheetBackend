@@ -89,7 +89,8 @@ export class NotificationRepository {
       attributes: ['messagePreviewEnabled'],
       where: { userId },
     });
-    return preference?.messagePreviewEnabled === true;
+    // No row yet means the defaults, and the default is to show the text.
+    return preference?.messagePreviewEnabled ?? true;
   }
 
   createDefaultPreference(userId: string, transaction: Transaction) {
@@ -97,7 +98,7 @@ export class NotificationRepository {
       {
         userId,
         membershipExpiryEnabled: true,
-        messagePreviewEnabled: false,
+        messagePreviewEnabled: true,
         preferredChannel: NotificationChannel.IN_APP,
         externalDeliveryConsentAt: null,
         consentVersion: null,

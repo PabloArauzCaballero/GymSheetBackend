@@ -117,6 +117,7 @@ import { workoutExerciseSwapsMigration } from "./202610220001-workout-exercise-s
 import { branchLocationMigration } from "./202611080001-branch-location";
 import { tutorialProgressInitialMigration } from "./202611080001-tutorial-progress";
 import { tutorialProgressMigration } from "./202611120001-tutorial-progress";
+import { messagePreviewsOnByDefaultMigration } from "./202611160001-message-previews-on-by-default";
 import { progressionStrikesAndCoachCardsMigration } from "./202610190002-progression-strikes-and-coach-cards";
 import { socialProfileDetailsMigration } from "./202611160101-social-profile-details";
 import { userBirthDateAndLegalAcceptancesMigration } from "./202611160201-user-birth-date-and-legal-acceptances";
@@ -268,6 +269,7 @@ export const databaseMigrations: DatabaseMigration[] = [
   // porque TEST pudo aplicar ya el primero.
   tutorialProgressInitialMigration,
   tutorialProgressMigration,
+  messagePreviewsOnByDefaultMigration,
   socialProfileDetailsMigration,
   userBirthDateAndLegalAcceptancesMigration,
   emailVerificationDevicesIdentitiesMigration,

@@ -6,6 +6,11 @@ function authorizedMediaUrl(storyId: string): string {
   return `/me/stories/${storyId}/media`;
 }
 
+/** Only photos have a thumbnail; a video ring keeps the author's avatar. */
+function authorizedThumbnailUrl(storyId: string, mediaType: StoryMediaType): string | null {
+  return mediaType === "image" ? `/me/stories/${storyId}/thumbnail` : null;
+}
+
 export type StoryResponse = {
   id: string;
   mediaUrl: string;
@@ -34,6 +39,8 @@ export type StoryFeedEntryResponse = {
   stories: {
     id: string;
     mediaUrl: string;
+    /** Small square image for the story ring; `null` for videos. */
+    thumbnailUrl: string | null;
     mediaType: StoryMediaType;
     caption: string | null;
     /** ISO 8601 — el contrato del frontend espera texto, no un `Date` serializado por el transporte. */
@@ -65,6 +72,7 @@ export function mapFeedRowsToResponse(rows: StoryFeedRow[]): StoryFeedEntryRespo
     entry.stories.push({
       id: row.id,
       mediaUrl: authorizedMediaUrl(row.id),
+      thumbnailUrl: authorizedThumbnailUrl(row.id, row.media_type),
       mediaType: row.media_type,
       caption: row.caption ?? null,
       // `new Date(...).toISOString()` y no una copia tal cual: el driver devuelve

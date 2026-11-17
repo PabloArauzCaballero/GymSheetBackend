@@ -40,6 +40,9 @@ export type MessageCreateFields = {
   forwarded?: boolean;
 };
 
+/** What the last item of a conversation is, so clients can pick an icon for its preview. */
+export type ConversationPreviewType = MessageType | "system" | "deleted";
+
 export interface ConversationSummaryRow {
   conversation_id: string;
   other_user_id: string;
@@ -47,6 +50,8 @@ export interface ConversationSummaryRow {
   other_user_photo_url: string | null;
   other_user_last_seen_at: string | null;
   last_message_body: string | null;
+  last_message_type: ConversationPreviewType | null;
+  last_message_from_me: boolean | null;
   last_message_at: string | null;
   can_write: boolean;
   system_kind: SystemConversationKind | null;
@@ -759,13 +764,20 @@ export class ChatRepository {
               u.nombre_completo AS other_user_name,
               other_photo.url AS other_user_photo_url,
               u.last_seen_at AS other_user_last_seen_at,
-              CASE WHEN last_msg.deleted_at IS NOT NULL THEN 'Mensaje eliminado' ELSE CASE last_msg.type
-                WHEN 'image' THEN COALESCE(last_msg.body, 'Foto')
-                WHEN 'video' THEN COALESCE(last_msg.body, 'Video')
-                WHEN 'location' THEN 'Ubicación'
-                WHEN 'sticker' THEN 'Sticker'
+              CASE WHEN last_msg.deleted_at IS NOT NULL THEN 'Mensaje eliminado' ELSE CASE
+                -- A view-once caption would leak the content the sender meant to show only once.
+                WHEN last_msg.view_once AND last_msg.type = 'image' THEN 'Foto de una vista'
+                WHEN last_msg.view_once AND last_msg.type = 'video' THEN 'Video de una vista'
+                WHEN last_msg.view_once AND last_msg.type = 'audio' THEN 'Nota de voz de escucha única'
+                WHEN last_msg.type = 'image' THEN COALESCE(NULLIF(last_msg.body, ''), 'Foto')
+                WHEN last_msg.type = 'video' THEN COALESCE(NULLIF(last_msg.body, ''), 'Video')
+                WHEN last_msg.type = 'audio' THEN 'Nota de voz'
+                WHEN last_msg.type = 'location' THEN COALESCE(last_msg.location_label, 'Ubicación')
+                WHEN last_msg.type = 'sticker' THEN 'Sticker'
                 ELSE last_msg.body
               END END AS last_message_body,
+              CASE WHEN last_msg.deleted_at IS NOT NULL THEN 'deleted' ELSE last_msg.type END AS last_message_type,
+              (last_msg.sender_id IS NOT NULL AND last_msg.sender_id = :userId) AS last_message_from_me,
               last_msg.created_at AS last_message_at,
               mine.can_write AS can_write,
               c.system_kind AS system_kind,
@@ -799,9 +811,11 @@ export class ChatRepository {
             ORDER BY p.position ASC LIMIT 1
          ) other_photo ON true
          LEFT JOIN LATERAL (
-           SELECT item.body, item.type, item.created_at, item.deleted_at
+           SELECT item.body, item.type, item.created_at, item.deleted_at,
+                  item.view_once, item.location_label, item.sender_id
              FROM (
-               SELECT m.id, m.body, m.type, m.created_at, m.deleted_at
+               SELECT m.id, m.body, m.type, m.created_at, m.deleted_at,
+                      m.view_once, m.location_label, m.sender_id
                  FROM chat.messages m
                 WHERE m.conversation_id = c.id
                   AND (m.expires_at IS NULL OR m.expires_at > now())
@@ -809,13 +823,15 @@ export class ChatRepository {
                UNION ALL
                SELECT e.id,
                       CASE WHEN e.cancelled_at IS NULL THEN 'Entrenamiento acordado' ELSE 'Entrenamiento cancelado' END AS body,
-                      'system'::text AS type, e.created_at, NULL::timestamptz AS deleted_at
+                      'system'::text AS type, e.created_at, NULL::timestamptz AS deleted_at,
+                      false AS view_once, NULL::text AS location_label, NULL::uuid AS sender_id
                  FROM chat.conversation_events e
                 WHERE e.conversation_id = c.id
                UNION ALL
                SELECT t.id,
                       CASE WHEN t.seconds IS NULL THEN 'Mensajes temporales desactivados' ELSE 'Mensajes temporales activados' END AS body,
-                      'system'::text AS type, t.created_at, NULL::timestamptz AS deleted_at
+                      'system'::text AS type, t.created_at, NULL::timestamptz AS deleted_at,
+                      false AS view_once, NULL::text AS location_label, NULL::uuid AS sender_id
                  FROM chat.conversation_timer_events t
                 WHERE t.conversation_id = c.id
              ) item
