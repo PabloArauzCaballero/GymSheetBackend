@@ -372,8 +372,11 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
     expect(JSON.stringify(directory.body.data)).not.toContain(owner.id);
     await e2e.as(person.token).get(`/me/gym-directory/${owner.id}`).expect(404);
     await e2e.as(person.token).post('/me/connections').send({ addresseeId: owner.id }).expect(404);
-    const board = await e2e.as(person.token).get('/me/progression/leaderboard').expect(200);
-    expect((board.body.data as { userId: string }[]).map((row) => row.userId)).not.toContain(owner.id);
+    // The leaderboard is the ranking of a confirmed gym (ADR-0027); a business
+    // as a member of one is covered by test/gym-community.e2e-spec.ts.
+    const board = await e2e.as(person.token).get('/me/progression/leaderboard');
+    expect([board.status, board.body.code]).toEqual([403, 'GYM_MEMBERSHIP_REQUIRED']);
+    expect(JSON.stringify(board.body)).not.toContain(owner.id);
   });
 
   it('a look-alike of a public name of the same type is refused: allowlisted characters, one stored fold', async () => {

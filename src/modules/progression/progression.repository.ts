@@ -1,4 +1,3 @@
-import { personAccountSql } from "../../common/sql/person-accounts";
 import { Injectable } from "@nestjs/common";
 import { MONTHLY_STRIKES_BASE } from "./user-streak-strike.model";
 import { settleStrikes, totalOf, type StrikeSettlement } from "./streak-strikes";
@@ -889,91 +888,6 @@ export class ProgressionRepository {
     };
   }
 
-  /**
-   * Clasificación del gimnasio, para la pantalla de la senda.
-   *
-   * El orden por racha desempata por puntos: dos personas con la misma racha
-   * vigente no deberían parecer iguales si una lleva mucho más entrenado.
-   */
-  leaderboard(
-    tenantId: string | null,
-    limit: number,
-    sortBy: "points" | "streak" = "points",
-    /** Quien mira: no ve la foto de quien bloqueó o a quien bloqueó. */
-    viewerId: string | null = null,
-  ): Promise<
-    Array<{
-      userId: string;
-      fullName: string;
-      points: number;
-      levelCode: string | null;
-      currentStreakDays: number;
-      photoUrl: string | null;
-      badges: Array<{
-        code: string;
-        name: string;
-        icon: string;
-        color: string;
-        rarity?: string;
-      }>;
-    }>
-  > {
-    const orderBy =
-      sortBy === "streak"
-        ? "p.current_streak_days DESC, p.points DESC"
-        : "p.points DESC, p.current_streak_days DESC";
-    return this.sequelize.query(
-      `SELECT p.usuario_id AS "userId",
-              u.nombre_completo AS "fullName",
-              p.points,
-              p.level_code AS "levelCode",
-              p.current_streak_days AS "currentStreakDays",
-              (
-                SELECT ph.url
-                  FROM profile.photos ph
-                 WHERE ph.user_id = p.usuario_id
-                   AND ph.hidden_at IS NULL
-                   -- Un bloqueo, en cualquier sentido, oculta la cara: el
-                   -- puesto y los puntos siguen, la foto no.
-                   AND NOT EXISTS (
-                     SELECT 1 FROM social.user_blocks b
-                      WHERE (b.blocker_id = p.usuario_id AND b.blocked_id = :viewerId)
-                         OR (b.blocker_id = :viewerId AND b.blocked_id = p.usuario_id)
-                   )
-                 ORDER BY ph.position ASC, ph.created_at ASC
-                 LIMIT 1
-              ) AS "photoUrl",
-              COALESCE(top_badges.items, '[]'::json) AS "badges"
-         FROM progression.user_progress p
-         JOIN public.usuarios u ON u.id = p.usuario_id
-         LEFT JOIN LATERAL (
-           SELECT json_agg(
-                    json_build_object(
-                      'code', ub.code,
-                      'name', ub.name,
-                      'icon', ub.icon,
-                      'color', ub.color,
-                      'rarity', ub.rarity
-                    ) ORDER BY ub.awarded_at DESC
-                  ) AS items
-             FROM (
-               SELECT b.code, b.name, b.icon, b.color, b.rarity, ub.awarded_at
-                 FROM progression.user_badges ub
-                 JOIN progression.badges b ON b.id = ub.badge_id
-                WHERE ub.usuario_id = p.usuario_id
-                ORDER BY ub.awarded_at DESC
-                LIMIT 3
-             ) ub
-         ) top_badges ON true
-        WHERE u.estado = 'ACTIVO'
-          AND ${personAccountSql("u")}
-          AND (:tenantId::text IS NULL OR u.tenant_id IS NOT DISTINCT FROM :tenantId)
-          AND p.points > 0
-        ORDER BY ${orderBy}
-        LIMIT :limit`,
-      { type: QueryTypes.SELECT, replacements: { tenantId, limit, viewerId } },
-    );
-  }
 }
 
 /**

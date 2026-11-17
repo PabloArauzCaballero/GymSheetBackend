@@ -75,7 +75,11 @@ export interface DirectoryRow {
   recommendationIntents?: string[];
   /** Optional "Conocer" answers; display only, never a ranking input. */
   about?: PublicAboutRow | null;
+  /** «Socio de X» (ADR-0027): the confirmed gym, if public and shown by its member. */
+  gymBadge?: GymBadgeRow | null;
 }
+
+export type GymBadgeRow = { id: string; name: string; handle: string | null; logoUrl: string | null };
 
 /**
  * Qué recorte del directorio se pide.
@@ -111,6 +115,8 @@ export interface DirectoryFilters {
   excludeDecided?: boolean;
   /** Add adults from other tenants who explicitly enabled cross-gym discovery. */
   includeCrossGym?: boolean;
+  /** Only the CONFIRMED SOCIOs of this gym who show their membership (ADR-0027). */
+  gymEntityId?: string;
   /** Map directory: candidates must still have map and profile consent. */
   mapOnly?: boolean;
   discoveryOnly?: boolean;
@@ -642,7 +648,11 @@ export class SocialRepository {
     return this.settings.findByPk(userId);
   }
 
-  /** Both sides must be active adults who explicitly opened cross-gym discovery. */
+  /**
+   * Both sides must be active adults who explicitly opened cross-gym
+   * discovery, or both be CONFIRMED SOCIOs of the same gym while the target
+   * shows that membership (ADR-0027: the gym is one community).
+   */
   async canInteractAcrossTenants(
     viewerId: string,
     targetId: string,
@@ -651,12 +661,18 @@ export class SocialRepository {
     const rows = await this.sequelize.query<{ allowed: boolean }>(
       `SELECT COUNT(DISTINCT u.id) = 2
                 AND BOOL_AND(u.estado = 'ACTIVO'
-                  AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int, 0) >= 18
-                  AND s.profile_enabled
-                  AND s.cross_gym_enabled) AS allowed
+                  AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int, 0) >= 18)
+                AND (BOOL_AND(COALESCE(s.profile_enabled AND s.cross_gym_enabled, false))
+                  OR EXISTS (
+                    SELECT 1 FROM directory.affiliations va
+                      JOIN directory.affiliations ta
+                        ON ta.gym_entity_id = va.gym_entity_id AND ta.user_id = :targetId
+                       AND ta.kind = 'SOCIO' AND ta.status = 'CONFIRMED'
+                      JOIN social.profile_settings ts
+                        ON ts.user_id = ta.user_id AND ts.profile_enabled AND ts.gym_membership_visible
+                     WHERE va.user_id = :viewerId AND va.kind = 'SOCIO' AND va.status = 'CONFIRMED')) AS allowed
          FROM public.usuarios u
-         JOIN social.profile_settings s ON s.user_id = u.id
-         LEFT JOIN public.perfiles_antropometricos p ON p.usuario_id = u.id
+         LEFT JOIN social.profile_settings s ON s.user_id = u.id
         WHERE u.id IN (:viewerId, :targetId)`,
       {
         type: QueryTypes.SELECT,
@@ -1218,6 +1234,7 @@ export class SocialRepository {
       recommendation_lon: number | null;
       recommendation_intents: string[] | null;
       about: PublicAboutRow | null;
+      gym_badge: GymBadgeRow | null;
     }>(
       `SELECT u.id AS usuario_id,
               u.nombre_completo AS full_name,
@@ -1242,7 +1259,9 @@ export class SocialRepository {
               CASE WHEN pd.user_id IS NOT NULL THEN json_build_object(
                 'interests', pd.interests, 'drinking', pd.drinking, 'smoking', pd.smoking,
                 'pets', pd.pets, 'bio', pd.bio, 'orientationVisible', pd.orientation_visible,
-                'orientation', CASE WHEN pd.orientation_visible THEN pd.orientation END) END AS about
+                'orientation', CASE WHEN pd.orientation_visible THEN pd.orientation END) END AS about,
+              CASE WHEN ge.id IS NOT NULL THEN json_build_object(
+                'id', ge.id, 'name', ge.name, 'handle', gh.handle, 'logoUrl', ge.logo_url) END AS gym_badge
          FROM public.usuarios u
          LEFT JOIN public.perfiles_antropometricos p ON p.usuario_id = u.id
          LEFT JOIN profile.onboarding o ON o.user_id = u.id
@@ -1265,6 +1284,14 @@ export class SocialRepository {
             OR (c.addressee_id = u.id AND c.requester_id = :viewerId))
          LEFT JOIN social.profile_settings s ON s.user_id = u.id
          LEFT JOIN social.profile_details pd ON pd.user_id = u.id
+         -- ADR-0027: the person's CONFIRMED SOCIO (ux_affiliations_confirmed_socio),
+         -- only when they opened their social profile and show the membership;
+         -- the badge only while the gym is public.
+         LEFT JOIN directory.affiliations ga
+           ON ga.user_id = u.id AND ga.kind = 'SOCIO' AND ga.status = 'CONFIRMED'
+          AND s.profile_enabled AND s.gym_membership_visible
+         LEFT JOIN directory.entities ge ON ge.id = ga.gym_entity_id AND ge.status = 'ACTIVE'
+         LEFT JOIN directory.handles gh ON gh.owner_entity_id = ge.id AND gh.status = 'ACTIVE'
          -- La galería entera, no sólo la portada: la tarjeta de descubrimiento
          -- pasa las fotos con el dedo, así que necesita todas. El LIMIT es el
          -- tope de producto (6) y va DENTRO del subselect: agregando primero y
@@ -1300,7 +1327,12 @@ export class SocialRepository {
               AND s.profile_enabled = true
               AND s.cross_gym_enabled = true
               AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int, 0) >= 18)
+            -- Members of the viewer's confirmed gym are its community, whatever their tenant.
+            OR (ga.gym_entity_id = (SELECT va.gym_entity_id FROM directory.affiliations va
+                                     WHERE va.user_id = :viewerId AND va.kind = 'SOCIO' AND va.status = 'CONFIRMED')
+              AND COALESCE(EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento))::int, 0) >= 18)
           )
+          AND (:gymEntityId::uuid IS NULL OR ga.gym_entity_id = :gymEntityId)
           AND (:objetivo::text IS NULL OR p.objetivo = ANY(string_to_array(:objetivo, ',')))
           AND (:branchId::uuid IS NULL OR u.sede_id = :branchId)
           AND (:gender::text IS NULL OR u.genero = :gender)
@@ -1347,6 +1379,7 @@ export class SocialRepository {
           userIds: filters.userIds?.length ? filters.userIds : [null],
           excludeDecided: filters.excludeDecided ?? false,
           includeCrossGym: filters.includeCrossGym ?? false,
+          gymEntityId: filters.gymEntityId ?? null,
           mapOnly: filters.mapOnly ?? false,
           discoveryOnly: filters.discoveryOnly ?? false,
           adultOnly: filters.adultOnly ?? false,
@@ -1392,6 +1425,7 @@ export class SocialRepository {
             : { lat: row.recommendation_lat, lon: row.recommendation_lon },
         recommendationIntents: row.recommendation_intents ?? [],
         about: row.about,
+        gymBadge: row.gym_badge,
       };
     });
   }

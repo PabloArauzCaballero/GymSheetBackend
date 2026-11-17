@@ -10,7 +10,9 @@ import { requestIdMiddleware } from '../src/common/middleware/request-id.middlew
 import { WorkoutSessionStatus } from '../src/common/enums/domain.enums';
 import { env } from '../src/config/env';
 import { WorkoutSessionModel } from '../src/modules/workouts/workout-session.model';
+import { Sequelize } from 'sequelize-typescript';
 import { E2E_SIGNUP_FIELDS } from './support/e2e-app';
+import { seedConfirmedSocio } from './support/gym-community-e2e';
 
 /**
  * `computeStreaks()` ya tiene cobertura unitaria pura (`progression.spec.ts`).
@@ -147,6 +149,8 @@ describe('Progression streaks (e2e)', () => {
 
   it('sorts the leaderboard by streak in non-increasing order when sortBy=streak', async () => {
     const { accessToken, userId } = await registerUser('leaderboard');
+    // The leaderboard is the ranking of the person's confirmed gym (ADR-0027).
+    await seedConfirmedSocio(application.get(Sequelize), userId);
     await seedFinishedSession(userId, -1);
     await seedFinishedSession(userId, 0);
     // Fuerza el recálculo de user_progress antes de leer la clasificación: es

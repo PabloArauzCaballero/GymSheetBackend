@@ -39,6 +39,8 @@ tags:
     description: Pedidos pagados por QR o en efectivo y confirmados por el negocio (ADR-0024)
   - name: Affiliations
     description: Afiliaciones de personas y coaches a la ficha del gimnasio (ADR-0025)
+  - name: GymCommunity
+    description: «Mi gimnasio», clasificación y socios por la afiliación SOCIO confirmada (ADR-0027)
 paths:
   /auth/register:
     post:
@@ -3827,6 +3829,63 @@ paths:
         "404": { description: "De otro gimnasio o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "409": { description: "AFFILIATION_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "422": { description: "AFFILIATION_NOTE_REQUIRED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/gym:
+    get:
+      tags: [GymCommunity]
+      summary: "Mi gimnasio: el SOCIO confirmado, la solicitud pendiente y el interruptor de visibilidad"
+      responses:
+        "200":
+          description: "MyGym: { status: NONE|REQUESTED|CONFIRMED, gym: { id, name, handle, logoUrl } | null (solo CONFIRMED), location: { id, name } | null, since (confirmación) | null, affiliationId | null, pendingRequest: { affiliationId, gym, location, requestedAt, switchesGym } | null (Solicitud enviada o cambio de gimnasio), membershipVisible }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/gym/visibility:
+    put:
+      tags: [GymCommunity]
+      summary: "Mostrar u ocultar que soy socio (insignia, lista de socios, clasificación, Conocer)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [membershipVisible], properties: { membershipVisible: { type: boolean } } }
+      responses:
+        "200":
+          description: "MyGym: { status: NONE|REQUESTED|CONFIRMED, gym: { id, name, handle, logoUrl } | null (solo CONFIRMED), location: { id, name } | null, since (confirmación) | null, affiliationId | null, pendingRequest: { affiliationId, gym, location, requestedAt, switchesGym } | null (Solicitud enviada o cambio de gimnasio), membershipVisible }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/gym/members:
+    get:
+      tags: [GymCommunity]
+      summary: "Socios de mi gimnasio que muestran su afiliación y tienen perfil social (orden por nombre)"
+      parameters:
+        - { name: q, in: query, schema: { type: string, minLength: 1, maxLength: 80 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "DirectoryEntry[] (la ficha del directorio, con gymBadge)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Consulta inválida", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "GYM_MEMBERSHIP_REQUIRED { status }, EMAIL_VERIFICATION_REQUIRED o ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/progression/leaderboard:
+    get:
+      tags: [GymCommunity]
+      summary: "Clasificación de mi gimnasio (SOCIO confirmados; ADR-0027)"
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
+        - { name: sortBy, in: query, schema: { type: string, enum: [points, streak], default: points } }
+      responses:
+        "200":
+          description: "[{ position, userId, points, levelCode, streakDays, displayName (nombre e inicial), photoUrl (null si hay bloqueo), badges, isMe }]; quien oculta su afiliación no aparece salvo para sí"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "GYM_MEMBERSHIP_REQUIRED { status: NONE|REQUESTED } (sin SOCIO confirmado) o ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
 components:
   securitySchemes:
     bearerAuth:

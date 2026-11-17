@@ -53,7 +53,8 @@ export type DirectoryEntryResponse = {
   points: number | null;
   levelCode: string | null;
   /** Interests, habits and bio; `orientation` only when its owner made it visible. */
-  about: PublicAboutResponse;
+  about: PublicAboutResponse;  /** «Socio de X» (ADR-0027): only a CONFIRMED membership of a public gym that its member shows. */
+  gymBadge: { id: string; name: string; handle: string | null; logoUrl: string | null } | null;
 };
 
 export function mapDirectoryRowToResponse(row: DirectoryRow): DirectoryEntryResponse {
@@ -74,6 +75,7 @@ export function mapDirectoryRowToResponse(row: DirectoryRow): DirectoryEntryResp
     points: row.points,
     levelCode: row.levelCode,
     about: mapPublicAbout(row.about),
+    gymBadge: row.gymBadge ? { ...row.gymBadge, logoUrl: resolveMediaUrl(row.gymBadge.logoUrl) } : null,
   };
 }
 
@@ -85,6 +87,7 @@ export const DISCOVERY_REASON_CODES = [
   "SHARED_INTERESTS",
   "VERIFIED",
   "NEW_HERE",
+  "SAME_GYM",
 ] as const;
 export type DiscoveryReasonCode = (typeof DISCOVERY_REASON_CODES)[number];
 
