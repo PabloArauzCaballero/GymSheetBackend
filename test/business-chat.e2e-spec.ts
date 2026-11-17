@@ -8,8 +8,11 @@ import { registerModerator, type Member } from './support/moderation-e2e';
 import { sellerWithQr } from './support/orders-e2e';
 
 /** The summary keys of `/me/conversations`: what either side can learn about the other. */
+// The exact keys a business receives: the person's social profile never reaches it.
+// `lastMessageType` and `lastMessageFromMe` came with dev's chat previews (type and author of the last message only).
 const SUMMARY_KEYS = [
-  'businessEntityId', 'canWrite', 'conversationId', 'disappearingSeconds', 'kind', 'lastMessage', 'lastMessageAt', 'nickname',
+  'businessEntityId', 'canWrite', 'conversationId', 'disappearingSeconds', 'kind', 'lastMessage', 'lastMessageAt',
+  'lastMessageFromMe', 'lastMessageType', 'nickname',
   'otherUserId', 'otherUserLastDeliveredAt', 'otherUserLastReadAt', 'otherUserLastSeenAt', 'otherUserName', 'otherUserOnline',
   'otherUserPhotoUrl', 'otherUserReadReceiptsSinceAt', 'systemKind',
 ];
