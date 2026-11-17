@@ -125,6 +125,13 @@ const downStatements = [
   `CREATE TEMP TABLE business_entities_to_drop ON COMMIT DROP AS
      SELECT entity_id FROM business.accounts`,
   `DROP TABLE IF EXISTS business.accounts`,
+  // A business that already sold keeps its listing, suspended (not public): its orders are financial
+  // history that references it (ADR-0024). Only the listings without orders are deleted.
+  `UPDATE directory.entities e SET status = 'SUSPENDED', updated_at = now()
+    WHERE e.id IN (SELECT entity_id FROM business_entities_to_drop)
+      AND EXISTS (SELECT 1 FROM directory.payment_orders o WHERE o.entity_id = e.id)`,
+  `DELETE FROM business_entities_to_drop d
+    WHERE EXISTS (SELECT 1 FROM directory.payment_orders o WHERE o.entity_id = d.entity_id)`,
   `DELETE FROM directory.entity_categories WHERE entity_id IN (SELECT entity_id FROM business_entities_to_drop)`,
   `DELETE FROM directory.entities WHERE id IN (SELECT entity_id FROM business_entities_to_drop)`,
   `DROP SCHEMA IF EXISTS business`,

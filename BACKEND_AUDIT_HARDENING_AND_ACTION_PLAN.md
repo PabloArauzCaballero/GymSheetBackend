@@ -957,7 +957,7 @@ Aflorados por F-001 y resueltos sin cambio de comportamiento:
 | Reseña de ficha no pública | `404` (una ficha `DRAFT` no existe para las personas) | `directory.service.spec.ts` |
 | El cierre administrativo de personal aceptaba una cuenta de negocio | `POST /admin/users/:id/close` la rechaza (`400 STAFF_CLOSURE_NOT_STAFF`); su cierre es de 8f | `account-closure.service.spec.ts`, `test/account-closure.e2e-spec.ts` (catálogo) |
 
-Pendiente por franja: KYC y activación (8b), sedes `directory.entity_locations` y publicaciones (8c), pedidos y D6/D9/D10 (8d), afiliación (8e), chat, cierre y exportación del negocio (8f).
+Pendiente por franja: KYC y activación (8b), sedes `directory.entity_locations` y publicaciones (8c), afiliación (8e), chat, cierre y exportación del negocio (8f).
 
 ### Franja 8b: KYC de negocios, aprobación en segundos y consola de REPP (ADR-0021)
 
@@ -1011,6 +1011,38 @@ CURRENCY_NOT_BOB`; el down las deja `INACTIVE`); e2e nuevas `business-listings` 
 pruebas en rojo de la línea base (mismas 10 suites, mismos nombres).
 
 Fuera de 8c: pedidos y reserva de stock (8d), moderación de imagen de las fotos (puerto `Noop`), orden por relevancia, filtros «cerca» y «abierto ahora» de publicaciones, servir tras una puerta los archivos de una publicación oculta.
+
+### Franja 8d: pedidos pagados por QR o en efectivo y confirmados por el negocio (ADR-0024)
+
+| Cambio / riesgo | Corrección | Prueba |
+|---|---|---|
+| D9 · `SYSTEM_ADMIN` confirmaba pagos (`admin/directory/*`) | Consola retirada; confirma solo la cuenta `NEGOCIO` dueña en `business/me/orders*`; persona, `MODERATOR` y `SYSTEM_ADMIN` → `403`, otro negocio → `404` | `test/business-orders.e2e-spec.ts`, `test/platform-operation.e2e-spec.ts` (falla contra 0ab2073), `account-kind.route-inventory.spec.ts`, `roles.guard.admin-routes.spec.ts` |
+| D5 · configuración de cobro pública | Ruta pública retirada; instrucciones y QR solo al comprador de una orden abierta y nunca de un negocio no público (`409 ORDER_BUSINESS_UNAVAILABLE`) | e2e (otra persona `404`, negocio `403`, `test/directory-defects.e2e-spec.ts` falla contra 0ab2073) |
+| D6 · comprobante como URL libre | Multipart JPEG/PNG por bytes, cifrado AES-256-GCM (derivación propia de `KYC_ENCRYPTION_KEY`) en `orders/{orderId}/receipt/{uuid}.bin`; fuera del montaje estático y de la política anónima de MinIO; en el recuento y el borrado real de ADR-0017 | e2e (bytes guardados ≠ claro, ruta estática `404` también codificada), `media-storage.port.spec.ts`, `private-media-path.spec.ts` |
+| D10 · aviso solo a `entity.user_id` | Los avisos van a la cuenta de negocio de `business.accounts`; solo vende una ficha con cuenta | e2e (recordatorios, vencimiento) |
+| Manipulación de precio y cantidad | Cuerpo estricto sin montos (`400`); precio de la publicación, total en centavos; varias unidades solo en productos (`422`), tope por pedido, un pedido abierto por publicación y tope de abiertos por persona bajo candado consultivo | e2e, `buyer-orders.service.spec.ts`, `order-rules.spec.ts` |
+| Doble confirmación / repetición | Candado de fila de la orden; la segunda y la repetición → `409 ORDER_INVALID_TRANSITION`; historial append-only con una sola fila `CONFIRMED` | e2e (dos simultáneas: `[200, 409]`) |
+| Stock | Reserva bajo `FOR UPDATE` al crear (`409 ORDER_OUT_OF_STOCK`), liberación exacta (`stock_reserved_units`) al cancelar, rechazar o vencer, consumo al confirmar; `ck_entity_plan_stock` (8c) | e2e (dos compradores a la vez: `[201, 409]`; CHECK en base), `order-lifecycle.service.spec.ts` |
+| Plazos sin dueño | `worker:orders-maintenance` (vence lo impago, cancela lo impago de un negocio no público con «no pagues», recuerda a las 24 h y 48 h); métricas `gym_sheet_orders_undecided*` | e2e (vencimiento libera stock, suspensión, recordatorios una vez cada uno, métrica); arranque real con `worker.started`/`worker.shutdown_requested` |
+| Almacenamiento gratis por comprobantes repetidos (revisión de seguridad de esta franja) | Tope de 3 comprobantes por orden, comprobado también antes de subir nada | e2e (el cuarto → `409 ORDER_RECEIPT_LIMIT` sin tocar el archivo guardado) |
+| Disputas | Denuncia `PAYMENT_ORDER` solo del comprador y con dinero que pudo moverse; copia del pedido en el expediente sin clave del archivo; comprobante visible para REPP solo dentro del caso, auditado; veredicto `suspendBusiness`, nunca la escalera de personas | `test/business-orders-disputes.e2e-spec.ts`, `moderation.policy.spec.ts` |
+| Titular de la cuenta distinto del negocio | Similitud de trigramas < 0,6 con la razón social o el representante → `WARN` y `kyc_checks PAYMENT_HOLDER_MATCH` para la post-revisión; nunca bloquea | e2e, `order-rules.spec.ts` |
+| Escritores previos a la migración (despliegue, fixtures) | Disparador que completa `unit_amount` y el plazo de 24 h en un `INSERT` sin ellos (hallado al correr la e2e completa: las fixtures de cierre y exportación fallaban) | `test/account-closure.e2e-spec.ts`, `test/account-export-email.e2e-spec.ts` |
+| El down de 8a (`202611200401`) borraba las fichas de negocio aunque tuvieran pedidos (FK `RESTRICT`: el rollback fallaba con ventas registradas; hallado en la e2e completa) | Una ficha que ya vendió se conserva `SUSPENDED` (no pública) con sus pedidos; solo se borran las que no tienen pedidos | `test/business-accounts.e2e-spec.ts` (ciclo down/up con pedidos en la base) |
+
+Evidencia (17/11/2026, sobre la 8c actualizada —`0c56e40`— mergeada; base `gym_sheet_f8d_e2e` nueva con
+schema + migraciones up → down → up + semilla base): `yarn lint` y `yarn type-check` limpios; `yarn build` OK;
+unitarias 263 suites / 2387 pruebas en verde; e2e nuevas `business-orders` 11 y `business-orders-disputes` 5
+en verde; e2e completa: 75 suites en verde y exactamente las 47 pruebas en rojo de la línea base (mismas 10
+suites, mismos nombres). Contra el código de 0ab2073, las pruebas cambiadas de `platform-operation` (D9) y
+`directory-defects` (D5/D7) fallan y las suites nuevas no compilan (rutas y módulos inexistentes). Sobre la
+base con datos: `migration:down` pasó 2 `EXPIRED` a `CANCELLED` y encoló 21 archivos en `media.release`;
+`migration:up` rellenó 21 filas de historial. `worker:orders-maintenance` compilado arrancó con
+`worker.started`, venció una orden insertada al estilo anterior (sin `unit_amount` ni plazo, completados
+por el disparador) y paró con `worker.shutdown_requested` (salida 0); sin base registra
+`orders_maintenance.pass_failed` y sigue vivo.
+
+Fuera de 8d: registro de pago en efectivo por el negocio (necesita la afiliación de 8e), suscripciones (8e), «Escribir» al negocio desde el pedido y cierre/exportación del negocio (8f), contracción de `receipt_url`/`verified_*` (8f), tope de pedidos por negocio no verificado (§6 del plan).
 
 
 ---

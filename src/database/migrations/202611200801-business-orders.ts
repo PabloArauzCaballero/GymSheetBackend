@@ -20,7 +20,8 @@ const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
  *    reserved, the rejection code, who decided and when, and how many
  *    verification reminders went out. `EXPIRED` joins the statuses.
  *    `receipt_url` and `verified_*` stay for legacy rows (contracted in 8f);
- *    `decided_*` is backfilled from them.
+ *    `decided_*` is backfilled from them. A trigger completes the unit amount
+ *    and the 24 h deadline for a writer that predates this migration.
  * 2. `directory.payment_order_history`, append-only: every status change,
  *    with its actor (null for the system) and reason. Backfilled with one row
  *    per existing order.
@@ -65,6 +66,16 @@ const upStatements = [
           receipt_attempts = CASE WHEN submitted_at IS NULL THEN 0 ELSE 1 END,
           expires_at = CASE WHEN status = 'PENDING_PAYMENT' THEN created_at + interval '24 hours' END`,
   `ALTER TABLE directory.payment_orders ALTER COLUMN unit_amount SET NOT NULL`,
+  // Expand phase: a writer that predates this migration (the previous release during a deploy, a
+  // fixture) sends neither the unit amount nor a deadline; the row is completed instead of refused.
+  `CREATE FUNCTION directory.payment_orders_legacy_defaults() RETURNS trigger LANGUAGE plpgsql AS $$
+   BEGIN
+     IF NEW.unit_amount IS NULL THEN NEW.unit_amount := NEW.amount / NEW.quantity; END IF;
+     IF NEW.status = 'PENDING_PAYMENT' AND NEW.expires_at IS NULL THEN NEW.expires_at := now() + interval '24 hours'; END IF;
+     RETURN NEW;
+   END $$`,
+  `CREATE TRIGGER trg_payment_orders_legacy_defaults BEFORE INSERT ON directory.payment_orders
+     FOR EACH ROW EXECUTE FUNCTION directory.payment_orders_legacy_defaults()`,
   `ALTER TABLE directory.payment_orders DROP CONSTRAINT IF EXISTS ck_payment_order_status`,
   `ALTER TABLE directory.payment_orders
      ADD CONSTRAINT ck_payment_order_status CHECK (status IN (${PREVIOUS_ORDER_STATUSES}, 'EXPIRED')),
@@ -140,6 +151,8 @@ const downStatements = [
   `ALTER TABLE moderation.reports DROP CONSTRAINT IF EXISTS ck_moderation_report_target_kind`,
   `ALTER TABLE moderation.reports ADD CONSTRAINT ck_moderation_report_target_kind
      CHECK (target_kind IN (${PREVIOUS_TARGET_KINDS})) NOT VALID`,
+  `DROP TRIGGER IF EXISTS trg_payment_orders_legacy_defaults ON directory.payment_orders`,
+  `DROP FUNCTION IF EXISTS directory.payment_orders_legacy_defaults()`,
   `DROP TABLE IF EXISTS directory.payment_order_history`,
   `DROP INDEX IF EXISTS directory.ix_payment_orders_athlete_open`,
   `DROP INDEX IF EXISTS directory.ix_payment_orders_verification`,

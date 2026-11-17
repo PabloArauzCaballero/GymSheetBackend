@@ -48,8 +48,9 @@ The API does not return stack traces or raw infrastructure errors to clients. Un
 - Request bodies are capped by `REQUEST_BODY_LIMIT`.
 - REPP operates the platform and the gym has no staff (ADR-0019, franja 7a): every `admin/*` route
   requires an active `SYSTEM_ADMIN` (impersonating a gym with `POST /auth/impersonate-tenant` to act
-  on that gym), except social moderation, which also admits `MODERATOR` (see below), and
-  `admin/directory`, which the listing's owner or a `SYSTEM_ADMIN` manages (anyone else: `404`).
+  on that gym), except social moderation, which also admits `MODERATOR` (see below). The old
+  owner-gated `admin/directory/*` console no longer exists (franja 8d, ADR-0024): REPP does not
+  manage a listing's payment data or orders (D9).
   Legacy gym roles (`ADMIN`, `FRONT_DESK`, `COACH`, `ENTRENADOR_EXTERNO`) get `403` on every
   `admin/*` route, whatever permission grants they hold.
 - Account kinds (ADR-0020): a business account (`rol = NEGOCIO`, `accountKind = BUSINESS`) only
@@ -636,13 +637,92 @@ is `403 MODERATION_SELF_CASE`. The audit row adds `businessSuspended`.
 | Method | Route | Access | Notes |
 | ------ | ----- | ------ | ----- |
 | POST | `/directory/entities` | `SYSTEM_ADMIN` | REPP seeds a listing it owns; strict body without `is_verified`, `tenant_id` or `user_id` (`400`). Anyone else: `403` |
-| GET | `/public/directory/entities/:entityId/payment-config` | public | `{ bankName, accountHolderName, accountNumber, aliasOrPhone, qrImageUrl, qrPayload, instructions, isActive } \| null` (no `taxId`, ids or dates; `null` when inactive); `404` when the listing is not `ACTIVE` |
 | GET | `/public/directory/plans`, `/public/directory/entities/:entityId/plans`, `/public/directory/plans/:planId` | public | mapped (`metadata: {}`, seller as a summary); only active, `LIVE` plans of `ACTIVE` listings (`404` otherwise; ADR-0022) |
-| POST | `/directory/payments/orders` | authenticated | `404` for a plan of a listing that is not `ACTIVE` or not `LIVE`; `paymentConfig` comes mapped like the public one |
 | PATCH/DELETE | `/directory/reviews/:id` | author (delete: also `SYSTEM_ADMIN`) | someone else's review: `404` |
 | POST | `/directory/entities/:id/reviews` | authenticated | `404` when the listing is not `ACTIVE` |
 
-Plans are priced in `BOB` only: the legacy `admin/directory/plans*` routes accept `currency: "BOB"` or nothing (`400` otherwise), and a plan they create is `LIVE` only with the shape of its kind (ADR-0022).
+Removed in franja 8d (ADR-0024): `GET /public/directory/entities/:entityId/payment-config` (the payment
+data is not public, D5) and every `admin/directory/*` route (payment config, plans, price, price
+history, entity orders, confirm, reject; D9). Plans are edited at `business/me/listings*` (ADR-0022).
+
+## Marketplace orders (ADR-0024, franja 8d)
+
+The buyer pays the business directly, by its QR (`method: QR`) or in cash (`CASH`, only if the
+business accepts it); **the business confirms**; REPP never touches the money and never confirms. Only
+a business with a business account sells, and only what is public (`404` otherwise). Prices in `BOB`,
+taken from the listing (the body carries no amount). Statuses:
+
+```
+QR:   PENDING_PAYMENT --receipt--> PENDING_VERIFICATION --confirm--> CONFIRMED
+                                                        --reject---> REJECTED --receipt (≤ 3 in total)--> PENDING_VERIFICATION
+CASH: PENDING_VERIFICATION --confirm--> CONFIRMED | --reject--> REJECTED
+cancel (buyer): PENDING_PAYMENT, REJECTED, CASH PENDING_VERIFICATION → CANCELLED (cancelReason BUYER)
+deadline (worker): PENDING_PAYMENT after ORDER_PAYMENT_TTL_HOURS (24), CASH after ORDER_CASH_TTL_HOURS (72) → EXPIRED
+seller not public (worker): unpaid orders → CANCELLED (cancelReason BUSINESS_UNAVAILABLE, "no pagues")
+```
+
+A product's units are reserved when the order is created (row lock on the listing; `409 ORDER_OUT_OF_STOCK
+{available}`), freed on cancel, reject or expiry, reserved again on a new receipt after a rejection, and
+taken from both counters on confirm. Every change leaves a row in the append-only
+`directory.payment_order_history` (the `timeline`). Notices (in-app): new cash order and receipt received
+(business), confirmed, rejected with reason, expired and "no pagues" (buyer), reminders at 24 h and 48 h of
+a receipt waiting (business). Confirming an order of a gym listing with a legacy tenant still creates the
+`dir_…` membership until franja 8e.
+
+`Order` (both sides): `{ id, orderNumber, status, method, quantity, unitAmount, amount, currency, listing:
+{ id, name, offerKind, validityDays, sessionsCount } (snapshot at purchase), seller: { entityId, name,
+handle, logoUrl }, expiresAt, submittedAt, decidedAt, cancelledAt, cancelReason, rejection: { code, text,
+note } | null, receipt: { uploaded, reference }, note, createdAt }`; the buyer's adds `actions: {
+canUploadReceipt, canCancel, canReport }`, the business's adds `buyer: { name }` and `actions: { canDecide }`.
+The detail adds `timeline: [{ status, at, reasonCode, by: BUYER|BUSINESS|SYSTEM }]`. Lists are keyset pages
+`{ items, nextCursor }` (`400 INVALID_CURSOR` for a tampered cursor).
+
+### Buyer (persons; a business account gets `403 ACCOUNT_KIND_NOT_ALLOWED`; someone else's order: `404`)
+
+| Method | Route | Body / response | Codes |
+| ------ | ----- | --------------- | ----- |
+| POST | `/directory/payments/orders` | strict `{ listingId, quantity? (1; > 1 only for PRODUCT, ≤ ORDER_MAX_QUANTITY), method? QR\|CASH (QR), note? (≤ 500) }` → `Order` | `201`, `400` (any other field, e.g. `amount`, `planId`), `404` (not public / no business account), `409 ORDER_OUT_OF_STOCK {available}`, `409 ORDER_ALREADY_OPEN {orderId}`, `409 ORDER_OPEN_LIMIT {max}` (ORDER_OPEN_MAX_PER_PERSON = 5), `409 ORDER_PAYMENT_METHOD_UNAVAILABLE {method}`, `422 ORDER_QUANTITY_NOT_ALLOWED {max}`, `429` (30/h) |
+| GET | `/directory/payments/orders/my-orders` | `?status&cursor&limit (≤ 50)` → `{ items: Order[], nextCursor }`, newest first | `200`, `400` |
+| GET | `/directory/payments/orders/:id` | `Order` + `timeline` | `200`, `404` |
+| GET | `/directory/payments/orders/:id/payment-instructions` | `{ orderId, orderNumber, method, amount, currency, expiresAt, bankName, accountHolderName, accountNumber, aliasOrPhone, instructions, qrPath }` (bank fields and `qrPath` null for cash; no tax id) — open or rejected orders only | `200`, `404`, `409 ORDER_INVALID_TRANSITION`, `409 ORDER_BUSINESS_UNAVAILABLE` (seller not public: do not pay), `409 ORDER_PAYMENT_METHOD_UNAVAILABLE` |
+| GET | `/directory/payments/orders/:id/payment-qr` | the business's QR image (decrypted; `Cache-Control: private, no-store`, `nosniff`) | `200`, `404`, `409` as above |
+| POST | `/directory/payments/orders/:id/receipt` | multipart `file` (JPEG/PNG by bytes, ≤ `MEDIA_UPLOAD_MAX_BYTES`) + optional field `reference` (≤ 100) → `Order`. Stored encrypted at `orders/{orderId}/receipt/{uuid}.bin` (no static route serves it); the previous receipt is deleted | `200`, `400`, `404`, `409 ORDER_INVALID_TRANSITION`, `409 ORDER_RECEIPT_LIMIT {max}` (3), `409 ORDER_OUT_OF_STOCK` (resend after a rejection), `413`, `503 PAYMENT_EVIDENCE_UNAVAILABLE` |
+| GET | `/directory/payments/orders/:id/receipt` | own receipt (decrypted, `no-store`) | `200`, `404` |
+| POST | `/directory/payments/orders/:id/cancel` | → `Order` | `200`, `404`, `409 ORDER_INVALID_TRANSITION` |
+| POST | `/me/reports` | `{ targetKind: PAYMENT_ORDER, targetId: orderId, reason, details? }` — "Tengo un problema con este pedido": only the buyer, and not while `PENDING_PAYMENT` | `201`, `404`, `409` (already reported) |
+
+### Business (`NEGOCIO` only; persons, `MODERATOR` and `SYSTEM_ADMIN`: `403`; another business's order: `404`)
+
+| Method | Route | Body / response | Codes |
+| ------ | ----- | --------------- | ----- |
+| GET | `/business/me/orders` | `?status&cursor&limit` → `{ items: Order[], nextCursor, pendingCount }`; "Por confirmar" (`PENDING_VERIFICATION`) first, oldest first, then the rest newest first | `200`, `400` |
+| GET | `/business/me/orders/:id` | `Order` + `timeline` | `200`, `404` |
+| GET | `/business/me/orders/:id/receipt` | the receipt (decrypted, `no-store`, `nosniff`) | `200`, `404` |
+| POST | `/business/me/orders/:id/confirm` | → `Order` (`CONFIRMED`). Row-locked: of two at once one is `200`, the other `409`; a replay is `409` | `200`, `404`, `409 ORDER_INVALID_TRANSITION` |
+| POST | `/business/me/orders/:id/reject` | strict `{ reasonCode: AMOUNT_MISMATCH\|UNREADABLE\|NOT_RECEIVED\|OTHER, note? (3–500; required with OTHER) }` → `Order` (`REJECTED`) | `200`, `400`, `404`, `409 ORDER_INVALID_TRANSITION`, `422 ORDER_REJECTION_NOTE_REQUIRED` |
+| GET | `/business/me/payment-config` | `{ bankName, accountHolderName, accountNumber, aliasOrPhone, instructions, acceptsCash, isActive, hasQr, holderMatch: PASS\|WARN\|UNKNOWN, updatedAt } \| null` | `200` |
+| PUT | `/business/me/payment-config` | strict `{ bankName, accountHolderName, accountNumber?, aliasOrPhone?, instructions?, acceptsCash? (false), isActive? (true) }` → same. A holder whose trigram similarity with the KYC legal name or representative is under 0.6 is `WARN` and flags REPP's post-review (`kyc_checks PAYMENT_HOLDER_MATCH`); it never blocks | `200`, `400`, `409 BUSINESS_ACCOUNT_LOCKED` |
+| PUT | `/business/me/payment-config/qr` | multipart `file` (JPEG/PNG) → same; encrypted at `business/{entityId}/payment/{uuid}.bin`, never public; the previous QR is deleted | `200`, `400`, `409 PAYMENT_CONFIG_REQUIRED`, `409 BUSINESS_ACCOUNT_LOCKED`, `413`, `503 PAYMENT_EVIDENCE_UNAVAILABLE` |
+| GET | `/business/me/payment-config/qr` | own QR image | `200`, `404` |
+
+A suspended business still decides the orders already paid (`PENDING_VERIFICATION`); its unpaid orders are
+cancelled by the worker and its payment data is no longer handed out.
+
+### REPP (`MODERATOR`, `SYSTEM_ADMIN`): disputes only
+
+`/admin/moderation/cases/PAYMENT_ORDER/:orderId` is a regular case (reported account: the business).
+`content` is `{ kind: PAYMENT_ORDER, orderNumber, status, method, quantity, unitAmount, amount, currency,
+listingName, buyerNote, receipt: { uploaded, sha256, reference, attempts, path }, rejection, cancelReason,
+createdAt, submittedAt, decidedAt, seller: { entityId, name, handle, status, isVerified, holderMatch },
+timeline }`. The verdict may `suspendBusiness` (no person ladder: `422`); an order is never hidden and
+REPP refunds nothing.
+
+| Method | Route | Response | Codes |
+| ------ | ----- | -------- | ----- |
+| GET | `/admin/moderation/cases/PAYMENT_ORDER/:orderId/receipt` | the receipt, only while a `PAYMENT_ORDER` case exists for it and the moderator may read the case (ADR-0018 §8); audited `moderation/payment-order-receipt-view` before the bytes go out | `200`, `403`, `404` |
+
+`GET /health/metrics` adds `gym_sheet_orders_undecided`, `gym_sheet_orders_undecided_overdue` (past the
+second reminder) and `gym_sheet_orders_undecided_oldest_seconds`.
 
 ## Main status codes
 

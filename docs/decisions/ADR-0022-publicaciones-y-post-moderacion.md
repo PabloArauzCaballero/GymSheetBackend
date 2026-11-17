@@ -125,7 +125,7 @@ paginación real y sin superficie para el negocio.
     (`PROHIBITED_PRODUCT|MISLEADING|PRICE_ABUSE|DUPLICATE|OTHER`); aviso al negocio en la app, auditoría
     `business/listing-release|listing-reject`, nunca sobre el propio negocio. Es una superficie que el
     plan no listaba para 8c, pero sin ella una publicación retenida no tenía salida.
-11. **Consola vieja `admin/directory/plans*`** (siembras de REPP, se retira en 8d): solo acepta `BOB`, y
+11. **Consola vieja `admin/directory/plans*`** (siembras de REPP; retirada en 8d, [ADR-0024](./ADR-0024-pedidos-confirmados-por-el-negocio.md)): solo acepta `BOB`, y
     lo que crea queda `LIVE` solo con la forma de su tipo (`legacyListingState`), sin las comprobaciones
     de precio ni de términos (es REPP quien la usa).
 
