@@ -5,13 +5,14 @@ import { hasOpenReportSql } from "../../common/moderation/open-report.sql";
 import { literal, Op, QueryTypes, Transaction, type WhereOptions } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { ConversationParticipantModel } from "./conversation-participant.model";
-import { ConversationModel } from "./conversation.model";
+import { ConversationModel, type ConversationKind } from "./conversation.model";
 import { MessageVisibilityModel } from "./message-visibility.model";
 import { lockSocialPairUsers } from "../social/social-pair-lock";
 import { MessageModel, MessageType } from "./message.model";
 import { expiryFor } from "./chat-disappearing";
 import { MessageReactionModel } from "./message-reaction.model";
 import { replyPreviewOf, type MessageExtras, type MessageReaction } from "./chat.mapper";
+import { assertBusinessDisappearingAllowed, assertBusinessMessageAllowed, businessSenderLocked } from "./business-chat.rules";
 
 export const REPLY_UNAVAILABLE_MESSAGE = "El mensaje al que respondes ya no está disponible.";
 
@@ -55,6 +56,11 @@ export interface ConversationSummaryRow {
   last_message_at: string | null;
   can_write: boolean;
   system_kind: SystemConversationKind | null;
+  kind: ConversationKind;
+  /** The listing of a BUSINESS conversation; `null` otherwise. */
+  business_entity_id: string | null;
+  /** The viewer is the business and the other side is its customer: only name and avatar of the person. */
+  viewer_is_business: boolean;
   /** Apodo que YO le puse a esta conversación, o `null` si no le puse ninguno. */
   nickname: string | null;
   /** Cursores del OTRO participante — con qué comparar el `createdAt` de mis propios mensajes para pintar el check. */
@@ -276,6 +282,7 @@ export class ChatRepository {
          FROM chat.participants p1
          JOIN chat.participants p2 ON p2.conversation_id = p1.conversation_id
          JOIN chat.conversations c ON c.id = p1.conversation_id AND c.revoked_at IS NULL
+          AND c.kind <> 'BUSINESS'
         WHERE p1.user_id = :userA AND p2.user_id = :userB
           AND (SELECT COUNT(*) FROM chat.participants p3 WHERE p3.conversation_id = p1.conversation_id) = 2
         LIMIT 1`,
@@ -342,7 +349,7 @@ export class ChatRepository {
          FROM chat.participants p1
          JOIN chat.participants p2 ON p2.conversation_id = p1.conversation_id
          JOIN chat.conversations c ON c.id = p1.conversation_id
-          AND c.revoked_at IS NULL AND c.system_kind IS NULL
+          AND c.revoked_at IS NULL AND c.system_kind IS NULL AND c.kind = 'DIRECT'
         WHERE p1.user_id = :userA AND p2.user_id = :userB
           AND (SELECT COUNT(*) FROM chat.participants p3 WHERE p3.conversation_id = p1.conversation_id) = 2
         ORDER BY c.created_at DESC
@@ -377,7 +384,7 @@ export class ChatRepository {
   ): Promise<string> {
     return this.sequelize.transaction(async (transaction) => {
       const conversation = await this.conversations.create(
-        { systemKind },
+        { systemKind, kind: "SYSTEM" },
         { transaction },
       );
       await this.participants.bulkCreate(
@@ -555,6 +562,8 @@ export class ChatRepository {
       });
       if (!participant) throw new NotFoundException("Conversación no encontrada.");
       if (!participant.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
+      assertBusinessMessageAllowed(conversation.kind, fields.type);
+      await this.assertBusinessSenderActive(conversationId, senderId, transaction);
       // El modo temporal se lee bajo el mismo bloqueo que lo cambia: un mensaje
       // enviado justo después de activarlo ya nace con caducidad.
       await this.assertReplyTarget(conversationId, senderId, fields.replyToId, transaction);
@@ -582,6 +591,8 @@ export class ChatRepository {
       });
       if (!participant) throw new NotFoundException("Conversación no encontrada.");
       if (!participant.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
+      assertBusinessMessageAllowed(conversation.kind, fields.type);
+      await this.assertBusinessSenderActive(conversationId, senderId, transaction);
 
       const existing = await this.messages.findOne({
         where: { conversationId, senderId, clientRequestId }, transaction,
@@ -619,6 +630,20 @@ export class ChatRepository {
       }, { transaction });
       return { message, created: true };
     });
+  }
+
+  /**
+   * A business that REPP suspended (or that closed) stops sending in its
+   * conversations; its customers can still write to it (ADR-0023).
+   */
+  async assertBusinessSenderActive(conversationId: string, senderId: string, transaction?: Transaction): Promise<void> {
+    const [locked] = await this.sequelize.query<{ status: string }>(
+      `SELECT a.status FROM chat.conversations c
+         JOIN business.accounts a ON a.entity_id = c.business_entity_id AND a.user_id = :senderId
+        WHERE c.id = :conversationId AND c.kind = 'BUSINESS' AND a.status <> 'ACTIVE'`,
+      { type: QueryTypes.SELECT, replacements: { conversationId, senderId }, ...(transaction ? { transaction } : {}) },
+    );
+    if (locked) throw businessSenderLocked();
   }
 
   getMessage(conversationId: string, messageId: string, userId: string): Promise<MessageModel | null> {
@@ -761,9 +786,13 @@ export class ChatRepository {
     return this.sequelize.query<ConversationSummaryRow>(
       `SELECT c.id AS conversation_id,
               other.user_id AS other_user_id,
-              u.nombre_completo AS other_user_name,
-              other_photo.url AS other_user_photo_url,
-              u.last_seen_at AS other_user_last_seen_at,
+              -- In a BUSINESS conversation the person sees the listing; the business sees only the person's name and avatar.
+              CASE WHEN c.kind = 'BUSINESS' AND other.user_id <> c.person_user_id THEN be.name ELSE u.nombre_completo END AS other_user_name,
+              CASE WHEN c.kind = 'BUSINESS' AND other.user_id <> c.person_user_id THEN be.logo_url ELSE other_photo.url END AS other_user_photo_url,
+              CASE WHEN c.kind = 'BUSINESS' AND other.user_id = c.person_user_id THEN NULL ELSE u.last_seen_at END AS other_user_last_seen_at,
+              c.kind AS kind,
+              c.business_entity_id AS business_entity_id,
+              (c.kind = 'BUSINESS' AND other.user_id = c.person_user_id) AS viewer_is_business,
               CASE WHEN last_msg.deleted_at IS NOT NULL THEN 'Mensaje eliminado' ELSE CASE
                 -- A view-once caption would leak the content the sender meant to show only once.
                 WHEN last_msg.view_once AND last_msg.type = 'image' THEN 'Foto de una vista'
@@ -804,6 +833,7 @@ export class ChatRepository {
          LEFT JOIN chat.read_receipt_settings mine_receipts ON mine_receipts.user_id = mine.user_id
          LEFT JOIN chat.read_receipt_settings other_receipts ON other_receipts.user_id = other.user_id
          JOIN public.usuarios u ON u.id = other.user_id
+         LEFT JOIN directory.entities be ON be.id = c.business_entity_id
          LEFT JOIN LATERAL (
            SELECT url FROM profile.photos p
             WHERE p.user_id = other.user_id
@@ -873,7 +903,7 @@ export class ChatRepository {
              FROM chat.conversations c
              JOIN chat.participants mine ON mine.conversation_id = c.id AND mine.user_id = :userId
              JOIN chat.participants other ON other.conversation_id = c.id AND other.user_id = m.other_id
-            WHERE c.system_kind IS NULL
+            WHERE c.system_kind IS NULL AND c.kind = 'DIRECT'
             ORDER BY c.created_at DESC
             LIMIT 1
          ) conv ON true
@@ -918,6 +948,7 @@ export class ChatRepository {
       const participant = await this.participants.findOne({ where: { conversationId, userId }, transaction });
       if (!participant) throw new NotFoundException("Conversación no encontrada.");
       if (!participant.canWrite) throw new ForbiddenException("Esta conversación es de solo lectura.");
+      assertBusinessDisappearingAllowed(conversation.kind, seconds);
       if ((conversation.disappearingSeconds ?? null) === seconds) return { seconds, event: null };
       await conversation.update({ disappearingSeconds: seconds }, { transaction });
       const [row] = await this.sequelize.query<DisappearingTimerEvent>(

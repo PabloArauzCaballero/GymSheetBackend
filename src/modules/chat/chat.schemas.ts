@@ -6,6 +6,11 @@ export const startConversationSchema = z.object({
   otherUserId: z.string().uuid(),
 });
 
+/** A person writes to a public listing (ADR-0023). */
+export const startBusinessConversationSchema = z.object({
+  entityId: z.string().uuid(),
+});
+
 /**
  * Texto, ubicación o sticker de catálogo, por REST (`POST .../messages`). Foto/video van por
  * `POST .../messages/media` (multipart) — ver `sendMediaMessageSchema` — y el
@@ -83,6 +88,7 @@ export const updateReadReceiptSettingsSchema = z.discriminatedUnion("scope", [
 ]);
 
 export type StartConversationInput = z.infer<typeof startConversationSchema>;
+export type StartBusinessConversationInput = z.infer<typeof startBusinessConversationSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 export type SendMediaMessageInput = z.infer<typeof sendMediaMessageSchema>;
 export type MessageListQuery = z.infer<typeof messageListQuerySchema>;

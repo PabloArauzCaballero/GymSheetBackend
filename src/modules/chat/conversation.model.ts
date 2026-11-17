@@ -2,6 +2,8 @@ import { Column, CreatedAt, DataType, Default, HasMany, Model, PrimaryKey, Table
 import { ConversationParticipantModel } from "./conversation-participant.model";
 import { MessageModel } from "./message.model";
 
+export type ConversationKind = "DIRECT" | "SYSTEM" | "BUSINESS";
+
 @Table({ tableName: "conversations", schema: "chat", underscored: true, timestamps: false })
 export class ConversationModel extends Model {
   @PrimaryKey
@@ -18,6 +20,19 @@ export class ConversationModel extends Model {
    */
   @Column({ type: DataType.STRING(20), allowNull: true, field: "system_kind" })
   declare systemKind: "CORPORATE" | "TENANT_ADMIN" | null;
+
+  /** BUSINESS: a person with a business (ADR-0023); no disappearing messages and no location there. */
+  @Default("DIRECT")
+  @Column({ type: DataType.STRING(10), allowNull: false })
+  declare kind: ConversationKind;
+
+  /** The listing of a BUSINESS conversation; its participant is the business account. */
+  @Column({ type: DataType.UUID, allowNull: true, field: "business_entity_id" })
+  declare businessEntityId: string | null;
+
+  /** The person of a BUSINESS conversation, the only side that can open it. */
+  @Column({ type: DataType.UUID, allowNull: true, field: "person_user_id" })
+  declare personUserId: string | null;
 
   @Column({ type: DataType.DATE, allowNull: true, field: "revoked_at" })
   declare revokedAt: Date | null;
