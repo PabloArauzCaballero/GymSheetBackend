@@ -37,6 +37,8 @@ tags:
     description: Publicaciones, sedes y marketplace público con post-moderación (ADR-0022)
   - name: Orders
     description: Pedidos pagados por QR o en efectivo y confirmados por el negocio (ADR-0024)
+  - name: Affiliations
+    description: Afiliaciones de personas y coaches a la ficha del gimnasio (ADR-0025)
 paths:
   /auth/register:
     post:
@@ -3088,6 +3090,7 @@ paths:
         "204": { description: No Content }
         "403": { $ref: "#/components/responses/Problem403" }
         "404": { $ref: "#/components/responses/Problem404" }
+        "409": { description: "LOCATION_IN_USE (un SOCIO vivo la declaró, ADR-0025)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
   /business/me/gallery:
     post:
       tags: [BusinessListings]
@@ -3558,6 +3561,272 @@ paths:
               schema: { type: string, format: binary }
         "403": { description: "Rol no permitido o MODERATION_SELF_CASE / MODERATION_PEER_CASE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "404": { description: "Sin caso para ese pedido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/affiliations:
+    post:
+      tags: [Affiliations]
+      summary: "Pedir ser socio o entrenador de un gimnasio público"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [kind, ciLast3], properties: { gymHandle: { type: string, minLength: 1, maxLength: 31, description: "@handle del gimnasio (o gymEntityId, uno solo)" }, gymEntityId: { type: string, format: uuid }, kind: { type: string, enum: [SOCIO, ENTRENADOR] }, locationId: { type: string, format: uuid, description: "Obligatoria para SOCIO" }, ciLast3: { type: string, pattern: "^[0-9]{3}$" }, switchGym: { type: boolean, default: false } } }
+      responses:
+        "201":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido o AFFILIATION_LOCATION_INVALID", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "EMAIL_VERIFICATION_REQUIRED o ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "Gimnasio no público o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_ALREADY_LIVE, AFFILIATION_SOCIO_PENDING, SOCIO_OF_ANOTHER_GYM { affiliationId, action: SWITCH_GYM }, AFFILIATION_LIMIT, AFFILIATION_COOLDOWN { retryAfter }", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+    get:
+      tags: [Affiliations]
+      summary: "Mis afiliaciones (más nuevas primero)"
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items: Affiliation[], nextCursor }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/affiliations/{id}:
+    get:
+      tags: [Affiliations]
+      summary: "Una afiliación propia"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Ajena o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/affiliations/{id}/cancel:
+    post:
+      tags: [Affiliations]
+      summary: "Retirar una solicitud pendiente"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Ajena o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/affiliations/{id}/end:
+    post:
+      tags: [Affiliations]
+      summary: "Dejar de ser socio o entrenador"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Ajena o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/gym-links:
+    post:
+      tags: [Affiliations]
+      summary: "Coach negocio: pedir vínculo con un gimnasio por @handle"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, properties: { gymHandle: { type: string, minLength: 1, maxLength: 31, description: "@handle del gimnasio (o gymEntityId, uno solo)" }, gymEntityId: { type: string, format: uuid }, locationId: { type: string, format: uuid } } }
+      responses:
+        "201":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED (no es COACH) o ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "Gimnasio no público o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "COACH_NOT_PUBLIC, AFFILIATION_ALREADY_LIVE, AFFILIATION_LIMIT, AFFILIATION_COOLDOWN", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+    get:
+      tags: [Affiliations]
+      summary: "Coach negocio: mis gimnasios"
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items: Affiliation[], nextCursor }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/gym-links/{id}:
+    get:
+      tags: [Affiliations]
+      summary: "Coach negocio: un vínculo"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "Ajeno o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/gym-links/{id}/cancel:
+    post:
+      tags: [Affiliations]
+      summary: "Coach negocio: retirar la solicitud"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Ajeno o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/gym-links/{id}/end:
+    post:
+      tags: [Affiliations]
+      summary: "Coach negocio: terminar el vínculo"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Ajeno o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/affiliations/requests:
+    get:
+      tags: [Affiliations]
+      summary: "Gimnasio: solicitudes pendientes (más viejas primero)"
+      parameters:
+        - { name: kind, in: query, schema: { type: string, enum: [SOCIO, ENTRENADOR] } }
+        - { name: locationId, in: query, schema: { type: string, format: uuid } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items: GymAffiliation[], nextCursor, pendingCount }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED (no es GYM) o ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "GYM_NOT_ACTIVE (el gimnasio no es público)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/affiliations/members:
+    get:
+      tags: [Affiliations]
+      summary: "Gimnasio: socios confirmados"
+      parameters:
+        - { name: locationId, in: query, schema: { type: string, format: uuid } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items: GymAffiliation[], nextCursor }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/affiliations/coaches:
+    get:
+      tags: [Affiliations]
+      summary: "Gimnasio: entrenadores confirmados (personas y coaches negocio)"
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items: GymAffiliation[], nextCursor }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/affiliations/{id}:
+    get:
+      tags: [Affiliations]
+      summary: "Gimnasio: una afiliación"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge }, location: { id, name } | null, requestedAt, confirmedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "De otro gimnasio, inexistente o pendiente con el gimnasio no público", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/affiliations/{id}/confirm:
+    post:
+      tags: [Affiliations]
+      summary: "Gimnasio: confirmar (un cambio de gimnasio termina la SOCIO anterior en la misma transacción)"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge }, location: { id, name } | null, requestedAt, confirmedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "De otro gimnasio o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_INVALID_TRANSITION (también la segunda de dos simultáneas), GYM_NOT_ACTIVE, SOCIO_OF_ANOTHER_GYM", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/affiliations/{id}/reject:
+    post:
+      tags: [Affiliations]
+      summary: "Gimnasio: rechazar con motivo"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [reasonCode], properties: { reasonCode: { type: string, enum: [UNKNOWN_PERSON, CI_MISMATCH, WRONG_LOCATION, NOT_A_COACH_HERE, OTHER] }, note: { type: string, minLength: 3, maxLength: 500 } } }
+      responses:
+        "200":
+          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge }, location: { id, name } | null, requestedAt, confirmedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "De otro gimnasio o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_INVALID_TRANSITION, GYM_NOT_ACTIVE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "AFFILIATION_NOTE_REQUIRED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/affiliations/{id}/end:
+    post:
+      tags: [Affiliations]
+      summary: "Gimnasio: terminar una afiliación confirmada"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [reasonCode], properties: { reasonCode: { type: string, enum: [NO_LONGER_MEMBER, NO_LONGER_COACH, CONDUCT, OTHER] }, note: { type: string, minLength: 3, maxLength: 500 } } }
+      responses:
+        "200":
+          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge }, location: { id, name } | null, requestedAt, confirmedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "De otro gimnasio o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "AFFILIATION_NOTE_REQUIRED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
 components:
   securitySchemes:
     bearerAuth:

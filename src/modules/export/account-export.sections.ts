@@ -131,6 +131,10 @@ export const ACCOUNT_EXPORT_SECTIONS: readonly AccountExportSection[] = [
   section("directory.payment_orders", "Órdenes de pago", "t.athlete_user_id = :userId", ["receipt_private_key"]),
   section("directory.payment_order_history", "Historial de tus pedidos",
     "t.order_id IN (SELECT o.id FROM directory.payment_orders o WHERE o.athlete_user_id = :userId)", ["actor_user_id"]),
+  // Affiliations to gyms (ADR-0025): which account on the gym's side made each change is internal.
+  section("directory.affiliations", "Afiliaciones a gimnasios", OWN, ["changed_by_user_id"]),
+  section("directory.affiliation_history", "Historial de tus afiliaciones",
+    "t.affiliation_id IN (SELECT a.id FROM directory.affiliations a WHERE a.user_id = :userId)", ["actor_user_id"]),
   section("access_control.credentials", "Credenciales de acceso", OWN, ["pin_hash"]),
   section("access_control.decisions", "Entradas al gimnasio", OWN),
   // Notifications.

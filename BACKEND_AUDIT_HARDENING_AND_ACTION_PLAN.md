@@ -1045,6 +1045,31 @@ por el disparador) y paró con `worker.shutdown_requested` (salida 0); sin base 
 Fuera de 8d: registro de pago en efectivo por el negocio (necesita la afiliación de 8e), suscripciones (8e), «Escribir» al negocio desde el pedido y cierre/exportación del negocio (8f), contracción de `receipt_url`/`verified_*` (8f), tope de pedidos por negocio no verificado (§6 del plan).
 
 
+### Franja 7b: afiliaciones de personas y coaches a la ficha del gimnasio (ADR-0025)
+
+| Cambio / riesgo | Corrección | Prueba |
+|---|---|---|
+| La pertenencia a un gimnasio era `usuarios.tenant_id` (uno solo, sin coach negocio ni fichas sin tenant) | `directory.affiliations` sobre la ficha GYM (`gym_entity_id`); `tenant_id` no se toca hasta 7c | `test/affiliations.e2e-spec.ts` |
+| Socio de dos gimnasios | Índice único parcial `ux_affiliations_confirmed_socio`; una sola solicitud SOCIO pendiente; el cambio de gimnasio termina la anterior en la misma transacción que confirma la nueva | `test/affiliations-integrity.e2e-spec.ts` (dos solicitudes a la vez `[201, 409]`, dos confirmaciones `[200, 409]`, `INSERT` directo rechazado por el índice), `gym-affiliations.service.spec.ts` |
+| Tipo de ficha y sede ajenas | FK compuestas a `entities(id, entity_type)` y a `entity_locations(id, entity_id)`; sede de otro gimnasio `400 AFFILIATION_LOCATION_INVALID` | e2e (API y SQL directo: `fk_affiliations_location`, `fk_affiliations_gym`, `ck_affiliations_ci_last3`) |
+| BOLA (ids de afiliación) | Toda lectura y escritura acotada al sujeto o al gimnasio; lo ajeno `404`; la propiedad se comprueba antes de tomar el candado de fila | e2e (otro gimnasio y otra persona `404` en ver, confirmar, rechazar, terminar, cancelar) |
+| BFLA (tipo de cuenta y de negocio) | `AccountKindGuard` (persona ↔ negocio) y tipo de ficha en el servicio (`403 BUSINESS_TYPE_NOT_ALLOWED`) | e2e, `account-kind.route-inventory.spec.ts` (falla contra 92af562) |
+| Datos personales que ve el gimnasio | DTO fijo: nombre visible, foto principal, sede, fechas y 3 dígitos del CI; nunca id, correo, edad, perfil ni CI completo; los avisos al gimnasio no nombran a la persona | e2e (claves exactas; el JSON no contiene id, correo ni fecha de nacimiento), `affiliation-rules.spec.ts` |
+| Recolección de datos por un gimnasio suspendido (revisión de seguridad de esta franja, plan §6.2) | Las solicitudes pendientes solo se leen y deciden con la ficha pública: si no, `409 GYM_NOT_ACTIVE` y `404` por id; socios y entrenadores siguen | e2e y `gym-affiliations.service.spec.ts` (fallan sin la corrección) |
+| Asignación masiva de estado | Esquemas Zod estrictos: `status`, `userId`, fechas → `400` | e2e, `affiliation-rules.spec.ts` |
+| Spam de solicitudes | Tope de pendientes (5 persona, 10 coach), espera de 7 días tras un no del gimnasio y de 1 día tras cancelar, throttle 20/h, correo verificado | e2e (`AFFILIATION_COOLDOWN`), `affiliation-requests.service.spec.ts` |
+| Borrar una sede declarada por un socio vivo | El CHECK `ck_affiliations_socio_location` lo impide; la API responde `409 LOCATION_IN_USE` | e2e |
+| Cierre de cuenta | Lo vivo termina (`ACCOUNT_CLOSED`), se borran los dígitos del CI, el historial (escrito por disparador) queda sin actor; exportación con sus afiliaciones | e2e (cierre), `account-closure.e2e-spec.ts` (inventario de FK), `account-export-email.e2e-spec.ts` |
+
+Evidencia (17/11/2026, sobre 92af562; base `gym_sheet_f7b_e2e` nueva con schema + migraciones up → down →
+up + semilla base): `yarn lint` y `yarn type-check` limpios; `yarn build` OK; unitarias 266 suites / 2402
+pruebas en verde; e2e nuevas `affiliations` 7 y `affiliations-integrity` 5 en verde; e2e completa: 77 suites
+en verde y exactamente las 47 pruebas en rojo de la línea base (mismas 10 suites, mismos nombres). Contra el
+código de 92af562 las suites nuevas no compilan (módulo inexistente) y el inventario de rutas falla.
+
+Fuera de 7b: lectores de «Mi gimnasio», sello «Socio de X» y Conocer sobre la afiliación (7c); suscripciones
+(8e, gancho `confirmInTransaction`); qué pasa con las afiliaciones al cerrar un gimnasio (8f).
+
 ---
 
 ## 5. Matriz de alcance funcional (dominio real: gimnasio)

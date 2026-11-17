@@ -591,7 +591,7 @@ LISTING_LOCKED_BY_REPP {moderationStatus}`; pause, resume, archive, stock and re
 | GET | `/business/me/locations` | → `Location[]` where `Location = { id, name, address, city, latitude, longitude, businessHours, displayOrder, createdAt, updatedAt }` | `200` |
 | POST | `/business/me/locations` | `{ name (2–120), city, address?, latitude?+longitude? (both or none), businessHours?, displayOrder? }` → `Location` (≤ 50) | `201`, `400`, `409 LOCATION_NAME_TAKEN`, `409 LOCATION_LIMIT`, `409 BUSINESS_ACCOUNT_LOCKED` |
 | PATCH | `/business/me/locations/:id` | any of the fields → `Location` | `200`, `400`, `404`, `409` |
-| DELETE | `/business/me/locations/:id` | | `204`, `404` |
+| DELETE | `/business/me/locations/:id` | refused while a live SOCIO declared it (ADR-0025); closed affiliations lose the location | `204`, `404`, `409 LOCATION_IN_USE` |
 | POST | `/business/me/gallery` | multipart `file` → `{ gallery: string[] }` (public profile gallery, ≤ 10) | `201`, `400`, `409 BUSINESS_GALLERY_LIMIT` |
 | DELETE | `/business/me/gallery/:position` | → `{ gallery }` | `200`, `404` |
 
@@ -723,6 +723,67 @@ REPP refunds nothing.
 
 `GET /health/metrics` adds `gym_sheet_orders_undecided`, `gym_sheet_orders_undecided_overdue` (past the
 second reminder) and `gym_sheet_orders_undecided_oldest_seconds`.
+
+## Affiliations to a gym (ADR-0025, franja 7b)
+
+A person is SOCIO of one gym and ENTRENADOR of several; a coach business (entity `COACH`) links to gyms
+by `@handle`. The gym (business account with a `GYM` entity) confirms, rejects or ends. The gym is named
+by its directory entity, never by `usuarios.tenant_id`. Only a public gym (`ACTIVE`) receives requests;
+any other is `404`.
+
+`Affiliation` (what the person or coach reads) = `{ id, kind: SOCIO|ENTRENADOR, status:
+REQUESTED|CONFIRMED|REJECTED|ENDED|CANCELLED, gym: { id, name, handle, logoUrl }, location: { id, name } |
+null, ciLast3 (persons; null for a coach), replacesAffiliationId, reasonCode, reasonNote, requestedAt,
+confirmedAt, closedAt }`. Reason codes: gym rejection `UNKNOWN_PERSON|CI_MISMATCH|WRONG_LOCATION|
+NOT_A_COACH_HERE|OTHER`; gym end `NO_LONGER_MEMBER|NO_LONGER_COACH|CONDUCT|OTHER`; subject `WITHDRAWN`
+(cancel), `LEFT` (end); system `SWITCHED_GYM`, `ACCOUNT_CLOSED`.
+
+### Person (`me/affiliations`; a business account gets `403 ACCOUNT_KIND_NOT_ALLOWED`; someone else's: `404`)
+
+| Method | Route | Body / response | Codes |
+| ------ | ----- | --------------- | ----- |
+| POST | `/me/affiliations` | strict `{ gymHandle \| gymEntityId (exactly one), kind, locationId (required for SOCIO, a location of that gym), ciLast3 (3 digits), switchGym? (false) }` → `Affiliation` (`REQUESTED`). Verified email; 20/hour | `201`, `400`, `400 AFFILIATION_LOCATION_INVALID`, `403 EMAIL_VERIFICATION_REQUIRED`, `404`, `409 AFFILIATION_ALREADY_LIVE {affiliationId,status}`, `409 AFFILIATION_SOCIO_PENDING {affiliationId}`, `409 SOCIO_OF_ANOTHER_GYM {affiliationId, action: SWITCH_GYM}`, `409 AFFILIATION_LIMIT {max: 5}`, `409 AFFILIATION_COOLDOWN {retryAfter}`, `429` |
+| GET | `/me/affiliations` | `?cursor&limit` → `{ items: Affiliation[], nextCursor }`, newest first | `200`, `400` |
+| GET | `/me/affiliations/:id` | `Affiliation` | `200`, `404` |
+| POST | `/me/affiliations/:id/cancel` | `REQUESTED` → `CANCELLED` (`WITHDRAWN`) | `200`, `404`, `409 AFFILIATION_INVALID_TRANSITION` |
+| POST | `/me/affiliations/:id/end` | `CONFIRMED` → `ENDED` (`LEFT`) | `200`, `404`, `409 AFFILIATION_INVALID_TRANSITION` |
+
+«Cambio de gimnasio»: with a confirmed SOCIO elsewhere, a SOCIO request is `409 SOCIO_OF_ANOTHER_GYM`
+unless `switchGym: true`; then it is created with `replacesAffiliationId` and the old one ends
+(`SWITCHED_GYM`) only when the new gym confirms, in the same transaction. One pending SOCIO request at a
+time. After the gym rejects or ends, the same gym and kind wait 7 days; after a cancellation, 1 day.
+
+### Coach business (`business/me/gym-links`; `NEGOCIO` with a `COACH` entity, else `403 BUSINESS_TYPE_NOT_ALLOWED`)
+
+| Method | Route | Body / response | Codes |
+| ------ | ----- | --------------- | ----- |
+| POST | `/business/me/gym-links` | strict `{ gymHandle \| gymEntityId, locationId? }` → `Affiliation` (`ENTRENADOR`, `REQUESTED`). The coach's own profile must be public | `201`, `400`, `403`, `404`, `409 COACH_NOT_PUBLIC`, `409 AFFILIATION_ALREADY_LIVE`, `409 AFFILIATION_LIMIT {max: 10}`, `409 AFFILIATION_COOLDOWN` |
+| GET | `/business/me/gym-links` | `?cursor&limit` → `{ items, nextCursor }` | `200`, `403` |
+| GET | `/business/me/gym-links/:id` | `Affiliation` | `200`, `403`, `404` |
+| POST | `/business/me/gym-links/:id/cancel` | `REQUESTED` → `CANCELLED` | `200`, `403`, `404`, `409` |
+| POST | `/business/me/gym-links/:id/end` | `CONFIRMED` → `ENDED` | `200`, `403`, `404`, `409` |
+
+### Gym (`business/me/affiliations`; `NEGOCIO` with a `GYM` entity, else `403 BUSINESS_TYPE_NOT_ALLOWED`; another gym's: `404`)
+
+`GymAffiliation` = `{ id, kind, status, subject, location: { id, name } | null, requestedAt, confirmedAt }`;
+`subject` = `{ type: PERSON, displayName, photoUrl, ciLast3 }` or `{ type: BUSINESS, name, handle, logoUrl,
+badge: VERIFIED|NEW }`. Nothing else about a person (no id, email, age, social profile or full CI).
+Pending requests are read and decided only while the gym is public: otherwise `409 GYM_NOT_ACTIVE` (and a
+pending one is `404` by id); members, coaches and `end` keep working.
+
+| Method | Route | Body / response | Codes |
+| ------ | ----- | --------------- | ----- |
+| GET | `/business/me/affiliations/requests` | `?kind&locationId&cursor&limit` → `{ items: GymAffiliation[], nextCursor, pendingCount }`, oldest first | `200`, `400`, `403`, `409 GYM_NOT_ACTIVE` |
+| GET | `/business/me/affiliations/members` | `?locationId&cursor&limit` → confirmed SOCIO, newest first | `200`, `400`, `403` |
+| GET | `/business/me/affiliations/coaches` | `?cursor&limit` → confirmed ENTRENADOR (persons and coach businesses) | `200`, `400`, `403` |
+| GET | `/business/me/affiliations/:id` | `GymAffiliation` | `200`, `403`, `404` |
+| POST | `/business/me/affiliations/:id/confirm` | `REQUESTED` → `CONFIRMED`; a gym switch ends the person's SOCIO elsewhere in the same transaction. Of two at once, one is `200` and the other `409` | `200`, `403`, `404`, `409 AFFILIATION_INVALID_TRANSITION`, `409 GYM_NOT_ACTIVE`, `409 SOCIO_OF_ANOTHER_GYM` |
+| POST | `/business/me/affiliations/:id/reject` | strict `{ reasonCode (rejection chips), note? (3–500; required with OTHER) }` | `200`, `400`, `403`, `404`, `409`, `422 AFFILIATION_NOTE_REQUIRED` |
+| POST | `/business/me/affiliations/:id/end` | strict `{ reasonCode (end chips), note? }`: `CONFIRMED` → `ENDED` | `200`, `400`, `403`, `404`, `409`, `422 AFFILIATION_NOTE_REQUIRED` |
+
+Notices (in-app, key `affiliation:{id}:{event}`): `requested` to the gym (it never names the person);
+`confirmed`, `rejected`, `ended` to the person or the coach. To report a gym's handling, use
+`POST /me/reports` with `targetKind: BUSINESS_PROFILE` and the gym's entity id.
 
 ## Main status codes
 

@@ -238,6 +238,14 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
   // The order's history stays for the business without the buyer's name on its own steps (ADR-0024).
   anonymize("directory.payment_order_history", "Historial de tus pedidos", "t.actor_user_id = :userId",
     "actor_user_id = NULL", GYM_RECORD),
+  // Affiliations to gyms (ADR-0025): the live ones end, the CI digits go; the history keeps the dates.
+  anonymize("directory.affiliations", "Afiliaciones a gimnasios", OWN,
+    `status = CASE t.status WHEN 'REQUESTED' THEN 'CANCELLED' WHEN 'CONFIRMED' THEN 'ENDED' ELSE t.status END,
+     reason_code = CASE WHEN t.status IN ('REQUESTED', 'CONFIRMED') THEN 'ACCOUNT_CLOSED' ELSE t.reason_code END,
+     closed_at = COALESCE(t.closed_at, now()), ci_last3 = NULL, changed_by_user_id = NULL, updated_at = now()`,
+    "Las vigentes terminan y se borran los dígitos del CI; el gimnasio ve «Cuenta cerrada» con las fechas."),
+  anonymize("directory.affiliation_history", "Historial de tus afiliaciones", "t.actor_user_id = :userId",
+    "actor_user_id = NULL", "Los cambios quedan sin tu cuenta como autor."),
   anonymize("public.membership_activation_requests", "Activaciones de membresía", OWN_ES,
     "nota = NULL, updated_at = now()", GYM_RECORD),
   anonymize("access_control.credentials", "Credenciales de acceso al gimnasio", OWN,

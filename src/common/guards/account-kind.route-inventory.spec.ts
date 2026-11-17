@@ -78,6 +78,19 @@ const BUSINESS_REACHABLE: string[] = [
   'GET business/me/payment-config/qr',
   'PUT business/me/payment-config',
   'PUT business/me/payment-config/qr',
+  // Affiliations: the gym's «Socios» and a coach's «Mis gimnasios» (ADR-0025, franja 7b).
+  'GET business/me/affiliations/:id',
+  'GET business/me/affiliations/coaches',
+  'GET business/me/affiliations/members',
+  'GET business/me/affiliations/requests',
+  'POST business/me/affiliations/:id/confirm',
+  'POST business/me/affiliations/:id/end',
+  'POST business/me/affiliations/:id/reject',
+  'GET business/me/gym-links',
+  'GET business/me/gym-links/:id',
+  'POST business/me/gym-links',
+  'POST business/me/gym-links/:id/cancel',
+  'POST business/me/gym-links/:id/end',
 ];
 
 type Route = { method: string; path: string; controller: Type; handler: object };

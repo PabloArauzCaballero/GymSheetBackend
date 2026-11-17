@@ -10,6 +10,7 @@ import { businessKycMigration } from '../src/database/migrations/202611200501-bu
 import { businessListingsMigration } from '../src/database/migrations/202611200601-business-listings';
 import { listingVersionStampMigration } from '../src/database/migrations/202611200602-listing-version-stamp';
 import { businessOrdersMigration } from '../src/database/migrations/202611200801-business-orders';
+import { affiliationsMigration } from '../src/database/migrations/202611200901-affiliations';
 import { businessNameSkeleton, handleSkeleton } from '../src/modules/business-accounts/handle-rules';
 import { E2eApp, bootE2eApp, markEmailVerified } from './support/e2e-app';
 
@@ -436,7 +437,9 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
     const queryInterface = sequelize.getQueryInterface();
     const transaction = await sequelize.transaction();
     try {
-      // Migrations roll back in reverse order: the orders (202611200801), the listings (202611200601) and the KYC tables (202611200501) come after business.accounts.
+      // Migrations roll back in reverse order: the affiliations (202611200901), the orders (202611200801), the listings (202611200601)
+      // and the KYC tables (202611200501) come after business.accounts.
+      await affiliationsMigration.down(queryInterface, transaction);
       await businessOrdersMigration.down(queryInterface, transaction);
       await listingVersionStampMigration.down(queryInterface, transaction);
       await businessListingsMigration.down(queryInterface, transaction);
@@ -457,6 +460,7 @@ describe('business accounts and @handles (e2e, franja 8a)', () => {
       await businessListingsMigration.up(queryInterface, transaction);
       await listingVersionStampMigration.up(queryInterface, transaction);
       await businessOrdersMigration.up(queryInterface, transaction);
+      await affiliationsMigration.up(queryInterface, transaction);
       const [again] = await sequelize.query<{ accounts: string | null }>(
         `SELECT to_regclass('business.accounts')::text AS accounts`,
         { type: QueryTypes.SELECT, transaction },

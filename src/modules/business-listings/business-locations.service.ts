@@ -4,7 +4,7 @@ import { DomainException } from '../../common/errors/domain.exception';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { BusinessListingsService } from './business-listings.service';
 import { CreateLocationInput, UpdateLocationInput } from './business-listings.schemas';
-import { EntityLocationsRepository, LocationNameTakenError, LocationRow } from './entity-locations.repository';
+import { EntityLocationsRepository, LocationInUseError, LocationNameTakenError, LocationRow } from './entity-locations.repository';
 import { ENTITY_LOCATIONS_MAX } from './listing.catalog';
 
 export type PublicLocationDto = {
@@ -82,11 +82,19 @@ export class BusinessLocationsService {
     return this.find(entityId, locationId);
   }
 
+  /** A location a live SOCIO declared stays (409 `LOCATION_IN_USE`): end or move those members first. */
   async remove(actor: AuthenticatedUser, locationId: string): Promise<void> {
-    await this.sequelize.transaction(async (transaction) => {
-      const { account } = await this.listings.lockOwner(actor, transaction);
-      if (!(await this.repository.remove(account.entityId, locationId, transaction))) throw notFound();
-    });
+    await this.sequelize
+      .transaction(async (transaction) => {
+        const { account } = await this.listings.lockOwner(actor, transaction);
+        if (!(await this.repository.remove(account.entityId, locationId, transaction))) throw notFound();
+      })
+      .catch((error: unknown) => {
+        if (error instanceof LocationInUseError) {
+          throw new DomainException(HttpStatus.CONFLICT, 'LOCATION_IN_USE', 'Hay socios que declararon esta sede; no se puede eliminar.');
+        }
+        throw error;
+      });
   }
 
   private async find(entityId: string, locationId: string): Promise<OwnLocationDto> {
