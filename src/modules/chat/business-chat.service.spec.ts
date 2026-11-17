@@ -82,7 +82,9 @@ describe("business chat rules", () => {
   it("the business never learns when its customer is online", () => {
     const row = {
       conversation_id: conversationId, other_user_id: personId, other_user_name: "Ana", other_user_photo_url: null,
-      other_user_last_seen_at: null, last_message_body: null, last_message_at: null, can_write: true,
+      other_user_last_seen_at: null, last_message_body: null,
+    last_message_type: null,
+    last_message_from_me: false, last_message_at: null, can_write: true,
       system_kind: null, kind: "BUSINESS", business_entity_id: entityId, viewer_is_business: true, nickname: null,
       other_last_delivered_at: null, other_last_read_at: null, other_read_receipts_enabled_since: null, disappearing_seconds: null,
     } satisfies ConversationSummaryRow;

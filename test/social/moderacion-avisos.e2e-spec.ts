@@ -779,7 +779,7 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
     });
   }, 60000);
 
-  it("H11.S2.M4 hides private message text from push unless the recipient opts in", async () => {
+  it("H11.S2.M4 shows message text in push by default and hides it when the recipient opts out", async () => {
     if (!application || !moduleRef) {
       throw new Error("H11 E2E setup did not finish.");
     }
@@ -833,6 +833,26 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
       metadata: {},
     });
 
+    // The push leaves after the HTTP response (fire-and-forget in ChatService):
+    // wait for the n-th one instead of racing it.
+    const pushNumber = async (count: number) => {
+      for (let attempt = 0; attempt < 100 && sendToUser.mock.calls.length < count; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(sendToUser).toHaveBeenCalledTimes(count);
+    };
+
+    // Default (no saved preference): the push shows the text, like WhatsApp.
+    await request(application.getHttpServer())
+      .post(url(`/me/conversations/${conversationId}/messages`))
+      .set("Authorization", `Bearer ${sender.accessToken}`)
+      .send({ type: "text", body: "texto visible por defecto" })
+      .expect(201);
+    await pushNumber(1);
+    expect(sendToUser).toHaveBeenLastCalledWith(recipient.userId, expect.objectContaining({
+      body: "texto visible por defecto",
+    }));
+
     await request(application.getHttpServer())
       .patch(url("/notifications/preferences/me"))
       .set("Authorization", `Bearer ${recipient.accessToken}`)
@@ -843,7 +863,26 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
       .set("Authorization", `Bearer ${sender.accessToken}`)
       .send({ type: "text", body: "texto privado de prueba" })
       .expect(201);
-    expect(sendToUser).toHaveBeenCalledWith(recipient.userId, expect.objectContaining({
+    await pushNumber(2);
+    expect(sendToUser).toHaveBeenLastCalledWith(recipient.userId, expect.objectContaining({
+      body: "Tienes un mensaje nuevo.",
+    }));
+
+    // A client without the switch saving other preferences keeps the choice.
+    const { vistaPreviaMensajes: _omitted, ...withoutPreview } = preference(false);
+    const kept = await request(application.getHttpServer())
+      .patch(url("/notifications/preferences/me"))
+      .set("Authorization", `Bearer ${recipient.accessToken}`)
+      .send({ ...withoutPreview, recordatoriosVencimiento: false })
+      .expect(200);
+    expect(kept.body.data).toMatchObject({ recordatoriosVencimiento: false, vistaPreviaMensajes: false });
+    await request(application.getHttpServer())
+      .post(url(`/me/conversations/${conversationId}/messages`))
+      .set("Authorization", `Bearer ${sender.accessToken}`)
+      .send({ type: "text", body: "sigue siendo privado" })
+      .expect(201);
+    await pushNumber(3);
+    expect(sendToUser).toHaveBeenLastCalledWith(recipient.userId, expect.objectContaining({
       body: "Tienes un mensaje nuevo.",
     }));
 
@@ -857,7 +896,8 @@ describe("H11 moderation notices (PostgreSQL e2e)", () => {
       .set("Authorization", `Bearer ${sender.accessToken}`)
       .send({ type: "text", body: "texto compartido por preferencia" })
       .expect(201);
-    expect(sendToUser).toHaveBeenCalledWith(recipient.userId, expect.objectContaining({
+    await pushNumber(4);
+    expect(sendToUser).toHaveBeenLastCalledWith(recipient.userId, expect.objectContaining({
       body: "texto compartido por preferencia",
     }));
     sendToUser.mockRestore();

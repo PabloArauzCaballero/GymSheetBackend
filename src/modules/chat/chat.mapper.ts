@@ -1,4 +1,4 @@
-import { ConversationSummaryRow, DisappearingTimerEvent, PendingReplyRow, SystemConversationKind } from "./chat.repository";
+import { ConversationPreviewType, ConversationSummaryRow, DisappearingTimerEvent, PendingReplyRow, SystemConversationKind } from "./chat.repository";
 import { MessageModel, MessageType } from "./message.model";
 import type { ConversationKind } from "./conversation.model";
 import { isExpired } from "./chat-disappearing";
@@ -225,6 +225,10 @@ export type ConversationSummaryResponse = {
   otherUserOnline: boolean;
   otherUserLastSeenAt: string | null;
   lastMessage: string | null;
+  /** Kind of the last item (`null` = empty conversation); drives the preview icon. */
+  lastMessageType: ConversationPreviewType | null;
+  /** Whether I sent the last item; `false` for system rows and empty conversations. */
+  lastMessageFromMe: boolean;
   lastMessageAt: string | null;
   canWrite: boolean;
   systemKind: SystemConversationKind | null;
@@ -276,6 +280,8 @@ export function mapConversationSummary(
     otherUserOnline: row.viewer_is_business ? false : otherUserOnline,
     otherUserLastSeenAt: row.other_user_last_seen_at,
     lastMessage: row.last_message_body,
+    lastMessageType: row.last_message_type,
+    lastMessageFromMe: row.last_message_from_me === true,
     lastMessageAt: row.last_message_at,
     canWrite: row.can_write,
     systemKind: row.system_kind,
