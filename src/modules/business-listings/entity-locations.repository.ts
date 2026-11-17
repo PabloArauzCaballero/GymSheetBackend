@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { QueryTypes, Transaction, UniqueConstraintError } from 'sequelize';
+import { DatabaseError, QueryTypes, Transaction, UniqueConstraintError } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import type { CreateLocationInput, UpdateLocationInput } from './business-listings.schemas';
 
@@ -31,6 +31,11 @@ const COLUMN_OF: Record<keyof UpdateLocationInput, string> = {
 
 /** Thrown when another location of the same business already has this name. */
 export class LocationNameTakenError extends Error {}
+
+/** Thrown when a live SOCIO declared this location (ADR-0025): the database refuses to leave it without one. */
+export class LocationInUseError extends Error {}
+
+const SOCIO_LOCATION_CHECK = 'ck_affiliations_socio_location';
 
 /** `directory.entity_locations`: every query is scoped to one entity, so a foreign id is simply not found. */
 @Injectable()
@@ -91,6 +96,8 @@ export class EntityLocationsRepository {
       return await this.sequelize.query<T>(sql, { type: QueryTypes.SELECT, replacements, transaction });
     } catch (error: unknown) {
       if (error instanceof UniqueConstraintError) throw new LocationNameTakenError();
+      // Deleting sets `location_id` NULL on its affiliations; a live SOCIO's CHECK refuses that.
+      if (error instanceof DatabaseError && (error.original as { constraint?: unknown }).constraint === SOCIO_LOCATION_CHECK) throw new LocationInUseError();
       throw error;
     }
   }

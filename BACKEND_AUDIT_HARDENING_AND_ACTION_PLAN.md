@@ -1081,6 +1081,98 @@ exactamente las 47 pruebas en rojo de la línea base (10 suites, mismos nombres)
 `dist/main.js`: readiness `migrations: up-to-date`.
 
 
+### Franja 7b: afiliaciones de personas y coaches a la ficha del gimnasio (ADR-0025)
+
+| Cambio / riesgo | Corrección | Prueba |
+|---|---|---|
+| La pertenencia a un gimnasio era `usuarios.tenant_id` (uno solo, sin coach negocio ni fichas sin tenant) | `directory.affiliations` sobre la ficha GYM (`gym_entity_id`); `tenant_id` no se toca hasta 7c | `test/affiliations.e2e-spec.ts` |
+| Socio de dos gimnasios | Índice único parcial `ux_affiliations_confirmed_socio`; una sola solicitud SOCIO pendiente; el cambio de gimnasio termina la anterior en la misma transacción que confirma la nueva | `test/affiliations-integrity.e2e-spec.ts` (dos solicitudes a la vez `[201, 409]`, dos confirmaciones `[200, 409]`, `INSERT` directo rechazado por el índice), `gym-affiliations.service.spec.ts` |
+| Tipo de ficha y sede ajenas | FK compuestas a `entities(id, entity_type)` y a `entity_locations(id, entity_id)`; sede de otro gimnasio `400 AFFILIATION_LOCATION_INVALID` | e2e (API y SQL directo: `fk_affiliations_location`, `fk_affiliations_gym`, `ck_affiliations_ci_last3`) |
+| BOLA (ids de afiliación) | Toda lectura y escritura acotada al sujeto o al gimnasio; lo ajeno `404`; la propiedad se comprueba antes de tomar el candado de fila | e2e (otro gimnasio y otra persona `404` en ver, confirmar, rechazar, terminar, cancelar) |
+| BFLA (tipo de cuenta y de negocio) | `AccountKindGuard` (persona ↔ negocio) y tipo de ficha en el servicio (`403 BUSINESS_TYPE_NOT_ALLOWED`) | e2e, `account-kind.route-inventory.spec.ts` (falla contra 92af562) |
+| Datos personales que ve el gimnasio | DTO fijo: nombre visible, foto principal, sede, fechas y 3 dígitos del CI; nunca id, correo, edad, perfil ni CI completo; los avisos al gimnasio no nombran a la persona | e2e (claves exactas; el JSON no contiene id, correo ni fecha de nacimiento), `affiliation-rules.spec.ts` |
+| Recolección de datos por un gimnasio suspendido (revisión de seguridad de esta franja, plan §6.2) | Las solicitudes pendientes solo se leen y deciden con la ficha pública: si no, `409 GYM_NOT_ACTIVE` y `404` por id; socios y entrenadores siguen | e2e y `gym-affiliations.service.spec.ts` (fallan sin la corrección) |
+| Lectura por id de filas cerradas (revisión de seguridad de a3c0a5f, MEDIA): un gimnasio, aun suspendido, leía nombre, foto y dígitos del CI de solicitudes rechazadas o canceladas | El gimnasio solo lee filas vivas (socios, entrenadores, solicitudes con la ficha pública); una cerrada es `404` y el eco de `reject`/`end` trae `subject: null` (la consulta no selecciona esos datos); los dígitos del CI se borran al cerrar la fila, con CHECK `ck_affiliations_ci_closed` | `test/affiliations.e2e-spec.ts` y `gym-affiliations.service.spec.ts`/`affiliation-rules.spec.ts` (fallan contra a3c0a5f) |
+| Asignación masiva de estado | Esquemas Zod estrictos: `status`, `userId`, fechas → `400` | e2e, `affiliation-rules.spec.ts` |
+| Spam de solicitudes | Tope de pendientes (5 persona, 10 coach), espera de 7 días tras un no del gimnasio y de 1 día tras cancelar, throttle 20/h, correo verificado | e2e (`AFFILIATION_COOLDOWN`), `affiliation-requests.service.spec.ts` |
+| Borrar una sede declarada por un socio vivo | El CHECK `ck_affiliations_socio_location` lo impide; la API responde `409 LOCATION_IN_USE` | e2e |
+| Cierre de cuenta | Lo vivo termina (`ACCOUNT_CLOSED`), se borran los dígitos del CI, el historial (escrito por disparador) queda sin actor; exportación con sus afiliaciones | e2e (cierre), `account-closure.e2e-spec.ts` (inventario de FK), `account-export-email.e2e-spec.ts` |
+
+Evidencia (17/11/2026, sobre 92af562; base `gym_sheet_f7b_e2e` nueva con schema + migraciones up → down →
+up + semilla base): `yarn lint` y `yarn type-check` limpios; `yarn build` OK; unitarias 266 suites / 2402
+pruebas en verde; e2e nuevas `affiliations` 7 y `affiliations-integrity` 5 en verde; e2e completa: 77 suites
+en verde y exactamente las 47 pruebas en rojo de la línea base (mismas 10 suites, mismos nombres). Contra el
+código de 92af562 las suites nuevas no compilan (módulo inexistente) y el inventario de rutas falla.
+
+Fuera de 7b: lectores de «Mi gimnasio», sello «Socio de X» y Conocer sobre la afiliación (7c); suscripciones
+(8e, gancho `confirmInTransaction`); qué pasa con las afiliaciones al cerrar un gimnasio (8f).
+
+### Franja 8e: suscripciones = afiliación SOCIO + compra en el marketplace (ADR-0026)
+
+| Cambio / riesgo | Corrección | Prueba |
+|---|---|---|
+| Dos vías de alta (catálogo global del gimnasio con intenciones, enlaces de activación y extensión en el sitio sin alcance de tenant; puente `dir_…` del marketplace) | Un solo libro de periodos (`membership.memberships`): un pedido confirmado = un periodo nuevo (`uq_memberships_payment_order`), encadenado tras el último ACTIVE de la misma publicación; se elimina el puente | `subscription.catalog.spec.ts`, `test/subscriptions-checkout.e2e-spec.ts` (renovación encadenada, el primer periodo intacto) |
+| Membresía de gimnasio sin afiliación | El pedido del `MEMBERSHIP` de una ficha GYM exige la SOCIO: sin ella, `422 AFFILIATION_REQUIRED`; con sede y CI, la solicitud nace en la misma transacción (reglas de ADR-0025: correo verificado, sede del gimnasio, `409 SOCIO_OF_ANOTHER_GYM` con la acción de cambio) | `checkout-affiliation.spec.ts`, `buyer-orders.service.spec.ts`, e2e (ningún pedido creado ante el `409`) |
+| Confirmación a medias | Persona → pedido → SOCIO → periodo → pedido `CONFIRMED` en una transacción; un gimnasio no público (`409 GYM_NOT_ACTIVE`) o un periodo que falla dejan pedido y afiliación como estaban; un aviso que falla no deshace nada | e2e «nothing is half-done» (suspensión real, fallo inyectado del libro y de los avisos), `business-orders.service.spec.ts` |
+| Manipulación de precio o vigencia | Cuerpos estrictos (`validityDays`, `startsOn`, `amount` → `400`); la vigencia y las sesiones salen de la copia del pedido, no de la publicación editada después | e2e «what was sold is what is opened» |
+| BOLA: una persona lee periodos ajenos | Toda lectura acotada a `user_id`; ajeno `404`, lista vacía | e2e |
+| BOLA: un negocio lee o cancela suscriptores de otro, o filas heredadas | Lecturas y escrituras acotadas a `entity_id` de la cuenta y a `origin = MARKETPLACE`; ajeno o LEGACY `404` | e2e (otro gimnasio y fila LEGACY atribuida al gimnasio: `404` al ver, cancelar, pausar) |
+| BFLA | `business/me/subscriptions*` solo `NEGOCIO` (persona y `SYSTEM_ADMIN` `403`); `me/subscriptions*` solo personas | e2e, `account-kind.route-inventory.spec.ts` (falla contra a3c0a5f) |
+| Datos personales que ve el negocio | Nombre visible, afiliación con sede, plan, fechas y último pago; nunca correo, id de usuario ni CI | e2e (el JSON no contiene correo ni id) |
+| Integridad del libro | FK compuestas (publicación del vendedor; afiliación de esa persona en ese gimnasio), CHECK de origen, tipo, fin opcional solo para packs y sesiones | migración `202611201001`, e2e |
+| Maquinaria retirada con datos personales | Tablas al esquema `retired` (reversible); el catálogo de cierre y la exportación las siguen cubriendo; inventario de FK a `usuarios` | `account-closure.e2e-spec.ts`, `account-export-email.e2e-spec.ts`, `subscriptions-retirement.e2e-spec.ts` (rutas retiradas `404`, migraciones down → up con filas LEGACY y MARKETPLACE idénticas) |
+| Regresión: retirar `admin/membership/*` se llevó la búsqueda de cuentas que usan la lista de cuentas, permisos y el selector de moderadores | `GET /admin/users` en el módulo `users` (solo `SYSTEM_ADMIN`), misma forma de respuesta; campos de recepción neutros y obsoletos; `%`/`_` literales; con suplantación, solo ese gimnasio | `test/admin-users.e2e-spec.ts` (falla contra 6f4728f: `404`), `platform-operation.e2e-spec.ts` (personal heredado `403`) |
+| Control de acceso físico fuera del producto | Módulo `access-control`, `worker:access`, variables y rutas retiradas; las tablas `access_control.*` quedan para la clasificación de Conocer (7c) | e2e de rutas retiradas, arranque real de la API y de los workers sin las variables |
+
+Evidencia (17/11/2026, sobre 368d2fe = 7b con su corrección; base `gym_sheet_f8e_e2e` nueva con schema +
+migraciones up → down → up + semilla base): `yarn lint` y `yarn type-check` limpios; `yarn build` OK (sin
+`dist/workers/access-event.worker.js`); unitarias 261 suites / 2387 pruebas en verde (se borraron 7 suites de lo
+retirado y se sumaron 2); e2e nuevas `subscriptions-checkout` 7, `subscriptions-views` 7 y
+`subscriptions-retirement` 2 en verde; e2e completa: 79 suites en verde y en rojo las 47 de la línea base
+(mismos nombres) más una de `minor-reports-closure` por el límite de 5 s con la máquina cargada (aislada pasa
+5/5 con límite de 20 s; la más lenta tarda 4,7 s). Contra a3c0a5f las suites nuevas no compilan y las
+unitarias cambiadas fallan (5 suites). Migraciones por CLI en la base de desarrollo con una fila LEGACY y un
+pack MARKETPLACE sin fin: down → down → up deja las filas idénticas (salvo la referencia al plan espejo en
+`retired_plan_id`). Arranque real del artefacto compilado **sin** `WHATSAPP_MEMBERSHIP_PHONE`,
+`ACTIVATION_LINK_TTL_HOURS`, `ACCESS_*` ni `PORTAL_PUBLIC_URL`: `/health/ready` 200 con migraciones al día,
+rutas retiradas 404, `/me/subscriptions` 401 sin token; `membership-reminder` (escaneó el libro),
+`notification-delivery`, `orders-maintenance`, `stories-purge`, `privacy-retention`, `account-data` y
+`program-week-close` emiten su arranque y `worker.shutdown_requested` y salen con 0 ante SIGTERM.
+`yarn audit:prod`: 14 avisos (1 bajo, 9 moderados, 4 altos), sin cambios de dependencias en esta franja.
+
+Fuera de 8e: consumo de sesiones (`sessions_used`) sin ruta todavía; «Mi gimnasio» por afiliación (7c); registro
+del pago en efectivo por el negocio (`orders/cash`); cierre del negocio y sus suscriptores (8f); `DROP` de
+`retired.*` (franja posterior, ≥ 30 días); contracción de `access_control.*` y de las tablas de personal (7d).
+
+### Franja 7c: «Mi gimnasio», clasificación, sello «Socio de X» y Conocer por la afiliación (ADR-0027)
+
+| Cambio / riesgo | Corrección | Prueba |
+|---|---|---|
+| La clasificación del gimnasio se concedía por `usuarios.tenant_id`: cualquiera del tenant por defecto veía a todos | El gimnasio es la SOCIO `CONFIRMED`; sin ella `403 GYM_MEMBERSHIP_REQUIRED {status}`; ninguna ruta acepta un id de gimnasio | `test/gym-community.e2e-spec.ts` (mismo tenant sin afiliación y `REQUESTED` → `403`); sonda ad hoc contra a3c0a5f: `200` con la lista ajena |
+| Tarjeta «Mi gimnasio» sin contrato (el móvil comparaba tenants) | `GET /me/gym`: `NONE`/`REQUESTED` («Solicitud enviada»)/`CONFIRMED`, cambio de gimnasio pendiente | e2e (los tres estados, cambio de gimnasio), `my-gym.service.spec.ts` |
+| Fin o cambio de gimnasio | Sin caché: la petición siguiente ya lee la fila nueva; el cambio mueve clasificación, socios y sello al confirmar el nuevo gimnasio | e2e (`end` → `403` inmediato; `switchGym` → todo en el gimnasio nuevo) |
+| Enumeración de socios (revisión de seguridad de esta franja) | Lista de socios solo para socios confirmados, de quienes tienen el perfil social activo y muestran la afiliación; interruptor `gym_membership_visible` (también clasificación y `SAME_GYM`) | e2e (oculta / perfil social apagado → fuera de la lista y sin sello; la clasificación conserva el puesto) |
+| Sello falsificable o de un gimnasio suspendido | `gymBadge` calculado en la consulta desde la SOCIO `CONFIRMED` y la ficha `ACTIVE`; el único escrito es un booleano estricto | e2e (`REQUESTED` sin sello, suspendido sin sello, cuerpo con `gymEntityId` → `400`) |
+| Un negocio en la clasificación | Filtro de persona (`personAccountSql`) aun si se le escribe una SOCIO por SQL | e2e |
+| Conocer «mismo gimnasio» | `SAME_GYM` y señal de afinidad solo con ambos `CONFIRMED`; socios del gimnasio en el *pool* y en el perímetro (también para conectar) sin consultas por candidato | `test/gym-community-conocer.e2e-spec.ts` |
+| Índices | Clasificación y *pool* por `ix_affiliations_gym_confirmed`; gimnasio propio por `ux_affiliations_confirmed_socio` | e2e con `EXPLAIN` (estadísticas frescas, `enable_seqscan = off`) |
+| Relleno de socios por tenant | No se hace: confirmar es del gimnasio, la sede no se inventa, el tenant por defecto es toda la instalación | e2e (mismo tenant → `NONE`) y ADR-0027 |
+
+Evidencia (17/11/2026, sobre 368d2fe = 7b con su corrección; base `gym_sheet_f7c_e2e` nueva con schema +
+migraciones up → down (`202611201101`) → up + semilla base): `yarn lint` y `yarn type-check` limpios;
+`yarn build` OK; unitarias 267 suites / 2407 pruebas en verde; integración de la consulta de Conocer y de
+historias contra la base migrada 2 suites / 21 pruebas en verde; e2e nuevas `gym-community` 7/7 y
+`gym-community-conocer` 3/3; e2e relacionadas (afiliaciones, Conocer, conexiones, perfil, bloqueos,
+recomendador, cuentas de negocio, rachas) 14 suites / 86 pruebas en verde. e2e completa: 78 suites en verde;
+en rojo las 10 suites / 47 pruebas de la línea base (mismos nombres) más 2 pruebas de
+`minor-reports-closure` por el tope de 5 s de Jest bajo carga: aisladas pasan (dos veces) y tardan lo mismo
+sobre 368d2fe (4,5 s y 4,9 s), no las toca esta franja. Contra a3c0a5f una persona del mismo tenant sin
+afiliación recibía `200` con la clasificación ajena (sonda ad hoc); con 7c, `403`.
+
+Fuera de 7c: el directorio de instalación `/me/gym-directory` sigue por tenant (decisión a confirmar, ADR-0027);
+la afinidad «misma sede» y el mapa de gimnasios siguen sobre `facilities.branches` hasta 7e; la lista de
+socios no tiene cursor (tope 50 y búsqueda por nombre, como el directorio).
+
 ---
 
 ## 5. Matriz de alcance funcional (dominio real: gimnasio)

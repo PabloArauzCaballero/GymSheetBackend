@@ -17,7 +17,6 @@ flowchart TB
         redis[("redis:7\nrate-limit counters\nephemeral")]
         migrate["migrate\none-shot\nmigration:up"]
 
-        wa["worker-access\naccess-event"]
         wr["worker-reminders\nmembership-reminder"]
         wn["worker-notifications\nnotification-delivery"]
         wx["worker-exercises-dataset\ndataset refresh"]
@@ -28,8 +27,7 @@ flowchart TB
     api -->|throttle counters| redis
     migrate -->|schema up| pg
 
-    wa -->|claim FOR UPDATE SKIP LOCKED| pg
-    wr -->|scan memberships + enqueue| pg
+    wr -->|scan subscription periods + enqueue| pg
     wn -->|claim + deliver| pg
     wx -->|refresh dataset| pg
     wn -.->|HTTP_GATEWAY provider| ext([Notification gateway])

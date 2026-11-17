@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
 import { UserRole } from '../../common/enums/domain.enums';
 import { BuyerOrdersService } from './buyer-orders.service';
+import { CheckoutAffiliation } from './checkout-affiliation';
 import { OrderLifecycle } from './order-lifecycle.service';
 import { OrderNotices } from './order-notices';
 import { OrdersRepository } from './orders.repository';
@@ -27,7 +28,7 @@ const listing = (patch: Record<string, unknown> = {}) => ({
   ...patch,
 });
 
-function build(options: { listing?: Record<string, unknown> | null; entityStatus?: string; config?: Record<string, unknown> | null; open?: { id: string; planId: string }[] } = {}) {
+function build(options: { listing?: Record<string, unknown> | null; entityStatus?: string; entityType?: string; config?: Record<string, unknown> | null; open?: { id: string; planId: string }[] } = {}) {
   const created: Record<string, unknown>[] = [];
   const repository = {
     transaction: jest.fn((work: (t: unknown) => Promise<unknown>) => work({})),
@@ -44,18 +45,20 @@ function build(options: { listing?: Record<string, unknown> | null; entityStatus
     history: jest.fn().mockResolvedValue([]),
   };
   const sellers = {
-    findSeller: jest.fn().mockResolvedValue({ entityId: 'entity-1', entityStatus: options.entityStatus ?? 'ACTIVE', ownerUserId: 'biz-1', accountStatus: 'ACTIVE' }),
+    findSeller: jest.fn().mockResolvedValue({ entityId: 'entity-1', entityType: options.entityType ?? 'COACH', entityStatus: options.entityStatus ?? 'ACTIVE', ownerUserId: 'biz-1', accountStatus: 'ACTIVE' }),
     findConfig: jest.fn().mockResolvedValue(options.config === null ? null : { isActive: true, qrPrivateKey: 'business/x/payment/y.bin', acceptsCash: false, ...options.config }),
   };
   const lifecycle = { reserve: jest.fn().mockResolvedValue(0) };
   const notices = { send: jest.fn() };
+  const affiliation = { lockPerson: jest.fn().mockResolvedValue(undefined), ensureSocio: jest.fn().mockResolvedValue(undefined) };
   const service = new BuyerOrdersService(
     repository as unknown as OrdersRepository,
     sellers as unknown as SellersRepository,
     lifecycle as unknown as OrderLifecycle,
     notices as unknown as OrderNotices,
+    affiliation as unknown as CheckoutAffiliation,
   );
-  return { service, repository, created, lifecycle };
+  return { service, repository, created, lifecycle, affiliation };
 }
 
 describe('BuyerOrdersService.create (ADR-0024)', () => {
@@ -95,5 +98,27 @@ describe('BuyerOrdersService.create (ADR-0024)', () => {
     lifecycle.reserve.mockResolvedValue(3);
     await expect(service.create(buyer, { listingId: 'listing-1', quantity: 3, method: 'QR' })).rejects.toThrow(NotFoundException);
     expect(created[0]).toMatchObject({ quantity: 3, amount: '361.50', stockReservedUnits: 3 });
+  });
+
+  it("a gym's membership checks the buyer's SOCIO affiliation (with the checkout's data) before the order exists", async () => {
+    const gym = build({ entityType: 'GYM' });
+    const affiliation = { locationId: '00000000-0000-4000-8000-000000000001', ciLast3: '123', switchGym: false };
+    await expect(gym.service.create(buyer, { listingId: 'listing-1', quantity: 1, method: 'QR', affiliation })).rejects.toThrow(NotFoundException);
+    expect(gym.affiliation.lockPerson).toHaveBeenCalledWith('buyer-1', {});
+    expect(gym.affiliation.ensureSocio).toHaveBeenCalledWith(buyer, 'entity-1', affiliation, {});
+
+    // A refused affiliation (e.g. SOCIO of another gym) creates no order.
+    const refused = build({ entityType: 'GYM' });
+    refused.affiliation.ensureSocio.mockRejectedValue(Object.assign(new Error('409'), { code: 'SOCIO_OF_ANOTHER_GYM' }));
+    await expect(refused.service.create(buyer, { listingId: 'listing-1', quantity: 1, method: 'QR' })).rejects.toMatchObject({ code: 'SOCIO_OF_ANOTHER_GYM' });
+    expect(refused.repository.create).not.toHaveBeenCalled();
+
+    // A day pass of a gym, or a coach's membership, needs no affiliation.
+    const pass = build({ entityType: 'GYM', listing: { offerKind: 'DAY_PASS', durationDays: null } });
+    await expect(pass.service.create(buyer, { listingId: 'listing-1', quantity: 1, method: 'QR' })).rejects.toThrow(NotFoundException);
+    const coach = build();
+    await expect(coach.service.create(buyer, { listingId: 'listing-1', quantity: 1, method: 'QR' })).rejects.toThrow(NotFoundException);
+    expect(pass.affiliation.ensureSocio).not.toHaveBeenCalled();
+    expect(coach.affiliation.ensureSocio).not.toHaveBeenCalled();
   });
 });

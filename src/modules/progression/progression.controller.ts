@@ -5,6 +5,7 @@ import { UserRole } from "../../common/enums/domain.enums";
 import { UuidParamPipe } from "../../common/pipes/uuid-param.pipe";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AuthenticatedUser } from "../../common/types/auth-context.types";
+import { MyGymService } from "../gym-community/my-gym.service";
 import { ProgressionAdminService } from "./progression-admin.service";
 import { ProgressionService } from "./progression.service";
 import {
@@ -33,7 +34,10 @@ import { Public } from "../../common/decorators/public.decorator";
 /** La senda del usuario autenticado. */
 @Controller("me/progression")
 export class ProgressionController {
-  constructor(private readonly progressionService: ProgressionService) {}
+  constructor(
+    private readonly progressionService: ProgressionService,
+    private readonly myGym: MyGymService,
+  ) {}
 
   @Get()
   getMyProgression(@CurrentUser() user: AuthenticatedUser) {
@@ -60,12 +64,13 @@ export class ProgressionController {
     return this.progressionService.acknowledge(user.id);
   }
 
+  /** The ranking of the person's confirmed gym (ADR-0027); 403 `GYM_MEMBERSHIP_REQUIRED` without one. */
   @Get("leaderboard")
   getLeaderboard(
     @CurrentUser() user: AuthenticatedUser,
     @Query(new ZodValidationPipe(leaderboardQuerySchema)) query: LeaderboardQuery,
   ) {
-    return this.progressionService.getLeaderboard(user.id, query.limit, query.sortBy);
+    return this.myGym.leaderboard(user.id, query.limit, query.sortBy);
   }
 
   @Get("rest-days")

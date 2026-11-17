@@ -54,7 +54,6 @@ jobs:
       REQUEST_BODY_LIMIT: 1mb
       LOG_LEVEL: error
       BUSINESS_TIME_ZONE: America/La_Paz
-      ACCESS_POLICY_VERSION: ci-policy
       DB_HOST: localhost
       DB_PORT: 5432
       DB_NAME: gym_sheet_ci
@@ -136,7 +135,6 @@ jobs:
           for entrypoint in \
             dist/main.js \
             dist/database/migrate.js \
-            dist/workers/access-event.worker.js \
             dist/workers/membership-reminder.worker.js \
             dist/workers/notification-delivery.worker.js
           do
@@ -444,7 +442,7 @@ jobs:
           echo "API exited cleanly on SIGTERM"
 
           # Worker: must log the shutdown request and release its loop.
-          node dist/workers/access-event.worker.js > /tmp/shutdown-worker.log 2>&1 &
+          node dist/workers/membership-reminder.worker.js > /tmp/shutdown-worker.log 2>&1 &
           worker_pid=$!
           sleep 5
           kill -TERM "$worker_pid"

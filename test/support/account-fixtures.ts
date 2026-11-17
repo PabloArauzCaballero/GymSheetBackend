@@ -99,10 +99,10 @@ export async function seedPersonalData(sequelize: Sequelize, userId: string, oth
     `INSERT INTO access_control.credentials (id, user_id, credential_type, provider, pin_hash)
        VALUES ('${randomUUID()}', :userId, 'PIN', 'INTERNAL', '$2a$04$fixturefixturefixturefixtureuWl4rK2P1z8cE6Z5sJ8Yv0m')`,
     // The gym's tax records.
-    `INSERT INTO membership.plans (id, code, name, duration_days) VALUES ('${ids.plan}', 'F4-${suffix}', 'Mensual', 30)`,
-    `INSERT INTO membership.memberships (id, user_id, plan_id, starts_on, ends_on, notes)
-       VALUES ('${ids.membership}', :userId, '${ids.plan}', CURRENT_DATE, CURRENT_DATE + 30, 'Paga en efectivo')`,
-    `INSERT INTO membership.customer_profiles (id, user_id, customer_number, phone_number, notes)
+    `INSERT INTO retired.membership_plans (id, code, name, duration_days) VALUES ('${ids.plan}', 'F4-${suffix}', 'Mensual', 30)`,
+    `INSERT INTO membership.memberships (id, user_id, retired_plan_id, starts_on, ends_on, notes, offer_kind, plan_name)
+       VALUES ('${ids.membership}', :userId, '${ids.plan}', CURRENT_DATE, CURRENT_DATE + 30, 'Paga en efectivo', 'MEMBERSHIP', 'Mensual')`,
+    `INSERT INTO retired.membership_customer_profiles (id, user_id, customer_number, phone_number, notes)
        VALUES ('${randomUUID()}', :userId, 'C-${suffix}', '+59170000000', 'Prefiere mañanas')`,
     `INSERT INTO directory.entities (id, slug, entity_type, name, name_skeleton, description, primary_category_id)
        VALUES ('${ids.entity}', 'f4-${suffix}', 'GYM', 'Gimnasio F4', '${businessNameSkeleton('Gimnasio F4')}', 'Prueba', 'a1000000-0000-4000-8000-000000000001')`,

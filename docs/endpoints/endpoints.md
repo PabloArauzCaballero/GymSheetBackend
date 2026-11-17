@@ -148,11 +148,12 @@ Canonical internal units are kilograms for body weight, centimeters for height, 
 | GET    | `/me/export/latest`                | authenticated | `{ export: <status> \| null }`: the caller's most recent request, so a client that lost the id resumes it |
 | GET    | `/me/export/:id`                   | owner         | `{ id, status: PENDING\|READY\|FAILED, requestedAt, completedAt, expiresAt, sizeBytes, downloadPath }` |
 | GET    | `/me/export/:id/download`          | owner         | `application/json` attachment while `READY` and not expired (7 days); `409 ACCOUNT_EXPORT_NOT_READY` before |
+| GET    | `/admin/users`                     | `SYSTEM_ADMIN` | REPP's account search (ADR-0026; replaces the retired `admin/membership/users`): strict `?q` (name or email fragment, 1–120, `%`/`_` literal) `&roles` (comma-separated `UserRole`, e.g. `CLIENTE` for the moderator picker) `&status` (`ACTIVO`\|`INACTIVO`) `&page` (1) `&pageSize` (≤ 100, 50) → `{ items: [{ id, nombreCompleto, email, rol, estado, tenantId, ultimaSesion, telefono: null, plan: null, venceEl: null, vigente: false }], page, pageSize, total, totalPages }`, ordered by name then id. `telefono`, `plan`, `venceEl`, `vigente` are kept neutral for the web and deprecated (they were the gym front desk's). Business accounts (`NEGOCIO`) are listed unless `roles` leaves them out; while impersonating a gym, only its accounts. `400` bad parameter, `401`, `403` anyone else (persons, `MODERATOR`, businesses) |
 | POST   | `/admin/users/:id/close`           | `ADMIN` (`SYSTEM_ADMIN` too) | Closes a **staff** account of the caller's gym (`ADMIN`, `COACH`, `FRONT_DESK`, `ENTRENADOR_EXTERNO`) with the same erasure, no password or PIN; `200 { closed: true, closedAt }`, audited in `admin.audit_log` (`domain: account`, `action: close`). Another gym's account, a platform account (`SYSTEM_ADMIN`, `MODERATOR`) or an already closed one: `404`; a member: `400 STAFF_CLOSURE_NOT_STAFF`; the caller's own account: `403 STAFF_CLOSURE_SELF`; the gym's last active admin: `403 STAFF_CLOSURE_LAST_ADMIN` |
 
 All of them are exempt from the legal-acceptance gate and the password/PIN routes use the auth rate limit. Wrong password: `400 CURRENT_PASSWORD_INVALID`; PIN errors reuse `EMAIL_PIN_INVALID|EXPIRED|EXHAUSTED|COOLDOWN` (the PIN table is `auth.email_verification_pins` with `purpose` `VERIFY_EMAIL|CHANGE_EMAIL|CLOSE_ACCOUNT`, one live code, cooldown and daily cap per purpose). Someone else's export answers `404`.
 
-**Closure** runs in one transaction driven by `src/modules/account/account-closure.catalog.ts` (the preview counts with the same predicates): sessions, devices, identities, PINs, notifications, health and training data, progression, Conocer, stories, reels, photos, comments, reviews and blocks are deleted; own chat messages are wiped like "delete for everyone" (the other person keeps theirs, the chat turns read-only), the system chats with REPP/the gym are deleted; consents are revoked; content under a moderation report, moderation records, the legal acceptances and the gym's tax records (memberships, payment orders with amounts and receipts, access log) are kept de-identified (notes and phone dropped, access credentials revoked). The account row is kept for FK integrity with email `cerrada-<id>@cuenta-cerrada.invalid`, name `Cuenta cerrada`, no birth date or sex, `estado = INACTIVO`, `closed_at` set and a random password hash: login answers the generic `401 Credenciales inválidas.` and the email can register again. Staff accounts answer `403 ACCOUNT_CLOSURE_STAFF`: REPP's `SYSTEM_ADMIN` closes them with `POST /admin/users/:id/close` (ADR-0019). A staff closure keeps what members still use: routines it assigned to members (and the routines behind them, like the gym's official ones) stay, signed «Cuenta cerrada»; the members' chats with the gym it answered stay theirs (only the system chats where the closing account is the member side are deleted); its `membership.staff_profiles` row is marked `TERMINATED`. Files are erased after commit through the outbox queue `media.release` (one job per file, 8 attempts, dead-letter; drained by the API every minute), only when no other row references them; on MinIO every version is removed, and a rejected removal ends in dead-letter (ADR-0017). If the account has a running suspension or strikes still counting (365 days), they are kept under the keyed hash of the email in `moderation.closed_account_sanctions`; signing up again with that email (password or Google/Apple) inherits them, and a running suspension makes the signup answer `403` like the login (ADR-0015).
+**Closure** runs in one transaction driven by `src/modules/account/account-closure.catalog.ts` (the preview counts with the same predicates): sessions, devices, identities, PINs, notifications, health and training data, progression, Conocer, stories, reels, photos, comments, reviews and blocks are deleted; own chat messages are wiped like "delete for everyone" (the other person keeps theirs, the chat turns read-only), the system chats with REPP/the gym are deleted; consents are revoked; content under a moderation report, moderation records, the legal acceptances and the gym's tax records (subscription periods, payment orders with amounts and receipts, access log, and the retired membership tables in schema `retired`) are kept de-identified (notes and phone dropped, access credentials revoked). The account row is kept for FK integrity with email `cerrada-<id>@cuenta-cerrada.invalid`, name `Cuenta cerrada`, no birth date or sex, `estado = INACTIVO`, `closed_at` set and a random password hash: login answers the generic `401 Credenciales inválidas.` and the email can register again. Staff accounts answer `403 ACCOUNT_CLOSURE_STAFF`: REPP's `SYSTEM_ADMIN` closes them with `POST /admin/users/:id/close` (ADR-0019). A staff closure keeps what members still use: routines it assigned to members (and the routines behind them, like the gym's official ones) stay, signed «Cuenta cerrada»; the members' chats with the gym it answered stay theirs (only the system chats where the closing account is the member side are deleted); its `membership.staff_profiles` row is marked `TERMINATED`. Files are erased after commit through the outbox queue `media.release` (one job per file, 8 attempts, dead-letter; drained by the API every minute), only when no other row references them; on MinIO every version is removed, and a rejected removal ends in dead-letter (ADR-0017). If the account has a running suspension or strikes still counting (365 days), they are kept under the keyed hash of the email in `moderation.closed_account_sanctions`; signing up again with that email (password or Google/Apple) inherits them, and a running suspension makes the signup answer `403` like the login (ADR-0015).
 
 **Export** is built by the same worker (queue `account.export`): one section per data-map table (`src/modules/export/account-export.sections.ts`), own rows only, credential hashes omitted, chats limited to the caller's own messages and conversation ids, each table capped at the routine-progress export limit (20 000 rows, `truncated: true` beyond it). The archive lives in `auth.account_exports` and is purged when it expires. When it turns `READY` the owner gets, once per export, an in-app notice «Tu copia de datos está lista» (`metadata: { type: ACCOUNT_EXPORT_READY, exportId, downloadPath, expiresAt }`) and the same notice by email; a build that dead-letters turns `FAILED` and notifies «No pudimos preparar tu copia de datos» (`ACCOUNT_EXPORT_FAILED`) the same way.
 
@@ -307,49 +308,52 @@ The health consent is optional: `physicalConsiderations` with `consentHealth: fa
 
 Body weight uses `KG`/`LB` and height `CM`/`IN` at the boundary; `measuredOn` is a date. Goals use the English `FitnessGoal` enum.
 
-## Membership
+## Subscriptions (ADR-0026, franja 8e)
 
-| Method | Route                             | Access        | Purpose                                       |
-| ------ | --------------------------------- | ------------- | --------------------------------------------- |
-| GET    | `/membership/plans`               | authenticated | List commercial plans                         |
-| GET    | `/membership/plans/:id`           | authenticated | Read one commercial plan                      |
-| GET    | `/me/membership`                  | authenticated | Effective membership projection and actions   |
-| GET    | `/me/accesses`                    | authenticated | Effective entitlements (not inferred from role) |
-| GET    | `/me/membership/options`          | authenticated | Options compatible with current state         |
-| POST   | `/me/membership/renewal-intent`   | authenticated | Register an idempotent renewal intent         |
-| POST   | `/me/membership/extension-intent` | authenticated | Register an idempotent extension intent        |
+A subscription is a **period** of the ledger `membership.memberships`, opened by a confirmed marketplace
+order (one order = one new period, never an extension in place). **Gym membership = confirmed SOCIO
+affiliation + ACTIVE period** of a `MEMBERSHIP` listing of that gym. Day passes, class packs and coach or
+centre services use the same ledger without affiliation. A product opens no period.
 
-> `GET /memberships/me` also exists (legacy plural path returning the current membership, `404` when none). It duplicates `/me/membership` and is pending unification; prefer `/me/membership`.
+- Window: `startsOn = max(today, endsOn of the last ACTIVE period of the same listing + 1)`, `endsOn =
+  startsOn + validityDays - 1` (validity as sold: the order's snapshot, never the listing edited later). A
+  `DAY_PASS` lasts one day; a `CLASS_PACK`/`SERVICE_PACK` without validity has no end (`endsOn: null`); a
+  `SERVICE_SESSION` counts one session. Dates in `BUSINESS_TIME_ZONE`.
+- Shown status: `UPCOMING` (a renewal chained after the running one), `ACTIVE`, `EXPIRING` (≤ 7 days left),
+  `EXPIRED`, `SUSPENDED`, `CANCELLED`; a line with only an open order is `PENDING`. `daysLeft` is 0 on the
+  last day, null without an end.
+- Legacy rows (`origin: LEGACY`, the gym-operated memberships before 8e) stay readable by their holder and
+  are never shown to a business.
+- The removed gym-operated machinery answers `404`: `/membership/plans[/:id]`, `/me/membership*`
+  (options, renewal and extension intents, activation request), `/memberships/me`, `/me/accesses`, the whole
+  `/admin/membership/*` (plans, features, scopes, customers, memberships, staff, intents, activation links,
+  users — replaced by `GET /admin/users` —, `insights/*` — `insights/lapsed` is replaced by `GET /business/me/subscriptions?status=EXPIRED`), and
+  physical access control (`/access/me`, `/access/credentials/me`, `/admin/access/*`).
 
-### Membership administration (`SYSTEM_ADMIN`)
+`Period`: `{ id, status, startsOn, endsOn, daysLeft, sessions: { total, used } | null, origin }`.
 
-| Method | Route                                          | Access            |
-| ------ | ---------------------------------------------- | ----------------- |
-| GET/POST | `/admin/membership/plans`                    | SYSTEM_ADMIN                      |
-| PATCH  | `/admin/membership/plans/:id`                  | SYSTEM_ADMIN      |
-| PATCH  | `/admin/membership/plans/:id/scopes`           | SYSTEM_ADMIN      |
-| POST/GET | `/admin/membership/customers`                | SYSTEM_ADMIN      |
-| POST/GET | `/admin/membership/memberships`              | SYSTEM_ADMIN      |
-| PATCH  | `/admin/membership/memberships/:id/status`     | SYSTEM_ADMIN      |
-| POST   | `/admin/membership/staff`                      | SYSTEM_ADMIN      |
-| PATCH  | `/admin/membership/staff/:userId/status`       | SYSTEM_ADMIN      |
-| POST   | `/admin/membership/intents/:id/confirm`        | SYSTEM_ADMIN      |
+### Person (`me/subscriptions`; a business account gets `403 ACCOUNT_KIND_NOT_ALLOWED`; someone else's: `404`)
 
-## Physical access control (`SYSTEM_ADMIN`)
+| Method | Route | Response | Codes |
+| ------ | ----- | -------- | ----- |
+| GET | `/me/subscriptions` | `{ today, items: [{ seller: { entityId, name, handle, logoUrl, entityType } \| null, affiliation: { id, status } \| null (the person's live SOCIO at that gym), subscriptions: [{ listing: { id, name, offerKind }, status, current: Period \| null, upcoming: Period \| null, pendingOrder: { id, orderNumber, status } \| null, renew: { listingId, available } \| null }] }] }` — running periods and those ended within a year (at most 200), grouped by seller and listing; `seller: null` is a legacy period of an unknown gym | `200` |
+| GET | `/me/subscriptions/:id` | `Period` + `{ listing, seller: { entityId, name, handle } \| null, renew, history: [{ fromStatus, toStatus, reasonCode, at }] }` (never who made a change) | `200`, `404` |
 
-| Method | Route                                          | Access            |
-| ------ | ---------------------------------------------- | ----------------- |
-| GET    | `/access/me`                                   | authenticated     |
-| GET/POST | `/admin/access/devices`                      | SYSTEM_ADMIN                      |
-| PATCH  | `/admin/access/devices/:id/status`             | SYSTEM_ADMIN      |
-| GET    | `/admin/access/events/:id`                     | SYSTEM_ADMIN      |
-| GET    | `/admin/access/history`                        | SYSTEM_ADMIN      |
-| GET    | `/access/credentials/me`                       | authenticated     |
-| POST   | `/admin/access/credentials/pin`                | SYSTEM_ADMIN      |
-| POST   | `/admin/access/credentials/external-reference` | SYSTEM_ADMIN      |
-| GET    | `/admin/access/credentials/user/:userId`       | SYSTEM_ADMIN      |
-| PATCH  | `/admin/access/credentials/:id/revoke`         | SYSTEM_ADMIN      |
-| POST   | `/admin/access/mock/events`                    | SYSTEM_ADMIN      |
+### Business (`business/me/subscriptions`; `NEGOCIO` only — persons, `MODERATOR` and `SYSTEM_ADMIN`: `403`; another business's period: `404`)
+
+| Method | Route | Body / response | Codes |
+| ------ | ----- | --------------- | ----- |
+| GET | `/business/me/subscriptions` | `?status=ACTIVE\|EXPIRING\|EXPIRED\|SUSPENDED\|CANCELLED&cursor&limit (≤ 50)` → `{ today, items: Subscriber[], nextCursor }`: the latest period of each (person, listing), soonest end first. `EXPIRING` = «por vencer», `EXPIRED` = «vencidos». `Subscriber` = `Period` + `{ subscriber: { displayName }, listing: { id, name, offerKind }, affiliation: { id, status, location } \| null, lastPayment: { orderNumber, amount, currency, method, paidAt } \| null, actions: { canCancel, canSuspend, canReactivate } }` — no email, user id or CI | `200`, `400` (`INVALID_CURSOR`) |
+| GET | `/business/me/subscriptions/:id` | `Subscriber` | `200`, `404` |
+| POST | `/business/me/subscriptions/:id/cancel` | strict `{ reasonCode: BUYER_REQUEST\|REFUNDED_BY_BUSINESS\|PAYMENT_ISSUE\|CONDUCT\|OTHER, note? (3–500; required with OTHER) }` → `Subscriber` (`CANCELLED`, final) | `200`, `400`, `404`, `409 SUBSCRIPTION_INVALID_TRANSITION`, `422 SUBSCRIPTION_NOTE_REQUIRED` |
+| POST | `/business/me/subscriptions/:id/suspend` | strict `{ reasonCode: BUYER_REQUEST\|PAYMENT_ISSUE\|HEALTH\|CONDUCT\|OTHER, note? }` → `Subscriber` (`SUSPENDED`) | same |
+| POST | `/business/me/subscriptions/:id/reactivate` | → `Subscriber` (`SUSPENDED` → `ACTIVE`) | `200`, `404`, `409` |
+
+Each change is row-locked, appends a `membership.status_history` row with its domain event and tells the
+person in-app (`subscription:{id}:{event}:{n}`). An ended period (shown `EXPIRED`) changes no more.
+
+The reminder worker (`worker:reminders`) reads the ledger: an `ACTIVE` period ending in 7, 3, 1 or 0 days
+gets one in-app reminder naming the plan and the seller, unless a renewal is already chained after it.
 
 ## Facilities (`SYSTEM_ADMIN`)
 
@@ -390,7 +394,7 @@ Body weight uses `KG`/`LB` and height `CM`/`IN` at the boundary; `measuredOn` is
 | POST   | `/routines/:id/exercises`      | owner         | Add an exercise to a routine               |
 | POST   | `/routines/:id/start`          | owner         | Start a workout session from a routine     |
 
-Physical access control, facilities and membership responses use the same `{ ok, data }` envelope and `application/problem+json` errors as the rest of the API. Full request/response schemas live in `openapi.yaml`.
+Facilities and subscription responses use the same `{ ok, data }` envelope and `application/problem+json` errors as the rest of the API. Full request/response schemas live in `openapi.yaml`.
 
 ## Social moderation (central REPP team, ADR-0018)
 
@@ -591,7 +595,7 @@ LISTING_LOCKED_BY_REPP {moderationStatus}`; pause, resume, archive, stock and re
 | GET | `/business/me/locations` | → `Location[]` where `Location = { id, name, address, city, latitude, longitude, businessHours, displayOrder, createdAt, updatedAt }` | `200` |
 | POST | `/business/me/locations` | `{ name (2–120), city, address?, latitude?+longitude? (both or none), businessHours?, displayOrder? }` → `Location` (≤ 50) | `201`, `400`, `409 LOCATION_NAME_TAKEN`, `409 LOCATION_LIMIT`, `409 BUSINESS_ACCOUNT_LOCKED` |
 | PATCH | `/business/me/locations/:id` | any of the fields → `Location` | `200`, `400`, `404`, `409` |
-| DELETE | `/business/me/locations/:id` | | `204`, `404` |
+| DELETE | `/business/me/locations/:id` | refused while a live SOCIO declared it (ADR-0025); closed affiliations lose the location | `204`, `404`, `409 LOCATION_IN_USE` |
 | POST | `/business/me/gallery` | multipart `file` → `{ gallery: string[] }` (public profile gallery, ≤ 10) | `201`, `400`, `409 BUSINESS_GALLERY_LIMIT` |
 | DELETE | `/business/me/gallery/:position` | → `{ gallery }` | `200`, `404` |
 
@@ -666,8 +670,8 @@ A product's units are reserved when the order is created (row lock on the listin
 taken from both counters on confirm. Every change leaves a row in the append-only
 `directory.payment_order_history` (the `timeline`). Notices (in-app): new cash order and receipt received
 (business), confirmed, rejected with reason, expired and "no pagues" (buyer), reminders at 24 h and 48 h of
-a receipt waiting (business). Confirming an order of a gym listing with a legacy tenant still creates the
-`dir_…` membership until franja 8e.
+a receipt waiting (business). Since franja 8e, confirming an order opens its subscription period (see
+«Subscriptions»); the legacy `dir_…` membership bridge is gone.
 
 `Order` (both sides): `{ id, orderNumber, status, method, quantity, unitAmount, amount, currency, listing:
 { id, name, offerKind, validityDays, sessionsCount } (snapshot at purchase), seller: { entityId, name,
@@ -681,7 +685,7 @@ The detail adds `timeline: [{ status, at, reasonCode, by: BUYER|BUSINESS|SYSTEM 
 
 | Method | Route | Body / response | Codes |
 | ------ | ----- | --------------- | ----- |
-| POST | `/directory/payments/orders` | strict `{ listingId, quantity? (1; > 1 only for PRODUCT, ≤ ORDER_MAX_QUANTITY), method? QR\|CASH (QR), note? (≤ 500) }` → `Order` | `201`, `400` (any other field, e.g. `amount`, `planId`), `404` (not public / no business account), `409 ORDER_OUT_OF_STOCK {available}`, `409 ORDER_ALREADY_OPEN {orderId}`, `409 ORDER_OPEN_LIMIT {max}` (ORDER_OPEN_MAX_PER_PERSON = 5), `409 ORDER_PAYMENT_METHOD_UNAVAILABLE {method}`, `422 ORDER_QUANTITY_NOT_ALLOWED {max}`, `429` (30/h) |
+| POST | `/directory/payments/orders` | strict `{ listingId, quantity? (1; > 1 only for PRODUCT, ≤ ORDER_MAX_QUANTITY), method? QR\|CASH (QR), note? (≤ 500), affiliation? { locationId, ciLast3 (3 digits), switchGym? (false) } }` → `Order`. A **gym's `MEMBERSHIP`** needs the buyer's SOCIO at that gym: already SOCIO (confirmed or requested) buys as is; otherwise `affiliation` is required and the REQUESTED SOCIO is created in the same transaction (ADR-0025 rules; verified email) | `201`, `400` (any other field, e.g. `amount`, `planId`; `AFFILIATION_LOCATION_INVALID`), `403 EMAIL_VERIFICATION_REQUIRED` (with `affiliation`), `404` (not public / no business account), `409 SOCIO_OF_ANOTHER_GYM {affiliationId, action: SWITCH_GYM}` (retry with `switchGym: true`), `409 AFFILIATION_SOCIO_PENDING`, `409 AFFILIATION_COOLDOWN`, `409 AFFILIATION_LIMIT`, `422 AFFILIATION_REQUIRED {gymEntityId}`, `409 ORDER_OUT_OF_STOCK {available}`, `409 ORDER_ALREADY_OPEN {orderId}`, `409 ORDER_OPEN_LIMIT {max}` (ORDER_OPEN_MAX_PER_PERSON = 5), `409 ORDER_PAYMENT_METHOD_UNAVAILABLE {method}`, `422 ORDER_QUANTITY_NOT_ALLOWED {max}`, `429` (30/h) |
 | GET | `/directory/payments/orders/my-orders` | `?status&cursor&limit (≤ 50)` → `{ items: Order[], nextCursor }`, newest first | `200`, `400` |
 | GET | `/directory/payments/orders/:id` | `Order` + `timeline` | `200`, `404` |
 | GET | `/directory/payments/orders/:id/payment-instructions` | `{ orderId, orderNumber, method, amount, currency, expiresAt, bankName, accountHolderName, accountNumber, aliasOrPhone, instructions, qrPath }` (bank fields and `qrPath` null for cash; no tax id) — open or rejected orders only | `200`, `404`, `409 ORDER_INVALID_TRANSITION`, `409 ORDER_BUSINESS_UNAVAILABLE` (seller not public: do not pay), `409 ORDER_PAYMENT_METHOD_UNAVAILABLE` |
@@ -698,7 +702,7 @@ The detail adds `timeline: [{ status, at, reasonCode, by: BUYER|BUSINESS|SYSTEM 
 | GET | `/business/me/orders` | `?status&cursor&limit` → `{ items: Order[], nextCursor, pendingCount }`; "Por confirmar" (`PENDING_VERIFICATION`) first, oldest first, then the rest newest first | `200`, `400` |
 | GET | `/business/me/orders/:id` | `Order` + `timeline` | `200`, `404` |
 | GET | `/business/me/orders/:id/receipt` | the receipt (decrypted, `no-store`, `nosniff`) | `200`, `404` |
-| POST | `/business/me/orders/:id/confirm` | → `Order` (`CONFIRMED`). Row-locked: of two at once one is `200`, the other `409`; a replay is `409` | `200`, `404`, `409 ORDER_INVALID_TRANSITION` |
+| POST | `/business/me/orders/:id/confirm` | strict `{ alsoConfirmAffiliation? (true) }` (body optional) → `Order` (`CONFIRMED`). One transaction: the order, its subscription period and, for a gym `MEMBERSHIP`, the buyer's REQUESTED SOCIO at this gym (unless `alsoConfirmAffiliation: false` — «también confirmo que es socio»); if one fails nothing changes. Row-locked: of two at once one is `200`, the other `409`; a replay is `409` | `200`, `400`, `404`, `409 ORDER_INVALID_TRANSITION`, `409 GYM_NOT_ACTIVE` (a gym REPP suspended confirms the payment only with `alsoConfirmAffiliation: false`) |
 | POST | `/business/me/orders/:id/reject` | strict `{ reasonCode: AMOUNT_MISMATCH\|UNREADABLE\|NOT_RECEIVED\|OTHER, note? (3–500; required with OTHER) }` → `Order` (`REJECTED`) | `200`, `400`, `404`, `409 ORDER_INVALID_TRANSITION`, `422 ORDER_REJECTION_NOTE_REQUIRED` |
 | GET | `/business/me/payment-config` | `{ bankName, accountHolderName, accountNumber, aliasOrPhone, instructions, acceptsCash, isActive, hasQr, holderMatch: PASS\|WARN\|UNKNOWN, updatedAt } \| null` | `200` |
 | PUT | `/business/me/payment-config` | strict `{ bankName, accountHolderName, accountNumber?, aliasOrPhone?, instructions?, acceptsCash? (false), isActive? (true) }` → same. A holder whose trigram similarity with the KYC legal name or representative is under 0.6 is `WARN` and flags REPP's post-review (`kyc_checks PAYMENT_HOLDER_MATCH`); it never blocks | `200`, `400`, `409 BUSINESS_ACCOUNT_LOCKED` |
@@ -723,6 +727,100 @@ REPP refunds nothing.
 
 `GET /health/metrics` adds `gym_sheet_orders_undecided`, `gym_sheet_orders_undecided_overdue` (past the
 second reminder) and `gym_sheet_orders_undecided_oldest_seconds`.
+
+## Affiliations to a gym (ADR-0025, franja 7b)
+
+A person is SOCIO of one gym and ENTRENADOR of several; a coach business (entity `COACH`) links to gyms
+by `@handle`. The gym (business account with a `GYM` entity) confirms, rejects or ends. The gym is named
+by its directory entity, never by `usuarios.tenant_id`. Only a public gym (`ACTIVE`) receives requests;
+any other is `404`.
+
+`Affiliation` (what the person or coach reads) = `{ id, kind: SOCIO|ENTRENADOR, status:
+REQUESTED|CONFIRMED|REJECTED|ENDED|CANCELLED, gym: { id, name, handle, logoUrl }, location: { id, name } |
+null, ciLast3 (persons; null for a coach), replacesAffiliationId, reasonCode, reasonNote, requestedAt,
+confirmedAt, closedAt }`. Reason codes: gym rejection `UNKNOWN_PERSON|CI_MISMATCH|WRONG_LOCATION|
+NOT_A_COACH_HERE|OTHER`; gym end `NO_LONGER_MEMBER|NO_LONGER_COACH|CONDUCT|OTHER`; subject `WITHDRAWN`
+(cancel), `LEFT` (end); system `SWITCHED_GYM`, `ACCOUNT_CLOSED`.
+
+### Person (`me/affiliations`; a business account gets `403 ACCOUNT_KIND_NOT_ALLOWED`; someone else's: `404`)
+
+| Method | Route | Body / response | Codes |
+| ------ | ----- | --------------- | ----- |
+| POST | `/me/affiliations` | strict `{ gymHandle \| gymEntityId (exactly one), kind, locationId (required for SOCIO, a location of that gym), ciLast3 (3 digits), switchGym? (false) }` → `Affiliation` (`REQUESTED`). Verified email; 20/hour | `201`, `400`, `400 AFFILIATION_LOCATION_INVALID`, `403 EMAIL_VERIFICATION_REQUIRED`, `404`, `409 AFFILIATION_ALREADY_LIVE {affiliationId,status}`, `409 AFFILIATION_SOCIO_PENDING {affiliationId}`, `409 SOCIO_OF_ANOTHER_GYM {affiliationId, action: SWITCH_GYM}`, `409 AFFILIATION_LIMIT {max: 5}`, `409 AFFILIATION_COOLDOWN {retryAfter}`, `429` |
+| GET | `/me/affiliations` | `?cursor&limit` → `{ items: Affiliation[], nextCursor }`, newest first | `200`, `400` |
+| GET | `/me/affiliations/:id` | `Affiliation` | `200`, `404` |
+| POST | `/me/affiliations/:id/cancel` | `REQUESTED` → `CANCELLED` (`WITHDRAWN`) | `200`, `404`, `409 AFFILIATION_INVALID_TRANSITION` |
+| POST | `/me/affiliations/:id/end` | `CONFIRMED` → `ENDED` (`LEFT`) | `200`, `404`, `409 AFFILIATION_INVALID_TRANSITION` |
+
+«Cambio de gimnasio»: with a confirmed SOCIO elsewhere, a SOCIO request is `409 SOCIO_OF_ANOTHER_GYM`
+unless `switchGym: true`; then it is created with `replacesAffiliationId` and the old one ends
+(`SWITCHED_GYM`) only when the new gym confirms, in the same transaction. One pending SOCIO request at a
+time. After the gym rejects or ends, the same gym and kind wait 7 days; after a cancellation, 1 day.
+
+### Coach business (`business/me/gym-links`; `NEGOCIO` with a `COACH` entity, else `403 BUSINESS_TYPE_NOT_ALLOWED`)
+
+| Method | Route | Body / response | Codes |
+| ------ | ----- | --------------- | ----- |
+| POST | `/business/me/gym-links` | strict `{ gymHandle \| gymEntityId, locationId? }` → `Affiliation` (`ENTRENADOR`, `REQUESTED`). The coach's own profile must be public | `201`, `400`, `403`, `404`, `409 COACH_NOT_PUBLIC`, `409 AFFILIATION_ALREADY_LIVE`, `409 AFFILIATION_LIMIT {max: 10}`, `409 AFFILIATION_COOLDOWN` |
+| GET | `/business/me/gym-links` | `?cursor&limit` → `{ items, nextCursor }` | `200`, `403` |
+| GET | `/business/me/gym-links/:id` | `Affiliation` | `200`, `403`, `404` |
+| POST | `/business/me/gym-links/:id/cancel` | `REQUESTED` → `CANCELLED` | `200`, `403`, `404`, `409` |
+| POST | `/business/me/gym-links/:id/end` | `CONFIRMED` → `ENDED` | `200`, `403`, `404`, `409` |
+
+### Gym (`business/me/affiliations`; `NEGOCIO` with a `GYM` entity, else `403 BUSINESS_TYPE_NOT_ALLOWED`; another gym's: `404`)
+
+`GymAffiliation` = `{ id, kind, status, subject, location: { id, name } | null, requestedAt, confirmedAt }`;
+`subject` = `{ type: PERSON, displayName, photoUrl, ciLast3 }` or `{ type: BUSINESS, name, handle, logoUrl,
+badge: VERIFIED|NEW }`, and `null` on a closed row (the echo of `reject` and `end`). Nothing else about a
+person (no id, email, age, social profile or full CI). A closed row (REJECTED, CANCELLED, ENDED) is `404` by
+id and never listed; its CI digits are erased (also in the person's own view).
+Pending requests are read and decided only while the gym is public: otherwise `409 GYM_NOT_ACTIVE` (and a
+pending one is `404` by id); members, coaches and `end` keep working.
+
+| Method | Route | Body / response | Codes |
+| ------ | ----- | --------------- | ----- |
+| GET | `/business/me/affiliations/requests` | `?kind&locationId&cursor&limit` → `{ items: GymAffiliation[], nextCursor, pendingCount }`, oldest first | `200`, `400`, `403`, `409 GYM_NOT_ACTIVE` |
+| GET | `/business/me/affiliations/members` | `?locationId&cursor&limit` → confirmed SOCIO, newest first | `200`, `400`, `403` |
+| GET | `/business/me/affiliations/coaches` | `?cursor&limit` → confirmed ENTRENADOR (persons and coach businesses) | `200`, `400`, `403` |
+| GET | `/business/me/affiliations/:id` | `GymAffiliation` of a live row: a member or coach, or a request while the gym is public | `200`, `403`, `404` (another gym's, closed, or pending with the gym not public) |
+| POST | `/business/me/affiliations/:id/confirm` | `REQUESTED` → `CONFIRMED`; a gym switch ends the person's SOCIO elsewhere in the same transaction. Of two at once, one is `200` and the other `409` | `200`, `403`, `404`, `409 AFFILIATION_INVALID_TRANSITION`, `409 GYM_NOT_ACTIVE`, `409 SOCIO_OF_ANOTHER_GYM` |
+| POST | `/business/me/affiliations/:id/reject` | strict `{ reasonCode (rejection chips), note? (3–500; required with OTHER) }` → `GymAffiliation` with `subject: null` | `200`, `400`, `403`, `404`, `409`, `422 AFFILIATION_NOTE_REQUIRED` |
+| POST | `/business/me/affiliations/:id/end` | strict `{ reasonCode (end chips), note? }`: `CONFIRMED` → `ENDED`, → `GymAffiliation` with `subject: null` | `200`, `400`, `403`, `404`, `409`, `422 AFFILIATION_NOTE_REQUIRED` |
+
+Notices (in-app, key `affiliation:{id}:{event}`): `requested` to the gym (it never names the person);
+`confirmed`, `rejected`, `ended` to the person or the coach. To report a gym's handling, use
+`POST /me/reports` with `targetKind: BUSINESS_PROFILE` and the gym's entity id.
+
+## Gym community by confirmed affiliation (ADR-0027, franja 7c)
+
+The gym of a person is their single **CONFIRMED SOCIO** affiliation (`directory.affiliations`), never
+`usuarios.tenant_id`, which stays as installation/brand. No gym id is ever taken from the client: every
+gym-scoped route reads the viewer's own confirmed gym, so another gym's community cannot be addressed.
+Without a confirmed SOCIO those routes answer `403 GYM_MEMBERSHIP_REQUIRED { status: NONE | REQUESTED }`
+(the same tenant grants nothing). Persons only: a business account gets `403 ACCOUNT_KIND_NOT_ALLOWED`.
+
+`MyGym` = `{ status: NONE|REQUESTED|CONFIRMED, gym: { id, name, handle, logoUrl } | null (CONFIRMED only),
+location: { id, name } | null, since (confirmedAt) | null, affiliationId | null, pendingRequest: {
+affiliationId, gym, location, requestedAt, switchesGym } | null, membershipVisible }`. `REQUESTED` is the
+«Solicitud enviada» card (`gym: null`, the request in `pendingRequest`); a gym switch shows `CONFIRMED`
+with `pendingRequest.switchesGym: true` until the new gym confirms.
+
+| Method | Route | Body / response | Codes |
+| ------ | ----- | --------------- | ----- |
+| GET | `/me/gym` | `MyGym` (`Cache-Control: private, no-store`) | `200`, `403 ACCOUNT_KIND_NOT_ALLOWED` |
+| PUT | `/me/gym/visibility` | strict `{ membershipVisible: boolean }` → `MyGym` | `200`, `400`, `403` |
+| GET | `/me/gym/members` | `?q&limit (1–50, 20)` → `DirectoryEntry[]` of the gym's confirmed SOCIOs who show their membership and have their social profile on, by name; verified email | `200`, `400`, `403 GYM_MEMBERSHIP_REQUIRED`, `403 EMAIL_VERIFICATION_REQUIRED` |
+| GET | `/me/progression/leaderboard` | `?limit (1–50, 10)&sortBy (points\|streak)` → `[{ position, userId, points, levelCode, streakDays, displayName, photoUrl, badges, isMe }]`: the confirmed SOCIOs of the viewer's gym with points; whoever hides the membership is left out (except for themselves); a block hides the photo | `200`, `403 GYM_MEMBERSHIP_REQUIRED` |
+
+**«Socio de X».** Every directory card (`/me/gym-directory`, `/me/gym-directory/:userId`, the Conocer deck,
+likes and passes, map people, `/me/gym/members`) carries `gymBadge: { id, name, handle, logoUrl } | null`:
+set only for a CONFIRMED SOCIO of a public (`ACTIVE`) gym whose member has the social profile on and
+`membershipVisible`. It is computed from the database on every read; no input sets it.
+
+**Conocer.** Reason `SAME_GYM` and an affinity signal when the viewer and the candidate are CONFIRMED SOCIOs
+of the same gym (candidate showing it). The confirmed members of the viewer's gym enter the candidate pool
+and are inside the perimeter whatever their tenant (also for like/connect); the rest of the perimeter is
+unchanged (tenant + bilateral cross-gym consent).
 
 ## Chat with businesses (ADR-0023, franja 8f)
 
@@ -770,6 +868,6 @@ logo. For the business, they are the person's display name and first profile pho
 
 ## Source contracts
 
-The primary OpenAPI contract is maintained at `docs/endpoints/openapi.yaml` and covers the full client and administrative surface (auth, profile, onboarding, equipment, exercises, media, favorites, workouts, export, dataset import, membership, physical access control, facilities, notifications and routines). The observability endpoints introduced by hardening are isolated in `docs/endpoints/openapi-observability.yaml` so infrastructure teams can import only the operational surface. The Postman collection currently covers the core client and catalog flows (health, auth, profile, equipment, exercises, media, favorites, workouts, export) and does **not** yet mirror the full route inventory; onboarding, membership, access control, facilities, notifications and routines are pending.
+The primary OpenAPI contract is maintained at `docs/endpoints/openapi.yaml` and covers the full client and administrative surface (auth, profile, onboarding, equipment, exercises, media, favorites, workouts, export, dataset import, subscriptions, facilities, notifications and routines). The observability endpoints introduced by hardening are isolated in `docs/endpoints/openapi-observability.yaml` so infrastructure teams can import only the operational surface. The Postman collection currently covers the core client and catalog flows (health, auth, profile, equipment, exercises, media, favorites, workouts, export) and does **not** yet mirror the full route inventory; onboarding, subscriptions, facilities, notifications and routines are pending.
 
 Controller, schema, route, response, error, or limit changes must update OpenAPI, this endpoint guide and the Postman collection in the same pull request.

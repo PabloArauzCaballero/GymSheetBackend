@@ -8,9 +8,13 @@ import { createListing, membership, publishedBusiness } from './listings-e2e';
 
 export type Seller = KycBusiness & { listingId: string };
 
-/** A published business with its payment data (holder = its KYC representative), its QR and one membership listing. */
-export async function sellerWithQr(h: KycHarness, label: string, options: { acceptsCash?: boolean } = {}): Promise<Seller> {
-  const owner = await publishedBusiness(h, label);
+/**
+ * A published business with its payment data (holder = its KYC representative), its QR and one
+ * membership listing. A CENTER by default: a GYM's membership also needs the buyer's SOCIO
+ * affiliation (ADR-0026), which the subscription suites exercise on their own.
+ */
+export async function sellerWithQr(h: KycHarness, label: string, options: { acceptsCash?: boolean; entityType?: string } = {}): Promise<Seller> {
+  const owner = await publishedBusiness(h, label, options.entityType ?? 'CENTER');
   await h.e2e
     .as(owner.token)
     .put('/business/me/payment-config')

@@ -21,13 +21,9 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
 
   type Route = [method: 'get' | 'post' | 'put' | 'patch' | 'del', path: string, body?: object];
   // At least one route per `admin/*` controller (the full set is checked by
-  // roles.guard.admin-routes.spec.ts); `admin/directory` no longer exists (ADR-0024), below.
+  // roles.guard.admin-routes.spec.ts); `admin/directory` no longer exists (ADR-0024), nor
+  // `admin/membership` and `admin/access` (ADR-0026).
   const adminRoutes: Route[] = [
-    ['get', '/admin/access/devices'],
-    ['get', `/admin/access/history?usuarioId=${uuid}`],
-    ['get', `/admin/access/credentials/user/${uuid}`],
-    ['post', '/admin/access/credentials/pin', { usuarioId: uuid, pin: '246810' }],
-    ...(env.ACCESS_MOCK_ENABLED ? [['post', '/admin/access/mock/events', {}] as Route] : []),
     ['post', '/admin/exercises/global', {}],
     ['get', '/admin/exercises/import/exercises-dataset/status'],
     ['get', `/admin/support/users/${uuid}/training`],
@@ -39,12 +35,7 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
     ['get', '/admin/platform/moderators'],
     ['get', '/admin/progression/levels'],
     ['post', '/admin/progression/prizes/redeem', { code: 'NOPE' }],
-    ['get', '/admin/membership/plans'],
-    ['post', '/admin/membership/plans', {}],
-    ['get', '/admin/membership/users'],
-    ['get', '/admin/membership/customers'],
-    ['get', '/admin/membership/staff'],
-    ['get', '/admin/membership/insights/equipment-usage'],
+    ['get', '/admin/users?q=x&roles=CLIENTE'],
     ['post', `/admin/users/${uuid}/close`],
     ['get', '/admin/media'],
     ['post', '/admin/notifications/broadcast', {}],
@@ -265,28 +256,5 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
       }
     }, 60000);
   });
-  describe('registering a person at the front desk (admin/membership/customers)', () => {
-    const body = (tag: string) => ({
-      email: `f7a-desk-${tag}-${randomUUID().slice(0, 8)}@example.test`,
-      pinAcceso: '4321',
-      nombreCompleto: 'Persona de mostrador',
-      numeroCliente: `F7A-${tag}-${randomUUID().slice(0, 6)}`,
-    });
 
-    it('asks the platform admin to operate a gym first instead of failing with 500', async () => {
-      const response = await e2e.as(platform.token).post('/admin/membership/customers').send(body('noscope')).expect(409);
-      expect(response.body.code).toBe('TENANT_SCOPE_REQUIRED');
-    });
-
-    it('registers the person in the gym being operated', async () => {
-      const scoped = await e2e.impersonate(platform.token);
-      const input = body('scoped');
-      await e2e.as(scoped).post('/admin/membership/customers').send(input).expect(201);
-      const [row] = await sequelize.query<{ tenant_id: string }>(
-        'SELECT tenant_id FROM public.usuarios WHERE email = :email',
-        { type: QueryTypes.SELECT, replacements: { email: input.email } },
-      );
-      expect(row.tenant_id).toBe(env.DEFAULT_TENANT_ID);
-    });
-  });
 });

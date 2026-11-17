@@ -15,7 +15,8 @@ tags:
   - name: Users
   - name: Profile
   - name: Onboarding
-  - name: Membership
+  - name: Subscriptions
+    description: Libro de periodos de suscripción (ADR-0026)
   - name: Equipment
   - name: Exercises
   - name: Exercise media
@@ -37,6 +38,10 @@ tags:
     description: Publicaciones, sedes y marketplace público con post-moderación (ADR-0022)
   - name: Orders
     description: Pedidos pagados por QR o en efectivo y confirmados por el negocio (ADR-0024)
+  - name: Affiliations
+    description: Afiliaciones de personas y coaches a la ficha del gimnasio (ADR-0025)
+  - name: GymCommunity
+    description: «Mi gimnasio», clasificación y socios por la afiliación SOCIO confirmada (ADR-0027)
   - name: BusinessChat
     description: Chat de una persona con un negocio; el negocio solo responde (ADR-0023)
 paths:
@@ -297,6 +302,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EquipmentListEnvelope"
+  /admin/users:
+    get:
+      tags: [Administration]
+      summary: "Búsqueda de cuentas de REPP (solo SYSTEM_ADMIN; reemplaza admin/membership/users, ADR-0026)"
+      parameters:
+        - { name: q, in: query, schema: { type: string, minLength: 1, maxLength: 120 }, description: "Fragmento de nombre o correo; % y _ son literales" }
+        - { name: roles, in: query, schema: { type: string }, description: "Roles separados por comas (CLIENTE para el selector de moderadores)" }
+        - { name: status, in: query, schema: { type: string, enum: [ACTIVO, INACTIVO] } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        "200":
+          description: "{ items: [{ id, nombreCompleto, email, rol, estado, tenantId, ultimaSesion, telefono: null, plan: null, venceEl: null, vigente: false }], page, pageSize, total, totalPages }; telefono, plan, venceEl y vigente quedan neutros y obsoletos (eran de la recepción del gimnasio). Con suplantación, solo las cuentas de ese gimnasio."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Parámetro inválido o no declarado", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "401": { description: "Sin token", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "No es SYSTEM_ADMIN (persona, MODERATOR, negocio)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
   /admin/equipment:
     post:
       tags: [Administration]
@@ -1012,363 +1036,7 @@ paths:
               schema: { $ref: "#/components/schemas/BodyMeasurementEnvelope" }
         "400": { $ref: "#/components/responses/Problem400" }
         "401": { $ref: "#/components/responses/Problem401" }
-  /memberships/me:
-    get:
-      tags: [Membership]
-      deprecated: true
-      summary: >-
-        (Legacy) Membresía vigente del usuario. Duplica `/me/membership` con
-        distinta semántica (404 si no hay membresía). Pendiente de unificación;
-        prefiera `/me/membership`.
-      responses:
-        "200":
-          description: Membresía vigente
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/GenericObjectEnvelope" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "404": { $ref: "#/components/responses/Problem404" }
-  /membership/plans:
-    get:
-      tags: [Membership]
-      summary: Listar planes comerciales, precios, beneficios e imágenes
-      responses:
-        "200":
-          description: Planes disponibles
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/MembershipPlanListEnvelope" }
-        "401": { $ref: "#/components/responses/Problem401" }
-  /membership/plans/{id}:
-    get:
-      tags: [Membership]
-      summary: Consultar plan comercial
-      parameters:
-        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
-      responses:
-        "200":
-          description: Plan encontrado
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/MembershipPlanEnvelope" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "404": { $ref: "#/components/responses/Problem404" }
-  /me/membership:
-    get:
-      tags: [Membership]
-      summary: Consultar membresía efectiva, pago pendiente, historial y acciones
-      responses:
-        "200":
-          description: Proyección de membresía
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/GenericObjectEnvelope" }
-        "401": { $ref: "#/components/responses/Problem401" }
-  /me/accesses:
-    get:
-      tags: [Membership]
-      summary: Consultar derechos efectivos sin inferirlos desde el rol
-      responses:
-        "200":
-          description: Derechos efectivos
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/MembershipAccessListEnvelope" }
-        "401": { $ref: "#/components/responses/Problem401" }
-  /me/membership/options:
-    get:
-      tags: [Membership]
-      summary: Consultar opciones compatibles según estado
-      responses:
-        "200":
-          description: Opciones compatibles
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/GenericObjectEnvelope" }
-        "401": { $ref: "#/components/responses/Problem401" }
-  /me/membership/renewal-intent:
-    post:
-      tags: [Membership]
-      summary: Registrar intención idempotente de renovación pendiente
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/MembershipIntentRequest" }
-      responses:
-        "201":
-          description: Intención pendiente; no concede acceso
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/GenericObjectEnvelope" }
-        "400": { $ref: "#/components/responses/Problem400" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "404": { $ref: "#/components/responses/Problem404" }
-  /me/membership/extension-intent:
-    post:
-      tags: [Membership]
-      summary: Registrar intención idempotente de extensión
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/MembershipIntentRequest" }
-      responses:
-        "201":
-          description: Intención pendiente; no extiende aún
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/GenericObjectEnvelope" }
-        "400": { $ref: "#/components/responses/Problem400" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "404": { $ref: "#/components/responses/Problem404" }
-        "422": { $ref: "#/components/responses/Problem422" }
-  /admin/membership/intents/{id}/confirm:
-    post:
-      tags: [Administration, Membership]
-      summary: Confirmar una intención y aplicar tiempo transaccionalmente
-      parameters:
-        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
-      responses:
-        "201": { description: Intención confirmada una sola vez }
   # ==== access ====
-  /access/me:
-    get:
-      tags: [Access control]
-      summary: Consultar el historial de acceso propio
-      parameters:
-        - $ref: "#/components/parameters/PageParam"
-        - $ref: "#/components/parameters/PageSize25Param"
-        - name: usuarioId
-          in: query
-          schema: { type: string, format: uuid }
-        - name: resultado
-          in: query
-          schema: { type: string, enum: [GRANTED, DENIED] }
-      responses:
-        "200":
-          description: Página de decisiones de acceso del usuario autenticado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AccessHistoryPageEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-  /admin/access/devices:
-    get:
-      tags: [Access control]
-      summary: Listar dispositivos de acceso
-      x-required-role: SYSTEM_ADMIN
-      responses:
-        "200":
-          description: Dispositivos registrados
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AccessDeviceListEnvelope"
-        "403": { $ref: "#/components/responses/Problem403" }
-    post:
-      tags: [Access control]
-      summary: Registrar un dispositivo de acceso
-      x-required-role: SYSTEM_ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AccessCreateDeviceRequest"
-      responses:
-        "201":
-          description: Dispositivo registrado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AccessDeviceEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "403": { $ref: "#/components/responses/Problem403" }
-  /admin/access/devices/{id}/status:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema: { type: string, format: uuid }
-    patch:
-      tags: [Access control]
-      summary: Cambiar el estado de un dispositivo de acceso
-      x-required-role: SYSTEM_ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AccessUpdateDeviceStatusRequest"
-      responses:
-        "200":
-          description: Estado del dispositivo actualizado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AccessDeviceEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "404": { $ref: "#/components/responses/Problem404" }
-  /admin/access/events/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema: { type: string, format: uuid }
-    get:
-      tags: [Access control]
-      summary: Consultar un evento de dispositivo de acceso
-      x-required-role: SYSTEM_ADMIN
-      responses:
-        "200":
-          description: Evento de acceso encontrado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AccessDeviceEventEnvelope"
-        "403": { $ref: "#/components/responses/Problem403" }
-        "404": { $ref: "#/components/responses/Problem404" }
-  /admin/access/history:
-    get:
-      tags: [Access control]
-      summary: Listar el historial global de decisiones de acceso
-      x-required-role: SYSTEM_ADMIN
-      parameters:
-        - $ref: "#/components/parameters/PageParam"
-        - $ref: "#/components/parameters/PageSize25Param"
-        - name: usuarioId
-          in: query
-          schema: { type: string, format: uuid }
-        - name: resultado
-          in: query
-          schema: { type: string, enum: [GRANTED, DENIED] }
-      responses:
-        "200":
-          description: Página de decisiones de acceso
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AccessHistoryPageEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "403": { $ref: "#/components/responses/Problem403" }
-  /access/credentials/me:
-    get:
-      tags: [Access control]
-      summary: Listar las credenciales de acceso propias
-      responses:
-        "200":
-          description: Credenciales del usuario autenticado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AccessCredentialListEnvelope"
-  /admin/access/credentials/pin:
-    post:
-      tags: [Access control]
-      summary: Emitir una credencial PIN para un usuario
-      x-required-role: SYSTEM_ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AccessCreatePinCredentialRequest"
-      responses:
-        "201":
-          description: Credencial PIN emitida (reemplaza la anterior activa)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AccessCredentialEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "403": { $ref: "#/components/responses/Problem403" }
-  /admin/access/credentials/external-reference:
-    post:
-      tags: [Access control]
-      summary: Registrar una referencia de credencial biométrica externa
-      x-required-role: SYSTEM_ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AccessCreateExternalCredentialRequest"
-      responses:
-        "201":
-          description: Referencia externa registrada
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AccessCredentialEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "409": { $ref: "#/components/responses/Problem409" }
-  /admin/access/credentials/user/{userId}:
-    parameters:
-      - name: userId
-        in: path
-        required: true
-        schema: { type: string, format: uuid }
-    get:
-      tags: [Access control]
-      summary: Listar las credenciales de acceso de un usuario
-      x-required-role: SYSTEM_ADMIN
-      responses:
-        "200":
-          description: Credenciales del usuario indicado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AccessCredentialListEnvelope"
-        "403": { $ref: "#/components/responses/Problem403" }
-  /admin/access/credentials/{id}/revoke:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema: { type: string, format: uuid }
-    patch:
-      tags: [Access control]
-      summary: Revocar una credencial de acceso
-      x-required-role: SYSTEM_ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AccessRevokeCredentialRequest"
-      responses:
-        "200":
-          description: Credencial revocada (idempotente si ya estaba revocada)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AccessCredentialEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "404": { $ref: "#/components/responses/Problem404" }
-  /admin/access/mock/events:
-    post:
-      tags: [Access control]
-      summary: Encolar un evento de acceso simulado (solo desarrollo)
-      x-required-role: SYSTEM_ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AccessMockEventRequest"
-      responses:
-        "201":
-          description: Evento encolado (idempotente por dispositivo y evento de origen)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AccessDeviceEventEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "403": { $ref: "#/components/responses/Problem403" }
   # ==== facilities ====
   # Fragmentos de paths OpenAPI 3.0.3 para el dominio FACILITIES.
   # Insertar bajo `paths:` del documento principal (docs/endpoints/openapi.yaml).
@@ -1973,297 +1641,6 @@ paths:
                 $ref: "#/components/schemas/NotificationPreferenceEnvelope"
         "400": { $ref: "#/components/responses/Problem400" }
         "401": { $ref: "#/components/responses/Problem401" }
-        "429": { $ref: "#/components/responses/Problem429" }
-  # ==== membership-admin ====
-  /admin/membership/plans:
-    get:
-      tags: [Membership]
-      summary: Listar planes de membresía para administración
-      x-required-role: SYSTEM_ADMIN
-      responses:
-        "200":
-          description: Catálogo completo de planes
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MembershipAdminPlanListEnvelope"
-        "401": { $ref: "#/components/responses/Problem401" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "429": { $ref: "#/components/responses/Problem429" }
-    post:
-      tags: [Membership]
-      summary: Crear un plan de membresía con sus alcances
-      x-required-role: SYSTEM_ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MembershipAdminCreatePlanRequest"
-      responses:
-        "201":
-          description: Plan creado con sus alcances
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MembershipAdminPlanEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "422":
-          description: Una sede o sala del alcance no existe o la sala no pertenece a su sede
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-        "429": { $ref: "#/components/responses/Problem429" }
-  /admin/membership/plans/{id}:
-    parameters:
-      - in: path
-        name: id
-        required: true
-        schema: { type: string, format: uuid }
-    patch:
-      tags: [Membership]
-      summary: Actualizar atributos de un plan de membresía
-      x-required-role: SYSTEM_ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MembershipAdminUpdatePlanRequest"
-      responses:
-        "200":
-          description: Plan actualizado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MembershipAdminPlanEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "404": { $ref: "#/components/responses/Problem404" }
-        "429": { $ref: "#/components/responses/Problem429" }
-  /admin/membership/plans/{id}/scopes:
-    parameters:
-      - in: path
-        name: id
-        required: true
-        schema: { type: string, format: uuid }
-    patch:
-      tags: [Membership]
-      summary: Reemplazar por completo los alcances de un plan
-      x-required-role: SYSTEM_ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MembershipAdminReplaceScopesRequest"
-      responses:
-        "200":
-          description: Plan con sus alcances reemplazados
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MembershipAdminPlanEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "404": { $ref: "#/components/responses/Problem404" }
-        "422":
-          description: Una sede o sala del alcance no existe o la sala no pertenece a su sede
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-        "429": { $ref: "#/components/responses/Problem429" }
-  /admin/membership/customers:
-    post:
-      tags: [Membership]
-      summary: Registrar un cliente con credencial de acceso
-      x-required-role: SYSTEM_ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MembershipAdminCreateCustomerRequest"
-      responses:
-        "201":
-          description: Cliente registrado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MembershipAdminCustomerEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "409": { $ref: "#/components/responses/Problem409" }
-        "429": { $ref: "#/components/responses/Problem429" }
-    get:
-      tags: [Membership]
-      summary: Listar clientes registrados de forma paginada
-      x-required-role: SYSTEM_ADMIN
-      parameters:
-        - $ref: "#/components/parameters/PageParam"
-        - $ref: "#/components/parameters/PageSize25Param"
-      responses:
-        "200":
-          description: Página de clientes
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MembershipAdminCustomerPageEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "429": { $ref: "#/components/responses/Problem429" }
-  /admin/membership/memberships:
-    post:
-      tags: [Membership]
-      summary: Activar una membresía para un cliente
-      x-required-role: SYSTEM_ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MembershipAdminCreateMembershipRequest"
-      responses:
-        "201":
-          description: Membresía activada
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MembershipAdminMembershipEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "422":
-          description: El cliente no existe o no tiene rol de cliente, o el plan no existe o está inactivo
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-        "429": { $ref: "#/components/responses/Problem429" }
-    get:
-      tags: [Membership]
-      summary: Listar membresías con filtros de forma paginada
-      x-required-role: SYSTEM_ADMIN
-      parameters:
-        - $ref: "#/components/parameters/PageParam"
-        - $ref: "#/components/parameters/PageSize25Param"
-        - in: query
-          name: userId
-          schema: { type: string, format: uuid }
-        - in: query
-          name: estado
-          schema:
-            $ref: "#/components/schemas/MembershipAdminMembershipStatus"
-      responses:
-        "200":
-          description: Página de membresías
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MembershipAdminMembershipPageEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "429": { $ref: "#/components/responses/Problem429" }
-  /admin/membership/memberships/{id}/status:
-    parameters:
-      - in: path
-        name: id
-        required: true
-        schema: { type: string, format: uuid }
-    patch:
-      tags: [Membership]
-      summary: Cambiar el estado de una membresía
-      x-required-role: SYSTEM_ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MembershipAdminMembershipStatusRequest"
-      responses:
-        "200":
-          description: Membresía con estado actualizado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MembershipAdminMembershipEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "404": { $ref: "#/components/responses/Problem404" }
-        "409": { $ref: "#/components/responses/Problem409" }
-        "429": { $ref: "#/components/responses/Problem429" }
-  /admin/membership/staff:
-    post:
-      tags: [Membership]
-      summary: Crear un perfil laboral para un usuario con rol de trabajo
-      x-required-role: SYSTEM_ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MembershipAdminCreateStaffRequest"
-      responses:
-        "201":
-          description: Perfil laboral creado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MembershipAdminStaffEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "409": { $ref: "#/components/responses/Problem409" }
-        "422":
-          description: El usuario no tiene un rol laboral permitido o una sede asignada no existe
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-        "429": { $ref: "#/components/responses/Problem429" }
-  /admin/membership/staff/{userId}/status:
-    parameters:
-      - in: path
-        name: userId
-        required: true
-        schema: { type: string, format: uuid }
-    patch:
-      tags: [Membership]
-      summary: Cambiar el estado laboral de un perfil de personal
-      x-required-role: SYSTEM_ADMIN
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MembershipAdminUpdateStaffStatusRequest"
-      responses:
-        "200":
-          description: Perfil laboral con estado actualizado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MembershipAdminStaffEnvelope"
-        "400": { $ref: "#/components/responses/Problem400" }
-        "401": { $ref: "#/components/responses/Problem401" }
-        "403": { $ref: "#/components/responses/Problem403" }
-        "404": { $ref: "#/components/responses/Problem404" }
-        "422":
-          description: La fecha de terminación es obligatoria cuando el estado es TERMINATED
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
         "429": { $ref: "#/components/responses/Problem429" }
   /business/signup:
     post:
@@ -3090,6 +2467,7 @@ paths:
         "204": { description: No Content }
         "403": { $ref: "#/components/responses/Problem403" }
         "404": { $ref: "#/components/responses/Problem404" }
+        "409": { description: "LOCATION_IN_USE (un SOCIO vivo la declaró, ADR-0025)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
   /business/me/gallery:
     post:
       tags: [BusinessListings]
@@ -3296,7 +2674,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { type: object, additionalProperties: false, required: [listingId], properties: { listingId: { type: string, format: uuid }, quantity: { type: integer, minimum: 1, default: 1 }, method: { type: string, enum: [QR, CASH], default: QR }, note: { type: string, maxLength: 500 } } }
+            schema: { type: object, additionalProperties: false, required: [listingId], properties: { listingId: { type: string, format: uuid }, quantity: { type: integer, minimum: 1, default: 1 }, method: { type: string, enum: [QR, CASH], default: QR }, note: { type: string, maxLength: 500 }, affiliation: { type: object, additionalProperties: false, required: [locationId, ciLast3], description: "Membresía de un gimnasio sin afiliación SOCIO: crea la solicitud REQUESTED en la misma transacción (ADR-0026)", properties: { locationId: { type: string, format: uuid }, ciLast3: { type: string, pattern: "^[0-9]{3}$" }, switchGym: { type: boolean, default: false } } } } }
       responses:
         "201":
           description: "Order: { id, orderNumber, status, method, quantity, unitAmount, amount, currency, listing, seller, expiresAt, submittedAt, decidedAt, cancelledAt, cancelReason, rejection, receipt: { uploaded, reference }, note, createdAt }"
@@ -3305,8 +2683,9 @@ paths:
               schema: { $ref: "#/components/schemas/SuccessEnvelope" }
         "400": { description: "Cuerpo inválido o con campos no declarados (amount, planId...)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "404": { description: "Publicación no pública o vendedor sin cuenta de negocio", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "409": { description: "ORDER_OUT_OF_STOCK | ORDER_ALREADY_OPEN | ORDER_OPEN_LIMIT | ORDER_PAYMENT_METHOD_UNAVAILABLE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "422": { description: "ORDER_QUANTITY_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "EMAIL_VERIFICATION_REQUIRED (con affiliation)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "ORDER_OUT_OF_STOCK | ORDER_ALREADY_OPEN | ORDER_OPEN_LIMIT | ORDER_PAYMENT_METHOD_UNAVAILABLE | SOCIO_OF_ANOTHER_GYM {affiliationId, action: SWITCH_GYM} | AFFILIATION_SOCIO_PENDING | AFFILIATION_COOLDOWN | AFFILIATION_LIMIT", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "ORDER_QUANTITY_NOT_ALLOWED | AFFILIATION_REQUIRED {gymEntityId}", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
   /directory/payments/orders/my-orders:
     get:
       tags: [Orders]
@@ -3457,9 +2836,14 @@ paths:
   /business/me/orders/{id}/confirm:
     post:
       tags: [Orders]
-      summary: "Confirmar el pago (solo el negocio dueño; REPP nunca)"
+      summary: "Confirmar el pago (solo el negocio dueño; REPP nunca). Abre el periodo de suscripción y, si es membresía de un gimnasio, confirma la SOCIO pendiente en la misma transacción"
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, properties: { alsoConfirmAffiliation: { type: boolean, default: true, description: "«También confirmo que es socio»" } } }
       responses:
         "200":
           description: "Order: { id, orderNumber, status, method, quantity, unitAmount, amount, currency, listing, seller, expiresAt, submittedAt, decidedAt, cancelledAt, cancelReason, rejection, receipt: { uploaded, reference }, note, createdAt }"
@@ -3468,7 +2852,7 @@ paths:
               schema: { $ref: "#/components/schemas/SuccessEnvelope" }
         "403": { description: "ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "404": { description: "Pedido de otro negocio o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "409": { description: "ORDER_INVALID_TRANSITION (también la segunda de dos simultáneas y una repetición)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "ORDER_INVALID_TRANSITION (también la segunda de dos simultáneas y una repetición) | GYM_NOT_ACTIVE (confirmar la SOCIO con el gimnasio no público)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
   /business/me/orders/{id}/reject:
     post:
       tags: [Orders]
@@ -3560,6 +2944,438 @@ paths:
               schema: { type: string, format: binary }
         "403": { description: "Rol no permitido o MODERATION_SELF_CASE / MODERATION_PEER_CASE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "404": { description: "Sin caso para ese pedido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/affiliations:
+    post:
+      tags: [Affiliations]
+      summary: "Pedir ser socio o entrenador de un gimnasio público"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [kind, ciLast3], properties: { gymHandle: { type: string, minLength: 1, maxLength: 31, description: "@handle del gimnasio (o gymEntityId, uno solo)" }, gymEntityId: { type: string, format: uuid }, kind: { type: string, enum: [SOCIO, ENTRENADOR] }, locationId: { type: string, format: uuid, description: "Obligatoria para SOCIO" }, ciLast3: { type: string, pattern: "^[0-9]{3}$" }, switchGym: { type: boolean, default: false } } }
+      responses:
+        "201":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido o AFFILIATION_LOCATION_INVALID", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "EMAIL_VERIFICATION_REQUIRED o ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "Gimnasio no público o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_ALREADY_LIVE, AFFILIATION_SOCIO_PENDING, SOCIO_OF_ANOTHER_GYM { affiliationId, action: SWITCH_GYM }, AFFILIATION_LIMIT, AFFILIATION_COOLDOWN { retryAfter }", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+    get:
+      tags: [Affiliations]
+      summary: "Mis afiliaciones (más nuevas primero)"
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items: Affiliation[], nextCursor }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/affiliations/{id}:
+    get:
+      tags: [Affiliations]
+      summary: "Una afiliación propia"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Ajena o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/affiliations/{id}/cancel:
+    post:
+      tags: [Affiliations]
+      summary: "Retirar una solicitud pendiente"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Ajena o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/affiliations/{id}/end:
+    post:
+      tags: [Affiliations]
+      summary: "Dejar de ser socio o entrenador"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Ajena o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/gym-links:
+    post:
+      tags: [Affiliations]
+      summary: "Coach negocio: pedir vínculo con un gimnasio por @handle"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, properties: { gymHandle: { type: string, minLength: 1, maxLength: 31, description: "@handle del gimnasio (o gymEntityId, uno solo)" }, gymEntityId: { type: string, format: uuid }, locationId: { type: string, format: uuid } } }
+      responses:
+        "201":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED (no es COACH) o ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "Gimnasio no público o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "COACH_NOT_PUBLIC, AFFILIATION_ALREADY_LIVE, AFFILIATION_LIMIT, AFFILIATION_COOLDOWN", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+    get:
+      tags: [Affiliations]
+      summary: "Coach negocio: mis gimnasios"
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items: Affiliation[], nextCursor }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/gym-links/{id}:
+    get:
+      tags: [Affiliations]
+      summary: "Coach negocio: un vínculo"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "Ajeno o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/gym-links/{id}/cancel:
+    post:
+      tags: [Affiliations]
+      summary: "Coach negocio: retirar la solicitud"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Ajeno o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/gym-links/{id}/end:
+    post:
+      tags: [Affiliations]
+      summary: "Coach negocio: terminar el vínculo"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Affiliation: { id, kind, status, gym: { id, name, handle, logoUrl }, location: { id, name } | null, ciLast3, replacesAffiliationId, reasonCode, reasonNote, requestedAt, confirmedAt, closedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Ajeno o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/affiliations/requests:
+    get:
+      tags: [Affiliations]
+      summary: "Gimnasio: solicitudes pendientes (más viejas primero)"
+      parameters:
+        - { name: kind, in: query, schema: { type: string, enum: [SOCIO, ENTRENADOR] } }
+        - { name: locationId, in: query, schema: { type: string, format: uuid } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items: GymAffiliation[], nextCursor, pendingCount }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED (no es GYM) o ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "GYM_NOT_ACTIVE (el gimnasio no es público)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/affiliations/members:
+    get:
+      tags: [Affiliations]
+      summary: "Gimnasio: socios confirmados"
+      parameters:
+        - { name: locationId, in: query, schema: { type: string, format: uuid } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items: GymAffiliation[], nextCursor }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/affiliations/coaches:
+    get:
+      tags: [Affiliations]
+      summary: "Gimnasio: entrenadores confirmados (personas y coaches negocio)"
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items: GymAffiliation[], nextCursor }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/affiliations/{id}:
+    get:
+      tags: [Affiliations]
+      summary: "Gimnasio: una afiliación"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge } | null (fila cerrada), location: { id, name } | null, requestedAt, confirmedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "De otro gimnasio, inexistente, cerrada (REJECTED, CANCELLED, ENDED) o pendiente con el gimnasio no público", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/affiliations/{id}/confirm:
+    post:
+      tags: [Affiliations]
+      summary: "Gimnasio: confirmar (un cambio de gimnasio termina la SOCIO anterior en la misma transacción)"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge } | null (fila cerrada), location: { id, name } | null, requestedAt, confirmedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "De otro gimnasio o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_INVALID_TRANSITION (también la segunda de dos simultáneas), GYM_NOT_ACTIVE, SOCIO_OF_ANOTHER_GYM", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/affiliations/{id}/reject:
+    post:
+      tags: [Affiliations]
+      summary: "Gimnasio: rechazar con motivo"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [reasonCode], properties: { reasonCode: { type: string, enum: [UNKNOWN_PERSON, CI_MISMATCH, WRONG_LOCATION, NOT_A_COACH_HERE, OTHER] }, note: { type: string, minLength: 3, maxLength: 500 } } }
+      responses:
+        "200":
+          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge } | null (fila cerrada), location: { id, name } | null, requestedAt, confirmedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "De otro gimnasio o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_INVALID_TRANSITION, GYM_NOT_ACTIVE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "AFFILIATION_NOTE_REQUIRED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/affiliations/{id}/end:
+    post:
+      tags: [Affiliations]
+      summary: "Gimnasio: terminar una afiliación confirmada"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [reasonCode], properties: { reasonCode: { type: string, enum: [NO_LONGER_MEMBER, NO_LONGER_COACH, CONDUCT, OTHER] }, note: { type: string, minLength: 3, maxLength: 500 } } }
+      responses:
+        "200":
+          description: "GymAffiliation: { id, kind, status, subject: { type: PERSON, displayName, photoUrl, ciLast3 } | { type: BUSINESS, name, handle, logoUrl, badge } | null (fila cerrada), location: { id, name } | null, requestedAt, confirmedAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "BUSINESS_TYPE_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "De otro gimnasio o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "AFFILIATION_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "AFFILIATION_NOTE_REQUIRED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/subscriptions:
+    get:
+      tags: [Subscriptions]
+      summary: "Mis suscripciones, agrupadas por negocio (reemplaza /me/membership)"
+      responses:
+        "200":
+          description: "{ today, items: [{ seller { entityId, name, handle, logoUrl, entityType }|null, affiliation { id, status }|null, subscriptions: [{ listing { id, name, offerKind }, status (Period status or PENDING), current: Period|null, upcoming: Period|null, pendingOrder { id, orderNumber, status }|null, renew { listingId, available }|null }] }] }; Period { id, status UPCOMING|ACTIVE|EXPIRING|EXPIRED|SUSPENDED|CANCELLED, startsOn, endsOn|null, daysLeft|null, sessions { total, used }|null, origin MARKETPLACE|LEGACY }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "ACCOUNT_KIND_NOT_ALLOWED (cuenta de negocio)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/subscriptions/{id}:
+    get:
+      tags: [Subscriptions]
+      summary: "Un periodo propio con su historial"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Period { id, status UPCOMING|ACTIVE|EXPIRING|EXPIRED|SUSPENDED|CANCELLED, startsOn, endsOn|null, daysLeft|null, sessions { total, used }|null, origin MARKETPLACE|LEGACY } + { listing, seller { entityId, name, handle }|null, renew, history: [{ fromStatus, toStatus, reasonCode, at }] }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Periodo ajeno o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/subscriptions:
+    get:
+      tags: [Subscriptions]
+      summary: "Suscriptores del negocio: último periodo por persona y publicación, el que vence antes primero (reemplaza insights/lapsed)"
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [ACTIVE, EXPIRING, EXPIRED, SUSPENDED, CANCELLED] }, description: "EXPIRING = por vencer (7 días o menos), EXPIRED = vencidos" }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ today, items: Subscriber[], nextCursor }; Subscriber = Period { id, status UPCOMING|ACTIVE|EXPIRING|EXPIRED|SUSPENDED|CANCELLED, startsOn, endsOn|null, daysLeft|null, sessions { total, used }|null, origin MARKETPLACE|LEGACY } + { subscriber { displayName }, listing { id, name, offerKind }, affiliation { id, status, location }|null, lastPayment { orderNumber, amount, currency, method, paidAt }|null, actions { canCancel, canSuspend, canReactivate } }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "INVALID_CURSOR o filtro inválido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "ACCOUNT_KIND_NOT_ALLOWED (persona, MODERATOR, SYSTEM_ADMIN)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/subscriptions/{id}:
+    get:
+      tags: [Subscriptions]
+      summary: "Un suscriptor (solo periodos vendidos por este negocio)"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Subscriber = Period { id, status UPCOMING|ACTIVE|EXPIRING|EXPIRED|SUSPENDED|CANCELLED, startsOn, endsOn|null, daysLeft|null, sessions { total, used }|null, origin MARKETPLACE|LEGACY } + { subscriber { displayName }, listing { id, name, offerKind }, affiliation { id, status, location }|null, lastPayment { orderNumber, amount, currency, method, paidAt }|null, actions { canCancel, canSuspend, canReactivate } }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Periodo de otro negocio, heredado o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/subscriptions/{id}/cancel:
+    post:
+      tags: [Subscriptions]
+      summary: "Cancelar (final) un periodo con motivo; queda en el historial y se avisa a la persona"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [reasonCode], properties: { reasonCode: { type: string, enum: [BUYER_REQUEST, REFUNDED_BY_BUSINESS, PAYMENT_ISSUE, CONDUCT, OTHER] }, note: { type: string, minLength: 3, maxLength: 500, description: "Obligatoria con OTHER" } } }
+      responses:
+        "200":
+          description: "Subscriber"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "Periodo ajeno", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "SUBSCRIPTION_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "SUBSCRIPTION_NOTE_REQUIRED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/subscriptions/{id}/suspend:
+    post:
+      tags: [Subscriptions]
+      summary: "Pausar un periodo con motivo; queda en el historial y se avisa a la persona"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [reasonCode], properties: { reasonCode: { type: string, enum: [BUYER_REQUEST, PAYMENT_ISSUE, HEALTH, CONDUCT, OTHER] }, note: { type: string, minLength: 3, maxLength: 500, description: "Obligatoria con OTHER" } } }
+      responses:
+        "200":
+          description: "Subscriber"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "Periodo ajeno", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "SUBSCRIPTION_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "SUBSCRIPTION_NOTE_REQUIRED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/subscriptions/{id}/reactivate:
+    post:
+      tags: [Subscriptions]
+      summary: "Reactivar un periodo pausado"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Subscriber"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Periodo ajeno", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "SUBSCRIPTION_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/gym:
+    get:
+      tags: [GymCommunity]
+      summary: "Mi gimnasio: el SOCIO confirmado, la solicitud pendiente y el interruptor de visibilidad"
+      responses:
+        "200":
+          description: "MyGym: { status: NONE|REQUESTED|CONFIRMED, gym: { id, name, handle, logoUrl } | null (solo CONFIRMED), location: { id, name } | null, since (confirmación) | null, affiliationId | null, pendingRequest: { affiliationId, gym, location, requestedAt, switchesGym } | null (Solicitud enviada o cambio de gimnasio), membershipVisible }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/gym/visibility:
+    put:
+      tags: [GymCommunity]
+      summary: "Mostrar u ocultar que soy socio (insignia, lista de socios, clasificación, Conocer)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [membershipVisible], properties: { membershipVisible: { type: boolean } } }
+      responses:
+        "200":
+          description: "MyGym: { status: NONE|REQUESTED|CONFIRMED, gym: { id, name, handle, logoUrl } | null (solo CONFIRMED), location: { id, name } | null, since (confirmación) | null, affiliationId | null, pendingRequest: { affiliationId, gym, location, requestedAt, switchesGym } | null (Solicitud enviada o cambio de gimnasio), membershipVisible }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/gym/members:
+    get:
+      tags: [GymCommunity]
+      summary: "Socios de mi gimnasio que muestran su afiliación y tienen perfil social (orden por nombre)"
+      parameters:
+        - { name: q, in: query, schema: { type: string, minLength: 1, maxLength: 80 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "DirectoryEntry[] (la ficha del directorio, con gymBadge)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Consulta inválida", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "GYM_MEMBERSHIP_REQUIRED { status }, EMAIL_VERIFICATION_REQUIRED o ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /me/progression/leaderboard:
+    get:
+      tags: [GymCommunity]
+      summary: "Clasificación de mi gimnasio (SOCIO confirmados; ADR-0027)"
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
+        - { name: sortBy, in: query, schema: { type: string, enum: [points, streak], default: points } }
+      responses:
+        "200":
+          description: "[{ position, userId, points, levelCode, streakDays, displayName (nombre e inicial), photoUrl (null si hay bloqueo), badges, isMe }]; quien oculta su afiliación no aparece salvo para sí"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "GYM_MEMBERSHIP_REQUIRED { status: NONE|REQUESTED } (sin SOCIO confirmado) o ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
   /me/business-conversations:
     post:
       tags: [BusinessChat]
@@ -4145,52 +3961,6 @@ components:
             data:
               type: array
               items: { $ref: "#/components/schemas/BodyMeasurement" }
-    MembershipIntentRequest:
-      type: object
-      required: [planId, idempotencyKey]
-      additionalProperties: false
-      properties:
-        planId: { type: string, format: uuid }
-        months: { type: integer, minimum: 1, maximum: 24, default: 1 }
-        idempotencyKey: { type: string, minLength: 8, maxLength: 120 }
-    MembershipPlan:
-      type: object
-      additionalProperties: true
-      required: [id, nombre]
-      properties:
-        id: { type: string, format: uuid }
-        codigo: { type: string }
-        nombre: { type: string }
-        tipo:
-          type: string
-          enum:
-            [DAY_PASS, WEEKLY, MONTHLY, QUARTERLY, SEMIANNUAL, ANNUAL, CUSTOM]
-        duracionDias: { type: integer }
-        estado: { type: string, enum: [ACTIVE, INACTIVE] }
-    MembershipPlanEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data: { $ref: "#/components/schemas/MembershipPlan" }
-    MembershipPlanListEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              type: array
-              items: { $ref: "#/components/schemas/MembershipPlan" }
-    MembershipAccessListEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              type: array
-              items:
-                type: object
-                additionalProperties: true
     EquipmentAssetFields:
       type: object
       properties:
@@ -4553,254 +4323,6 @@ components:
           type: boolean
           description: Solo se permite si la configuración confirma explícitamente la licencia.
     # ==== access ====
-    AccessDeviceStatus:
-      type: string
-      enum: [ACTIVE, MAINTENANCE, OFFLINE, INACTIVE]
-    AccessCredentialType:
-      type: string
-      enum: [PIN, FACE, FINGERPRINT]
-    AccessCredentialStatus:
-      type: string
-      enum: [ACTIVE, SUSPENDED, REVOKED]
-    AccessDecisionOutcome:
-      type: string
-      enum: [GRANTED, DENIED]
-    AccessDecisionReason:
-      type: string
-      enum:
-        - STAFF_ACCESS
-        - ACTIVE_MEMBERSHIP
-        - USER_INACTIVE
-        - CREDENTIAL_INACTIVE
-        - DEVICE_INACTIVE
-        - MEMBERSHIP_NOT_FOUND
-        - MEMBERSHIP_NOT_STARTED
-        - MEMBERSHIP_EXPIRED
-        - MEMBERSHIP_SUSPENDED
-        - ACCESS_SCOPE_DENIED
-        - DIRECTION_NOT_ALLOWED
-        - INVALID_EVENT
-    AccessQueueItemStatus:
-      type: string
-      enum: [PENDING, PROCESSING, COMPLETED, FAILED, DEAD_LETTER]
-    AccessCreateDeviceRequest:
-      type: object
-      additionalProperties: false
-      required: [puntoAccesoId, adapterKey, dispositivoExternoId, nombre]
-      properties:
-        puntoAccesoId: { type: string, format: uuid }
-        adapterKey:
-          type: string
-          minLength: 2
-          maxLength: 100
-          pattern: "^[A-Za-z0-9._-]+$"
-        dispositivoExternoId: { type: string, minLength: 2, maxLength: 180 }
-        nombre: { type: string, minLength: 2, maxLength: 180 }
-        metadata:
-          type: object
-          description: El JSON serializado no puede superar 8 KiB.
-          additionalProperties: true
-          default: {}
-    AccessUpdateDeviceStatusRequest:
-      type: object
-      additionalProperties: false
-      required: [estado]
-      properties:
-        estado: { $ref: "#/components/schemas/AccessDeviceStatus" }
-    AccessCreatePinCredentialRequest:
-      type: object
-      additionalProperties: false
-      required: [usuarioId, pin]
-      properties:
-        usuarioId: { type: string, format: uuid }
-        pin: { type: string, pattern: "^\\d{4,12}$" }
-        proveedor:
-          type: string
-          minLength: 2
-          maxLength: 100
-          default: INTERNAL_PIN
-    AccessCreateExternalCredentialRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - usuarioId
-        - modalidad
-        - proveedor
-        - referenciaExterna
-        - versionConsentimiento
-        - consentimientoRegistradoEn
-      properties:
-        usuarioId: { type: string, format: uuid }
-        modalidad: { type: string, enum: [FACE, FINGERPRINT] }
-        proveedor: { type: string, minLength: 2, maxLength: 100 }
-        referenciaExterna: { type: string, minLength: 8, maxLength: 255 }
-        versionConsentimiento: { type: string, minLength: 1, maxLength: 80 }
-        consentimientoRegistradoEn: { type: string, format: date-time }
-        metadata:
-          type: object
-          description: El JSON serializado no puede superar 4 KiB.
-          additionalProperties: true
-          default: {}
-    AccessRevokeCredentialRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        motivo:
-          type: string
-          nullable: true
-          minLength: 3
-          maxLength: 1000
-    AccessMockEventRequest:
-      type: object
-      additionalProperties: false
-      required: [dispositivoId, credencialId, direccion]
-      properties:
-        dispositivoId: { type: string, format: uuid }
-        credencialId: { type: string, format: uuid }
-        eventoOrigenId: { type: string, minLength: 8, maxLength: 200 }
-        direccion: { type: string, enum: [ENTRY, EXIT] }
-        ocurridoEn: { type: string, format: date-time }
-    AccessDevice:
-      type: object
-      required: [id, puntoAccesoId, adapterKey, dispositivoExternoId, nombre, estado]
-      additionalProperties: true
-      properties:
-        id: { type: string, format: uuid }
-        puntoAccesoId: { type: string, format: uuid }
-        adapterKey: { type: string }
-        dispositivoExternoId: { type: string }
-        nombre: { type: string }
-        estado: { $ref: "#/components/schemas/AccessDeviceStatus" }
-        vistoPorUltimaVezEn: { type: string, format: date-time, nullable: true }
-        metadata:
-          type: object
-          additionalProperties: true
-    AccessDecision:
-      type: object
-      required:
-        - id
-        - eventoDispositivoId
-        - usuarioId
-        - resultado
-        - razon
-        - decididoEn
-        - versionPolitica
-      additionalProperties: true
-      properties:
-        id: { type: string, format: uuid }
-        eventoDispositivoId: { type: string, format: uuid }
-        usuarioId: { type: string, format: uuid }
-        resultado: { $ref: "#/components/schemas/AccessDecisionOutcome" }
-        razon: { $ref: "#/components/schemas/AccessDecisionReason" }
-        membresiaId: { type: string, format: uuid, nullable: true }
-        perfilPersonalId: { type: string, format: uuid, nullable: true }
-        diasRestantes: { type: integer, nullable: true }
-        decididoEn: { type: string, format: date-time }
-        versionPolitica: { type: string }
-    AccessDeviceEvent:
-      type: object
-      required:
-        - id
-        - dispositivoId
-        - eventoOrigenId
-        - credencialId
-        - direccion
-        - ocurridoEn
-        - recibidoEn
-        - estadoCola
-      additionalProperties: true
-      properties:
-        id: { type: string, format: uuid }
-        dispositivoId: { type: string, format: uuid }
-        eventoOrigenId: { type: string }
-        credencialId: { type: string, format: uuid }
-        direccion: { type: string, enum: [ENTRY, EXIT] }
-        ocurridoEn: { type: string, format: date-time }
-        recibidoEn: { type: string, format: date-time }
-        estadoCola: { $ref: "#/components/schemas/AccessQueueItemStatus" }
-        decision:
-          nullable: true
-          allOf:
-            - $ref: "#/components/schemas/AccessDecision"
-    AccessCredential:
-      type: object
-      required:
-        - id
-        - usuarioId
-        - tipo
-        - proveedor
-        - estado
-        - referenciaExternaRegistrada
-        - registradoEn
-      additionalProperties: true
-      properties:
-        id: { type: string, format: uuid }
-        usuarioId: { type: string, format: uuid }
-        tipo: { $ref: "#/components/schemas/AccessCredentialType" }
-        proveedor: { type: string }
-        estado: { $ref: "#/components/schemas/AccessCredentialStatus" }
-        referenciaExternaRegistrada: { type: boolean }
-        versionConsentimiento: { type: string, nullable: true }
-        consentimientoRegistradoEn: { type: string, format: date-time, nullable: true }
-        registradoEn: { type: string, format: date-time }
-        verificadoPorUltimaVezEn: { type: string, format: date-time, nullable: true }
-        revocadoEn: { type: string, format: date-time, nullable: true }
-    AccessDeviceEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data: { $ref: "#/components/schemas/AccessDevice" }
-    AccessDeviceListEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              type: array
-              items: { $ref: "#/components/schemas/AccessDevice" }
-    AccessDeviceEventEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data: { $ref: "#/components/schemas/AccessDeviceEvent" }
-    AccessCredentialEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data: { $ref: "#/components/schemas/AccessCredential" }
-    AccessCredentialListEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              type: array
-              items: { $ref: "#/components/schemas/AccessCredential" }
-    AccessHistoryPageEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              type: object
-              required: [items, page, pageSize, total, totalPages]
-              properties:
-                items:
-                  type: array
-                  items: { $ref: "#/components/schemas/AccessDecision" }
-                page: { type: integer, minimum: 1 }
-                pageSize: { type: integer, minimum: 1, maximum: 100 }
-                total: { type: integer, minimum: 0 }
-                totalPages: { type: integer, minimum: 0 }
-    # ==== facilities ====
-    # Fragmentos de schemas OpenAPI 3.0.3 para el dominio FACILITIES.
-    # Insertar bajo components.schemas del documento principal (docs/endpoints/openapi.yaml).
-    # Reutiliza SuccessEnvelope y Problem ya definidos en ese documento.
-
-    # --- Enums ---
     FacilityStatus:
       type: string
       enum: [ACTIVE, INACTIVE]
@@ -5482,319 +5004,3 @@ components:
                   type: string
                   format: date
                   description: Fecha de negocio con la que se calcularon los días restantes.
-    # ==== membership-admin ====
-    MembershipAdminPlanType:
-      type: string
-      enum: [DAY_PASS, WEEKLY, MONTHLY, QUARTERLY, SEMIANNUAL, ANNUAL, CUSTOM]
-    MembershipAdminPlanStatus:
-      type: string
-      enum: [ACTIVE, INACTIVE]
-    MembershipAdminMembershipStatus:
-      type: string
-      enum: [ACTIVE, SUSPENDED, CANCELLED, EXPIRED]
-    MembershipAdminEntitlementSource:
-      type: string
-      enum: [MEMBERSHIP, PURCHASE, ADMIN_GRANT, PROMOTION, TRIAL]
-    MembershipAdminStaffPosition:
-      type: string
-      enum: [COACH, FRONT_DESK, ADMINISTRATION]
-    MembershipAdminEmploymentStatus:
-      type: string
-      enum: [ACTIVE, SUSPENDED, TERMINATED]
-    MembershipAdminScopeInput:
-      type: object
-      additionalProperties: false
-      required: [sedeId]
-      properties:
-        sedeId: { type: string, format: uuid }
-        salaId: { type: string, format: uuid, nullable: true }
-    MembershipAdminScope:
-      type: object
-      additionalProperties: true
-      required: [sedeId, salaId]
-      properties:
-        sedeId: { type: string, format: uuid }
-        salaId: { type: string, format: uuid, nullable: true }
-    MembershipAdminCreatePlanRequest:
-      type: object
-      additionalProperties: false
-      required: [codigo, nombre, tipo, duracionDias, alcances]
-      properties:
-        codigo:
-          type: string
-          minLength: 2
-          maxLength: 80
-          pattern: "^[A-Za-z0-9._-]+$"
-        nombre: { type: string, minLength: 2, maxLength: 180 }
-        descripcion: { type: string, nullable: true, maxLength: 2000 }
-        tipo: { $ref: "#/components/schemas/MembershipAdminPlanType" }
-        duracionDias: { type: integer, minimum: 1, maximum: 3650 }
-        diasRecordatorio:
-          type: array
-          maxItems: 30
-          default: [7, 3, 1, 0]
-          items: { type: integer, minimum: 0, maximum: 3650 }
-        alcances:
-          type: array
-          minItems: 1
-          maxItems: 100
-          items: { $ref: "#/components/schemas/MembershipAdminScopeInput" }
-        metadata:
-          type: object
-          description: El JSON serializado no puede superar 16 KiB.
-          additionalProperties: true
-          default: {}
-    MembershipAdminUpdatePlanRequest:
-      type: object
-      additionalProperties: false
-      minProperties: 1
-      properties:
-        nombre: { type: string, minLength: 2, maxLength: 180 }
-        descripcion: { type: string, nullable: true, maxLength: 2000 }
-        tipo: { $ref: "#/components/schemas/MembershipAdminPlanType" }
-        duracionDias: { type: integer, minimum: 1, maximum: 3650 }
-        diasRecordatorio:
-          type: array
-          maxItems: 30
-          items: { type: integer, minimum: 0, maximum: 3650 }
-        estado: { $ref: "#/components/schemas/MembershipAdminPlanStatus" }
-        metadata:
-          type: object
-          additionalProperties: true
-    MembershipAdminReplaceScopesRequest:
-      type: object
-      additionalProperties: false
-      required: [alcances]
-      properties:
-        alcances:
-          type: array
-          minItems: 1
-          maxItems: 100
-          items: { $ref: "#/components/schemas/MembershipAdminScopeInput" }
-    MembershipAdminCreateCustomerRequest:
-      type: object
-      additionalProperties: false
-      required: [email, password, pinAcceso, nombreCompleto, numeroCliente]
-      properties:
-        email: { type: string, format: email, maxLength: 180 }
-        password: { type: string, minLength: 10, maxLength: 128, format: password }
-        pinAcceso: { type: string, pattern: "^\\d{4,12}$" }
-        nombreCompleto: { type: string, minLength: 3, maxLength: 180 }
-        numeroCliente: { type: string, minLength: 2, maxLength: 80 }
-        telefono: { type: string, nullable: true, minLength: 5, maxLength: 40 }
-        referenciaExterna: { type: string, nullable: true, minLength: 1, maxLength: 180 }
-        notas: { type: string, nullable: true, maxLength: 2000 }
-        metadata:
-          type: object
-          additionalProperties: true
-          default: {}
-    MembershipAdminCreateMembershipRequest:
-      type: object
-      additionalProperties: false
-      required: [clienteUsuarioId, planId]
-      properties:
-        clienteUsuarioId: { type: string, format: uuid }
-        planId: { type: string, format: uuid }
-        iniciaEl: { type: string, format: date }
-        referenciaExterna: { type: string, nullable: true, minLength: 1, maxLength: 180 }
-        notas: { type: string, nullable: true, maxLength: 2000 }
-        metadata:
-          type: object
-          additionalProperties: true
-          default: {}
-    MembershipAdminMembershipStatusRequest:
-      type: object
-      additionalProperties: false
-      required: [estado]
-      properties:
-        estado: { $ref: "#/components/schemas/MembershipAdminMembershipStatus" }
-        motivo: { type: string, nullable: true, maxLength: 2000 }
-    MembershipAdminCreateStaffRequest:
-      type: object
-      additionalProperties: false
-      required: [usuarioId, cargo, contratadoEl, sedes]
-      properties:
-        usuarioId: { type: string, format: uuid }
-        cargo: { $ref: "#/components/schemas/MembershipAdminStaffPosition" }
-        contratadoEl: { type: string, format: date }
-        accesoIlimitado: { type: boolean, default: true }
-        sedes:
-          type: array
-          minItems: 1
-          maxItems: 100
-          items: { type: string, format: uuid }
-        metadata:
-          type: object
-          additionalProperties: true
-          default: {}
-    MembershipAdminUpdateStaffStatusRequest:
-      type: object
-      additionalProperties: false
-      required: [estadoLaboral]
-      properties:
-        estadoLaboral: { $ref: "#/components/schemas/MembershipAdminEmploymentStatus" }
-        terminadoEl: { type: string, format: date, nullable: true }
-    MembershipAdminPlanImage:
-      type: object
-      additionalProperties: true
-      properties:
-        id: { type: string, format: uuid }
-        publicId: { type: string }
-        url: { type: string, nullable: true }
-        altText: { type: string, nullable: true }
-        width: { type: integer, nullable: true }
-        height: { type: integer, nullable: true }
-        licencia: { type: string, nullable: true }
-        atribucion: { type: string, nullable: true }
-    MembershipAdminPlan:
-      type: object
-      additionalProperties: true
-      required: [id, codigo, nombre, tipo, duracionDias, estado, alcances]
-      properties:
-        id: { type: string, format: uuid }
-        publicId: { type: string }
-        codigo: { type: string }
-        nombre: { type: string }
-        descripcion: { type: string, nullable: true }
-        tipo: { $ref: "#/components/schemas/MembershipAdminPlanType" }
-        duracionDias: { type: integer }
-        diasRecordatorio:
-          type: array
-          items: { type: integer }
-        estado: { $ref: "#/components/schemas/MembershipAdminPlanStatus" }
-        precio: { type: number, nullable: true }
-        moneda: { type: string, nullable: true }
-        beneficios:
-          type: array
-          items: { type: object, additionalProperties: true }
-        orden: { type: integer }
-        disponibleNuevo: { type: boolean }
-        disponibleRenovacion: { type: boolean }
-        disponibleExtension: { type: boolean }
-        imagen:
-          allOf:
-            - $ref: "#/components/schemas/MembershipAdminPlanImage"
-          nullable: true
-        alcances:
-          type: array
-          items: { $ref: "#/components/schemas/MembershipAdminScope" }
-        metadata:
-          type: object
-          additionalProperties: true
-    MembershipAdminMembership:
-      type: object
-      additionalProperties: true
-      required: [id, clienteUsuarioId, planId, iniciaEl, venceEl, estado, diasRestantes]
-      properties:
-        id: { type: string, format: uuid }
-        clienteUsuarioId: { type: string, format: uuid }
-        planId: { type: string, format: uuid }
-        plan: { $ref: "#/components/schemas/MembershipAdminPlan" }
-        iniciaEl: { type: string, format: date }
-        venceEl: { type: string, format: date }
-        estado: { $ref: "#/components/schemas/MembershipAdminMembershipStatus" }
-        diasRestantes: { type: integer, minimum: 0 }
-        venceHoy: { type: boolean }
-        vigenteHoy: { type: boolean }
-        referenciaExterna: { type: string, nullable: true }
-        notas: { type: string, nullable: true }
-    MembershipAdminCustomerUser:
-      type: object
-      additionalProperties: true
-      properties:
-        id: { type: string, format: uuid }
-        email: { type: string, format: email }
-        nombreCompleto: { type: string }
-        estado: { type: string }
-    MembershipAdminCustomer:
-      type: object
-      additionalProperties: true
-      required: [id, usuarioId, numeroCliente]
-      properties:
-        id: { type: string, format: uuid }
-        usuarioId: { type: string, format: uuid }
-        numeroCliente: { type: string }
-        telefono: { type: string, nullable: true }
-        registradoEl: { type: string, format: date }
-        referenciaExterna: { type: string, nullable: true }
-        notas: { type: string, nullable: true }
-        usuario: { $ref: "#/components/schemas/MembershipAdminCustomerUser" }
-    MembershipAdminStaff:
-      type: object
-      additionalProperties: true
-      required: [id, usuarioId, cargo, estadoLaboral, contratadoEl, accesoIlimitado, sedes]
-      properties:
-        id: { type: string, format: uuid }
-        usuarioId: { type: string, format: uuid }
-        cargo: { $ref: "#/components/schemas/MembershipAdminStaffPosition" }
-        estadoLaboral: { $ref: "#/components/schemas/MembershipAdminEmploymentStatus" }
-        contratadoEl: { type: string, format: date }
-        terminadoEl: { type: string, format: date, nullable: true }
-        accesoIlimitado: { type: boolean }
-        sedes:
-          type: array
-          items: { type: string, format: uuid }
-    MembershipAdminPlanEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data: { $ref: "#/components/schemas/MembershipAdminPlan" }
-    MembershipAdminPlanListEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              type: array
-              items: { $ref: "#/components/schemas/MembershipAdminPlan" }
-    MembershipAdminMembershipEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data: { $ref: "#/components/schemas/MembershipAdminMembership" }
-    MembershipAdminMembershipPageEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              type: object
-              required: [items, page, pageSize, total, totalPages]
-              properties:
-                items:
-                  type: array
-                  items: { $ref: "#/components/schemas/MembershipAdminMembership" }
-                page: { type: integer, minimum: 1 }
-                pageSize: { type: integer, minimum: 1, maximum: 100 }
-                total: { type: integer, minimum: 0 }
-                totalPages: { type: integer, minimum: 0 }
-    MembershipAdminCustomerEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data: { $ref: "#/components/schemas/MembershipAdminCustomer" }
-    MembershipAdminCustomerPageEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              type: object
-              required: [items, page, pageSize, total, totalPages]
-              properties:
-                items:
-                  type: array
-                  items: { $ref: "#/components/schemas/MembershipAdminCustomer" }
-                page: { type: integer, minimum: 1 }
-                pageSize: { type: integer, minimum: 1, maximum: 100 }
-                total: { type: integer, minimum: 0 }
-                totalPages: { type: integer, minimum: 0 }
-    MembershipAdminStaffEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/SuccessEnvelope"
-        - type: object
-          properties:
-            data: { $ref: "#/components/schemas/MembershipAdminStaff" }

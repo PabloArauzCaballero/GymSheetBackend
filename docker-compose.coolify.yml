@@ -12,7 +12,7 @@
 #    llega al proceso si algún `environment:` de ESTE archivo la referencia con `${VAR}`. Por eso
 #    `x-app-environment` de abajo tiene que listar cada variable que el backend necesita —
 #    limitarse a las de base de datos (como se hizo en un intento anterior) deja sin
-#    `JWT_ACCESS_SECRET`/`WHATSAPP_MEMBERSHIP_PHONE`/etc. al contenedor, que revienta con
+#    `JWT_ACCESS_SECRET`/`DB_PASSWORD`/etc. al contenedor, que revienta con
 #    `exit 1` al arrancar (env.ts rechaza el proceso si falta cualquier variable requerida) sin
 #    dejar rastro en el log de despliegue de Coolify, solo en el log del propio contenedor.
 # 3. TODAS las variables deben quedar "Runtime only" en Coolify (no "Available at Buildtime"):
@@ -51,9 +51,6 @@ x-app-environment: &app-environment
   LOG_LEVEL: ${LOG_LEVEL:-info}
   BUSINESS_TIME_ZONE: ${BUSINESS_TIME_ZONE:-America/La_Paz}
   DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-}
-  ACCESS_POLICY_VERSION: ${ACCESS_POLICY_VERSION:-2026-07-19}
-  ACCESS_MOCK_ENABLED: ${ACCESS_MOCK_ENABLED:-false}
-  WHATSAPP_MEMBERSHIP_PHONE: ${WHATSAPP_MEMBERSHIP_PHONE:?WHATSAPP_MEMBERSHIP_PHONE is required}
   METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
   # Required: the privacy pepper (ADR-0014/0015). This stack runs with NODE_ENV=development, so
   # the production check in env.ts would not catch a missing value; Compose refuses to deploy.
@@ -150,8 +147,6 @@ x-app-environment: &app-environment
   GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN:-}
   GMAIL_FROM_EMAIL: ${GMAIL_FROM_EMAIL:-}
 
-  PORTAL_PUBLIC_URL: ${PORTAL_PUBLIC_URL:-http://localhost:3001}
-  ACTIVATION_LINK_TTL_HOURS: ${ACTIVATION_LINK_TTL_HOURS:-48}
 
   EXERCISES_DATASET_ENABLED: ${EXERCISES_DATASET_ENABLED:-false}
   EXERCISES_DATASET_JSON_URL: ${EXERCISES_DATASET_JSON_URL:-https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json}
@@ -689,17 +684,11 @@ services:
   # demás queda exactamente como hoy.
   #
   # Reparto de responsabilidades (docs/workers/notification-workers.md):
-  #   access-event        → drena la bandeja de eventos de acceso física
   #   membership-reminder → avisos de vencimiento de membresía
   #   notification-delivery → entrega lo que el outbox transaccional deja listo
   #   exercises-dataset-refresh → refresco del dataset externo de ejercicios;
   #     solo hace trabajo real con EXERCISES_DATASET_ENABLED=true.
   # ---------------------------------------------------------------------------
-
-  worker-access-event:
-    <<: *worker-service
-    profiles: ['workers']
-    command: ['node', 'dist/workers/access-event.worker.js']
 
   worker-membership-reminder:
     <<: *worker-service

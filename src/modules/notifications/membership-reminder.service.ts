@@ -5,7 +5,8 @@ import { NotificationStatus } from '../../common/enums/domain.enums';
 import { BusinessDateService } from '../../common/time/business-date.service';
 import { GymDomainEvent } from '../integration/domain-event.catalog';
 import { DomainEventPublisher } from '../integration/domain-event.publisher';
-import { NotificationRepository } from './notification.repository';
+import { REMINDER_DAYS } from '../subscriptions/subscription.catalog';
+import { ExpiringMembershipCandidate, NotificationRepository } from './notification.repository';
 import { NotificationScheduleService } from './notification-schedule.service';
 
 export type ReminderScanResult = {
@@ -30,6 +31,7 @@ export class MembershipReminderService {
     const today = this.dates.today();
     const candidates = await this.repository.findExpiringMemberships(
       today,
+      REMINDER_DAYS,
       limit,
     );
     let created = 0;
@@ -51,12 +53,8 @@ export class MembershipReminderService {
               recipientUserId: candidate.userId,
               membershipId: candidate.membershipId,
               channel: candidate.channel,
-              subject: 'Tu plan está por vencer',
-              body: this.buildBody(
-                candidate.planName,
-                candidate.daysRemaining,
-                candidate.endsOn,
-              ),
+              subject: 'Tu suscripción está por vencer',
+              body: this.buildBody(candidate),
               daysRemaining: candidate.daysRemaining,
               deduplicationKey: key,
               status: NotificationStatus.PENDING,
@@ -117,15 +115,14 @@ export class MembershipReminderService {
     return { candidates: candidates.length, created, duplicates };
   }
 
-  private buildBody(
-    planName: string,
-    daysRemaining: number,
-    endsOn: string,
-  ): string {
-    if (daysRemaining === 0) {
-      return `Tu plan ${planName} vence hoy (${endsOn}). Acércate a recepción para renovarlo.`;
+  private buildBody(candidate: ExpiringMembershipCandidate): string {
+    const what = candidate.sellerName
+      ? `«${candidate.planName}» de ${candidate.sellerName}`
+      : `«${candidate.planName}»`;
+    if (candidate.daysRemaining === 0) {
+      return `Tu ${what} vence hoy (${candidate.endsOn}). Renuévala desde Mis suscripciones.`;
     }
-    const unit = daysRemaining === 1 ? 'día' : 'días';
-    return `A tu plan ${planName} le quedan ${daysRemaining} ${unit}. Vence el ${endsOn}.`;
+    const unit = candidate.daysRemaining === 1 ? 'día' : 'días';
+    return `A tu ${what} le quedan ${candidate.daysRemaining} ${unit}. Vence el ${candidate.endsOn}; puedes renovarla desde Mis suscripciones.`;
   }
 }

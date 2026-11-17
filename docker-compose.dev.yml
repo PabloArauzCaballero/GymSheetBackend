@@ -65,12 +65,6 @@ services:
     environment:
       <<: *dev-environment
 
-  worker-access:
-    <<: [*dev-image, *dev-source]
-    command: ["yarn", "worker:access:dev"]
-    environment:
-      <<: *dev-environment
-
   worker-reminders:
     <<: [*dev-image, *dev-source]
     command: ["yarn", "worker:reminders:dev"]

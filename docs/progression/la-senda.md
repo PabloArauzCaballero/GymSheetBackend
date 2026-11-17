@@ -375,7 +375,7 @@ GET  /api/v1/me/progression              estado completo (con streak, challenges
 GET  /api/v1/me/progression/rules        cuánto vale cada cosa
 GET  /api/v1/me/progression/prizes       los cupones del socio
 POST /api/v1/me/progression/acknowledge  las novedades (insignias, retos, cupones) dejan de serlo
-GET  /api/v1/me/progression/leaderboard  clasificación del gimnasio
+GET  /api/v1/me/progression/leaderboard  clasificación del gimnasio (SOCIO confirmados, ADR-0027)
 ```
 
 El `finish` de una sesión (`PATCH /workouts/{id}/finish`) devuelve en
@@ -385,6 +385,12 @@ El contrato completo está en `PLAN_RUTINAS_REPP/12_PREMIOS_2026-10-18.md` §3.
 
 La clasificación muestra nombre de pila e inicial («Ana P.»): una tabla pública
 con el nombre completo de cada socio sería una lista de clientes del gimnasio.
+
+Desde la franja 7c (ADR-0027) la clasificación es la del gimnasio de la
+afiliación SOCIO confirmada, no la del tenant: sin ella responde
+`403 GYM_MEMBERSHIP_REQUIRED { status }`, y quien oculta su afiliación
+(`PUT /me/gym/visibility`) no aparece. El catálogo (niveles, insignias,
+premios) sigue siendo por tenant: es la marca, no el gimnasio.
 
 ## 10. Qué mirar si algo va mal
 

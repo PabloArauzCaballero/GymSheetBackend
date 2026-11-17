@@ -1,5 +1,4 @@
 import { INestApplication } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { json, urlencoded } from 'express';
 import request from 'supertest';
@@ -18,11 +17,6 @@ describe('cross-gym connections (e2e)', () => {
   let sequelize: Sequelize;
   const temporaryTenantIds: string[] = [];
   const connectionIds: string[] = [];
-  const credentialIds: string[] = [];
-  const eventIds: string[] = [];
-  const deviceIds: string[] = [];
-  const accessPointIds: string[] = [];
-  const branchIds: string[] = [];
   const testUserIds: string[] = [];
   const url = (path: string) => `/${env.API_PREFIX}${path}`;
 
@@ -61,34 +55,6 @@ describe('cross-gym connections (e2e)', () => {
       if (connectionIds.length > 0) {
         await sequelize.query('DELETE FROM social.connections WHERE id IN (:connectionIds)', {
           replacements: { connectionIds },
-        });
-      }
-      if (eventIds.length > 0) {
-        await sequelize.query('DELETE FROM access_control.decisions WHERE device_event_id IN (:eventIds)', {
-          replacements: { eventIds },
-        });
-        await sequelize.query('DELETE FROM access_control.device_events WHERE id IN (:eventIds)', {
-          replacements: { eventIds },
-        });
-      }
-      if (credentialIds.length > 0) {
-        await sequelize.query('DELETE FROM access_control.credentials WHERE id IN (:credentialIds)', {
-          replacements: { credentialIds },
-        });
-      }
-      if (deviceIds.length > 0) {
-        await sequelize.query('DELETE FROM access_control.devices WHERE id IN (:deviceIds)', {
-          replacements: { deviceIds },
-        });
-      }
-      if (accessPointIds.length > 0) {
-        await sequelize.query('DELETE FROM facilities.access_points WHERE id IN (:accessPointIds)', {
-          replacements: { accessPointIds },
-        });
-      }
-      if (branchIds.length > 0) {
-        await sequelize.query('DELETE FROM facilities.branches WHERE id IN (:branchIds)', {
-          replacements: { branchIds },
         });
       }
       if (temporaryTenantIds.length > 0) {
@@ -185,159 +151,6 @@ describe('cross-gym connections (e2e)', () => {
         expect.objectContaining({ id: connectionId, status: 'ACCEPTED' }),
       ]));
     }
-  }, 60000);
-
-  it('H3.S1.M2 hides connected users’ membership and access credentials from another gym', async () => {
-    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const temporaryTenantId = `connections-private-${suffix}`;
-    temporaryTenantIds.push(temporaryTenantId);
-    await sequelize.query(
-      `INSERT INTO public.tenants (id, nombre, estado)
-       VALUES (:tenantId, 'Connections private e2e', 'ACTIVO')`,
-      { replacements: { tenantId: temporaryTenantId } },
-    );
-
-    const register = async (label: string) => {
-      const email = `connections-private-${label}-${suffix}@example.test`;
-      const password = 'connections-private-password';
-      const response = await request(httpServer)
-        .post(url('/auth/register'))
-        .send({ email, password, nombreCompleto: `Connections ${label} ${suffix}`, ...E2E_SIGNUP_FIELDS })
-        .expect(201);
-      await markEmailVerified(application, response.body.data.user.id as string);
-      const member = {
-        accessToken: response.body.data.accessToken as string,
-        userId: response.body.data.user.id as string,
-        email,
-        password,
-      };
-      testUserIds.push(member.userId);
-      return member;
-    };
-
-    // Two connected members of different gyms. Each gym is operated by REPP's
-    // platform admin impersonating it (franja 7a, ADR-0019): operating gym A
-    // must not reveal what gym B knows about its member.
-    const adminA = await register('admin-a');
-    const adminB = await register('admin-b');
-    const operator = await register('operator');
-    await sequelize.query(
-      'UPDATE public.usuarios SET tenant_id = :tenantId WHERE id = :userId',
-      { replacements: { tenantId: temporaryTenantId, userId: adminB.userId } },
-    );
-    await sequelize.query(
-      "UPDATE public.usuarios SET rol = 'SYSTEM_ADMIN' WHERE id = :userId",
-      { replacements: { userId: operator.userId } },
-    );
-    const [connection] = await sequelize.query<{ id: string }>(
-      `INSERT INTO social.connections (requester_id, addressee_id, status, responded_at)
-       VALUES (:requesterId, :addresseeId, 'ACCEPTED', now()) RETURNING id`,
-      { type: QueryTypes.SELECT, replacements: { requesterId: adminA.userId, addresseeId: adminB.userId } },
-    );
-    connectionIds.push(connection.id);
-
-    const login = async (member: { email: string; password: string }) => {
-      const response = await request(httpServer)
-        .post(url('/auth/login'))
-        .send({ email: member.email, password: member.password })
-        .expect(201);
-      return response.body.data.accessToken as string;
-    };
-    const operatorToken = await login(operator);
-    const impersonate = async (tenantId: string) => {
-      const response = await request(httpServer)
-        .post(url('/auth/impersonate-tenant'))
-        .set('Authorization', `Bearer ${operatorToken}`)
-        .send({ tenantId })
-        .expect(201);
-      return response.body.data.accessToken as string;
-    };
-    const [tokenA, tokenB] = await Promise.all([impersonate(env.DEFAULT_TENANT_ID), impersonate(temporaryTenantId)]);
-
-    const credential = await request(httpServer)
-      .post(url('/admin/access/credentials/pin'))
-      .set('Authorization', `Bearer ${tokenB}`)
-      .send({ usuarioId: adminB.userId, pin: '246810' })
-      .expect(201);
-    credentialIds.push(credential.body.data.id as string);
-
-    const [branch] = await sequelize.query<{ id: string }>(
-      `INSERT INTO facilities.branches (id, code, name, time_zone, tenant_id)
-       VALUES (:id, :code, 'Private access fixture', 'America/La_Paz', :tenantId) RETURNING id`,
-      { type: QueryTypes.SELECT, replacements: { id: randomUUID(), code: `private-${suffix}`, tenantId: temporaryTenantId } },
-    );
-    branchIds.push(branch.id);
-    const [accessPoint] = await sequelize.query<{ id: string }>(
-      `INSERT INTO facilities.access_points (id, branch_id, code, name)
-       VALUES (:id, :branchId, :code, 'Private access fixture') RETURNING id`,
-      { type: QueryTypes.SELECT, replacements: { id: randomUUID(), branchId: branch.id, code: `private-${suffix}` } },
-    );
-    accessPointIds.push(accessPoint.id);
-    const [device] = await sequelize.query<{ id: string }>(
-      `INSERT INTO access_control.devices (id, access_point_id, adapter_key, external_device_id, name)
-       VALUES (:id, :accessPointId, 'E2E', :externalId, 'Private access fixture') RETURNING id`,
-      { type: QueryTypes.SELECT, replacements: { id: randomUUID(), accessPointId: accessPoint.id, externalId: `private-${suffix}` } },
-    );
-    deviceIds.push(device.id);
-    const [event] = await sequelize.query<{ id: string }>(
-      `INSERT INTO access_control.device_events
-         (id, device_id, source_event_id, credential_id, requested_direction, occurred_at, queue_status, completed_at)
-       VALUES (:id, :deviceId, :sourceId, :credentialId, 'ENTRY', now(), 'COMPLETED', now()) RETURNING id`,
-      {
-        type: QueryTypes.SELECT,
-        replacements: { id: randomUUID(), deviceId: device.id, sourceId: `private-${suffix}`, credentialId: credential.body.data.id },
-      },
-    );
-    eventIds.push(event.id);
-    await sequelize.query(
-      `INSERT INTO access_control.decisions (id, device_event_id, user_id, outcome, reason_code, policy_version)
-       VALUES (:id, :eventId, :userId, 'GRANTED', 'ACTIVE_MEMBERSHIP', 'e2e-private-v1')`,
-      { replacements: { id: randomUUID(), eventId: event.id, userId: adminB.userId } },
-    );
-
-    const ownTenantUsers = await request(httpServer)
-      .get(url(`/admin/membership/users?q=${encodeURIComponent(adminB.email)}`))
-      .set('Authorization', `Bearer ${tokenA}`)
-      .expect(200);
-    expect(ownTenantUsers.body.data.items).toHaveLength(0);
-    expect(ownTenantUsers.body.data.total).toBe(0);
-
-    await request(httpServer)
-      .get(url(`/admin/access/credentials/user/${adminB.userId}`))
-      .set('Authorization', `Bearer ${tokenA}`)
-      .expect(404);
-
-    const ownTenantAttendance = await request(httpServer)
-      .get(url(`/admin/access/history?usuarioId=${adminB.userId}`))
-      .set('Authorization', `Bearer ${tokenA}`)
-      .expect(200);
-    expect(ownTenantAttendance.body.data.items).toHaveLength(0);
-    expect(ownTenantAttendance.body.data.total).toBe(0);
-
-    await request(httpServer)
-      .get(url(`/admin/access/events/${event.id}`))
-      .set('Authorization', `Bearer ${tokenA}`)
-      .expect(404);
-
-    const targetAttendance = await request(httpServer)
-      .get(url(`/admin/access/history?usuarioId=${adminB.userId}`))
-      .set('Authorization', `Bearer ${tokenB}`)
-      .expect(200);
-    expect(targetAttendance.body.data.items).toEqual(
-      expect.arrayContaining([expect.objectContaining({ usuarioId: adminB.userId })]),
-    );
-    await request(httpServer)
-      .get(url(`/admin/access/events/${event.id}`))
-      .set('Authorization', `Bearer ${tokenB}`)
-      .expect(200);
-
-    const targetTenantUsers = await request(httpServer)
-      .get(url(`/admin/membership/users?q=${encodeURIComponent(adminB.email)}`))
-      .set('Authorization', `Bearer ${tokenB}`)
-      .expect(200);
-    expect(targetTenantUsers.body.data.items).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: adminB.userId, email: adminB.email })]),
-    );
   }, 60000);
 
   it('H3.S1.M3 serializes simultaneous cross-gym requests into one accepted connection', async () => {

@@ -25,11 +25,15 @@ import { DiscoveryRankingService } from "./discovery-ranking.service";
 import { IntegrationModule } from "../integration/integration.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { ChatModule } from "../chat/chat.module";
+import { GymCommunityModule } from "../gym-community/gym-community.module";
+import { GymMembersController } from "./gym-members.controller";
+import { GymMembersService } from "./gym-members.service";
 
 @Module({
   imports: [
     ConsentsModule,
     forwardRef(() => ChatModule),
+    GymCommunityModule,
     IntegrationModule,
     NotificationsModule,
     UsersModule,
@@ -42,6 +46,7 @@ import { ChatModule } from "../chat/chat.module";
     ]),
   ],
   controllers: [
+    GymMembersController,
     SocialController,
     SocialInteractionsController,
     SocialMapController,
@@ -49,6 +54,7 @@ import { ChatModule } from "../chat/chat.module";
   ],
   providers: [
     ChatEventsService,
+    GymMembersService,
     SocialRepository,
     SocialService,
     SocialInteractionsService,

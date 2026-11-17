@@ -62,10 +62,14 @@ export async function bootKycHarness(): Promise<KycHarness> {
   mutableEnv.IP_HASH_SECRET = before.pepper ?? 'e2e-privacy-pepper-0123456789abcdef0123';
   mutableEnv.BUSINESS_SIGNUP_ENABLED = true;
   const legalSet = (await request(e2e.http).get(e2e.url('/legal/current?accountKind=BUSINESS')).expect(200)).body.data;
-  const [{ id: categoryId }] = await sequelize.query<{ id: string }>(
-    `SELECT id FROM directory.categories WHERE entity_scope IN ('GYM', 'ALL') AND is_active ORDER BY display_order LIMIT 1`,
-    { type: QueryTypes.SELECT },
-  );
+  // The first active category that fits each listing type (a COACH cannot take a GYM category).
+  const categoryOf = async (entityType: string): Promise<string> => {
+    const [{ id }] = await sequelize.query<{ id: string }>(
+      `SELECT id FROM directory.categories WHERE entity_scope IN (:entityType, 'ALL') AND is_active ORDER BY display_order LIMIT 1`,
+      { type: QueryTypes.SELECT, replacements: { entityType } },
+    );
+    return id;
+  };
   const photo = await sharp({ create: { width: 1000, height: 820, channels: 3, background: '#888', noise: { type: 'gaussian', mean: 128, sigma: 60 } } })
     .jpeg({ quality: 60 })
     .toBuffer();
@@ -102,7 +106,7 @@ export async function bootKycHarness(): Promise<KycHarness> {
     await e2e.sql('UPDATE public.usuarios SET signup_risk = :risk WHERE id = :id', { id, risk: options.risk ?? 'LOW' });
     const token = response.body.data.accessToken as string;
     const handle = `${letters(10)}.kyc`;
-    await e2e.as(token).patch('/business/me/profile').send({ primaryCategoryId: categoryId, city: 'La Paz' }).expect(200);
+    await e2e.as(token).patch('/business/me/profile').send({ primaryCategoryId: await categoryOf(options.entityType ?? 'GYM'), city: 'La Paz' }).expect(200);
     await e2e.as(token).put('/business/me/handle').send({ handle }).expect(200);
     await e2e.as(token).post('/business/me/media').field('slot', 'LOGO').attach('file', logo, { filename: 'logo.png', contentType: 'image/png' }).expect(201);
     return { id, token, entityId: response.body.data.business.entityId as string, email, name, handle, phone: `7${randomDigits(7)}` };

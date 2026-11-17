@@ -126,7 +126,6 @@ describe('Directory Module - Logic & Service Tests', () => {
     let service: DirectoryService;
     let mockRepo: any;
     let mockMembershipModel: any;
-    let mockAccessDecisionModel: any;
     let mockSequelize: any;
     let mockNotificationService: any;
     let mockProductEvents: any;
@@ -144,7 +143,6 @@ describe('Directory Module - Logic & Service Tests', () => {
         getUserAvatars: jest.fn().mockResolvedValue(new Map()),
       };
       mockMembershipModel = { findOne: jest.fn() };
-      mockAccessDecisionModel = { findOne: jest.fn() };
       mockSequelize = {
         transaction: jest.fn((callback: (tx: object) => Promise<unknown>) => callback({})),
       };
@@ -158,7 +156,6 @@ describe('Directory Module - Logic & Service Tests', () => {
       service = new DirectoryService(
         mockRepo,
         mockMembershipModel,
-        mockAccessDecisionModel,
         mockSequelize,
         mockNotificationService,
         mockProductEvents,

@@ -65,8 +65,8 @@ o el endpoint de importación; el snapshot es el punto de partida, no la autorid
 
 ## Workers: definidos, apagados por defecto
 
-Los cinco workers (`access-event`, `membership-reminder`, `notification-delivery`, `stories-purge`,
-`exercises-dataset-refresh`) ya están en `docker-compose.coolify.yml`, pero **no arrancan salvo que
+Los workers (`membership-reminder`, `notification-delivery`, `stories-purge`,
+`exercises-dataset-refresh`; `access-event` se retiró con ADR-0026) ya están en `docker-compose.coolify.yml`, pero **no arrancan salvo que
 se pidan**. Para encenderlos, añadir en las variables de la aplicación en Coolify:
 
 ```

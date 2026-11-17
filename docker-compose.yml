@@ -19,8 +19,6 @@ x-app-environment: &app-environment
   API_PREFIX: ${API_PREFIX:-api/v1}
   LOG_LEVEL: ${LOG_LEVEL:-info}
   BUSINESS_TIME_ZONE: ${BUSINESS_TIME_ZONE:-America/La_Paz}
-  ACCESS_POLICY_VERSION: ${ACCESS_POLICY_VERSION:-2026-07-19}
-  WHATSAPP_MEMBERSHIP_PHONE: ${WHATSAPP_MEMBERSHIP_PHONE:?WHATSAPP_MEMBERSHIP_PHONE is required}
   SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
   SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
   SEED_ADMIN_FULL_NAME: ${SEED_ADMIN_FULL_NAME:-GymSheet Administrator}
@@ -271,26 +269,6 @@ services:
     # SIGTERM is forwarded by tini and handled by enableShutdownHooks(); allow
     # in-flight requests to drain before the container is killed.
     stop_grace_period: 30s
-
-  worker-access:
-    <<: [*app-image, *app-security, *worker-runtime]
-    command: ["node", "dist/workers/access-event.worker.js"]
-    environment:
-      <<: *app-environment
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-    deploy:
-      resources:
-        limits:
-          memory: 384m
-    # Longer than the API: a worker must be allowed to finish the job it holds
-    # rather than leave it locked until the lock timeout expires.
-    stop_grace_period: 45s
 
   worker-reminders:
     <<: [*app-image, *app-security, *worker-runtime]

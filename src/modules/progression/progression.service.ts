@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { UserGender } from "../../common/enums/domain.enums";
 import { env } from "../../config/env";
-import { resolveMediaUrl } from "../../common/media/media-url";
 import { badgeIllustration, rarityRank } from "./badge-illustrations";
 import { UsersRepository } from "../users/users.repository";
 import { ChallengeTotals } from "./challenges.repository";
@@ -629,25 +628,6 @@ export class ProgressionService {
     return this.getRestDays(userId);
   }
 
-  async getLeaderboard(userId: string, limit: number, sortBy: "points" | "streak" = "points") {
-    const user = await this.usersRepository.findById(userId);
-    if (!user) throw new NotFoundException("Usuario no encontrado.");
-    const tenantId = user.tenantId ?? env.DEFAULT_TENANT_ID ?? null;
-    const rows = await this.progressionRepository.leaderboard(tenantId, limit, sortBy, userId);
-    return rows.map((row, index) => ({
-      position: index + 1,
-      userId: row.userId,
-      points: Number(row.points),
-      levelCode: row.levelCode,
-      streakDays: Number(row.currentStreakDays),
-      // Solo el nombre de pila y la inicial: una tabla pública con el nombre
-      // completo de cada socio es una lista de clientes del gimnasio.
-      displayName: shortenName(row.fullName),
-      photoUrl: resolveMediaUrl(row.photoUrl),
-      badges: Array.isArray(row.badges) ? row.badges : [],
-      isMe: row.userId === userId,
-    }));
-  }
 }
 
 /** Qué cupones pide un premio para este socio ahora (ver `grantPrizes`). */
@@ -1031,14 +1011,6 @@ function formatMetric(value: number, criterion: BadgeCriterionType): string {
     default:
       return formatted;
   }
-}
-
-/** «Ana María Pérez Soto» → «Ana P.» */
-function shortenName(fullName: string): string {
-  const parts = fullName.trim().split(/\s+/);
-  const first = parts[0] ?? "";
-  const surnameInitial = parts.length > 1 ? `${parts[1].charAt(0).toUpperCase()}.` : "";
-  return [first, surnameInitial].filter(Boolean).join(" ");
 }
 
 function currentMonthString(): string {
