@@ -1,4 +1,6 @@
 import request from 'supertest';
+import { ImageModerationService } from '../src/modules/business-kyc/image-moderation/image-moderation.service';
+import { MediaReleaseService } from '../src/modules/media/media-release.service';
 import { BUSINESS_CLOSURE_STEPS } from '../src/modules/business-closure/business-closure.catalog';
 import { publishedCoach } from './support/affiliations-e2e';
 import { KycBusiness, KycHarness, bootKycHarness, randomDigits } from './support/kyc-e2e';
@@ -45,6 +47,12 @@ describe('a business account closes itself (e2e, franja 8f, ADR-0028)', () => {
   }, 240000);
 
   afterAll(async () => {
+    // The closures, the far-future retention passes and every logo uploaded here queue jobs on shared
+    // queues: drain them so a later suite's single drain pass finds its own jobs first.
+    const release = h.e2e.app.get(MediaReleaseService, { strict: false });
+    for (let pass = 0; pass < 20 && (await release.drainOnce(200)) > 0; pass += 1);
+    const moderation = h.e2e.app.get(ImageModerationService, { strict: false });
+    for (let pass = 0; pass < 20 && (await moderation.drainOnce(200)) > 0; pass += 1);
     await removeReceipts(h);
     await h.close();
   });

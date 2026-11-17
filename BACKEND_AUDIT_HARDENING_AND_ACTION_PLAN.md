@@ -1237,6 +1237,17 @@ emiten `worker.shutdown_requested` ante SIGTERM y salen con 0; `privacy-retentio
 el paso KYC nuevo (`recordsPurgedAccounts`, `revokedFingerprintsDeleted`). `BUSINESS_SIGNUP_ENABLED` sigue en
 `false`.
 
+Tras mezclar dev (#75–#77) y la franja 7d (ADR-0029) en esta rama (17/11/2026): `yarn lint` y `yarn type-check`
+limpios; `yarn build` OK; unitarias 262 suites / 2412 pruebas en verde; migraciones up → down ×5 (1303 → 1201) → up
+→ semilla en base nueva; e2e dirigidas (negocio, cierre, contracción del personal, operación de la plataforma,
+cuentas, suscripciones, afiliaciones, comunidad del gimnasio, `admin/users`, chat) 23 suites / 184 pruebas en
+verde; e2e completa en base nueva: 87 suites en verde, 1 omitida, 9 en rojo con 45 pruebas, los mismos nombres que
+antes de mezclar (línea base). Carga con 4 978 publicaciones públicas: búsqueda p50 19,7 / p95 30,6 / p99 34,7 ms,
+perfil p50 37,0 / p95 49,7 / p99 56,6 ms (200 peticiones cada una, 0 errores). Arranque real: ready 200; los cuatro
+workers emiten `worker.shutdown_requested` y salen con 0. Las suites de cierre del negocio drenan al terminar las
+colas compartidas que llenan (`media.release`, moderación de logos): con una base reutilizada, el único drenaje de
+una suite posterior (`account-closure`, `business-kyc`) no encontraba sus propios trabajos.
+
 Fuera de 8f: el `DROP` de `retired.payment_order_receipt_urls` (franja posterior); el camino de vuelta de una
 cuenta `KYC_MISSING` (un KYC nuevo) y los plazos de retención y la exportación de documentos de una COMPANY,
 pendientes del abogado; la verificación del alta pública (`BUSINESS_SIGNUP_ENABLED`) tras su firma.

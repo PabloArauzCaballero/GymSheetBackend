@@ -8,6 +8,7 @@ import { retireTenantAdminChatsMigration } from '../src/database/migrations/2026
 import { KycCipher } from '../src/modules/business-kyc/kyc-cipher';
 import { KycRetentionService } from '../src/modules/business-kyc/kyc-retention.service';
 import { AccountExportService } from '../src/modules/export/account-export.service';
+import { ImageModerationService } from '../src/modules/business-kyc/image-moderation/image-moderation.service';
 import { MediaReleaseService } from '../src/modules/media/media-release.service';
 import { publishedCoach } from './support/affiliations-e2e';
 import { KycBusiness, KycHarness, bootKycHarness } from './support/kyc-e2e';
@@ -33,6 +34,12 @@ describe('business export, KYC retention and erasure, unverified seller cap (e2e
   }, 60000);
 
   afterAll(async () => {
+    // The closures, the far-future retention passes and every logo uploaded here queue jobs on shared
+    // queues: drain them so a later suite's single drain pass finds its own jobs first.
+    const release = h.e2e.app.get(MediaReleaseService, { strict: false });
+    for (let pass = 0; pass < 20 && (await release.drainOnce(200)) > 0; pass += 1);
+    const moderation = h.e2e.app.get(ImageModerationService, { strict: false });
+    for (let pass = 0; pass < 20 && (await moderation.drainOnce(200)) > 0; pass += 1);
     await removeReceipts(h);
     await h.close();
   });
