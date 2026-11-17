@@ -111,7 +111,7 @@ Justificación en §11.
 | Framework | NestJS 11 |
 | Lenguaje | TypeScript 5.7 (strict) |
 | ORM | Sequelize 6 + sequelize-typescript |
-| Base de datos | PostgreSQL (esquemas: `public`, `training`, `facilities`, `membership`, `access_control`, `notifications`, `integration`, `app_meta`) |
+| Base de datos | PostgreSQL (esquemas: `public`, `training`, `facilities`, `membership`, `notifications`, `integration`, `app_meta`, …; lo retirado vive en `retired` hasta su `DROP`; `access_control` se retiró en 7d, ADR-0029) |
 | Validación | Zod 3 |
 | Autenticación | JWT HS256 vía passport-jwt |
 | Hashing | bcryptjs (coste configurable 10–14) |
@@ -1241,6 +1241,30 @@ Fuera de 8f: el `DROP` de `retired.payment_order_receipt_urls` (franja posterior
 cuenta `KYC_MISSING` (un KYC nuevo) y los plazos de retención y la exportación de documentos de una COMPANY,
 pendientes del abogado; la verificación del alta pública (`BUSINESS_SIGNUP_ENABLED`) tras su firma.
 
+### Franja 7d: contracción del personal del gimnasio (ADR-0029)
+
+| Cambio / riesgo | Corrección | Prueba |
+|---|---|---|
+| Roles de personal sin poder pero vivos (`ADMIN`, `FRONT_DESK`, `COACH`, `ENTRENADOR_EXTERNO`) | Las cuentas pasan a `CLIENTE` con libro `retired.staff_role_conversions` para el rollback; CHECK `ck_usuarios_rol` acotado a `SYSTEM_ADMIN`, `MODERATOR`, `CLIENTE`, `NEGOCIO`; valores fuera del enum | `test/staff-contraction.e2e-spec.ts` (up → down → up con los cuatro roles y un `MODERATOR` intacto; la cuenta convertida inicia sesión como persona y se cierra la cuenta) |
+| Atajo de `RolesGuard` (`SYSTEM_ADMIN` cumplía `@Roles(ADMIN)`) | Se quita: un rol entra solo donde la ruta lo nombra | `roles.guard.spec.ts`, `roles.guard.admin-routes.spec.ts` (ninguna ruta de ningún controlador declara un rol retirado o desconocido) |
+| Catálogo de permisos que no abría nada desde 7a | Fuera `PermissionGuard`, `@RequirePermission`, modelos, siembra y rutas de concesión (`404`); tablas a `retired`; queda `GET /admin/permissions/me` obsoleto con todas las claves | `platform-operation.e2e-spec.ts` (rutas retiradas `404` incluso para `SYSTEM_ADMIN`, `me` `200`) |
+| Cierre de personal `POST /admin/users/:id/close` y regla del último `ADMIN` | Se eliminan (`404`); la expersona de personal se cierra con `DELETE /me/account` | `platform-operation.e2e-spec.ts`, `staff-contraction.e2e-spec.ts` |
+| Tablas de personal y control de acceso con datos personales | `membership.staff_*`, `access_control.*` y `admin.{permissions,user_permissions,retired_permission_grants}` a `retired` (reversible); cierre y exportación las siguen cubriendo | `account-closure.catalog.spec.ts`, `account-closure.e2e-spec.ts` (inventario de FK a `usuarios`), `staff-contraction.e2e-spec.ts` |
+| Conocer leía `access_control.decisions` | «Entrenando ahora» = entrenamiento en curso (3 h); la señal muerta se quita | `social-discovery-ranking.e2e-spec.ts` (quien entrena sube primero; falla si se anula la señal) |
+| Chat `TENANT_ADMIN` revocado pero presente | Filas y libro de 7a a `retired.chat_tenant_admin_*`; CHECK de `system_kind` solo `CORPORATE`; el cierre borra el chat retirado de cualquiera de los dos lados | `staff-contraction.e2e-spec.ts`, `platform-operation.e2e-spec.ts` (la base rechaza `TENANT_ADMIN`) |
+
+Evidencia (17/11/2026, sobre 863928c; base `gym_sheet_f7d_e2e` nueva con schema + migraciones up → down → up +
+semilla base): `yarn lint` y `yarn type-check` limpios; `yarn build` OK; unitarias 260 suites / 2391 pruebas en
+verde (se borraron 3 suites de lo retirado: servicio y guard de permisos y su siembra); e2e nueva
+`staff-contraction` 4/4; e2e completa: 85 suites en verde y en rojo 45 pruebas, todas de la línea base de 47
+(H11.S2.M4 con su nombre nuevo; pasan dos de la base, H7.S2.M3 y el caso 10 de recompensas); se borró
+`staff-closure.e2e-spec.ts` (5 pruebas del cierre de personal retirado). Migraciones por CLI con cuentas
+`ADMIN`/`COACH`, un perfil de personal y un chat `TENANT_ADMIN` con mensaje y libro: up las convierte y retira,
+tres down lo devuelven todo, up de nuevo. Arranque real del artefacto compilado: `/health/ready` 200 con
+migraciones al día; `GET /admin/permissions/me` 200, `catalog`, `:userId` y `POST /admin/users/:id/close` 404;
+semilla `mock` sin roles de personal (1 `SYSTEM_ADMIN`, 9 `CLIENTE`). Fuera de 7d: sedes, salas y `access_points`
+(`facilities.*`), el canje de premios en recepción (`admin/progression/prizes/redeem`) y la afinidad «misma sede»
+(7e); el `DROP` de `retired.*` (≥ 30 días); quitar `GET /admin/permissions/me` cuando la web decida por rol.
 
 ---
 

@@ -139,8 +139,12 @@ export const ACCOUNT_EXPORT_SECTIONS: readonly AccountExportSection[] = [
   section("directory.affiliations", "Afiliaciones a gimnasios", OWN, ["changed_by_user_id"]),
   section("directory.affiliation_history", "Historial de tus afiliaciones",
     "t.affiliation_id IN (SELECT a.id FROM directory.affiliations a WHERE a.user_id = :userId)", ["actor_user_id"]),
-  section("access_control.credentials", "Credenciales de acceso", OWN, ["pin_hash"]),
-  section("access_control.decisions", "Entradas al gimnasio", OWN),
+  // Retired by ADR-0029: still yours until their final DROP.
+  section("retired.access_control_credentials", "Credenciales de acceso (registro retirado)", OWN, ["pin_hash"]),
+  section("retired.access_control_decisions", "Entradas al gimnasio (registro retirado)", OWN),
+  section("retired.membership_staff_profiles", "Ficha de personal del gimnasio (registro retirado)", OWN),
+  section("retired.chat_tenant_admin_messages", "Tus mensajes del chat retirado con tu gimnasio (registro retirado)",
+    "t.sender_id = :userId", ["idempotency_body", "deleted_request_hash"]),
   // Notifications.
   section("notifications.messages", "Avisos recibidos", "t.recipient_user_id = :userId AND NOT t.secret"),
   section("notifications.device_tokens", "Permisos push", OWN, ["push_token", "auth", "p256dh"]),

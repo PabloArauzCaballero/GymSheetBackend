@@ -2,7 +2,7 @@
 
 Estado: **aceptado**
 Fecha: 2026-11-16
-Continúa [ADR-0018](./ADR-0018-moderacion-central-de-repp.md) (moderación central de REPP).
+Continúa [ADR-0018](./ADR-0018-moderacion-central-de-repp.md) (moderación central de REPP). Lo que aquí queda «hasta 7d» lo cierra [ADR-0029](./ADR-0029-contraccion-del-personal-del-gimnasio.md).
 
 ## Contexto
 

@@ -10,14 +10,13 @@ import { UsersModule } from "../users/users.module";
 import { AccountClosureRepository } from "./account-closure.repository";
 import { AccountClosureService } from "./account-closure.service";
 import { AccountController } from "./account.controller";
-import { AdminAccountClosureController } from "./admin-account-closure.controller";
 import { EmailChangeController } from "./email-change.controller";
 import { EmailChangeService } from "./email-change.service";
 
 /** Account rights (franja 4): rename, email change and closure. The export lives in ExportModule. */
 @Module({
   imports: [BrandingModule, AuthModule, UsersModule, IntegrationModule, NotificationsModule, MediaModule, ClosedAccountSanctionsModule, BusinessClosureModule],
-  controllers: [AccountController, AdminAccountClosureController, EmailChangeController],
+  controllers: [AccountController, EmailChangeController],
   providers: [AccountClosureRepository, AccountClosureService, EmailChangeService],
 })
 export class AccountModule {}

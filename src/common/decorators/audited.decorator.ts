@@ -23,7 +23,7 @@ export type AuditedMetadata = {
 /**
  * Marca una ruta administrativa para que quede registrada en `admin.audit_log`.
  *
- * Sigue a `@Roles()` y `@RequirePermission()` en forma y en intención: es
+ * Sigue a `@Roles()` en forma y en intención: es
  * declarativo, vive junto al handler y no obliga a inyectar nada en el
  * controlador. El registro ocurre sólo si el handler respondió correctamente —
  * una acción rechazada no es una acción.

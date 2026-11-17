@@ -9,7 +9,7 @@ import { WorkoutsService } from '../workouts/workouts.service';
 import { ExportService } from './export.service';
 import { RoutineProgressDownloadAuditModel } from './routine-progress-download-audit.model';
 
-const actor = { id: '00000000-0000-4000-8000-000000000001', role: UserRole.COACH } as AuthenticatedUser;
+const actor = { id: '00000000-0000-4000-8000-000000000001', role: UserRole.CLIENT } as AuthenticatedUser;
 const secret = 'unit-download-audit-ip-secret-0123456789';
 
 describe('ExportService.recordRoutineProgressDownloadAudit', () => {

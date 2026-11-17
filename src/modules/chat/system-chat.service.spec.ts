@@ -58,8 +58,8 @@ describe("SystemChatService.ensureSystemConversations", () => {
     expect(chatRepository.createSystemConversation).toHaveBeenCalledWith(userA, corporateUserId, "CORPORATE");
   });
 
-  it("never creates a gym admin (TENANT_ADMIN) conversation, even with an active legacy ADMIN in the gym", async () => {
-    // Franja 7a (ADR-0019): the gym has no staff, so only REPP's support chat remains.
+  it("creates only REPP's support chat: there is no gym admin (TENANT_ADMIN) conversation", async () => {
+    // Franja 7a (ADR-0019) stopped creating it and franja 7d (ADR-0029) retired the kind.
     env.SEED_SYSTEM_CORPORATE_EMAIL = "corporativo@gymsheet.local";
     const chatRepository = {
       findDirectConversation: jest.fn().mockResolvedValue(null),
@@ -67,7 +67,6 @@ describe("SystemChatService.ensureSystemConversations", () => {
     } as unknown as ChatRepository;
     const usersRepository = {
       findActiveByEmail: jest.fn().mockResolvedValue({ id: corporateUserId }),
-      findAdminForTenant: jest.fn().mockResolvedValue({ id: "00000000-0000-4000-8000-0000000000ad" }),
     } as unknown as UsersRepository;
     const service = new SystemChatService(usersRepository, chatRepository);
 

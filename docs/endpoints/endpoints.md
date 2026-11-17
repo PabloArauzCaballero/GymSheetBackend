@@ -51,8 +51,15 @@ The API does not return stack traces or raw infrastructure errors to clients. Un
   on that gym), except social moderation, which also admits `MODERATOR` (see below). The old
   owner-gated `admin/directory/*` console no longer exists (franja 8d, ADR-0024): REPP does not
   manage a listing's payment data or orders (D9).
-  Legacy gym roles (`ADMIN`, `FRONT_DESK`, `COACH`, `ENTRENADOR_EXTERNO`) get `403` on every
-  `admin/*` route, whatever permission grants they hold.
+  Since franja 7d (ADR-0029) the gym staff roles (`ADMIN`, `FRONT_DESK`, `COACH`,
+  `ENTRENADOR_EXTERNO`) no longer exist: those accounts are members (`CLIENTE`) and get `403` on
+  every `admin/*` route like any member. `usuarios.rol` admits only `SYSTEM_ADMIN`, `MODERATOR`,
+  `CLIENTE` and `NEGOCIO`, and a role grants exactly the routes that name it (no role stands in
+  for another).
+- Permission grants are gone too (ADR-0029): `GET /admin/permissions/catalog`, `GET|POST
+  /admin/permissions/:userId` and `DELETE /admin/permissions/:userId/:permissionKey` answer `404`.
+  `GET /admin/permissions/me` (`SYSTEM_ADMIN`) stays, **deprecated**, and returns every key
+  (`{ permissionKeys: [...] }`) so the web keeps gating REPP's console until it decides by role.
 - Account kinds (ADR-0020): a business account (`rol = NEGOCIO`, `accountKind = BUSINESS`) only
   reaches `auth/*` (not the socket ticket), `legal/*`, `me/legal/*`, `me/devices/*`, `health/*`,
   `business/*`, `public/*` and its notifications; anything else answers
@@ -149,7 +156,7 @@ Canonical internal units are kilograms for body weight, centimeters for height, 
 | GET    | `/me/export/:id`                   | owner         | `{ id, status: PENDING\|READY\|FAILED, requestedAt, completedAt, expiresAt, sizeBytes, downloadPath }` |
 | GET    | `/me/export/:id/download`          | owner         | `application/json` attachment while `READY` and not expired (7 days); `409 ACCOUNT_EXPORT_NOT_READY` before. A business account's archive adds `tables["business.*"]` and `businessKyc` (ADR-0028, below) |
 | GET    | `/admin/users`                     | `SYSTEM_ADMIN` | REPP's account search (ADR-0026; replaces the retired `admin/membership/users`): strict `?q` (name or email fragment, 1–120, `%`/`_` literal) `&roles` (comma-separated `UserRole`, e.g. `CLIENTE` for the moderator picker) `&status` (`ACTIVO`\|`INACTIVO`) `&page` (1) `&pageSize` (≤ 100, 50) → `{ items: [{ id, nombreCompleto, email, rol, estado, tenantId, ultimaSesion, telefono: null, plan: null, venceEl: null, vigente: false }], page, pageSize, total, totalPages }`, ordered by name then id. `telefono`, `plan`, `venceEl`, `vigente` are kept neutral for the web and deprecated (they were the gym front desk's). Business accounts (`NEGOCIO`) are listed unless `roles` leaves them out; while impersonating a gym, only its accounts. `400` bad parameter, `401`, `403` anyone else (persons, `MODERATOR`, businesses) |
-| POST   | `/admin/users/:id/close`           | `ADMIN` (`SYSTEM_ADMIN` too) | Closes a **staff** account of the caller's gym (`ADMIN`, `COACH`, `FRONT_DESK`, `ENTRENADOR_EXTERNO`) with the same erasure, no password or PIN; `200 { closed: true, closedAt }`, audited in `admin.audit_log` (`domain: account`, `action: close`). Another gym's account, a platform account (`SYSTEM_ADMIN`, `MODERATOR`) or an already closed one: `404`; a member: `400 STAFF_CLOSURE_NOT_STAFF`; the caller's own account: `403 STAFF_CLOSURE_SELF`; the gym's last active admin: `403 STAFF_CLOSURE_LAST_ADMIN` |
+| POST   | `/admin/users/:id/close`           | — | **Removed** in franja 7d (ADR-0029): it only closed gym staff accounts, which no longer exist; `404`. A former staff member is a person and closes the account with `DELETE /me/account` |
 
 #### Closing and exporting a business account (ADR-0028)
 
@@ -180,7 +187,7 @@ for a `COMPANY` CI and phone are masks and the CI and selfie images are `withhel
 
 All of them are exempt from the legal-acceptance gate and the password/PIN routes use the auth rate limit. Wrong password: `400 CURRENT_PASSWORD_INVALID`; PIN errors reuse `EMAIL_PIN_INVALID|EXPIRED|EXHAUSTED|COOLDOWN` (the PIN table is `auth.email_verification_pins` with `purpose` `VERIFY_EMAIL|CHANGE_EMAIL|CLOSE_ACCOUNT`, one live code, cooldown and daily cap per purpose). Someone else's export answers `404`.
 
-**Closure** runs in one transaction driven by `src/modules/account/account-closure.catalog.ts` (the preview counts with the same predicates): sessions, devices, identities, PINs, notifications, health and training data, progression, Conocer, stories, reels, photos, comments, reviews and blocks are deleted; own chat messages are wiped like "delete for everyone" (the other person keeps theirs, the chat turns read-only), the system chats with REPP/the gym are deleted; consents are revoked; content under a moderation report, moderation records, the legal acceptances and the gym's tax records (subscription periods, payment orders with amounts and receipts, access log, and the retired membership tables in schema `retired`) are kept de-identified (notes and phone dropped, access credentials revoked). The account row is kept for FK integrity with email `cerrada-<id>@cuenta-cerrada.invalid`, name `Cuenta cerrada`, no birth date or sex, `estado = INACTIVO`, `closed_at` set and a random password hash: login answers the generic `401 Credenciales inválidas.` and the email can register again. Staff accounts answer `403 ACCOUNT_CLOSURE_STAFF`: REPP's `SYSTEM_ADMIN` closes them with `POST /admin/users/:id/close` (ADR-0019). A staff closure keeps what members still use: routines it assigned to members (and the routines behind them, like the gym's official ones) stay, signed «Cuenta cerrada»; the members' chats with the gym it answered stay theirs (only the system chats where the closing account is the member side are deleted); its `membership.staff_profiles` row is marked `TERMINATED`. Files are erased after commit through the outbox queue `media.release` (one job per file, 8 attempts, dead-letter; drained by the API every minute), only when no other row references them; on MinIO every version is removed, and a rejected removal ends in dead-letter (ADR-0017). If the account has a running suspension or strikes still counting (365 days), they are kept under the keyed hash of the email in `moderation.closed_account_sanctions`; signing up again with that email (password or Google/Apple) inherits them, and a running suspension makes the signup answer `403` like the login (ADR-0015).
+**Closure** runs in one transaction driven by `src/modules/account/account-closure.catalog.ts` (the preview counts with the same predicates): sessions, devices, identities, PINs, notifications, health and training data, progression, Conocer, stories, reels, photos, comments, reviews and blocks are deleted; own chat messages are wiped like "delete for everyone" (the other person keeps theirs, the chat turns read-only), the system chats with REPP/the gym are deleted; consents are revoked; content under a moderation report, moderation records, the legal acceptances and the gym's tax records (subscription periods, payment orders with amounts and receipts, access log, and the retired membership tables in schema `retired`) are kept de-identified (notes and phone dropped, access credentials revoked). The account row is kept for FK integrity with email `cerrada-<id>@cuenta-cerrada.invalid`, name `Cuenta cerrada`, no birth date or sex, `estado = INACTIVO`, `closed_at` set and a random password hash: login answers the generic `401 Credenciales inválidas.` and the email can register again. Platform and business accounts (`SYSTEM_ADMIN`, `MODERATOR`, `NEGOCIO`) answer `403 ACCOUNT_CLOSURE_STAFF`. A former staff member (a `CLIENTE` since franja 7d, ADR-0029) closes like any person, and the closure keeps what members still use: routines it assigned to members (and the routines behind them) stay, signed «Cuenta cerrada»; its retired staff file (`retired.membership_staff_profiles`) is marked `TERMINATED`, its retired access credentials are revoked, and the retired gym admin chats it took part in (`retired.chat_tenant_admin_*`, either side) are deleted with their files. Files are erased after commit through the outbox queue `media.release` (one job per file, 8 attempts, dead-letter; drained by the API every minute), only when no other row references them; on MinIO every version is removed, and a rejected removal ends in dead-letter (ADR-0017). If the account has a running suspension or strikes still counting (365 days), they are kept under the keyed hash of the email in `moderation.closed_account_sanctions`; signing up again with that email (password or Google/Apple) inherits them, and a running suspension makes the signup answer `403` like the login (ADR-0015).
 
 **Export** is built by the same worker (queue `account.export`): one section per data-map table (`src/modules/export/account-export.sections.ts`), own rows only, credential hashes omitted, chats limited to the caller's own messages and conversation ids, each table capped at the routine-progress export limit (20 000 rows, `truncated: true` beyond it). The archive lives in `auth.account_exports` and is purged when it expires. When it turns `READY` the owner gets, once per export, an in-app notice «Tu copia de datos está lista» (`metadata: { type: ACCOUNT_EXPORT_READY, exportId, downloadPath, expiresAt }`) and the same notice by email; a build that dead-letters turns `FAILED` and notifies «No pudimos preparar tu copia de datos» (`ACCOUNT_EXPORT_FAILED`) the same way.
 
@@ -427,8 +434,8 @@ Facilities and subscription responses use the same `{ ok, data }` envelope and `
 
 Social moderation is done by the central REPP team, never by gym staff. Role `MODERATOR` is
 platform-level: it works the queue of **every gym**; `SYSTEM_ADMIN` also enters (every gym, or only
-the impersonated one). Gym roles (`ADMIN`, `FRONT_DESK`, `COACH`, …) get **`403`** on every route
-below, whatever grants they hold: the `moderation:read` / `moderation:act` permissions no longer
+the impersonated one). Members and business accounts get **`403`** on every route below (the gym
+staff roles no longer exist, ADR-0029): the `moderation:read` / `moderation:act` permissions no longer
 exist (retired by migration `202611200101-platform-moderators`). No permission grant is needed by a
 moderator.
 
@@ -474,8 +481,8 @@ open (it only hands an own claim back). Refusals log `moderation.case_refused`.
 ### Person verification review (selfie, central REPP team)
 
 The selfie review follows the same rule: a selfie is biometric data and the gym never sees it.
-`MODERATOR` reviews every gym, `SYSTEM_ADMIN` every gym or only the impersonated one; `ADMIN`,
-`FRONT_DESK` and every other gym role get **`403`**, retired `moderation:*` grants or not.
+`MODERATOR` reviews every gym, `SYSTEM_ADMIN` every gym or only the impersonated one; members and
+business accounts get **`403`**.
 The case rule of ADR-0018 §8 applies too: nobody reviews their own selfie (`403
 MODERATION_SELF_CASE`), a `MODERATOR` never opens or decides a `MODERATOR`/`SYSTEM_ADMIN` attempt
 (`403 MODERATION_PEER_CASE`), and the queue hides both from whoever may not decide them.

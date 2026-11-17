@@ -145,10 +145,10 @@ describe('FacilitiesService — equipo de otro gimnasio', () => {
   const actor: AuthenticatedUser = {
     id: '00000000-0000-4000-8000-000000000001',
     email: 'admin@topfitness.test',
-    role: UserRole.ADMIN,
+    role: UserRole.SYSTEM_ADMIN,
     tenantId: 'topfitness',
     tenantScope: 'topfitness',
-    impersonating: false,
+    impersonating: true,
   };
 
   function createService(

@@ -1,11 +1,9 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/domain.enums';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuthenticatedUser } from '../../common/types/auth-context.types';
-import { AdminPermissionKey } from './admin-permission.catalog';
 import { AuditLogService } from './audit-log.service';
 import { AuditLogQueryInput, auditLogQuerySchema } from './audit.schemas';
 
@@ -20,7 +18,6 @@ export class AuditController {
   constructor(private readonly auditLog: AuditLogService) {}
 
   @Get()
-  @RequirePermission(AdminPermissionKey.ADMIN_ACCESS_MANAGE)
   list(
     @Query(new ZodValidationPipe(auditLogQuerySchema)) query: AuditLogQueryInput,
     @CurrentUser() actor: AuthenticatedUser,

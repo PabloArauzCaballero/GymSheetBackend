@@ -2,6 +2,9 @@ import { QueryTypes } from 'sequelize';
 import { env } from '../src/config/env';
 import { contractPaymentReceiptUrlMigration } from '../src/database/migrations/202611201202-contract-payment-receipt-url';
 import { businessClosureMigration } from '../src/database/migrations/202611201201-business-closure';
+import { staffRolesToMembersMigration } from '../src/database/migrations/202611201301-staff-roles-to-members';
+import { retireStaffAndAccessControlMigration } from '../src/database/migrations/202611201302-retire-staff-and-access-control';
+import { retireTenantAdminChatsMigration } from '../src/database/migrations/202611201303-retire-tenant-admin-chats';
 import { KycCipher } from '../src/modules/business-kyc/kyc-cipher';
 import { KycRetentionService } from '../src/modules/business-kyc/kyc-retention.service';
 import { AccountExportService } from '../src/modules/export/account-export.service';
@@ -170,12 +173,19 @@ describe('business export, KYC retention and erasure, unverified seller cap (e2e
     try {
       expect(await column()).toBe(0);
       await h.sequelize.query(`INSERT INTO retired.payment_order_receipt_urls (order_id, receipt_url) VALUES (:id, 'https://legacy.example/r.jpg')`, { replacements: { id: created.id }, transaction });
+      // Reverse id order: the staff contraction of 7d (202611201301–1303) is newer than this franja.
+      await retireTenantAdminChatsMigration.down(queryInterface, transaction);
+      await retireStaffAndAccessControlMigration.down(queryInterface, transaction);
+      await staffRolesToMembersMigration.down(queryInterface, transaction);
       await contractPaymentReceiptUrlMigration.down(queryInterface, transaction);
       await businessClosureMigration.down(queryInterface, transaction);
       const [restored] = await h.sequelize.query<{ url: string }>('SELECT receipt_url AS url FROM directory.payment_orders WHERE id = :id', { type: QueryTypes.SELECT, replacements: { id: created.id }, transaction });
       expect(restored.url).toBe('https://legacy.example/r.jpg');
       await businessClosureMigration.up(queryInterface, transaction);
       await contractPaymentReceiptUrlMigration.up(queryInterface, transaction);
+      await staffRolesToMembersMigration.up(queryInterface, transaction);
+      await retireStaffAndAccessControlMigration.up(queryInterface, transaction);
+      await retireTenantAdminChatsMigration.up(queryInterface, transaction);
       expect(await column()).toBe(0);
       const [kept] = await h.sequelize.query<{ url: string }>('SELECT receipt_url AS url FROM retired.payment_order_receipt_urls WHERE order_id = :id', { type: QueryTypes.SELECT, replacements: { id: created.id }, transaction });
       expect(kept.url).toBe('https://legacy.example/r.jpg');

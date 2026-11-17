@@ -44,8 +44,8 @@ const MINOR_ACCOUNT_CLOSURE_MAX_ATTEMPTS = 10;
  * of climbing the warning ladder, and a confirmed minor's account is closed
  * and erased. A single report never suspends: otherwise anyone could lock out
  * any member indefinitely with one tap.
- * Staff accounts are excluded: the gym manages them, and a member must not be
- * able to lock out the front desk with one report.
+ * Only member accounts are concerned: a platform or business account is not
+ * a person reported as a minor, and a member must not lock out REPP with a report.
  */
 @Injectable()
 export class ModerationMinorService {

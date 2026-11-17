@@ -1,6 +1,4 @@
-import { AdminPermissionModel } from "../../modules/admin-access/admin-permission.model";
 import { TenantModel } from "../../modules/tenants/tenant.model";
-import { AdminUserPermissionModel } from "../../modules/admin-access/admin-user-permission.model";
 import { AdminAuditLogModel } from "../../modules/admin-access/audit-log.model";
 import { ModerationReportModel } from "../../modules/moderation/report.model";
 import { UserStrikeModel } from "../../modules/moderation/user-strike.model";
@@ -177,8 +175,6 @@ export const databaseModels = [
   UserProgressModel,
   RestDayPreferenceModel,
   UserStreakStrikeModel,
-  AdminPermissionModel,
-  AdminUserPermissionModel,
   AdminAuditLogModel,
   ModerationReportModel,
   UserStrikeModel,

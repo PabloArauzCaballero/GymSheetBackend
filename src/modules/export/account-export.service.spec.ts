@@ -153,7 +153,7 @@ describe('AccountExportService', () => {
     expect(omitted('public.usuarios')).toContain('password_hash');
     expect(omitted('auth.refresh_tokens')).toContain('token_hash');
     expect(omitted('auth.email_verification_pins')).toContain('pin_hash');
-    expect(omitted('access_control.credentials')).toContain('pin_hash');
+    expect(omitted('retired.access_control_credentials')).toContain('pin_hash');
     expect(omitted('notifications.device_tokens')).toContain('push_token');
   });
 

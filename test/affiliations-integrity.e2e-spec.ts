@@ -4,10 +4,9 @@ import { affiliationsClosedRowsMigration } from '../src/database/migrations/2026
 import { subscriptionLedgerMigration } from '../src/database/migrations/202611201001-subscription-ledger';
 import { retireMembershipMachineryMigration } from '../src/database/migrations/202611201002-retire-membership-machinery';
 import { gymMembershipVisibilityMigration } from '../src/database/migrations/202611201101-gym-membership-visibility';
-import { businessClosureMigration } from '../src/database/migrations/202611201201-business-closure';
-import { contractPaymentReceiptUrlMigration } from '../src/database/migrations/202611201202-contract-payment-receipt-url';
 import { KycHarness, bootKycHarness } from './support/kyc-e2e';
 import { Gym, confirm, gymWithLocations, historyOf, noticeKeys, requestAt, socioAt, statusOf } from './support/affiliations-e2e';
+import { redoStaffContraction, undoStaffContraction } from './support/staff-contraction-migrations';
 
 describe('affiliations: one gym per SOCIO, the gym switch, concurrency and the closure (e2e, franja 7b)', () => {
   let h: KycHarness;
@@ -152,9 +151,7 @@ describe('affiliations: one gym per SOCIO, the gym switch, concurrency and the c
         )
       )[0];
     try {
-      // The business closure (202611201202, 202611201201) rolls back first: it is the newest.
-      await contractPaymentReceiptUrlMigration.down(queryInterface, transaction);
-      await businessClosureMigration.down(queryInterface, transaction);
+      await undoStaffContraction(queryInterface, transaction);
       await gymMembershipVisibilityMigration.down(queryInterface, transaction);
       await retireMembershipMachineryMigration.down(queryInterface, transaction);
       await subscriptionLedgerMigration.down(queryInterface, transaction);
@@ -166,8 +163,7 @@ describe('affiliations: one gym per SOCIO, the gym switch, concurrency and the c
       await subscriptionLedgerMigration.up(queryInterface, transaction);
       await retireMembershipMachineryMigration.up(queryInterface, transaction);
       await gymMembershipVisibilityMigration.up(queryInterface, transaction);
-      await businessClosureMigration.up(queryInterface, transaction);
-      await contractPaymentReceiptUrlMigration.up(queryInterface, transaction);
+      await redoStaffContraction(queryInterface, transaction);
       expect(await tables()).toEqual({ affiliations: 'directory.affiliations', history: 'directory.affiliation_history' });
     } finally {
       await transaction.rollback();

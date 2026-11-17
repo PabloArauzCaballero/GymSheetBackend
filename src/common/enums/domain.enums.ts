@@ -1,12 +1,7 @@
 export enum UserRole {
   /**
-   * Administrador de plataforma: opera POR ENCIMA de los gimnasios.
-   *
-   * `ADMIN` es el administrador de UN gimnasio y nunca ve otro. Este rol existe
-   * porque hasta ahora `ADMIN` era supra-inquilino de facto —ninguna ruta
-   * `admin/*` comprobaba el gimnasio— sin que nadie lo hubiera decidido. Separar
-   * los dos permite cerrar ese agujero sin quitarle a una consola de sistema una
-   * capacidad que sí necesita.
+   * Platform administrator: REPP operates the platform above every gym
+   * (ADR-0019). The gym has no staff roles since franja 7d (ADR-0029).
    */
   SYSTEM_ADMIN = "SYSTEM_ADMIN",
   /**
@@ -22,16 +17,8 @@ export enum UserRole {
    * it reach its own allow-list of routes.
    */
   BUSINESS = "NEGOCIO",
-  /**
-   * Legacy gym staff roles (`ADMIN`, `COACH`, `FRONT_DESK`, and the external
-   * trainer): since franja 7a they grant no power at all (ADR-0019) and are
-   * removed with their staff tables in franja 7d.
-   */
-  ADMIN = "ADMIN",
+  /** A person (member). The legacy gym staff roles became this in franja 7d (ADR-0029). */
   CLIENT = "CLIENTE",
-  EXTERNAL_TRAINER = "ENTRENADOR_EXTERNO",
-  COACH = "COACH",
-  FRONT_DESK = "FRONT_DESK",
 }
 
 export enum UserStatus {
@@ -214,18 +201,6 @@ export enum EntitlementSource {
   TRIAL = "TRIAL",
   /** Otorgado automáticamente al cruzar un umbral de racha. */
   STREAK_REWARD = "STREAK_REWARD",
-}
-
-export enum EmploymentStatus {
-  ACTIVE = "ACTIVE",
-  SUSPENDED = "SUSPENDED",
-  TERMINATED = "TERMINATED",
-}
-
-export enum StaffPosition {
-  COACH = "COACH",
-  FRONT_DESK = "FRONT_DESK",
-  ADMINISTRATION = "ADMINISTRATION",
 }
 
 export enum MaintenanceType {

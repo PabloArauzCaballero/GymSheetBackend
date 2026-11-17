@@ -25,21 +25,6 @@ export class AccountClosureRepository {
     return row?.linked === true;
   }
 
-  /**
-   * Locks every active ADMIN of a gym, in id order (two admins closing each
-   * other cannot deadlock), and returns their ids: the caller refuses to
-   * close the last one, and no concurrent closure can slip past that count.
-   */
-  async lockActiveAdmins(tenantId: string, defaultTenantId: string, transaction: Transaction): Promise<string[]> {
-    const rows = await this.sequelize.query<{ id: string }>(
-      `SELECT id FROM public.usuarios
-        WHERE rol = 'ADMIN' AND estado = 'ACTIVO' AND COALESCE(tenant_id, :defaultTenantId) = :tenantId
-        ORDER BY id FOR UPDATE`,
-      { type: QueryTypes.SELECT, replacements: { tenantId, defaultTenantId }, transaction },
-    );
-    return rows.map((row) => row.id);
-  }
-
   /** One round trip: a count per visible step, evaluated on the current state. */
   async countSteps(userId: string, catalog: readonly ClosureStep[] = ACCOUNT_CLOSURE_STEPS): Promise<ClosureStepCount[]> {
     const visible = catalog.filter((step) => !step.internal);

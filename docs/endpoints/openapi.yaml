@@ -3734,7 +3734,7 @@ components:
         nombreCompleto: { type: string }
         rol:
           type: string
-          enum: [SYSTEM_ADMIN, MODERATOR, ADMIN, CLIENTE, ENTRENADOR_EXTERNO, COACH, FRONT_DESK, NEGOCIO]
+          enum: [SYSTEM_ADMIN, MODERATOR, CLIENTE, NEGOCIO]
         accountKind: { type: string, enum: [PERSON, BUSINESS] }
     AuthEnvelope:
       allOf:
@@ -3761,7 +3761,7 @@ components:
                 email: { type: string, format: email }
                 role:
                   type: string
-                  enum: [SYSTEM_ADMIN, MODERATOR, ADMIN, CLIENTE, ENTRENADOR_EXTERNO, COACH, FRONT_DESK, NEGOCIO]
+                  enum: [SYSTEM_ADMIN, MODERATOR, CLIENTE, NEGOCIO]
                 accountKind: { type: string, enum: [PERSON, BUSINESS] }
                 businessEntityId: { type: string, format: uuid, nullable: true }
     UserEnvelope:

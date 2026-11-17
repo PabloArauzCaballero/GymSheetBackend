@@ -119,6 +119,25 @@ describe('Discovery ranking and single match model (e2e)', () => {
     expect(second.headers['x-next-cursor']).toBeUndefined();
   });
 
+  it('ranks a candidate with a workout in progress first: the only "training now" signal since ADR-0029', async () => {
+    const candidates = [await member('rank-now-a', 'FEMALE', homeBranch), await member('rank-now-b', 'FEMALE', homeBranch)];
+    // Seen a month ago: recent presence would saturate the activity score and hide the workout.
+    await e2e.sql(`UPDATE public.usuarios SET last_active_at = now() - INTERVAL '30 days', last_seen_at = NULL WHERE id IN (:ids)`,
+      { ids: candidates.map((candidate) => candidate.id) });
+    expect(await sequelize.query(`SELECT to_regclass('access_control.decisions') AS t`, { type: QueryTypes.SELECT }))
+      .toEqual([{ t: null }]);
+    // Each candidate in turn trains now, seen by a fresh viewer: the order follows the workout, not the id.
+    for (const [index, training] of candidates.entries()) {
+      await e2e.sql(`UPDATE public.sesiones_entrenamiento SET estado = 'FINALIZADA' WHERE usuario_id IN (:ids)`,
+        { ids: candidates.map((candidate) => candidate.id) });
+      await e2e.sql(`INSERT INTO public.sesiones_entrenamiento (usuario_id, estado, fecha_inicio) VALUES (:id, 'EN_PROGRESO', now())`,
+        { id: training.id });
+      const viewer = await member(`rank-now-viewer-${index}`, 'MALE', homeBranch);
+      const ids = (await deckIds(viewer)).filter((id) => candidates.some((candidate) => candidate.id === id));
+      expect(ids[0]).toBe(training.id);
+    }
+  });
+
   it('turns a mutual like into one accepted connection from every entry point', async () => {
     const viewer = await member('match-viewer', 'MALE', homeBranch);
     const swiper = await member('match-swipe', 'FEMALE', homeBranch);

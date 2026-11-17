@@ -17,12 +17,11 @@ const closedAt = new Date('2026-11-18T10:00:00Z');
 
 type BuildOptions = {
   role?: UserRole; identity?: boolean; pinKind?: string; keys?: string[]; inUse?: string[]; closedAt?: Date | null;
-  tenantId?: string | null; admins?: string[];
 };
 
 async function build(options: BuildOptions = {}) {
   const user = {
-    id: userId, email: 'ana@example.test', tenantId: options.tenantId ?? null, role: options.role ?? UserRole.CLIENT,
+    id: userId, email: 'ana@example.test', tenantId: null, role: options.role ?? UserRole.CLIENT,
     passwordHash: await bcrypt.hash('secret-pass', 4), closedAt: options.closedAt ?? null,
   };
   const repository = {
@@ -33,7 +32,6 @@ async function build(options: BuildOptions = {}) {
     eraseAll: jest.fn().mockResolvedValue(undefined),
     anonymizeAccount: jest.fn().mockResolvedValue(closedAt),
     keysStillInUse: jest.fn().mockResolvedValue(new Set(options.inUse ?? [])),
-    lockActiveAdmins: jest.fn().mockResolvedValue(options.admins ?? []),
   };
   const users = {
     findActiveById: jest.fn().mockResolvedValue(user),
@@ -71,8 +69,9 @@ describe('AccountClosureService.close', () => {
     expect(repository.runInTransaction).not.toHaveBeenCalled();
   });
 
-  it('refuses staff accounts with 403', async () => {
-    const { service, repository } = await build({ role: UserRole.COACH });
+  // A business account closes too, through its own catalogue (ADR-0028; see the business describe below).
+  it.each([UserRole.MODERATOR, UserRole.SYSTEM_ADMIN])('refuses a %s account with 403', async (role) => {
+    const { service, repository } = await build({ role });
     await expect(service.close(userId, { password: 'secret-pass' })).rejects.toMatchObject({ code: 'ACCOUNT_CLOSURE_STAFF', status: 403 });
     expect(repository.eraseAll).not.toHaveBeenCalled();
   });
@@ -172,69 +171,15 @@ describe('AccountClosureService.closeByModeration', () => {
     expect(sanctions.recordAtClosure).not.toHaveBeenCalled();
   });
 
-  it('is a no-op for an account already closed or gone, and never closes staff', async () => {
+  it('is a no-op for an account already closed or gone, and never closes a platform account', async () => {
     const closed = await build({ closedAt });
     await expect(closed.service.closeByModeration(userId)).resolves.toBe('ALREADY_CLOSED');
     expect(closed.repository.eraseAll).not.toHaveBeenCalled();
     const gone = await build();
     gone.users.findById.mockResolvedValue(null);
     await expect(gone.service.closeByModeration(userId)).resolves.toBe('ALREADY_CLOSED');
-    const staff = await build({ role: UserRole.COACH });
+    const staff = await build({ role: UserRole.MODERATOR });
     await expect(staff.service.closeByModeration(userId)).resolves.toBe('STAFF_SKIPPED');
     expect(staff.repository.eraseAll).not.toHaveBeenCalled();
-  });
-});
-
-describe('AccountClosureService.closeStaffByAdmin', () => {
-  // REPP's platform admin operating the gym through impersonation (ADR-0019, franja 7a).
-  const admin = {
-    id: '00000000-0000-4000-8000-0000000000ad', email: 'admin@repp.test', role: UserRole.SYSTEM_ADMIN,
-    tenantId: 'gym', tenantScope: 'gym', impersonating: true, emailVerified: true, deviceId: null,
-  };
-
-  it('closes a staff account of the impersonated gym with the same erasure, no password, carrying its strikes', async () => {
-    const { service, repository, sanctions, users } = await build({ role: UserRole.COACH, tenantId: 'gym' });
-    await expect(service.closeStaffByAdmin(admin, userId)).resolves.toEqual({ closed: true, closedAt });
-    expect(users.lockUserForUpdate).toHaveBeenCalledWith(userId, transaction);
-    expect(sanctions.recordAtClosure).toHaveBeenCalledWith(expect.objectContaining({ id: userId }), transaction);
-    expect(repository.eraseAll).toHaveBeenCalledWith(userId, transaction, ACCOUNT_CLOSURE_STEPS);
-    expect(repository.anonymizeAccount).toHaveBeenCalledWith(userId, expect.objectContaining({ tombstoneEmail: closedAccountEmail(userId) }), transaction);
-    expect(repository.lockActiveAdmins).not.toHaveBeenCalled();
-  });
-
-  it("answers 404 for another gym's account, a platform account or a missing one", async () => {
-    for (const options of [
-      { role: UserRole.COACH, tenantId: 'other-gym' },
-      { role: UserRole.SYSTEM_ADMIN, tenantId: 'gym' },
-      // A REPP moderator is not gym staff, even when its own account sits in the gym.
-      { role: UserRole.MODERATOR, tenantId: 'gym' },
-    ]) {
-      const { service, repository } = await build(options);
-      await expect(service.closeStaffByAdmin(admin, userId)).rejects.toMatchObject({ status: 404 });
-      expect(repository.eraseAll).not.toHaveBeenCalled();
-    }
-    const missing = await build({ role: UserRole.COACH, tenantId: 'gym' });
-    missing.users.findActiveById.mockResolvedValue(null);
-    await expect(missing.service.closeStaffByAdmin(admin, userId)).rejects.toMatchObject({ status: 404 });
-  });
-
-  it('refuses a member account, the admin own account and the last admin of the gym', async () => {
-    const member = await build({ role: UserRole.CLIENT, tenantId: 'gym' });
-    await expect(member.service.closeStaffByAdmin(admin, userId)).rejects.toMatchObject({ status: 400, code: 'STAFF_CLOSURE_NOT_STAFF' });
-    const business = await build({ role: UserRole.BUSINESS, tenantId: 'gym' });
-    await expect(business.service.closeStaffByAdmin(admin, userId)).rejects.toMatchObject({ status: 400, code: 'STAFF_CLOSURE_NOT_STAFF' });
-    expect(business.repository.eraseAll).not.toHaveBeenCalled();
-    const self = await build({ role: UserRole.ADMIN, tenantId: 'gym' });
-    await expect(self.service.closeStaffByAdmin({ ...admin, id: userId }, userId)).rejects.toMatchObject({ status: 403, code: 'STAFF_CLOSURE_SELF' });
-    const last = await build({ role: UserRole.ADMIN, tenantId: 'gym', admins: [userId] });
-    await expect(last.service.closeStaffByAdmin(admin, userId)).rejects.toMatchObject({ status: 403, code: 'STAFF_CLOSURE_LAST_ADMIN' });
-    expect(last.repository.lockActiveAdmins).toHaveBeenCalledWith('gym', expect.any(String), transaction);
-    for (const refused of [member, self, last]) expect(refused.repository.eraseAll).not.toHaveBeenCalled();
-  });
-
-  it('closes another admin when the gym keeps one', async () => {
-    const { service, repository } = await build({ role: UserRole.ADMIN, tenantId: 'gym', admins: [admin.id, userId] });
-    await expect(service.closeStaffByAdmin(admin, userId)).resolves.toMatchObject({ closed: true });
-    expect(repository.eraseAll).toHaveBeenCalled();
   });
 });

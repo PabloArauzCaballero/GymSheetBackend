@@ -96,7 +96,7 @@ export async function seedPersonalData(sequelize: Sequelize, userId: string, oth
        VALUES ('${randomUUID()}', :userId, 'IN_APP', 'Hola', 'fixture-${suffix}')`,
     `INSERT INTO notifications.device_tokens (id, user_id, platform, push_token) VALUES ('${randomUUID()}', :userId, 'ANDROID', 'tok-${suffix}')`,
     `INSERT INTO auth.user_devices (user_id, installation_id) VALUES (:userId, '${randomUUID()}')`,
-    `INSERT INTO access_control.credentials (id, user_id, credential_type, provider, pin_hash)
+    `INSERT INTO retired.access_control_credentials (id, user_id, credential_type, provider, pin_hash)
        VALUES ('${randomUUID()}', :userId, 'PIN', 'INTERNAL', '$2a$04$fixturefixturefixturefixtureuWl4rK2P1z8cE6Z5sJ8Yv0m')`,
     // The gym's tax records.
     `INSERT INTO retired.membership_plans (id, code, name, duration_days) VALUES ('${ids.plan}', 'F4-${suffix}', 'Mensual', 30)`,
