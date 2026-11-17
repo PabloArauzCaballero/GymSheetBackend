@@ -1,4 +1,4 @@
-import { ListingShape, legacyListingState, moderationAfterChecks, priceCheckCodes, shapeViolations } from './listing-checks';
+import { ListingShape, moderationAfterChecks, priceCheckCodes, shapeViolations } from './listing-checks';
 import { LEGACY_TYPE_OF, OFFER_KINDS, legacyOfferKind } from './listing.catalog';
 
 const band = { min: 1, max: 50_000, outlierFactor: 5 };
@@ -78,14 +78,6 @@ describe('publication checks (ADR-0022)', () => {
   describe('legacy plans', () => {
     it('the legacy type is derived from every offer kind and maps back to a kind of the same type', () => {
       for (const kind of OFFER_KINDS) expect(LEGACY_TYPE_OF[legacyOfferKind(LEGACY_TYPE_OF[kind], 30)]).toBe(LEGACY_TYPE_OF[kind]);
-    });
-
-    it('a legacy plan is LIVE only with the shape of its kind', () => {
-      expect(legacyListingState('MEMBERSHIP_PLAN', 30)).toMatchObject({ offerKind: 'MEMBERSHIP', moderationStatus: 'LIVE', autoCheckCodes: [] });
-      expect(legacyListingState('MEMBERSHIP_PLAN', null)).toMatchObject({ moderationStatus: 'HELD', moderationReasonCode: 'VALIDITY_REQUIRED', publishedAt: null });
-      expect(legacyListingState('PASS', 1)).toMatchObject({ offerKind: 'DAY_PASS', moderationStatus: 'LIVE' });
-      expect(legacyListingState('PASS', 7)).toMatchObject({ offerKind: 'MULTI_DAY_PASS', moderationStatus: 'LIVE' });
-      expect(legacyListingState('PRODUCT', 30)).toMatchObject({ offerKind: 'PRODUCT', moderationStatus: 'HELD' });
     });
   });
 });

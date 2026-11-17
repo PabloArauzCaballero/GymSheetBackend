@@ -24,9 +24,4 @@ export class PublicDirectoryPaymentsController {
   getPlan(@Param('planId', UuidParamPipe) planId: string) {
     return this.paymentsService.getPublicPlan(planId);
   }
-
-  @Get('entities/:entityId/payment-config')
-  getPaymentConfig(@Param('entityId', UuidParamPipe) entityId: string) {
-    return this.paymentsService.getPaymentConfig(entityId);
-  }
 }

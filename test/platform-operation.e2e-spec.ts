@@ -21,7 +21,7 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
 
   type Route = [method: 'get' | 'post' | 'put' | 'patch' | 'del', path: string, body?: object];
   // At least one route per `admin/*` controller (the full set is checked by
-  // roles.guard.admin-routes.spec.ts); `admin/directory` is owner-gated below.
+  // roles.guard.admin-routes.spec.ts); `admin/directory` no longer exists (ADR-0024), below.
   const adminRoutes: Route[] = [
     ['get', '/admin/access/devices'],
     ['get', `/admin/access/history?usuarioId=${uuid}`],
@@ -135,9 +135,11 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
       expect(config.count).toBe('0');
     });
 
-    it('the owner and the platform SYSTEM_ADMIN do manage it and answer reviews', async () => {
-      await e2e.as(owner.token).put(`/admin/directory/entities/${entityId}/payment-config`).send(paymentConfig).expect(200);
-      await e2e.as(platform.token).get(`/admin/directory/entities/${entityId}/payment-orders`).expect(200);
+    it('REPP no longer manages money (D9): the admin/directory console is gone for the owner and SYSTEM_ADMIN; replies stay', async () => {
+      // Franja 8d (ADR-0024): payment data and orders live under business/me/*, only for the owning business account.
+      await e2e.as(owner.token).put(`/admin/directory/entities/${entityId}/payment-config`).send(paymentConfig).expect(404);
+      await e2e.as(platform.token).get(`/admin/directory/entities/${entityId}/payment-orders`).expect(404);
+      await e2e.as(platform.token).post(`/admin/directory/payment-orders/${randomUUID()}/confirm`).expect(404);
       await e2e.as(platform.token).post(`/directory/reviews/${reviewId}/reply`).send({ reply_text: 'Gracias, equipo REPP' }).expect(201);
     });
   });

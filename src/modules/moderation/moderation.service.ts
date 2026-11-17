@@ -29,7 +29,7 @@ import { ModerationEvidenceService } from "./moderation-evidence.service";
 import { ModerationMinorService } from "./moderation-minor.service";
 import { emailModerationNotice, ModerationNotice, sanctionNotice } from "./moderation-notices";
 import { CaseContentSnapshot, ModerationCaseContentService } from "./moderation-case-content.service";
-import { BUSINESS_TARGET_HIDDEN_SQL } from "./moderation-business-targets";
+import { BUSINESS_TARGET_HIDDEN_SQL, isBusinessTargetKind } from "./moderation-business-targets";
 import {
   caseRefusalFor,
   CaseRefusalCode,
@@ -68,6 +68,7 @@ const CROSS_TENANT_TARGETS: ReadonlySet<ModerationTargetKindValue> = new Set([
   // The marketplace is public: anyone who sees a listing or a profile can report it.
   ModerationTargetKind.BUSINESS_LISTING,
   ModerationTargetKind.BUSINESS_PROFILE,
+  ModerationTargetKind.PAYMENT_ORDER,
 ]);
 
 /** Lo que se le enseña al moderador antes de que decida. */
@@ -140,6 +141,7 @@ export class ModerationService {
     const owner = await this.repository.findContentOwner(
       input.targetKind,
       input.targetId,
+      reporter.id,
     );
     const canReportReel =
       input.targetKind !== ModerationTargetKind.REEL ||
@@ -392,7 +394,7 @@ export class ModerationService {
     targetKind: ModerationTargetKindValue,
     targetId: string,
   ): Promise<boolean> {
-    if (targetKind === ModerationTargetKind.BUSINESS_LISTING || targetKind === ModerationTargetKind.BUSINESS_PROFILE) {
+    if (isBusinessTargetKind(targetKind)) {
       const [row] = await this.sequelize.query<{ hidden: boolean }>(BUSINESS_TARGET_HIDDEN_SQL[targetKind], {
         type: QueryTypes.SELECT,
         replacements: { targetId },
@@ -744,6 +746,7 @@ export class ModerationService {
     const owner = await this.repository.findContentOwner(
       ModerationTargetKind.USER,
       userId,
+      actor.id,
     );
     const scope = platformScopeOf(actor);
     if (!owner || (scope && owner.tenantId !== scope)) {

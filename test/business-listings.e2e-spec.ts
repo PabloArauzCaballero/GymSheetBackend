@@ -92,7 +92,7 @@ describe('business listings, locations and the public marketplace (e2e, franja 8
     await publicGet(h, `/public/directory/plans/${held.id}`).expect(404);
     const reporter = await h.e2e.register('lst-reporter');
     await h.e2e.as(reporter.token).post('/me/reports').send({ targetKind: 'BUSINESS_LISTING', targetId: held.id, reason: 'SPAM' }).expect(404);
-    await h.e2e.as(reporter.token).post('/directory/payments/orders').send({ planId: held.id }).expect(404);
+    await h.e2e.as(reporter.token).post('/directory/payments/orders').send({ listingId: held.id }).expect(404);
     const fixed = await h.e2e.as(seller.token).patch(`/business/me/listings/${held.id}/price`).send({ price: 240 }).expect(200);
     expect(fixed.body.data).toMatchObject({ moderationStatus: 'LIVE', autoCheckCodes: [] });
     await publicGet(h, `/public/directory/listings/${held.id}`).expect(200);

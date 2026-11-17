@@ -35,6 +35,8 @@ tags:
     description: Consola REPP de negocios, KYC y publicaciones (ADR-0021, ADR-0022)
   - name: BusinessListings
     description: Publicaciones, sedes y marketplace público con post-moderación (ADR-0022)
+  - name: Orders
+    description: Pedidos pagados por QR o en efectivo y confirmados por el negocio (ADR-0024)
 paths:
   /auth/register:
     post:
@@ -3284,6 +3286,278 @@ paths:
                           available: { type: boolean }
                           reason: { type: string, nullable: true, enum: [TAKEN, RESERVED, INVALID, TOO_SIMILAR, null] }
         "429": { $ref: "#/components/responses/Problem429" }
+  /directory/payments/orders:
+    post:
+      tags: [Orders]
+      summary: "Crear un pedido (el precio sale de la publicación)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [listingId], properties: { listingId: { type: string, format: uuid }, quantity: { type: integer, minimum: 1, default: 1 }, method: { type: string, enum: [QR, CASH], default: QR }, note: { type: string, maxLength: 500 } } }
+      responses:
+        "201":
+          description: "Order: { id, orderNumber, status, method, quantity, unitAmount, amount, currency, listing, seller, expiresAt, submittedAt, decidedAt, cancelledAt, cancelReason, rejection, receipt: { uploaded, reference }, note, createdAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido o con campos no declarados (amount, planId...)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "Publicación no pública o vendedor sin cuenta de negocio", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "ORDER_OUT_OF_STOCK | ORDER_ALREADY_OPEN | ORDER_OPEN_LIMIT | ORDER_PAYMENT_METHOD_UNAVAILABLE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "ORDER_QUANTITY_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /directory/payments/orders/my-orders:
+    get:
+      tags: [Orders]
+      summary: "Mis compras (cursor, más recientes primero)"
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [PENDING_PAYMENT, PENDING_VERIFICATION, CONFIRMED, REJECTED, CANCELLED, EXPIRED] } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items: Order[], nextCursor }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "INVALID_CURSOR", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /directory/payments/orders/{id}:
+    get:
+      tags: [Orders]
+      summary: "Un pedido propio con su línea de tiempo"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Order: { id, orderNumber, status, method, quantity, unitAmount, amount, currency, listing, seller, expiresAt, submittedAt, decidedAt, cancelledAt, cancelReason, rejection, receipt: { uploaded, reference }, note, createdAt } + timeline: [{ status, at, reasonCode, by: BUYER|BUSINESS|SYSTEM }]"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Pedido ajeno o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /directory/payments/orders/{id}/payment-instructions:
+    get:
+      tags: [Orders]
+      summary: "Datos de cobro del negocio, solo al comprador"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "{ orderId, orderNumber, method, amount, currency, expiresAt, bankName, accountHolderName, accountNumber, aliasOrPhone, instructions, qrPath }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Pedido ajeno o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "ORDER_INVALID_TRANSITION | ORDER_BUSINESS_UNAVAILABLE | ORDER_PAYMENT_METHOD_UNAVAILABLE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /directory/payments/orders/{id}/payment-qr:
+    get:
+      tags: [Orders]
+      summary: "QR del negocio (privado)"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Imagen descifrada, Cache-Control private, no-store"
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        "404": { description: "Pedido ajeno, sin QR o en efectivo", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "ORDER_BUSINESS_UNAVAILABLE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /directory/payments/orders/{id}/receipt:
+    post:
+      tags: [Orders]
+      summary: "Subir el comprobante (privado y cifrado)"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, required: [file], properties: { file: { type: string, format: binary }, reference: { type: string, maxLength: 100 } } }
+      responses:
+        "200":
+          description: "Order: { id, orderNumber, status, method, quantity, unitAmount, amount, currency, listing, seller, expiresAt, submittedAt, decidedAt, cancelledAt, cancelReason, rejection, receipt: { uploaded, reference }, note, createdAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Archivo ausente o no JPEG/PNG", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "Pedido ajeno o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "ORDER_INVALID_TRANSITION | ORDER_RECEIPT_LIMIT | ORDER_OUT_OF_STOCK", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "413": { description: "Archivo demasiado grande", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "503": { description: "PAYMENT_EVIDENCE_UNAVAILABLE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+    get:
+      tags: [Orders]
+      summary: "Mi comprobante"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Imagen descifrada"
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        "404": { description: "Pedido ajeno o sin comprobante", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /directory/payments/orders/{id}/cancel:
+    post:
+      tags: [Orders]
+      summary: "Cancelar un pedido impago"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Order: { id, orderNumber, status, method, quantity, unitAmount, amount, currency, listing, seller, expiresAt, submittedAt, decidedAt, cancelledAt, cancelReason, rejection, receipt: { uploaded, reference }, note, createdAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "404": { description: "Pedido ajeno o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "ORDER_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/orders:
+    get:
+      tags: [Orders]
+      summary: "Bandeja del negocio: Por confirmar primero"
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [PENDING_PAYMENT, PENDING_VERIFICATION, CONFIRMED, REJECTED, CANCELLED, EXPIRED] } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: "{ items: (Order & { buyer: { name }, actions: { canDecide } })[], nextCursor, pendingCount }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "INVALID_CURSOR", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "403": { description: "ACCOUNT_KIND_NOT_ALLOWED (persona, MODERATOR, SYSTEM_ADMIN)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/orders/{id}:
+    get:
+      tags: [Orders]
+      summary: "Un pedido del negocio con su línea de tiempo"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Order: { id, orderNumber, status, method, quantity, unitAmount, amount, currency, listing, seller, expiresAt, submittedAt, decidedAt, cancelledAt, cancelReason, rejection, receipt: { uploaded, reference }, note, createdAt } + buyer + timeline"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "Pedido de otro negocio o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/orders/{id}/receipt:
+    get:
+      tags: [Orders]
+      summary: "Comprobante del pedido"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Imagen descifrada"
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        "404": { description: "Pedido de otro negocio o sin comprobante", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/orders/{id}/confirm:
+    post:
+      tags: [Orders]
+      summary: "Confirmar el pago (solo el negocio dueño; REPP nunca)"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Order: { id, orderNumber, status, method, quantity, unitAmount, amount, currency, listing, seller, expiresAt, submittedAt, decidedAt, cancelledAt, cancelReason, rejection, receipt: { uploaded, reference }, note, createdAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "Pedido de otro negocio o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "ORDER_INVALID_TRANSITION (también la segunda de dos simultáneas y una repetición)", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/orders/{id}/reject:
+    post:
+      tags: [Orders]
+      summary: "Rechazar con motivo"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [reasonCode], properties: { reasonCode: { type: string, enum: [AMOUNT_MISMATCH, UNREADABLE, NOT_RECEIVED, OTHER] }, note: { type: string, minLength: 3, maxLength: 500 } } }
+      responses:
+        "200":
+          description: "Order: { id, orderNumber, status, method, quantity, unitAmount, amount, currency, listing, seller, expiresAt, submittedAt, decidedAt, cancelledAt, cancelReason, rejection, receipt: { uploaded, reference }, note, createdAt }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "Pedido de otro negocio o inexistente", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "ORDER_INVALID_TRANSITION", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: "ORDER_REJECTION_NOTE_REQUIRED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/payment-config:
+    get:
+      tags: [Orders]
+      summary: "Datos de cobro propios (privados)"
+      responses:
+        "200":
+          description: "{ bankName, accountHolderName, accountNumber, aliasOrPhone, instructions, acceptsCash, isActive, hasQr, holderMatch: PASS|WARN|UNKNOWN, updatedAt } | null"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "403": { description: "ACCOUNT_KIND_NOT_ALLOWED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+    put:
+      tags: [Orders]
+      summary: "Guardar banco y titular (WARN si el titular no se parece al KYC; nunca bloquea)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [bankName, accountHolderName], properties: { bankName: { type: string, minLength: 2, maxLength: 100 }, accountHolderName: { type: string, minLength: 2, maxLength: 180 }, accountNumber: { type: string, maxLength: 100, nullable: true }, aliasOrPhone: { type: string, maxLength: 100, nullable: true }, instructions: { type: string, maxLength: 2000, nullable: true }, acceptsCash: { type: boolean, default: false }, isActive: { type: boolean, default: true } } }
+      responses:
+        "200":
+          description: "{ bankName, accountHolderName, accountNumber, aliasOrPhone, instructions, acceptsCash, isActive, hasQr, holderMatch: PASS|WARN|UNKNOWN, updatedAt } | null"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Cuerpo inválido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "BUSINESS_ACCOUNT_LOCKED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /business/me/payment-config/qr:
+    put:
+      tags: [Orders]
+      summary: "Subir el QR de cobro (privado, cifrado)"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } }
+      responses:
+        "200":
+          description: "{ bankName, accountHolderName, accountNumber, aliasOrPhone, instructions, acceptsCash, isActive, hasQr, holderMatch: PASS|WARN|UNKNOWN, updatedAt } | null"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuccessEnvelope" }
+        "400": { description: "Archivo ausente o no JPEG/PNG", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "409": { description: "PAYMENT_CONFIG_REQUIRED | BUSINESS_ACCOUNT_LOCKED", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "413": { description: "Archivo demasiado grande", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "503": { description: "PAYMENT_EVIDENCE_UNAVAILABLE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+    get:
+      tags: [Orders]
+      summary: "Mi QR de cobro"
+      responses:
+        "200":
+          description: "Imagen descifrada"
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        "404": { description: "Sin QR", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+  /admin/moderation/cases/PAYMENT_ORDER/{orderId}/receipt:
+    get:
+      tags: [Orders]
+      summary: "Comprobante como evidencia de una disputa (auditado)"
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: "Imagen descifrada; solo si existe un caso PAYMENT_ORDER y el moderador puede leerlo (ADR-0018 §8)"
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        "403": { description: "Rol no permitido o MODERATION_SELF_CASE / MODERATION_PEER_CASE", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: "Sin caso para ese pedido", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
 components:
   securitySchemes:
     bearerAuth:

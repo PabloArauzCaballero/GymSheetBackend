@@ -11,6 +11,10 @@ import { selectRows } from './support/privacy-e2e';
 const PASSWORD = 'e2e-strong-password';
 
 /** A report of a minor needs corroboration to suspend, and a confirmed minor is erased by the worker. */
+// Each case spawns the account-data worker and waits for its outbox job (~4.5 s alone): the
+// default 5 s left no margin and the suite timed out whenever the machine was busy.
+jest.setTimeout(30000);
+
 describe('Minor reports and moderation-decided closure (e2e)', () => {
   let e2e: E2eApp;
   let moderator: Member;

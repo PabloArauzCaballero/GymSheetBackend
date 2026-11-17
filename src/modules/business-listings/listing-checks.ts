@@ -1,5 +1,5 @@
-import type { EntityPlanType, ListingModerationStatus, ListingOfferKind } from '../directory/models/entity-plan.model';
-import { SHAPE_BY_KIND, legacyOfferKind } from './listing.catalog';
+import type { ListingModerationStatus, ListingOfferKind } from '../directory/models/entity-plan.model';
+import { SHAPE_BY_KIND } from './listing.catalog';
 
 /** Fields that decide whether a listing has the shape its kind requires. */
 export type ListingShape = {
@@ -61,23 +61,4 @@ export function moderationAfterChecks(
 ): ListingModerationStatus {
   if (current === 'HIDDEN' || current === 'REJECTED') return current;
   return codes.length === 0 ? 'LIVE' : 'HELD';
-}
-
-/**
- * State of a plan created through the legacy `admin/directory/*` console
- * (REPP's seeds, retired in franja 8d): its kind derives from `type`, and it is
- * LIVE only if it has the shape of that kind, like the migration's backfill.
- */
-export function legacyListingState(type: EntityPlanType, durationDays: number | null) {
-  const offerKind = legacyOfferKind(type, durationDays);
-  // A legacy one-day pass may carry `duration_days = 1`; the database accepts it for DAY_PASS.
-  const validityDays = offerKind === 'DAY_PASS' && durationDays === 1 ? null : durationDays;
-  const codes = shapeViolations({ offerKind, validityDays, sessionsCount: null, stockQuantity: null, productCategoryId: null });
-  return {
-    offerKind,
-    moderationStatus: (codes.length === 0 ? 'LIVE' : 'HELD') as ListingModerationStatus,
-    moderationReasonCode: codes[0] ?? null,
-    autoCheckCodes: codes,
-    publishedAt: codes.length === 0 ? new Date() : null,
-  };
 }

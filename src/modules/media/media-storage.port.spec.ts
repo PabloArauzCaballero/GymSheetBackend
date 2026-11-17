@@ -1,5 +1,5 @@
 import { MINIO_PUBLIC_OBJECT_PATTERNS } from "./adapters/minio-public-policy";
-import { isBusinessKycKey, isDeletableContentKey, mediaObjectKey } from "./media-storage.port";
+import { isBusinessKycKey, isDeletableContentKey, isPaymentEvidenceKey, mediaObjectKey } from "./media-storage.port";
 
 const ACCOUNT = "1b6f0d1e-0000-4000-8000-000000000001";
 const SUBMISSION = "2c6f0d1e-0000-4000-8000-000000000002";
@@ -30,4 +30,27 @@ describe("KYC document keys (ADR-0021)", () => {
     `business/${ACCOUNT}/kyc/${SUBMISSION}/${OBJECT}.jpg`,
     `business/${ACCOUNT}/public/${OBJECT}.bin`,
   ])("does not treat %s as a KYC key", (key) => expect(isBusinessKycKey(key)).toBe(false));
+});
+
+describe("payment evidence keys (ADR-0024)", () => {
+  const receipt = `orders/${ACCOUNT}/receipt/${OBJECT}.bin`;
+  const qr = `business/${ACCOUNT}/payment/${OBJECT}.bin`;
+
+  it("names a receipt and a payment QR by their object id under private folders", () => {
+    expect(mediaObjectKey({ category: "order-receipt", orderId: ACCOUNT, objectId: OBJECT }, "a".repeat(64), "application/octet-stream")).toBe(receipt);
+    expect(mediaObjectKey({ category: "payment-qr", entityId: ACCOUNT, objectId: OBJECT }, "a".repeat(64), "application/octet-stream")).toBe(qr);
+  });
+
+  it("is deletable (ADR-0017) and outside every anonymous read pattern", () => {
+    for (const key of [receipt, qr]) {
+      expect(isPaymentEvidenceKey(key)).toBe(true);
+      expect(isDeletableContentKey(key)).toBe(true);
+      expect(MINIO_PUBLIC_OBJECT_PATTERNS.filter((pattern) => matchesPattern(key, pattern))).toEqual([]);
+    }
+  });
+
+  it.each([`orders/${ACCOUNT}/receipt/../x.bin`, `orders/${ACCOUNT}/receipt/${OBJECT}.jpg`, `business/${ACCOUNT}/public/${OBJECT}.bin`])(
+    "does not treat %s as payment evidence",
+    (key) => expect(isPaymentEvidenceKey(key)).toBe(false),
+  );
 });

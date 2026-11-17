@@ -37,17 +37,37 @@ export class EntityPaymentConfigModel extends Model {
   @Column({ type: DataType.STRING(180), allowNull: false, field: 'account_holder_name' })
   declare accountHolderName: string;
 
-  @Column({ type: DataType.STRING(50), allowNull: false, field: 'tax_id' })
-  declare taxId: string;
+  /** Legacy: the NIT lives in the KYC since franja 8d (ADR-0024). */
+  @Column({ type: DataType.STRING(50), allowNull: true, field: 'tax_id' })
+  declare taxId: string | null;
 
-  @Column({ type: DataType.STRING(100), allowNull: false, field: 'account_number' })
-  declare accountNumber: string;
+  @Column({ type: DataType.STRING(100), allowNull: true, field: 'account_number' })
+  declare accountNumber: string | null;
 
   @Column({ type: DataType.STRING(100), allowNull: true, field: 'alias_or_phone' })
   declare aliasOrPhone: string | null;
 
-  @Column({ type: DataType.TEXT, allowNull: false, field: 'qr_image_url' })
-  declare qrImageUrl: string;
+  /** Legacy public URL; the QR is a private encrypted file since franja 8d (ADR-0024). */
+  @Column({ type: DataType.TEXT, allowNull: true, field: 'qr_image_url' })
+  declare qrImageUrl: string | null;
+
+  /** `business/{entityId}/payment/{uuid}.bin`, encrypted; served only to a buyer of an open order. */
+  @Column({ type: DataType.TEXT, allowNull: true, field: 'qr_private_key' })
+  declare qrPrivateKey: string | null;
+
+  @Column({ type: DataType.STRING(20), allowNull: true, field: 'qr_mime' })
+  declare qrMime: string | null;
+
+  @Default(false)
+  @Column({ type: DataType.BOOLEAN, allowNull: false, field: 'accepts_cash' })
+  declare acceptsCash: boolean;
+
+  /** Holder name vs the KYC legal name or representative: WARN flags REPP's post-review, never blocks. */
+  @Column({ type: DataType.STRING(7), allowNull: true, field: 'holder_match' })
+  declare holderMatch: 'PASS' | 'WARN' | 'UNKNOWN' | null;
+
+  @Column({ type: DataType.DECIMAL(4, 3), allowNull: true, field: 'holder_similarity' })
+  declare holderSimilarity: string | null;
 
   @Column({ type: DataType.TEXT, allowNull: true, field: 'qr_payload' })
   declare qrPayload: string | null;

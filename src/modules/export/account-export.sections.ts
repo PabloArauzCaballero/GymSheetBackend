@@ -127,7 +127,10 @@ export const ACCOUNT_EXPORT_SECTIONS: readonly AccountExportSection[] = [
   section("membership.intents", "Compras de membresía", OWN),
   section("membership.entitlements", "Beneficios", OWN),
   section("public.membership_activation_requests", "Activaciones", OWN_ES, ["token_hash"]),
-  section("directory.payment_orders", "Órdenes de pago", "t.athlete_user_id = :userId"),
+  // The receipt's storage key is internal; the receipt itself is read at its own route (ADR-0024).
+  section("directory.payment_orders", "Órdenes de pago", "t.athlete_user_id = :userId", ["receipt_private_key"]),
+  section("directory.payment_order_history", "Historial de tus pedidos",
+    "t.order_id IN (SELECT o.id FROM directory.payment_orders o WHERE o.athlete_user_id = :userId)", ["actor_user_id"]),
   section("access_control.credentials", "Credenciales de acceso", OWN, ["pin_hash"]),
   section("access_control.decisions", "Entradas al gimnasio", OWN),
   // Notifications.

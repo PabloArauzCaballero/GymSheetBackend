@@ -3,7 +3,7 @@ import { InjectModel } from "@nestjs/sequelize";
 import { Op, QueryTypes, Transaction } from "sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { exerciseVisibleSql, routineVisibleSql } from "../../common/sql/content-visibility";
-import { BUSINESS_QUEUE_HIDDEN, BUSINESS_QUEUE_JOINS, BUSINESS_TARGET_ENTITY_SQL, BUSINESS_TARGET_OWNER_SQL, listingVisibilitySql } from "./moderation-business-targets";
+import { BUSINESS_QUEUE_HIDDEN, BUSINESS_QUEUE_JOINS, BUSINESS_TARGET_ENTITY_SQL, BUSINESS_TARGET_OWNER_SQL, isBusinessTargetKind, listingVisibilitySql } from "./moderation-business-targets";
 import { ModerationReportModel } from "./report.model";
 import { UserStrikeModel } from "./user-strike.model";
 import {
@@ -217,7 +217,7 @@ export class ModerationRepository {
 
   /** The business (entity) a marketplace case is about; null for any other kind or a missing row. */
   async findBusinessEntityOf(targetKind: ModerationTargetKindValue, targetId: string, transaction: Transaction): Promise<string | null> {
-    const sql = targetKind === "BUSINESS_LISTING" || targetKind === "BUSINESS_PROFILE" ? BUSINESS_TARGET_ENTITY_SQL[targetKind] : null;
+    const sql = isBusinessTargetKind(targetKind) ? BUSINESS_TARGET_ENTITY_SQL[targetKind] : null;
     if (!sql) return null;
     const [row] = await this.sequelize.query<{ entityId: string }>(sql, { type: QueryTypes.SELECT, replacements: { targetId }, transaction });
     return row?.entityId ?? null;
@@ -457,9 +457,11 @@ export class ModerationRepository {
   }
 
   /** Dueño de un contenido, para resolver a quién se sanciona. Nulo si no existe. */
+  /** `reporterId` scopes the targets only one person may report (a dispute about their own order). */
   async findContentOwner(
     targetKind: ModerationTargetKindValue,
     targetId: string,
+    reporterId: string,
   ): Promise<{ userId: string; tenantId: string } | null> {
     const queries: Record<string, string | null> = {
       STORY: `SELECT s.user_id AS "userId", u.tenant_id AS "tenantId"
@@ -502,7 +504,7 @@ export class ModerationRepository {
       tenantId: string;
     }>(sql, {
       type: QueryTypes.SELECT,
-      replacements: { targetId },
+      replacements: { targetId, reporterId },
     });
     return rows[0] ?? null;
   }

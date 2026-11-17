@@ -20,19 +20,34 @@ export const BUSINESS_TARGET_OWNER_SQL = {
                        FROM directory.entities e
                        JOIN public.usuarios u ON u.id = e.user_id
                       WHERE e.id = :targetId AND e.status = 'ACTIVE'`,
+  // Only the buyer disputes an order, and only once money may have moved (a receipt or a cash order).
+  PAYMENT_ORDER: `SELECT e.user_id AS "userId", u.tenant_id AS "tenantId"
+                    FROM directory.payment_orders o
+                    JOIN directory.entities e ON e.id = o.entity_id
+                    JOIN public.usuarios u ON u.id = e.user_id
+                   WHERE o.id = :targetId AND o.athlete_user_id = :reporterId AND o.status <> 'PENDING_PAYMENT'`,
 } as const;
 
 /** Whether the case's content is already off the marketplace: a hidden listing, a suspended business. */
 export const BUSINESS_TARGET_HIDDEN_SQL = {
   BUSINESS_LISTING: `SELECT (moderation_status = 'HIDDEN') AS hidden FROM directory.entity_plans WHERE id = :targetId`,
   BUSINESS_PROFILE: `SELECT (status = 'SUSPENDED') AS hidden FROM directory.entities WHERE id = :targetId`,
+  PAYMENT_ORDER: `SELECT (e.status = 'SUSPENDED') AS hidden FROM directory.payment_orders o
+                    JOIN directory.entities e ON e.id = o.entity_id WHERE o.id = :targetId`,
 } as const;
 
 /** The business (entity) a case is about, to suspend it. */
 export const BUSINESS_TARGET_ENTITY_SQL = {
   BUSINESS_LISTING: `SELECT entity_id AS "entityId" FROM directory.entity_plans WHERE id = :targetId`,
   BUSINESS_PROFILE: `SELECT id AS "entityId" FROM directory.entities WHERE id = :targetId`,
+  PAYMENT_ORDER: `SELECT entity_id AS "entityId" FROM directory.payment_orders WHERE id = :targetId`,
 } as const;
+
+export type BusinessTargetKind = keyof typeof BUSINESS_TARGET_ENTITY_SQL;
+
+export function isBusinessTargetKind(kind: string): kind is BusinessTargetKind {
+  return Object.prototype.hasOwnProperty.call(BUSINESS_TARGET_ENTITY_SQL, kind);
+}
 
 /**
  * Hides a listing (LIVE or HELD → HIDDEN) or restores one: HIDDEN → LIVE only
@@ -59,5 +74,8 @@ export const BUSINESS_QUEUE_JOINS = `
          LEFT JOIN directory.entity_plans bl
            ON r.target_kind = 'BUSINESS_LISTING' AND bl.id = r.target_id
          LEFT JOIN directory.entities bp
-           ON r.target_kind = 'BUSINESS_PROFILE' AND bp.id = r.target_id`;
-export const BUSINESS_QUEUE_HIDDEN = `bool_or(bl.moderation_status = 'HIDDEN') OR bool_or(bp.status = 'SUSPENDED')`;
+           ON r.target_kind = 'BUSINESS_PROFILE' AND bp.id = r.target_id
+         LEFT JOIN directory.payment_orders bo
+           ON r.target_kind = 'PAYMENT_ORDER' AND bo.id = r.target_id
+         LEFT JOIN directory.entities boe ON boe.id = bo.entity_id`;
+export const BUSINESS_QUEUE_HIDDEN = `bool_or(bl.moderation_status = 'HIDDEN') OR bool_or(bp.status = 'SUSPENDED') OR bool_or(boe.status = 'SUSPENDED')`;

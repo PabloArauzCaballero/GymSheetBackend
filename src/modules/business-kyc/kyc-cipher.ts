@@ -20,7 +20,14 @@ function kycUnavailable(): DomainException {
  * `KYC_UNAVAILABLE` (production refuses to boot without it, `env.ts`).
  */
 export class KycCipher {
-  constructor(private readonly secret: () => string | undefined = () => env.KYC_ENCRYPTION_KEY) {}
+  /**
+   * `domain` separates the derived keys: payment evidence (ADR-0024) uses its
+   * own, so a receipt's ciphertext never decrypts as a KYC document.
+   */
+  constructor(
+    private readonly secret: () => string | undefined = () => env.KYC_ENCRYPTION_KEY,
+    private readonly domain = "gymsheet:kyc:v1",
+  ) {}
 
   /** Whether the KYC can run: the cipher key and the privacy pepper are both configured. */
   available(): boolean {
@@ -55,7 +62,7 @@ export class KycCipher {
   private key(): Buffer {
     const secret = this.secret();
     if (!secret) throw kycUnavailable();
-    return createHash("sha256").update("gymsheet:kyc:v1\0", "utf8").update(secret, "utf8").digest();
+    return createHash("sha256").update(`${this.domain}\0`, "utf8").update(secret, "utf8").digest();
   }
 }
 

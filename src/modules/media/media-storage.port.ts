@@ -43,7 +43,9 @@ export type MediaCategory =
   | "catalog"
   | "ejercicios"
   | "business"
-  | "kyc";
+  | "kyc"
+  | "order-receipt"
+  | "payment-qr";
 
 /**
  * Destino de una carga. Es una unión discriminada a propósito: el compilador
@@ -84,6 +86,17 @@ export type MediaUploadTarget =
       readonly submissionId: string;
       readonly objectId: string;
     }
+  /**
+   * A buyer's payment receipt (ADR-0024), already encrypted:
+   * `orders/{orderId}/receipt/{objectId}.bin`. Private and deletable.
+   */
+  | { readonly category: "order-receipt"; readonly orderId: string; readonly objectId: string }
+  /**
+   * A business's payment QR (ADR-0024), already encrypted:
+   * `business/{entityId}/payment/{objectId}.bin`. Private: only a buyer of an
+   * open order of that business gets it. Deletable.
+   */
+  | { readonly category: "payment-qr"; readonly entityId: string; readonly objectId: string }
   /**
    * Demostraciones de un ejercicio del catálogo: una carpeta por ejercicio.
    *
@@ -198,9 +211,17 @@ export function isBusinessKycKey(key: string): boolean {
   return BUSINESS_KYC_KEY_PATTERN.test(key) && isSafeStorageKey(key);
 }
 
-/** Keys the API deletes for real (ADR-0017): a person's content, a business's public media and its KYC documents. */
+/** A buyer's receipt or a business's payment QR (ADR-0024), encrypted and private. */
+export const PAYMENT_EVIDENCE_KEY_PATTERN =
+  /^(?:orders\/[0-9a-f-]{36}\/receipt|business\/[0-9a-f-]{36}\/payment)\/[0-9a-f-]{36}\.bin$/u;
+
+export function isPaymentEvidenceKey(key: string): boolean {
+  return PAYMENT_EVIDENCE_KEY_PATTERN.test(key) && isSafeStorageKey(key);
+}
+
+/** Keys the API deletes for real (ADR-0017): a person's content, a business's public media, its KYC documents and payment evidence. */
 export function isDeletableContentKey(key: string): boolean {
-  return isUserContentKey(key) || isBusinessPublicKey(key) || isBusinessKycKey(key);
+  return isUserContentKey(key) || isBusinessPublicKey(key) || isBusinessKycKey(key) || isPaymentEvidenceKey(key);
 }
 
 /**
@@ -209,7 +230,9 @@ export function isDeletableContentKey(key: string): boolean {
  * opaque ciphertext named by its random object id, `.bin`, whatever the type.
  */
 export function mediaObjectKey(target: MediaUploadTarget, checksumSha256: string, mimeType: string): string {
-  if (target.category === "kyc") return `${mediaTargetPrefix(target)}/${target.objectId}.bin`;
+  if (target.category === "kyc" || target.category === "order-receipt" || target.category === "payment-qr") {
+    return `${mediaTargetPrefix(target)}/${target.objectId}.bin`;
+  }
   return `${mediaTargetPrefix(target)}/${checksumSha256}${resolveMediaExtension(mimeType)}`;
 }
 
@@ -217,6 +240,8 @@ export function mediaTargetPrefix(target: MediaUploadTarget): string {
   if (target.category === "catalog") return "catalog";
   if (target.category === "business") return `business/${target.entityId}/public`;
   if (target.category === "kyc") return `business/${target.accountId}/kyc/${target.submissionId}`;
+  if (target.category === "order-receipt") return `orders/${target.orderId}/receipt`;
+  if (target.category === "payment-qr") return `business/${target.entityId}/payment`;
   if (target.category === "ejercicios") {
     return "ownerUserId" in target
       ? `users/${target.ownerUserId}/ejercicios/${target.exerciseId}`

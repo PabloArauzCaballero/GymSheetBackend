@@ -21,7 +21,10 @@ export type PaymentOrderStatus =
   | 'PENDING_VERIFICATION'
   | 'CONFIRMED'
   | 'REJECTED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'EXPIRED';
+
+export type PaymentOrderMethod = 'QR' | 'CASH';
 
 @Table({
   tableName: 'payment_orders',
@@ -68,6 +71,58 @@ export class PaymentOrderModel extends Model {
 
   @Column({ type: DataType.DECIMAL(12, 2), allowNull: false })
   declare amount: string;
+
+  @Default(1)
+  @Column({ type: DataType.INTEGER, allowNull: false })
+  declare quantity: number;
+
+  @Column({ type: DataType.DECIMAL(12, 2), allowNull: false, field: 'unit_amount' })
+  declare unitAmount: string;
+
+  @Default('QR')
+  @Column({ type: DataType.STRING(4), allowNull: false })
+  declare method: PaymentOrderMethod;
+
+  @Column({ type: DataType.DATE, allowNull: true, field: 'expires_at' })
+  declare expiresAt: Date | null;
+
+  @Column({ type: DataType.DATE, allowNull: true, field: 'cancelled_at' })
+  declare cancelledAt: Date | null;
+
+  @Column({ type: DataType.STRING(24), allowNull: true, field: 'cancel_reason' })
+  declare cancelReason: string | null;
+
+  /** Private encrypted receipt (ADR-0024): `orders/{orderId}/receipt/{uuid}.bin`. */
+  @Column({ type: DataType.TEXT, allowNull: true, field: 'receipt_private_key' })
+  declare receiptPrivateKey: string | null;
+
+  @Column({ type: DataType.STRING(20), allowNull: true, field: 'receipt_mime' })
+  declare receiptMime: string | null;
+
+  @Column({ type: DataType.CHAR(64), allowNull: true, field: 'receipt_sha256' })
+  declare receiptSha256: string | null;
+
+  @Default(0)
+  @Column({ type: DataType.SMALLINT, allowNull: false, field: 'receipt_attempts' })
+  declare receiptAttempts: number;
+
+  /** Units of the listing's stock this order holds reserved (0 once released or consumed). */
+  @Default(0)
+  @Column({ type: DataType.INTEGER, allowNull: false, field: 'stock_reserved_units' })
+  declare stockReservedUnits: number;
+
+  @Column({ type: DataType.STRING(16), allowNull: true, field: 'rejection_code' })
+  declare rejectionCode: string | null;
+
+  @Column({ type: DataType.UUID, allowNull: true, field: 'decided_by_user_id' })
+  declare decidedByUserId: string | null;
+
+  @Column({ type: DataType.DATE, allowNull: true, field: 'decided_at' })
+  declare decidedAt: Date | null;
+
+  @Default(0)
+  @Column({ type: DataType.SMALLINT, allowNull: false, field: 'reminders_sent' })
+  declare remindersSent: number;
 
   @Column({ type: DataType.CHAR(3), allowNull: false })
   declare currency: string;

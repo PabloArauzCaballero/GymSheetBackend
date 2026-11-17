@@ -235,6 +235,9 @@ export const ACCOUNT_CLOSURE_STEPS: readonly ClosureStep[] = [
   keep("membership.entitlements", "Beneficios de membresía", OWN, GYM_RECORD),
   anonymize("directory.payment_orders", "Órdenes de pago y comprobantes", "t.athlete_user_id = :userId",
     "athlete_notes = NULL, updated_at = now()", GYM_RECORD),
+  // The order's history stays for the business without the buyer's name on its own steps (ADR-0024).
+  anonymize("directory.payment_order_history", "Historial de tus pedidos", "t.actor_user_id = :userId",
+    "actor_user_id = NULL", GYM_RECORD),
   anonymize("public.membership_activation_requests", "Activaciones de membresía", OWN_ES,
     "nota = NULL, updated_at = now()", GYM_RECORD),
   anonymize("access_control.credentials", "Credenciales de acceso al gimnasio", OWN,
