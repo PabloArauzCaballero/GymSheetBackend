@@ -148,6 +148,7 @@ Canonical internal units are kilograms for body weight, centimeters for height, 
 | GET    | `/me/export/latest`                | authenticated | `{ export: <status> \| null }`: the caller's most recent request, so a client that lost the id resumes it |
 | GET    | `/me/export/:id`                   | owner         | `{ id, status: PENDING\|READY\|FAILED, requestedAt, completedAt, expiresAt, sizeBytes, downloadPath }` |
 | GET    | `/me/export/:id/download`          | owner         | `application/json` attachment while `READY` and not expired (7 days); `409 ACCOUNT_EXPORT_NOT_READY` before |
+| GET    | `/admin/users`                     | `SYSTEM_ADMIN` | REPP's account search (ADR-0026; replaces the retired `admin/membership/users`): strict `?q` (name or email fragment, 1–120, `%`/`_` literal) `&roles` (comma-separated `UserRole`, e.g. `CLIENTE` for the moderator picker) `&status` (`ACTIVO`\|`INACTIVO`) `&page` (1) `&pageSize` (≤ 100, 50) → `{ items: [{ id, nombreCompleto, email, rol, estado, tenantId, ultimaSesion, telefono: null, plan: null, venceEl: null, vigente: false }], page, pageSize, total, totalPages }`, ordered by name then id. `telefono`, `plan`, `venceEl`, `vigente` are kept neutral for the web and deprecated (they were the gym front desk's). Business accounts (`NEGOCIO`) are listed unless `roles` leaves them out; while impersonating a gym, only its accounts. `400` bad parameter, `401`, `403` anyone else (persons, `MODERATOR`, businesses) |
 | POST   | `/admin/users/:id/close`           | `ADMIN` (`SYSTEM_ADMIN` too) | Closes a **staff** account of the caller's gym (`ADMIN`, `COACH`, `FRONT_DESK`, `ENTRENADOR_EXTERNO`) with the same erasure, no password or PIN; `200 { closed: true, closedAt }`, audited in `admin.audit_log` (`domain: account`, `action: close`). Another gym's account, a platform account (`SYSTEM_ADMIN`, `MODERATOR`) or an already closed one: `404`; a member: `400 STAFF_CLOSURE_NOT_STAFF`; the caller's own account: `403 STAFF_CLOSURE_SELF`; the gym's last active admin: `403 STAFF_CLOSURE_LAST_ADMIN` |
 
 All of them are exempt from the legal-acceptance gate and the password/PIN routes use the auth rate limit. Wrong password: `400 CURRENT_PASSWORD_INVALID`; PIN errors reuse `EMAIL_PIN_INVALID|EXPIRED|EXHAUSTED|COOLDOWN` (the PIN table is `auth.email_verification_pins` with `purpose` `VERIFY_EMAIL|CHANGE_EMAIL|CLOSE_ACCOUNT`, one live code, cooldown and daily cap per purpose). Someone else's export answers `404`.
@@ -326,7 +327,7 @@ centre services use the same ledger without affiliation. A product opens no peri
 - The removed gym-operated machinery answers `404`: `/membership/plans[/:id]`, `/me/membership*`
   (options, renewal and extension intents, activation request), `/memberships/me`, `/me/accesses`, the whole
   `/admin/membership/*` (plans, features, scopes, customers, memberships, staff, intents, activation links,
-  users, `insights/*` — `insights/lapsed` is replaced by `GET /business/me/subscriptions?status=EXPIRED`), and
+  users — replaced by `GET /admin/users` —, `insights/*` — `insights/lapsed` is replaced by `GET /business/me/subscriptions?status=EXPIRED`), and
   physical access control (`/access/me`, `/access/credentials/me`, `/admin/access/*`).
 
 `Period`: `{ id, status, startsOn, endsOn, daysLeft, sessions: { total, used } | null, origin }`.

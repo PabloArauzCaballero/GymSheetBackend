@@ -83,6 +83,17 @@ tenant) y la del marketplace (pedido confirmado por el negocio, que creaba la me
     personales de las tablas retiradas se siguen borrando o anonimizando hasta su `DROP` (franja posterior,
     30 días como mínimo). Los periodos se conservan sin notas, como registro del negocio.
 
+11. **Búsqueda de cuentas de REPP fuera del módulo de membresías.** `admin/membership/users` alimentaba
+    tres pantallas que siguen: la lista de cuentas (`/admin/usuarios`), la búsqueda de `/admin/permissions` y
+    el selector de miembros de `/sistema/moderadores`. Queda como `GET /admin/users?q&roles&status&page&pageSize`
+    en el módulo `users`, solo `SYSTEM_ADMIN` (ADR-0019), con la misma forma de respuesta para que la web cambie
+    solo la ruta. Los campos de la recepción del gimnasio (`telefono` de la ficha de socio retirada y `plan`,
+    `venceEl`, `vigente` de la membresía operada por el gimnasio) quedan neutros (`null`, `false`) y obsoletos:
+    las suscripciones son de cada negocio, no de la lista de cuentas de REPP. Las cuentas de negocio aparecen
+    (REPP también las opera) salvo que `roles` las deje fuera; el selector de moderadores pide `roles=CLIENTE`
+    y la promoción vuelve a comprobar que es una persona (ADR-0018). Con suplantación, solo las cuentas de ese
+    gimnasio, como antes. `%` y `_` del texto buscado son literales.
+
 ## Consecuencias
 
 - Contrato en `docs/endpoints/endpoints.md` y `openapi.yaml`. El cliente actual (web y móvil) que llama a

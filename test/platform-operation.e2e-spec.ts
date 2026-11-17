@@ -35,6 +35,7 @@ describe('REPP operates the platform; the gym has no staff (e2e, franja 7a)', ()
     ['get', '/admin/platform/moderators'],
     ['get', '/admin/progression/levels'],
     ['post', '/admin/progression/prizes/redeem', { code: 'NOPE' }],
+    ['get', '/admin/users?q=x&roles=CLIENTE'],
     ['post', `/admin/users/${uuid}/close`],
     ['get', '/admin/media'],
     ['post', '/admin/notifications/broadcast', {}],
