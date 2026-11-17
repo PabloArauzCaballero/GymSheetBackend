@@ -1173,6 +1173,75 @@ Fuera de 7c: el directorio de instalación `/me/gym-directory` sigue por tenant 
 la afinidad «misma sede» y el mapa de gimnasios siguen sobre `facilities.branches` hasta 7e; la lista de
 socios no tiene cursor (tope 50 y búsqueda por nombre, como el directorio).
 
+### Franja 8f: cierre, exportación y retención del negocio; endurecimiento del marketplace (ADR-0028)
+
+| Cambio / riesgo | Corrección | Prueba |
+|---|---|---|
+| Una cuenta de negocio no podía cerrarse ni exportar sus datos (`403 ACCOUNT_KIND_NOT_ALLOWED`) | `me/account/*` (salvo `PATCH`) y `me/export/*` abiertos al negocio; catálogo `BUSINESS_CLOSURE_STEPS` | `test/business-closure.e2e-spec.ts` 9/9; inventario de rutas; sonda contra 863928c: `403` |
+| Cerrar con comprobantes por decidir dejaría pagos en el aire | `409 BUSINESS_HAS_PENDING_VERIFICATIONS {count, action}` y `blockers` en la vista previa; cuenta, ficha, publicaciones y pedidos `FOR UPDATE` antes de decidir | e2e (409, nada cambia; tras rechazar, cierra) |
+| Cierre de un gimnasio sin destino para sus socios (abierto por 7b) | Afiliaciones `ENDED`/`CANCELLED` con `BUSINESS_CLOSED`, CI borrado y aviso a socios y coaches | e2e (socio, solicitud y vínculo de coach; avisos) |
+| Pedidos sin pagar de un negocio cerrado | `CANCELLED` (`BUSINESS_CLOSED`) con aviso «no pagues» y stock liberado; confirmados conservados sin el negocio como autor | e2e |
+| Periodos de un negocio cerrado | En curso o por empezar `CANCELLED` con historial y evento; vencidos como historial | e2e |
+| Chat con un negocio cerrado | Solo lectura para la persona, `businessClosed`; mensajes del negocio conservados | e2e |
+| `@handle` de un negocio cerrado | `RETIRED` sin redirección, bloqueado 180 días | e2e (otro negocio `409 HANDLE_TAKEN`; pasado el bloqueo, libre) |
+| Evasión de una sanción cerrando el negocio | `closed_account_sanctions` con HMAC de NIT y CI y la suspensión de REPP; heredar por correo marca en vez de borrar | e2e (negocio nuevo con el mismo NIT/CI → `IN_REVIEW`, `CLOSED_ACCOUNT_SANCTION` FAIL); unitarias |
+| Exportación del negocio exponía datos de otras personas | Solo nombre visible del comprador/socio; sin `ci_last3`, ids ni notas; CI e imágenes del representante de una COMPANY retenidos | `test/business-closure-data.e2e-spec.ts`; `kyc-export.reader.spec.ts` |
+| Retención del KYC sin los 5 años de registros y en constantes | `KYC_RETENTION_*_DAYS` por entorno; registros a los 5 años del cierre; datos en claro del representante a los 180 | e2e con reloj (31, 179, 181, 1824, 1826 días) |
+| Borrado del KYC a pedido | `POST /business/me/kyc/erase`: cuenta `SUSPENDED` con `KYC_MISSING`; REPP no la reactiva tal cual | e2e |
+| **F8F-1** (seguridad, media): un comprador podía enviar un comprobante a un negocio suspendido, pausado o cerrado; el pedido volvía a `PENDING_VERIFICATION` y esquivaba la cancelación | `409 ORDER_BUSINESS_UNAVAILABLE` bajo el lock del pedido | e2e; sonda contra 863928c: `200` |
+| **F8F-2** (plan §6.1): negocios «Nuevo» sin tope de pedidos abiertos | `ORDER_OPEN_MAX_UNVERIFIED_SELLER` (10) bajo lock consultivo por vendedor, `409 ORDER_SELLER_OPEN_LIMIT` | e2e y unitarias; sonda contra 863928c: `201` |
+| `payment_orders.receipt_url` legado sin lectores | Contraída (valores en `retired.payment_order_receipt_urls`) | e2e down/up en transacción revertida |
+
+Revisión `security-audit` sobre `business/*`, `admin/business/*`, `me/subscriptions*`, `me/affiliations*`,
+`me/gym*`: toda ruta `business/*` lleva `@Roles(NEGOCIO)` y el inventario de rutas fija exactamente lo que un
+negocio alcanza; `admin/business/*` exige `PLATFORM_MODERATION_ROLES` y la regla de caso propio; todo `:id` pasa
+por `UuidParamPipe` y todo `:handle` por su esquema; los cuerpos son Zod estrictos (los tres de alta y medios
+del negocio usan el modo por defecto, que descarta campos no declarados); toda lectura o decisión se acota a la
+ficha de la cuenta o al titular (ajeno → `404`: pedidos, afiliaciones, vínculos de coach, suscriptores,
+suscripciones propias); un handle cerrado responde el mismo `404` que uno inexistente. Hallazgos: F8F-1 y F8F-2,
+corregidos con prueba.
+
+`backend-hardening` (marketplace): índices de las consultas nuevas existentes (`ix_payment_orders_entity_status`
+para el tope y el bloqueo del cierre, `ix_affiliations_gym_*`/`ix_affiliations_coach`, `ix_memberships_seller`,
+GIN de `nit_hmacs`/`ci_hmacs`); trabajo del cierre en una transacción con avisos en savepoints (un aviso que falla
+no deshace el cierre); borrado de archivos por `media.release` (outbox, reintentos finitos); retención por lotes
+de 200 con `SKIP LOCKED`.
+
+Prueba de carga (`test/load/http-load-smoke.mjs`, ahora con una fase anónima del marketplace y el boleto
+antibot del alta) contra `dist/main.js` real en :3045 sobre la base e2e tras la corrida completa, con 4 978
+publicaciones públicas (38 de las suites, replicadas por SQL para tener volumen) y `PUBLIC_RATE_LIMIT_MAX=1000`
+para medir latencia y no el límite; concurrencia 10, presupuesto de lectura p95 800 ms / p99 1 600 ms:
+
+| Escenario | Peticiones | Errores | p50 | p95 | p99 | Máx. |
+|---|---:|---:|---:|---:|---:|---:|
+| `GET /public/directory/listings` (recientes y por precio, 20 por página) | 200 | 0 | 33,1 ms | **72,6 ms** | 134,6 ms | 136,6 ms |
+| `GET /public/directory/profiles/:handle` (perfil + sedes + primera página) | 200 | 0 | 67,3 ms | **113,3 ms** | 133,8 ms | 136,9 ms |
+| Lectura de ejercicios (autenticada) | 60 | 0 | 336,9 ms | 461,2 ms | 514,8 ms | 514,8 ms |
+| Creación de series | 20 | 0 | 114,6 ms | 129,8 ms | 140,6 ms | 140,6 ms |
+| Exportación de historial | 15 | 0 | 154,7 ms | 170,4 ms | 170,4 ms | 170,4 ms |
+
+RSS +23,9 MB (presupuesto 64 MB), cuerpo de 2 MB → `413`, límite de auth → `429`. Una corrida previa con solo
+las 38 publicaciones de las suites dio p95 139,2 ms (búsqueda) y 146,6 ms (perfil).
+
+Evidencia (17/11/2026, sobre 863928c): `yarn lint` y `yarn type-check` limpios; `yarn build` OK; unitarias
+265 suites / 2431 pruebas en verde; e2e nuevas `business-closure` 9/9 y `business-closure-data` 7/7; e2e
+completa sobre base nueva (schema + migraciones + semilla base): 87 suites en verde, 1 omitida, 9 en rojo con
+45 pruebas, todas de la línea base de 47 nombres (44 iguales; `H11.S2.M4` es la prueba renombrada que solo corre
+en la base aislada de QA; `H7.S2.M3` y el caso 10 de recompensas pasan ahora). Migraciones up → down → down → up
+→ semilla en base nueva, y down/up en transacción revertida en cinco suites (8a, 8c, 7b, 8e y la de esta franja).
+Sonda HTTP de las cinco reglas nuevas contra 863928c en una base propia: 5/5 en rojo (cierre `403`, exportación
+`403`, borrado del KYC `404`, tercer pedido al tope `201`, comprobante a negocio suspendido `200`); en esta rama
+5/5 en verde. Arranque real: `/health/live` 200 y `/health/ready` 200 (`database: ready`, `migrations:
+up-to-date`); `account-data`, `privacy-retention`, `orders-maintenance` y `notification-delivery` arrancan,
+emiten `worker.shutdown_requested` ante SIGTERM y salen con 0; `privacy-retention.command` sale con 0 e informa
+el paso KYC nuevo (`recordsPurgedAccounts`, `revokedFingerprintsDeleted`). `BUSINESS_SIGNUP_ENABLED` sigue en
+`false`.
+
+Fuera de 8f: el `DROP` de `retired.payment_order_receipt_urls` (franja posterior); el camino de vuelta de una
+cuenta `KYC_MISSING` (un KYC nuevo) y los plazos de retención y la exportación de documentos de una COMPANY,
+pendientes del abogado; la verificación del alta pública (`BUSINESS_SIGNUP_ENABLED`) tras su firma.
+
+
 ---
 
 ## 5. Matriz de alcance funcional (dominio real: gimnasio)

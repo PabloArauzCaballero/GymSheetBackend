@@ -104,10 +104,13 @@ const password = 'LoadTestPassword123!';
 // Signup must echo the current terms version; read it instead of hardcoding it.
 const legal = await requestData('/legal/current');
 const termsVersion = legal.documents.find((entry) => entry.document === 'TERMS').version;
+// The anti-bot layer (ADR-0013) wants the form ticket of the real client; run with SIGNUP_MIN_FILL_MS=0.
+const { ticket } = await requestData('/auth/register/ticket');
 const registration = await requestData('/auth/register', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
+    ticket,
     email: `load-${uniqueSuffix}@load.test`,
     password,
     nombreCompleto: 'Load Test User',

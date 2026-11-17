@@ -180,7 +180,7 @@ export class AccountClosureService {
         "Las cuentas de socios las cierra cada socio desde su app.",
       );
     }
-    // A business account is not staff either: it closes itself with `DELETE /me/account` (ADR-0028).
+    // A business account is not staff either; its own closure (listing, handle, orders) is franja 8f (ADR-0020).
     if (user.role === UserRole.BUSINESS) {
       throw new DomainException(
         HttpStatus.BAD_REQUEST,
